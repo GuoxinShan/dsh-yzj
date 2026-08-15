@@ -6,8 +6,9 @@
  */
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
 
-/** Panel tabs (我的 removed — the composer '@' covers directory search). */
-export type YzjTab = 'docs' | 'calendar' | 'chat'
+/** Panel tabs (我的 removed — the composer '@' covers directory search;
+ * 待办 added for the demo-stage todo library). */
+export type YzjTab = 'docs' | 'calendar' | 'chat' | 'todo'
 /** Yunzhijia panel viewing state (raw CLI payloads, rendered by components). */
 export type YzjPanelState = {
   open: boolean
@@ -39,6 +40,12 @@ export type YzjPanelState = {
   anchorMsgId: string
   /** Sum of unread counts across recent sessions (the floating-ball badge). */
   unreadTotal: number
+  /** Todo tab: library snapshot (views from the yzjTodo core). */
+  todos: unknown[]
+  todoReady: boolean
+  todoLink: string
+  /** Active tag filter ('' = all). */
+  todoTag: string
   loading: boolean
   error: string
 }
@@ -68,6 +75,9 @@ export type YzjPanelActions = {
   prependMessages: (draft: YzjPanelState, messages: unknown[]) => void
   setAnchorMsgId: (draft: YzjPanelState, id: string) => void
   setUnreadTotal: (draft: YzjPanelState, total: number) => void
+  setTodoState: (draft: YzjPanelState, todos: unknown[], ready: boolean, link: string) => void
+  patchTodo: (draft: YzjPanelState, todo: unknown) => void
+  setTodoTag: (draft: YzjPanelState, tag: string) => void
   setLoading: (draft: YzjPanelState, loading: boolean) => void
   setError: (draft: YzjPanelState, error: string) => void
 }
@@ -99,6 +109,10 @@ export function createYzjStore(): EngineStoreHandle<YzjPanelState, YzjPanelActio
       messagesAnchor: '',
       anchorMsgId: '',
       unreadTotal: 0,
+      todos: [],
+      todoReady: false,
+      todoLink: '',
+      todoTag: '',
       loading: false,
       error: '',
     }),
@@ -136,6 +150,16 @@ export function createYzjStore(): EngineStoreHandle<YzjPanelState, YzjPanelActio
       },
       setAnchorMsgId: (d: YzjPanelState, id: string) => { d.anchorMsgId = id },
       setUnreadTotal: (d: YzjPanelState, total: number) => { d.unreadTotal = total },
+      setTodoState: (d: YzjPanelState, todos: unknown[], ready: boolean, link: string) => {
+        d.todos = todos
+        d.todoReady = ready
+        d.todoLink = link
+      },
+      patchTodo: (d: YzjPanelState, todo: unknown) => {
+        const todoId = String(asRecord(todo).todoId)
+        d.todos = d.todos.map(item => String(asRecord(item).todoId) === todoId ? todo : item)
+      },
+      setTodoTag: (d: YzjPanelState, tag: string) => { d.todoTag = tag },
       setLoading: (d: YzjPanelState, loading: boolean) => { d.loading = loading },
       setError: (d: YzjPanelState, error: string) => { d.error = error },
     },

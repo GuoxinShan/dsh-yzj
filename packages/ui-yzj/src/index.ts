@@ -10,6 +10,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { ConnectionRpcHandler } from '@deepseek-ai/dsh-client-connection'
 import type {} from '@dsh-yzj/bridge'
+import type {} from '@dsh-yzj/tool-yzj'
 import { applyWriteGate, type YzjWriteRecord } from './write-gate.ts'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -329,6 +330,59 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
         const entry = await fileDataFor(ctx, fileId)
         if (entry === undefined) return internalError(`file-data failed to download fileId ${fileId}`)
         return { ok: true, value: entry }
+      }
+      case 'todo-state': {
+        // Panel todo tab snapshot over the shared yzjTodo core (tool-yzj).
+        const todo = ctx.get('yzjTodo')
+        if (todo === undefined) return internalError('todo-state: yzjTodo 服务不可用（tool-yzj 未挂载）')
+        try {
+          return { ok: true, value: await todo.state() }
+        } catch (error) {
+          return internalError(`todo-state failed: ${String(error)}`)
+        }
+      }
+      case 'todo-ensure': {
+        const todo = ctx.get('yzjTodo')
+        if (todo === undefined) return internalError('todo-ensure: yzjTodo 服务不可用（tool-yzj 未挂载）')
+        try {
+          return { ok: true, value: await todo.ensure() }
+        } catch (error) {
+          return internalError(`todo-ensure failed: ${String(error)}`)
+        }
+      }
+      case 'todo-create': {
+        const todo = ctx.get('yzjTodo')
+        if (todo === undefined) return internalError('todo-create: yzjTodo 服务不可用（tool-yzj 未挂载）')
+        const title = stringField(payload, 'title')
+        if (title === undefined) return internalError('todo-create endpoint requires a title payload')
+        const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
+        const rawTags = record.tags
+        const tags = Array.isArray(rawTags)
+          ? rawTags.filter((item): item is string => typeof item === 'string')
+          : typeof rawTags === 'string' ? [rawTags] : []
+        try {
+          const created = await todo.create({
+            title,
+            ddl: stringField(record, 'ddl'),
+            priority: stringField(record, 'priority'),
+            assignee: stringField(record, 'assignee'),
+            tags,
+          })
+          return { ok: true, value: created }
+        } catch (error) {
+          return internalError(`todo-create failed: ${String(error)}`)
+        }
+      }
+      case 'todo-toggle': {
+        const todo = ctx.get('yzjTodo')
+        if (todo === undefined) return internalError('todo-toggle: yzjTodo 服务不可用（tool-yzj 未挂载）')
+        const todoId = stringField(payload, 'todoId')
+        if (todoId === undefined) return internalError('todo-toggle endpoint requires a todoId payload')
+        try {
+          return { ok: true, value: await todo.toggle(todoId) }
+        } catch (error) {
+          return internalError(`todo-toggle failed: ${String(error)}`)
+        }
       }
       case 'write-list': {
         const sessionId = stringField(payload, 'sessionId')

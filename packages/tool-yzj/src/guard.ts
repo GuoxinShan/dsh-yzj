@@ -47,6 +47,10 @@ const WRITE_SPECS: Record<string, DangerousSpec> = {
   yzj_sheet_record_update: { reason: '更新多维表格记录', level: 'standard' },
   yzj_calendar_event_create: { reason: '新建日程', level: 'standard' },
   yzj_calendar_event_update: { reason: '更新日程', level: 'standard' },
+  // --- todo family (demo-stage sheet backend) ---
+  yzj_todo_create: { reason: '在待办任务库创建待办（首用时会自动开通任务库）', level: 'standard' },
+  yzj_todo_update: { reason: '更新待办（状态/负责人/DDL/标签/日志）', level: 'standard' },
+  yzj_todo_complete: { reason: '完成待办（状态置 done）', level: 'standard' },
 }
 
 /** The host-internal ask-pending event the guard emits before returning ask. */

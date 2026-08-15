@@ -30,6 +30,7 @@ export const YZJ_WRITE_TOOL_NAMES = [
   'yzj_doc_block_update', 'yzj_sheet_create', 'yzj_sheet_table_create',
   'yzj_sheet_table_rename', 'yzj_sheet_record_create', 'yzj_sheet_record_update',
   'yzj_calendar_event_create', 'yzj_calendar_event_update',
+  'yzj_todo_create', 'yzj_todo_update', 'yzj_todo_complete',
 ] as const
 
 /** The injected decision face the confirmation card receives. */
@@ -89,11 +90,14 @@ const WRITE_TITLES: Record<string, string> = {
   yzj_sheet_record_update: '更新记录',
   yzj_calendar_event_create: '新建日程',
   yzj_calendar_event_update: '更新日程',
+  yzj_todo_create: '新建待办',
+  yzj_todo_update: '更新待办',
+  yzj_todo_complete: '完成待办',
 }
 
 /** Domain labels for the card header. */
 const DOMAIN_LABELS: Record<string, string> = {
-  im: '消息', doc: '文档', kb: '知识库', sheet: '多维表格', calendar: '日程', file: '文件', other: '云之家',
+  im: '消息', doc: '文档', kb: '知识库', sheet: '多维表格', calendar: '日程', file: '文件', todo: '待办', other: '云之家',
 }
 
 function row(title: string, sub: string, key: string): ReactNode {
@@ -228,6 +232,22 @@ function ArgBody({ record, names }: { record: YzjWriteRecord; names: Record<stri
         const orgNames = orgs.map(id => names[asString(id)] ?? '').filter(name => name !== '')
         push('组织者', orgNames.length > 0 ? orgNames.join('、') : `${orgs.length} 人`, 'o')
       }
+      break
+    }
+    case 'todo': {
+      if (str('title') !== '') push('标题', str('title'), 't')
+      if (str('todoId') !== '') push('待办', str('todoId'), 'id')
+      if (record.toolName === 'yzj_todo_update' || record.toolName === 'yzj_todo_complete') {
+        push('操作', record.toolName === 'yzj_todo_complete' ? '标记完成' : '更新字段', 'op')
+      }
+      if (str('status') !== '') push('状态', str('status'), 'st')
+      if (str('assignee') !== '') push('负责人', str('assignee'), 'as')
+      if (str('ddl') !== '') push('DDL', str('ddl'), 'dl')
+      if (str('priority') !== '') push('优先级', str('priority'), 'pr')
+      const tags = list('tags').filter((tag): tag is string => typeof tag === 'string')
+      if (tags.length > 0) push('标签', tags.map(tag => `#${tag}`).join(' '), 'tg')
+      if (str('appendLog') !== '') push('备注', str('appendLog').slice(0, 200), 'al')
+      if (str('note') !== '') push('备注', str('note').slice(0, 200), 'nt')
       break
     }
     case 'file':

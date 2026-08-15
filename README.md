@@ -9,8 +9,8 @@
 | 包 | 角色 | 说明 |
 |---|---|---|
 | [`packages/bridge`](packages/bridge/README.md) | `@dsh-yzj/bridge` → `ctx.yzjBridge` | 有界子进程通道：argv 数组直启 `yzj-cli`，无 shell 插值；复用机器上 `yzj-cli auth login` 的登录态与 keychain 凭据，harness 全程不接触 appSecret/accessToken |
-| [`packages/tool-yzj`](packages/tool-yzj/README.md) | `@dsh-yzj/tool-yzj`（注册到 `ctx.tools`） | 41 个模型面工具：doc（16）/ sheet（10）/ calendar（7）/ contact（3）/ im（3）/ file（2）；每个工具输出有界 digest，并把裁剪后的结构化载荷经 `output.presentationMeta` 投影给 UI |
-| [`packages/ui-yzj`](packages/ui-yzj/README.md) | `@dsh-yzj/ui-yzj`（`dsh.client` 双面包） | node half：`/yzj` Connection RPC 通道；browser half：`tool.call.toolview` keyed 富卡片 + 侧边栏「云之家」按钮 + 工作台 overlay 面板 |
+| [`packages/tool-yzj`](packages/tool-yzj/README.md) | `@dsh-yzj/tool-yzj`（注册到 `ctx.tools`） | 45 个模型面工具：doc（16）/ sheet（10）/ calendar（7）/ contact（3）/ im（3）/ file（2）/ **todo（4）**；每个工具输出有界 digest，并把裁剪后的结构化载荷经 `output.presentationMeta` 投影给 UI；todo 核心同时以 `ctx.yzjTodo` 服务暴露给浏览器面 |
+| [`packages/ui-yzj`](packages/ui-yzj/README.md) | `@dsh-yzj/ui-yzj`（`dsh.client` 双面包） | node half：`/yzj` Connection RPC 通道（18 端点，含面板直写 im-send/file-upload/file-data）；browser half：`tool.call.toolview` keyed 富卡片 + 悬浮球入口 + 工作台 overlay 面板（三 tab + 真 IM composer） |
 | [`packages/bundle`](packages/bundle/README.md) | `@dsh-yzj/bundle` | 可安装的 profile patch 层（`cordis.patch.yml`），挂载上面三行 |
 
 ## 安装
@@ -23,7 +23,7 @@ pnpm dsh plugin --profile web add -w link:/Users/guoxinshan/dev/dsh-yzj/packages
 dsh plugin --profile web add <npm 包名或路径>
 ```
 
-安装后重启 GUI（源码启动时重启 `node --import tsx/esm apps/cli/src/bin.ts web`），侧边栏底部出现「云之家」按钮。
+安装后重启 GUI（源码启动时重启 `node --import tsx/esm apps/cli/src/bin.ts web`），右下角出现「云之家」悬浮球（hover 展开快捷坞）。
 
 > 本地开发用 `link:` 依赖指向 harness checkout；对外发布时把各包的 `link:` 依赖换成已发布的 `@deepseek-ai/dsh-*` 版本范围。
 
@@ -35,10 +35,13 @@ dsh plugin --profile web add <npm 包名或路径>
 - **contact**：whoami、通讯录搜索、用户详情
 - **im**：发消息（text/file/richText、@、回复、多图）、聊天记录、最近会话
 - **file**：上传（≤30MB、最多 5 并发）、下载（自动重命名 / 覆盖）
+- **todo**：语义化待办工具族（demo 阶段以多维表格「待办任务库」承载，首用自动开通）——`yzj_todo_list/create/update/complete`；稳定 ID 幂等、host 强制状态机、追加式推进日志；**核心理念 tag 自由聚合**（tag 可以是项目/群组/主题）；后端迁移架构见 `docs/待办后端迁移说明.md`
 
 ### 确认流（确认卡）
 
-全部 22 个写工具按风险分级在 `tools/pre-execute` 返回 `ask`（标准确认 / 强确认），由 host 侧 `write-gate` 应答 `approval/request` waterfall 后，在浏览器渲染**按 domain 分发的确认卡**：参数全文（消息目标/文档落位/记录内容/日程时间等，不折叠截断）、风险徽标（删除类强确认红色卡片）、四动词（确认 / 取消 / 查看上下文 / 编辑）。`查看上下文` 打开悬浮窗并锚定对应 tab/消息；终态由官方工具事件承载（回放安全）。覆盖：`doc`（含 workspace/rename/move/import/block）、`sheet`（含 table/record）、`calendar`、`im message send`、`file upload/download` 全部写操作。
+全部 25 个写工具按风险分级在 `tools/pre-execute` 返回 `ask`（标准确认 / 强确认），由 host 侧 `write-gate` 应答 `approval/request` waterfall 后，在浏览器渲染**按 domain 分发的确认卡**：参数全文（消息目标/文档落位/记录内容/日程时间/待办字段等，不折叠截断；目标以解析后的名称展示，ID 不再裸露）、风险徽标（删除类强确认红色卡片）、四动词（确认 / 取消 / 查看上下文 / 编辑）。`查看上下文` 打开面板并锚定对应 tab/消息（卡片↔面板双向跳转）；终态由官方工具事件承载（回放安全）。覆盖：`doc`（含 workspace/rename/move/import/block）、`sheet`（含 table/record）、`calendar`、`im message send`、`file upload/download`、`todo` 全部写操作。
+
+**写路径两分原则（待正式拍板成文）**：确认卡门控的是 **agent 发起的写**；用户在面板的直接操作（IM composer 发消息，以及规划中的待办勾选/新建）即用户本人意志，不经确认卡，走 `/yzj` 直写端点（`im-send`/`file-upload`）。
 
 ## 与 yzj-cli skill 的关系
 
@@ -50,8 +53,8 @@ bundle 交付**改造版 skill**（`packages/bundle/skills/yzj-cli/SKILL.md`）�
 
 ### UI 设计
 
-- **工具结果富卡片**：`tool.call.toolview` keyed 注册全部 41 个工具名。pending 态从参数渲染标题；settled 态优先渲染结构化 `meta`（文档详情/列表、数据表 schema、记录表、日程时间线、消息气泡、联系人卡片），无结构时回退到 digest 文本。失败态显示错误摘要。
-- **云之家工作台**：侧边栏底部按钮 + 浮层面板，四个 tab——知识库（工作区 → 文档树钻取）、日程（今日）、会话（最近群 → 消息气泡）、我的（身份卡片 + 通讯录搜索）。数据经 `/yzj` RPC 通道实时拉取，与工具调用互不依赖。全条目可拖拽进 composer（chip + 上下文回源 + 拖入即处理快捷动作）。
+- **工具结果富卡片**：`tool.call.toolview` keyed 注册全部 45 个工具名。pending 态从参数渲染标题；settled 态优先渲染结构化 `meta`（文档详情/列表、数据表 schema、记录表、日程时间线、消息气泡、联系人卡片、待办列表/动作摘要），无结构时回退到 digest 文本。失败态显示错误摘要。
+- **云之家工作台**：悬浮球唯一入口（hover 快捷坞、持久化显隐、真实未读角标轮询），四个 tab——知识库（双栏：左侧工作区/文档树，右侧文档内容预览）、日程（今日）、会话（完整 IM：正序气泡、媒体/文件预览、表情渲染、回复、日期分割线、锚点定位、全部已读、真 composer 直发）、**待办**（逾期/今天/进行中/待办/已完成分桶 + #tag 聚合过滤 + 快捷新建（识别 `#标签` 与日期片段）+ 勾选完成/重开 + 整行拖入对话；未开通时一键开通）。未读数来自 CLI `unreadCount` + 本地已读持久化（刷新不回退 99+）；未读增长触发浏览器系统通知。全条目可拖拽进 composer（全屏 drop overlay）成 chip + 上下文回源。
 
 ## 开发
 
@@ -68,7 +71,9 @@ pnpm --filter @dsh-yzj/ui-yzj bundle   # 仅重建客户端 bundle（改 UI 后�
 
 - **依赖解析**：各包以 `link:` 相对路径依赖 harness checkout（`../../../deepseek-harness/...`）；发布前需替换为已发布的版本范围并验证 `dsh plugin add` 从 registry 安装。
 - **确认卡状态不落会话日志**：harness 对外部插件的自定义 session 事件类型无注册面，确认卡 pending/approved 瞬态由 host 内存表承载（SPA 刷新存活；host 重启降级为普通工具卡），终态由官方工具事件回放。
+- **面板「我的」tab 已移除**（原设计四 tab）：身份经 `yzj_whoami`、找人经 @ 候选；第四 tab 现为**待办**（是否另恢复通讯录浏览待拍板）。
+- **拖入即处理快捷动作已移除**：现为全屏 drop overlay 直接成 chip（v1.6 硬性要求 4 曾实现后删除，终局与否待拍板）。
 - **无群搜索/消息搜索**：沿用 CLI 能力面（最近会话翻页定位）。
 - **`file download` 只回传摘要**：CLI 的 `downloaded N bytes to <path>` 文本输出不携带结构化路径，卡片回退文本模式。
-- **工作台面板为只读浏览**：面板内不直接发起写入（写入走对话 + 工具确认流）。
+- **待办为 demo 阶段**：数据存于多维表格「待办任务库」（个人知识库，首用自动开通）；负责人/标签因 CLI 字段写入限制降级为文本形态；原生后端迁移方案见 `docs/待办后端迁移说明.md`。
 - **无独立文件夹概念**：归类用父文档挂载，与云之家产品语义一致。

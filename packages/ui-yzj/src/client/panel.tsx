@@ -9,6 +9,7 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, ty
 import {
   IconChecklistOutline14,
   IconFolderOpenOutline16,
+  IconListPenOutline16,
   IconNewChatOutline16,
   Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -22,6 +23,7 @@ import {
 } from './im-cache.ts'
 import { emitYzjDropRequest } from './drop-bus.ts'
 import { registerPanelController } from './panel-controller.ts'
+import { TodoPane } from './todo-pane.tsx'
 import css from './panel.module.css'
 
 /** The props shares the panel reads. */
@@ -46,7 +48,7 @@ function asArray(value: unknown): unknown[] {
 
 /** One draggable reference payload shared by drag sources and the drop dock. */
 export interface YzjDragRef {
-  kind: 'workspace' | 'doc' | 'group' | 'event' | 'contact' | 'message'
+  kind: 'workspace' | 'doc' | 'group' | 'event' | 'contact' | 'message' | 'todo'
   id: string
   title: string
   url?: string
@@ -61,7 +63,7 @@ export const YZJ_DRAG_MIME = 'application/x-dsh-yzj-ref'
 /** Human-readable citation text for a drag ref (what lands in the draft). */
 export function yzjRefText(ref: YzjDragRef): string {
   const kindLabel: Record<YzjDragRef['kind'], string> = {
-    workspace: '知识库', doc: '文档', group: '会话', event: '日程', contact: '联系人', message: '消息',
+    workspace: '知识库', doc: '文档', group: '会话', event: '日程', contact: '联系人', message: '消息', todo: '待办',
   }
   const head = `【云之家·${kindLabel[ref.kind]}】${ref.title}`
   const sub = ref.sub === undefined || ref.sub === '' ? '' : `（${ref.sub}）`
@@ -481,6 +483,7 @@ const TABS: { key: YzjTab; label: string; icon: () => ReactNode }[] = [
   { key: 'docs', label: '知识库', icon: () => <IconFolderOpenOutline16 /> },
   { key: 'calendar', label: '日程', icon: () => <IconChecklistOutline14 /> },
   { key: 'chat', label: '会话', icon: () => <IconNewChatOutline16 /> },
+  { key: 'todo', label: '待办', icon: () => <IconListPenOutline16 /> },
 ]
 
 /** The sidebar-foot toggle; label and open state ride the store shares. */
@@ -606,6 +609,7 @@ export function YzjPanelButton(props: YzjPanelButtonProps) {  const open = props
 /** Shortcut order for the floating ball's hover quick-dock. */
 const DOCK_ITEMS: { key: YzjTab; label: string; icon: () => ReactNode }[] = [
   { key: 'chat', label: '会话', icon: () => <IconNewChatOutline16 /> },
+  { key: 'todo', label: '待办', icon: () => <IconListPenOutline16 /> },
   { key: 'calendar', label: '日程', icon: () => <IconChecklistOutline14 /> },
   { key: 'docs', label: '知识库', icon: () => <IconFolderOpenOutline16 /> },
 ]
@@ -748,6 +752,22 @@ function loadTab(
         props.actions.setLoading(false)
       } else fail(result.error.message)
     })
+  } else if (tab === 'todo') {
+    void props.todoState().then((result) => {
+      if (result.ok) {
+        const value = asRecord(result.value)
+        const library = asRecord(value.library)
+        props.actions.setTodoState(
+          asArray(value.todos),
+          value.ready === true,
+          typeof library.link === 'string' ? library.link : '',
+        )
+        props.actions.setLoading(false)
+        if (typeof value.error === 'string' && value.error !== '') {
+          props.actions.setError(`待办读取失败：${value.error}`)
+        }
+      } else fail(result.error.message)
+    })
   }
 }
 
@@ -756,7 +776,7 @@ export function YzjPanel(props: YzjPanelProps) {
   const open = props.useStore(state => state.open)
   const tab = props.useStore(state => state.tab)
   // Persisted tabs may hold the removed 'me'; fall back to the docs tab.
-  const activeTab: YzjTab = tab === 'docs' || tab === 'calendar' || tab === 'chat' ? tab : 'docs'
+  const activeTab: YzjTab = tab === 'docs' || tab === 'calendar' || tab === 'chat' || tab === 'todo' ? tab : 'docs'
   const anchorActive = props.useStore(state => state.anchorMsgId !== '')
   const state = props.useStore(s => s)
   const panelRef = useRef<HTMLDivElement | null>(null)
@@ -1896,6 +1916,21 @@ export function YzjPanel(props: YzjPanelProps) {
             </div>
           </div>
         </div>
+      )}
+
+      {activeTab === 'todo' && (
+        <TodoPane
+          todos={state.todos}
+          ready={state.todoReady}
+          libraryLink={state.todoLink}
+          tagFilter={state.todoTag}
+          loading={state.loading}
+          actions={props.actions}
+          todoState={props.todoState}
+          ensureTodo={props.ensureTodo}
+          createTodo={props.createTodo}
+          toggleTodo={props.toggleTodo}
+        />
       )}
 
       {dropToast !== '' && (

@@ -23,11 +23,29 @@ function tableLine(record: unknown): string {
   return fields.length === 0 ? head : `${head} · 字段: ${fields.join(' / ')}`
 }
 
+/**
+ * One record's field map. The CLI returns `records[].fields` as a JSON
+ * **string** (e.g. `"{\"姓名\":\"张明\"}"`) on create/update/list, though some
+ * paths emit a nested object; accept both.
+ */
+function fieldsOf(record: unknown): Record<string, unknown> {
+  const row = asRecord(record)
+  const raw = row.fieldsValue ?? row.fields ?? row.values
+  if (typeof raw === 'string') {
+    try {
+      return asRecord(JSON.parse(raw))
+    } catch {
+      return {}
+    }
+  }
+  return asRecord(raw)
+}
+
 /** One record line: record id plus the visible field values. */
 function recordLine(record: unknown): string {
   const row = asRecord(record)
   const id = asString(row.id ?? row.recordId)
-  const fields = asRecord(row.fieldsValue ?? row.fields ?? row.values)
+  const fields = fieldsOf(record)
   const parts: string[] = []
   for (const [key, value] of Object.entries(fields)) {
     if (value === null || value === undefined) continue
