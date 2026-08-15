@@ -243,7 +243,9 @@ export function TodoPane(props: TodoPaneProps) {
     return () => window.removeEventListener('mousedown', onDown)
   }, [switcherOpen])
 
-  const todos = useMemo(() => props.todos.map(asRecord), [props.todos])
+  // Defensive: persisted stores from older builds may carry `todos` as
+  // anything but an array — never crash the pane on stale state.
+  const todos = useMemo(() => (Array.isArray(props.todos) ? props.todos : []).map(asRecord), [props.todos])
   const parsed = useMemo(() => parseQuickCreate(draft), [draft])
   const tagCounts = useMemo(() => {
     const counts = new Map<string, number>()
@@ -264,7 +266,8 @@ export function TodoPane(props: TodoPaneProps) {
     if (props.libScope === 'team' || props.libScope === 'personal') {
       return { scope: props.libScope, workspaceName: props.libName }
     }
-    for (const lib of (props.libraries ?? []).map(asRecord)) {
+    const libs = Array.isArray(props.libraries) ? props.libraries : []
+    for (const lib of libs.map(asRecord)) {
       if (asString(lib.docId) === props.activeDocId) {
         return { scope: asString(lib.scope), workspaceName: asString(lib.workspaceName) }
       }
@@ -478,7 +481,7 @@ export function TodoPane(props: TodoPaneProps) {
         )}
         {switcherOpen && (
           <div className={css.libMenu} role="listbox" aria-label="任务库">
-            {!teamPick && (props.libraries ?? []).map(asRecord).map((lib) => {
+            {!teamPick && (Array.isArray(props.libraries) ? props.libraries : []).map(asRecord).map((lib) => {
               const docId = asString(lib.docId)
               const scope = asString(lib.scope)
               const name = asString(lib.workspaceName)

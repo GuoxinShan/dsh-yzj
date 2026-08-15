@@ -91,7 +91,7 @@ export type YzjPanelActions = {
 
 /** Create the Yunzhijia panel store handle. */
 export function createYzjStore(): EngineStoreHandle<YzjPanelState, YzjPanelActions> {
-  return defineStore({
+  const handle = defineStore({
     init: (): YzjPanelState => ({
       open: false,
       tab: 'docs',
@@ -129,10 +129,13 @@ export function createYzjStore(): EngineStoreHandle<YzjPanelState, YzjPanelActio
       loading: true,
       error: '',
     }),
-    // v4: reset any legacy open:true / off-screen / stale-schema blobs
-    // (the old 查看上下文 path wrote shadow-store snapshots) — the read
-    // state lives in a separate key and is preserved.
-    persist: 'dsh.yzj.panel.v4',
+    // v5: schema gained todo fields (todos/todoLib*/…); the engine's
+    // persistence REPLACES state wholesale with the parsed blob, so a blob
+    // written by an older build leaves every new key undefined — the pane
+    // crashed on `todos.map` (and any array consumer crashes likewise).
+    // The version bump alone doesn't harden future schema drift, so
+    // `create` below also repairs non-conforming rehydrated blobs.
+    persist: 'dsh.yzj.panel.v5',
     actions: {
       setOpen: (d: YzjPanelState, open: boolean) => { d.open = open },
       setTab: (d: YzjPanelState, tab: YzjTab) => { d.tab = tab },
@@ -183,6 +186,29 @@ export function createYzjStore(): EngineStoreHandle<YzjPanelState, YzjPanelActio
       setError: (d: YzjPanelState, error: string) => { d.error = error },
     },
   })
+  return {
+    ...handle,
+    create(scopeKey?: string) {
+      const instance = handle.create(scopeKey)
+      const snap = instance.getSnapshot()
+      // Repair a non-conforming rehydrated blob: every array-typed field
+      // must exist as an array; a single violation resets to the fresh
+      // init (panel UI state is cheap to rebuild; read-state lives in
+      // separate keys and survives). Without this, a blob written by an
+      // older build (or a poisoned one) crashes array consumers.
+      const arrays: (keyof YzjPanelState)[] = [
+        'workspaces', 'docs', 'events', 'calEvents', 'groups', 'messages',
+        'todos', 'todoLibraries',
+      ]
+      const broken = arrays.some(key => !Array.isArray(snap[key]))
+        || typeof snap.loading !== 'boolean'
+      if (broken) {
+        instance.store.set({ ...handle.spec.init(), open: false, tab: 'docs' })
+        instance.clearPersisted()
+      }
+      return instance
+    },
+  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
