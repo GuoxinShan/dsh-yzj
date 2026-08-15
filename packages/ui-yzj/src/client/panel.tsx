@@ -877,6 +877,10 @@ export function YzjPanel(props: YzjPanelProps) {
   // tab; append whatever arrived and keep the bottom pinned when the user
   // is already there. ~30s matches the unread-badge cadence.
   const atBottomRef = useRef(true)
+  // Infinite scroll (older messages): refs only — bisect variant D.
+  const chatScrollRef = useRef<{ more: boolean; loading: boolean; loadOlder: () => void }>({ more: false, loading: false, loadOlder: () => {} })
+  const scrollRestoreRef = useRef<{ height: number; top: number } | null>(null)
+  const lastTopLoadRef = useRef(0)
   useEffect(() => {
     if (!open || activeTab !== 'chat' || state.groupId === '') return
     const poll = (): void => {
@@ -913,16 +917,30 @@ export function YzjPanel(props: YzjPanelProps) {
   }, [open, activeTab, state.groupId, state.messages.length === 0])
 
   // Track whether the message list is scrolled to the bottom (autoscroll
-  // follow vs. keep the user's reading position).
+  // follow vs. keep the user's reading position) — and auto-load the older
+  // page when the user reaches the top (infinite scroll). The listener reads
+  // flags through chatScrollRef; loadOlderMessages self-registers into it.
   useEffect(() => {
     const list = listRef.current
     if (list === null || activeTab !== 'chat') return
     const onScroll = (): void => {
       atBottomRef.current = list.scrollHeight - list.scrollTop - list.clientHeight < 40
+      const { more, loading, loadOlder } = chatScrollRef.current
+      if (list.scrollTop <= 60 && more && !loading && scrollRestoreRef.current === null
+        && Date.now() - lastTopLoadRef.current > 1200) {
+        lastTopLoadRef.current = Date.now()
+        scrollRestoreRef.current = { height: list.scrollHeight, top: list.scrollTop }
+        loadOlder()
+      }
     }
     list.addEventListener('scroll', onScroll, { passive: true })
     return () => list.removeEventListener('scroll', onScroll)
   }, [activeTab, state.groupId])
+  // Refresh only the FLAGS (the loader registers itself; no forward ref).
+  useEffect(() => {
+    chatScrollRef.current = { ...chatScrollRef.current, more: state.messagesMore, loading: state.loading }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.messagesMore, state.loading])
 
   // External jumps (card 查看 → docs preview) set docId without the click
   // handler; fetch the preview when the id changes.
@@ -1438,8 +1456,11 @@ export function YzjPanel(props: YzjPanelProps) {
     })
   }
 
+  // Keep the scroll listener's facts fresh: the loader SELF-REGISTERS here
+  // (no forward references); flags are refreshed by the effect above.
   const loadOlderMessages = (): void => {
     if (state.loading || state.messagesAnchor === '') return
+    chatScrollRef.current = { ...chatScrollRef.current, loadOlder: loadOlderMessages }
     props.actions.setLoading(true)
     void props.fetchMessages(state.groupId, 20, { type: 'old', msgId: state.messagesAnchor }).then((result) => {
       if (result.ok) {
@@ -1452,12 +1473,28 @@ export function YzjPanel(props: YzjPanelProps) {
         if (older.length > 0) {
           props.actions.setMessagesAnchor(asString(asRecord(older[0]).msgId))
         }
+        // Position restore AFTER the prepend lands: shift scrollTop by the
+        // height the older page added above the user's reading position.
+        requestAnimationFrame(() => {
+          const restore = scrollRestoreRef.current
+          scrollRestoreRef.current = null
+          const list = listRef.current
+          if (restore === null || list === null) return
+          const delta = list.scrollHeight - restore.height
+          if (delta > 0) list.scrollTop = restore.top + delta
+        })
       } else {
         props.actions.setError(result.error.message)
+        // A failed page leaves the restore armed forever; drop it so the
+        // user can scroll-top again to retry.
+        scrollRestoreRef.current = null
       }
       props.actions.setLoading(false)
     })
   }
+  // Self-register on every render so the listener always has the freshest
+  // closure (state snapshot) without any forward reference.
+  chatScrollRef.current = { ...chatScrollRef.current, loadOlder: loadOlderMessages }
 
   /** Core send: calls the bridge, appends the local message, clears state. */
   const doSend = async (opts: {
