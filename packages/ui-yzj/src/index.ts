@@ -289,11 +289,30 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
             return internalError('im-send: images are only supported for msg-type richText')
           }
         }
+        // @ mentions (issue #4): mirror the tool's rule — one atOpenId per
+        // @姓名 fragment in the content, in order; @all only when explicit.
+        const rawAt = record.atOpenIds
+        const atOpenIds = Array.isArray(rawAt)
+          ? rawAt.filter((item): item is string => typeof item === 'string' && item !== '')
+          : []
+        const atAll = record.atAll === true
+        if (msgType !== 'file') {
+          const atFragments = (content ?? '').match(/@[^@\s，,、]+/g) ?? []
+          const atNames = atFragments.filter(frag => frag !== '@all')
+          if (atOpenIds.length !== atNames.length) {
+            return internalError(`im-send: atOpenIds (${atOpenIds.length}) must match the @姓名 fragments in content (${atNames.length}), in order`)
+          }
+          if (atAll && !(content ?? '').includes('@all')) {
+            return internalError('im-send: atAll requires an @all fragment in content')
+          }
+        }
         const command = ['im', 'message', 'send', '--msg-type', msgType, '--group-id', groupId]
         if (content !== undefined) command.push('--content', content)
         if (fileId !== undefined) command.push('--file-id', fileId)
         if (replyMsgId !== undefined) command.push('--reply-msg-id', replyMsgId)
         for (const image of images) command.push('--image', image)
+        for (const openId of atOpenIds) command.push('--at-open-id', openId)
+        if (atAll) command.push('--at-all')
         return bridgeResult(ctx, 'im message send', command)
       }
       case 'file-upload': {

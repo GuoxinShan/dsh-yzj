@@ -22,5 +22,8 @@ export default defineConfig({
   test: {
     environment: 'node',
     setupFiles: ['./vitest.setup.ts'],
+    // Only this repo's packages — stray sibling checkouts cloned into the
+    // workspace root (e.g. .openclaw-yzj) must not be picked up.
+    include: ['packages/*/tests/**/*.{test,spec}.?(c|m)[jt]s?(x)'],
   },
 })
