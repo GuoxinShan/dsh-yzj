@@ -16,6 +16,8 @@ packages/       @dsh-yzj/* workspace 包（均 private、ESM）
                   browser half 为 toolview 富卡片 + 悬浮球工作台面板
   bundle/         可安装 profile patch 层（cordis.patch.yml）+ 改造版 yzj-cli skill
 docs/           中文设计文档：整体方案、待办功能设计、gap 对照、待办后端迁移
+docs/踩坑记录/   实现级坑库（pitfall-NNN-*.md）——动手前先查，解决新坑后回写（见 Conventions）
+spike/          预研探针（robot/ 为机器人通道调研）
 .acceptance/    Playwright 浏览器验收脚本（verify-*.mjs）+ 提交为证据的截图（shots-*/）
 .openclaw-yzj/  未纳入 git 的本地参考工程（OpenClaw 机器人通道原型），不属于 workspace，勿改动
 tsdown.shared.ts  客户端 closure-factory bundle 预设（与 harness client 预设对齐）
@@ -60,6 +62,7 @@ node .acceptance/verify-real-data.mjs   # 需运行中的 GUI + 已登录 yzj-cl
 - **新工具清单**：域模块实现 → guard 风险表（若写）→ `cards.tsx` keyed 卡片视图 → 包 README 工具清单同步 → 测试。
 - **todo 为 demo 阶段**：后端是多维表格「待办任务库」（首用自动开通）；工具核、`ctx.yzjTodo` 服务与面板任务库切换器共享 active-library holder，agent 写入跟随当前激活库。迁移方案见 [docs/待办后端迁移说明.md](docs/待办后端迁移说明.md)。
 - **测试自跳过而非失败**：依赖真实登录 / CLI 的测试在缺失时 skip（`tools.spec.ts` 范式）；平台差异在测试内显式分支（bridge 的 fake CLI 在 Windows 经 `node` 路由）。
+- **踩坑记录制度**：[docs/踩坑记录/](docs/踩坑记录/README.md) 是实现级坑库。**动手前先查索引**——涉及面板 hooks/浏览器渲染（React #310 前向引用形状）、store 持久化 schema 变更（整体替换回放）、解析 CLI 输出（三种形态/静默丢弃）、bridge 大载荷（上限截断成空结果）时尤其必须。踩到新坑（现象与文档/预期不符、排查超过一次构建-验证循环）解决后**同提交回写一条** `pitfall-NNN-*.md` 并更新索引；jsdom 测试通过不等于浏览器没问题（见 pitfall-001）。
 - **提交**：conventional commits（`feat(ui-yzj): …` / `fix(todo): …`），直推 main。
 - 文件以恰好一个换行符结尾。
 - **文档随代码走**：行为变化（工具面、配置键、RPC 端点、确认流）同提交更新根 README 与对应包 README；实现与设计分歧更新 gap 对照文档。
