@@ -706,7 +706,6 @@ export function YzjFloatBall(props: YzjFloatBallProps) {
 function loadTab(
   tab: YzjTab,
   props: YzjPanelProps,
-  state: YzjPanelState,
 ): void {
   const fail = (error: unknown): void => {
     props.actions.setError(typeof error === 'string' ? error : '加载失败')
@@ -723,8 +722,17 @@ function loadTab(
     })
   } else if (tab === 'calendar') {
     const pad = (n: number): string => String(n).padStart(2, '0')
-    const start = `${state.calYear}-${pad(state.calMonth)}-01`
-    const end = `${state.calYear}-${pad(state.calMonth)}-${pad(new Date(state.calYear, state.calMonth, 0).getDate())}`
+    // Opening 日程 always lands on today: cursor month + selected day. A
+    // stale persisted selection (or a previously browsed month) must not
+    // survive the reopen.
+    const now = new Date()
+    const year = now.getFullYear()
+    const month = now.getMonth() + 1
+    props.actions.setCalCursor(year, month)
+    props.actions.setCalDay(`${year}-${pad(month)}-${pad(now.getDate())}`)
+    props.actions.setCalEventId('')
+    const start = `${year}-${pad(month)}-01`
+    const end = `${year}-${pad(month)}-${pad(new Date(year, month, 0).getDate())}`
     void props.fetchEvents(start, end).then((result) => {
       if (result.ok) {
         props.actions.setCalEvents(asArray(result.value))
@@ -795,6 +803,8 @@ export function YzjPanel(props: YzjPanelProps) {
   const [dropArmed, setDropArmed] = useState(false)
   const dropDepth = useRef(0)
   const [docPreview, setDocPreview] = useState<{ title: string; meta: string; lines: string[] } | null>(null)
+  /** Folder drill-down trail inside the selected workspace (root = workspace). */
+  const [docCrumbs, setDocCrumbs] = useState<{ id: string; title: string }[]>([])
   const [eventDetail, setEventDetail] = useState<{ title: string; time: string; person: string; place: string; content: string } | null>(null)
   const dropToastTimer = useRef<number | null>(null)
   const listRef = useRef<HTMLDivElement | null>(null)
@@ -964,6 +974,21 @@ export function YzjPanel(props: YzjPanelProps) {
     return () => window.removeEventListener('keydown', onKey)
   }, [lightbox])
 
+  // Esc dismisses layered UI first (emoji picker → reply bar), then closes
+  // the panel itself — the standard floating-panel contract.
+  useEffect(() => {
+    if (!open) return
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape' || lightbox !== null) return
+      if (emojiOpen) { setEmojiOpen(false); return }
+      if (replyTo !== null) { setReplyTo(null); return }
+      props.actions.setOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, lightbox, emojiOpen, replyTo])
+
   // Scroll the jump anchor into view once its group's messages land.
   useEffect(() => {
     if (state.anchorMsgId === '' || anchorRef.current === null) return
@@ -994,7 +1019,7 @@ export function YzjPanel(props: YzjPanelProps) {
 
   useEffect(() => {
     if (!open) return
-    loadTab(activeTab, props, state)
+    loadTab(activeTab, props)
     // tab switches and opens are the load triggers; state reads inside the
     // loader come from the snapshot taken at effect time.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1020,13 +1045,11 @@ export function YzjPanel(props: YzjPanelProps) {
       }
     : undefined
 
-  const openWorkspace = (id: string): void => {
-    props.actions.setWorkspaceId(id)
-    props.actions.setDocId('')
-    setDocPreview(null)
+  /** Fetch one docs level of the workspace; parentId omitted = root. */
+  const fetchDocsAt = (workspace: string, parentId?: string): void => {
     props.actions.setLoading(true)
     props.actions.setError('')
-    void props.fetchDocs(id).then((result) => {
+    void props.fetchDocs(workspace, parentId).then((result) => {
       if (result.ok) {
         props.actions.setDocs(asArray(result.value))
       } else {
@@ -1034,6 +1057,32 @@ export function YzjPanel(props: YzjPanelProps) {
       }
       props.actions.setLoading(false)
     })
+  }
+
+  const openWorkspace = (id: string): void => {
+    props.actions.setWorkspaceId(id)
+    props.actions.setDocId('')
+    setDocPreview(null)
+    setDocCrumbs([])
+    fetchDocsAt(id)
+  }
+
+  /** Drill into a folder node (docs tab): push a crumb, load its children. */
+  const openFolder = (id: string, title: string): void => {
+    props.actions.setDocId('')
+    setDocPreview(null)
+    setDocCrumbs(prev => [...prev, { id, title }])
+    fetchDocsAt(state.workspaceId, id)
+  }
+
+  /** Jump the docs trail back to a crumb (index -1 = workspace root). */
+  const jumpCrumb = (index: number): void => {
+    const next = index < 0 ? [] : docCrumbs.slice(0, index + 1)
+    props.actions.setDocId('')
+    setDocPreview(null)
+    setDocCrumbs(next)
+    const parent = next.length > 0 ? next[next.length - 1]!.id : undefined
+    fetchDocsAt(state.workspaceId, parent)
   }
 
   /** Right-pane doc preview: info + first blocks as text. */
@@ -1078,21 +1127,60 @@ export function YzjPanel(props: YzjPanelProps) {
     loadDocPreview(id)
   }
 
-  /** Move the calendar cursor and fetch the new month. */
+  /** Move the calendar cursor and fetch the new month. Landing on the
+   *  current month reselects today; other months clear the selection. */
   const moveMonth = (delta: number): void => {
     const next = new Date(state.calYear, state.calMonth - 1 + delta, 1)
     const year = next.getFullYear()
     const month = next.getMonth() + 1
+    const now = new Date()
+    const pad = (n: number): string => String(n).padStart(2, '0')
     props.actions.setCalCursor(year, month)
-    props.actions.setCalDay('')
+    props.actions.setCalDay(year === now.getFullYear() && month === now.getMonth() + 1
+      ? `${year}-${pad(month)}-${pad(now.getDate())}`
+      : '')
     props.actions.setCalEventId('')
     setEventDetail(null)
-    const pad = (n: number): string => String(n).padStart(2, '0')
     const start = `${year}-${pad(month)}-01`
     const end = `${year}-${pad(month)}-${pad(new Date(year, month, 0).getDate())}`
     props.actions.setLoading(true)
     props.actions.setError('')
     void props.fetchEvents(start, end).then((result) => {
+      if (result.ok) {
+        props.actions.setCalEvents(asArray(result.value))
+      } else {
+        props.actions.setError(result.error.message)
+      }
+      props.actions.setLoading(false)
+    })
+  }
+
+  /** Human day heading for the calendar right pane: 今天 · 周六 / 8月20日 · 周四. */
+  const dayHeadLabel = (day: string): string => {
+    if (day === '') return ''
+    const pad = (n: number): string => String(n).padStart(2, '0')
+    const now = new Date()
+    const todayKey = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+    const weekdays = ['日', '一', '二', '三', '四', '五', '六']
+    const date = new Date(`${day}T00:00:00`)
+    const weekday = weekdays[date.getDay()] ?? ''
+    const base = day === todayKey ? '今天' : `${Number(day.slice(5, 7))}月${Number(day.slice(8, 10))}日`
+    return weekday === '' ? base : `${base} · 周${weekday}`
+  }
+
+  /** Jump the calendar back to today and select it. */
+  const jumpToToday = (): void => {
+    const now = new Date()
+    const year = now.getFullYear()
+    const month = now.getMonth() + 1
+    const pad = (n: number): string => String(n).padStart(2, '0')
+    props.actions.setCalCursor(year, month)
+    props.actions.setCalDay(`${year}-${pad(month)}-${pad(now.getDate())}`)
+    props.actions.setCalEventId('')
+    setEventDetail(null)
+    props.actions.setLoading(true)
+    props.actions.setError('')
+    void props.fetchEvents(`${year}-${pad(month)}-01`, `${year}-${pad(month)}-${pad(new Date(year, month, 0).getDate())}`).then((result) => {
       if (result.ok) {
         props.actions.setCalEvents(asArray(result.value))
       } else {
@@ -1350,7 +1438,7 @@ export function YzjPanel(props: YzjPanelProps) {
         <button
           type="button"
           className={css.iconButton}
-          onClick={() => { loadTab(activeTab, props, state) }}
+          onClick={() => { loadTab(activeTab, props) }}
           disabled={state.loading}
           aria-label="刷新"
           title="刷新"
@@ -1460,9 +1548,29 @@ export function YzjPanel(props: YzjPanelProps) {
               ) : (
                 <div className={css.paneList}>
                   <div className={css.paneHead}>
-                    <span className={css.paneTitle}>
-                      {asString(state.workspaces.map(asRecord).find(ws => asString(ws.id) === state.workspaceId)?.name ?? '知识库')}
-                    </span>
+                    {docCrumbs.length === 0 ? (
+                      <span className={css.paneTitle}>
+                        {asString(state.workspaces.map(asRecord).find(ws => asString(ws.id) === state.workspaceId)?.name ?? '知识库')}
+                      </span>
+                    ) : (
+                      <nav className={css.crumbs} aria-label="文档位置">
+                        <button type="button" className={css.crumbLink} onClick={() => { jumpCrumb(-1) }}>
+                          {asString(state.workspaces.map(asRecord).find(ws => asString(ws.id) === state.workspaceId)?.name ?? '知识库')}
+                        </button>
+                        {docCrumbs.map((crumb, index) => (
+                          <span key={crumb.id} className={css.crumbItem}>
+                            <span className={css.crumbSep} aria-hidden="true">/</span>
+                            {index === docCrumbs.length - 1
+                              ? <span className={css.crumbCurrent}>{crumb.title}</span>
+                              : (
+                                  <button type="button" className={css.crumbLink} onClick={() => { jumpCrumb(index) }}>
+                                    {crumb.title}
+                                  </button>
+                                )}
+                          </span>
+                        ))}
+                      </nav>
+                    )}
                   </div>
                   {state.docs.length === 0 && !state.loading && state.error === '' && <div className={css.empty}>暂无文档</div>}
                   {state.docs.map((item, index) => {
@@ -1471,26 +1579,45 @@ export function YzjPanel(props: YzjPanelProps) {
                     const title = asString(node.title)
                     const id = asString(node.id)
                     const url = asString(node.openWebUrl)
+                    const hasChildren = node.hasChildren === true
+                      || (typeof node.childrenCount === 'number' && node.childrenCount > 0)
                     return (
-                      <button
-                        key={`d${index}`}
-                        type="button"
-                        className={css.item}
-                        onClick={() => { openDoc(id) }}
-                        draggable
-                        onDragStart={(event) => {
-                          startDragTransfer(event, {
-                            kind: 'doc', id, title, url,
-                            sub: `${suffix === 'dbt' ? '多维表格' : '在线文档'} · ${asString(node.updateTime).slice(0, 10)}`,
-                          })
-                        }}
-                      >
-                        <span className={css.itemTitle}>
-                          <span className={css.docGlyph}>{suffix === 'dbt' ? '表' : '文'}</span>
-                          <span className={css.itemTitleText}>{title}</span>
-                        </span>
-                        <span className={css.itemSub}>{suffix === 'dbt' ? '多维表格' : '在线文档'} · {asString(node.updateTime).slice(0, 10)}</span>
-                      </button>
+                      <div key={`d${index}`} className={css.docRowWrap}>
+                        <button
+                          type="button"
+                          className={css.item}
+                          onClick={() => { openDoc(id) }}
+                          draggable
+                          onDragStart={(event) => {
+                            startDragTransfer(event, {
+                              kind: 'doc', id, title, url,
+                              sub: `${suffix === 'dbt' ? '多维表格' : '在线文档'} · ${asString(node.updateTime).slice(0, 10)}`,
+                            })
+                          }}
+                        >
+                          <span className={css.itemTitle}>
+                            <span className={css.docGlyph}>{suffix === 'dbt' ? '表' : '文'}</span>
+                            <span className={css.itemTitleText}>{title}</span>
+                          </span>
+                          <span className={css.itemSub}>
+                            {suffix === 'dbt' ? '多维表格' : '在线文档'} · {asString(node.updateTime).slice(0, 10)}
+                            {hasChildren && typeof node.childrenCount === 'number' ? ` · ${node.childrenCount} 个子项` : ''}
+                          </span>
+                        </button>
+                        {hasChildren && (
+                          <button
+                            type="button"
+                            className={css.drill}
+                            title={`打开「${title}」`}
+                            aria-label={`打开文件夹 ${title}`}
+                            onClick={() => { openFolder(id, title) }}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                              <path d="M9 5l7 7-7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
                     )
                   })}
                 </div>
@@ -1508,6 +1635,7 @@ export function YzjPanel(props: YzjPanelProps) {
                 <button type="button" className={css.calNav} aria-label="上个月" onClick={() => moveMonth(-1)}>‹</button>
                 <span className={css.calTitle}>{state.calYear}年{state.calMonth}月</span>
                 <button type="button" className={css.calNav} aria-label="下个月" onClick={() => moveMonth(1)}>›</button>
+                <button type="button" className={css.calToday} onClick={jumpToToday} title="回到今天">今天</button>
               </div>
               <div className={css.calGrid}>
                 {['一', '二', '三', '四', '五', '六', '日'].map(day => (
@@ -1560,7 +1688,7 @@ export function YzjPanel(props: YzjPanelProps) {
               ) : (
                 <div className={css.paneList}>
                   <div className={css.paneHead}>
-                    <span className={css.paneTitle}>{formatListTime(`${state.calDay} 00:00:00`)}</span>
+                    <span className={css.paneTitle}>{dayHeadLabel(state.calDay)}</span>
                   </div>
                   {(() => {
                     const pad = (n: number): string => String(n).padStart(2, '0')
