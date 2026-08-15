@@ -43,16 +43,25 @@ function clock(ms: unknown): string {
 function blockText(node: unknown): string {
   const record = asRecord(node)
   const parts: string[] = []
-  const content = record.content
-  if (Array.isArray(content)) {
-    for (const item of content) {
-      const text = asString(asRecord(item).content)
-      if (text !== '') parts.push(text)
+  // Leaf text nodes carry the string in `content`; containers mirror their
+  // children in BOTH `childNodes` (tree) and `content` (array) — walking
+  // both duplicated every sentence. Same algorithm as the preview walk.
+  const own = asString(record.content)
+  if (own !== '') parts.push(own)
+  const children = record.childNodes ?? record.children
+  const childArray = asArray(children)
+  if (childArray.length > 0) {
+    for (const child of childArray) {
+      const childText = blockText(child)
+      if (childText !== '') parts.push(childText)
     }
-  }
-  for (const child of asArray(record.children)) {
-    const childText = blockText(child)
-    if (childText !== '') parts.push(childText)
+  } else if (Array.isArray(record.content)) {
+    // Container with no tree children (e.g. the root doc block): the
+    // `content` array is the only child source.
+    for (const item of record.content) {
+      const childText = blockText(item)
+      if (childText !== '') parts.push(childText)
+    }
   }
   return parts.join(' ')
     .replace(/\s+/g, ' ')
@@ -98,9 +107,10 @@ export async function fetchRefContext(
           if (link !== '') lines.push(`链接：${link}`)
         }
         if (blocksResult.ok) {
-          // The CLI wraps blocks as { data: { blocks: [...] } }.
+          // The CLI wraps as { data: { blocks: [...] } } — check the data
+          // envelope first (see the preview walk for the duplication rules).
           const blocksValue = asRecord(blocksResult.value)
-          const blocks = asArray(blocksValue.blocks ?? asRecord(blocksValue.data).blocks)
+          const blocks = asArray(asRecord(blocksValue.data).blocks ?? blocksValue.blocks)
           const excerpt = blocks.slice(0, 10).map(blockText).filter(text => text !== '').join(' ')
           if (excerpt !== '') {
             lines.push(`内容摘要：${excerpt.length > 500 ? `${excerpt.slice(0, 500)}…` : excerpt}`)

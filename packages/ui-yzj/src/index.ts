@@ -218,7 +218,21 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
         const command = ['doc', 'block', 'list', '--id', id]
         const blockId = stringField(payload, 'blockId')
         if (blockId !== undefined) command.push('--block-id', blockId)
-        return bridgeResult(ctx, 'doc block list', command)
+        // Block dumps are legitimately large (a meeting note measures ~390k
+        // chars; the bridge's default 200k cap truncates them into
+        // unparseable JSON → the preview rendered EMPTY for big docs). Use a
+        // dedicated 2MB budget for this read-only endpoint.
+        let result
+        try {
+          result = await ctx.yzjBridge.run(command, { timeoutMs: 120_000, maxOutputChars: 2_000_000 })
+        } catch (error) {
+          return internalError(`doc block list failed: ${String(error)}；请确认已安装 yzj-cli 并完成 \`yzj-cli auth login\``)
+        }
+        if (!result.ok) {
+          const detail = result.stderr.trim() === '' ? `doc block list failed (exit ${result.exitCode})` : result.stderr.trim()
+          return internalError(detail)
+        }
+        return { ok: true, value: result.json ?? {} }
       }
       case 'sheet-get': {
         const id = stringField(payload, 'id')
