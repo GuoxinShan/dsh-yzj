@@ -113,6 +113,9 @@ importers:
       '@dsh-yzj/bridge':
         specifier: workspace:^
         version: link:../bridge
+      '@dsh-yzj/tool-yzj':
+        specifier: workspace:^
+        version: link:../tool-yzj
       react:
         specifier: ^18.2.0
         version: 18.2.0

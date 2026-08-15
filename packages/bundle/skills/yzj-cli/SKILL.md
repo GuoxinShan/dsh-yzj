@@ -37,24 +37,17 @@
 3. 播报中给出可操作的下一步（如「需要我把结论沉淀到知识库吗」）；用户在面板中可自行核对上下文（未读角标、群消息流）。
 4. 规则：只读动作（拉取/筛选/播报）无需确认；任何写动作仍走确认卡。
 
-## 影子任务库（待办预研探针）
+## 待办（yzj_todo_* 工具族，语义化——不要用裸 sheet 工具管理待办）
 
-把一张多维表格当轻量任务库（字段对齐未来待办 API），用于预研阶段的真实使用验证：
+待办有专属工具族，底层由多维表格「待办任务库」承载（demo 阶段，首用自动开通；后端将切换原生待办，见仓库 docs/待办后端迁移说明.md）。**核心理念是标签聚合：tag 可以是一个项目、一个群组、任何主题**，待办通过 tag 自由聚合（如 `#接口改造 #需求评审群`）。
 
-- **表结构**（创建时用 `yzj_sheet_create` + `yzj_sheet_table_create`，字段类型建议）：
+- **查**：`yzj_todo_list`（`status: open/pending/in_progress/done/overdue/all`，`tag`、`assignee` 过滤，按 DDL 升序）。
+- **建**：`yzj_todo_create`（`title` 必填；`tags` 聚合标签；`ddl` `YYYY-MM-DD`；`assignee` 姓名（唯一命中通讯录时自动解析为 openId）；`refs` 传入来源引用 token 会记入日志并在确认卡展示；幂等：传 `todoId` 且已存在时直接返回原记录）。
+- **改**：`yzj_todo_update`（状态机：pending→in_progress→done，done→in_progress 重开，in_progress↔pending 打回；pending 不能直接 done——用 complete；推进日志 host 追加，不可改写）。
+- **完成**：`yzj_todo_complete`（任意状态→done，幂等）。
+- **规则**：id 一律来自 `yzj_todo_list`，不编造；所有写操作过确认卡；刻意**无删除工具**——需要废弃时与用户确认后走 `yzj_sheet_record_delete`（强确认）。
 
-  | 字段 | 类型 | 说明 |
-  |---|---|---|
-  | `todo_id` | SingleSelect / 文本 | 稳定 ID（如 `T-20260814-001`），禁止重复 |
-  | `标题` | MultiLineText | 任务标题 |
-  | `状态` | SingleSelect | `pending` → `in_progress` → `done` 状态机 |
-  | `负责人` | Contact | 负责人 openId |
-  | `DDL` | Date | 截止日期 |
-  | `来源消息` | Url | 拖入消息的溯源链（引用 token 转链接） |
-  | `推进日志` | MultiLineText | 每次推进追加一行：`时间 动作 结果` |
-
-- **使用规则**：创建任务 = `yzj_sheet_record_create`（确认卡）；推进 = 先 `yzj_sheet_record_list` 按 `todo_id` 查到记录再 `yzj_sheet_record_update`（确认卡）；查逾期 = `yzj_sheet_record_list` 过滤 `DDL` 与 `状态`。所有写入都过确认卡。
-- **预研产出**：记录每条卡点（如「需要批量状态流转」「需要按 DDL 排序视图」），作为正式待办 API 的需求输入。
+面板「待办」tab（用户直写）：分桶（逾期/今天/进行中/待办/已完成）、#tag 聚合过滤、快捷新建（支持 `#标签` 和日期片段）、勾选完成/重开；待办条目可拖入对话交给你跟进。
 
 ## 常见问题
 

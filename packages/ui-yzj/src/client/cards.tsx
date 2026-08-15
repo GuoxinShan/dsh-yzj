@@ -12,6 +12,7 @@ import {
   IconCloseFill14,
   IconDataOutline16,
   IconFolderOpenOutline16,
+  IconListPenOutline16,
   IconNewChatOutline16,
   IconRefreshOutline14,
   IconSendOutline14,
@@ -63,6 +64,10 @@ export const YZJ_TOOL_NAMES = [  'yzj_whoami',
   'yzj_im_group_recent',
   'yzj_file_upload',
   'yzj_file_download',
+  'yzj_todo_list',
+  'yzj_todo_create',
+  'yzj_todo_update',
+  'yzj_todo_complete',
 ] as const
 
 /** Short human titles per tool family. */
@@ -108,6 +113,10 @@ const FAMILY_TITLES: Record<string, string> = {
   yzj_im_group_recent: '最近会话',
   yzj_file_upload: '上传文件',
   yzj_file_download: '下载文件',
+  yzj_todo_list: '待办列表',
+  yzj_todo_create: '新建待办',
+  yzj_todo_update: '更新待办',
+  yzj_todo_complete: '完成待办',
 }
 
 type UnknownRecord = Record<string, unknown>
@@ -117,6 +126,7 @@ export type YzjJumpTarget =
   | { kind: 'group'; groupId: string }
   | { kind: 'doc'; docId: string }
   | { kind: 'workspace'; workspaceId: string }
+  | { kind: 'todo' }
   | { kind: 'event'; event: { id: string; startDate: number; title: string } }
 
 /** Injected by the registration: jump to a panel view. */
@@ -372,9 +382,56 @@ function ImBody(meta: UnknownRecord, openPanel: YzjCardInjected['openPanel']): R
   return null
 }
 
+/** Todo-domain body: list rows or one action summary, ids never shown. */
+function TodoBody(meta: UnknownRecord, toolName: string): ReactNode {
+  const statusLabel: Record<string, string> = { pending: '待办', in_progress: '进行中', done: '已完成' }
+  if (toolName === 'yzj_todo_list') {
+    if (meta.ready === false) {
+      return <div className={css.rows}>{row('任务库未开通', '创建第一条待办时会自动开通', 'np')}</div>
+    }
+    const list = asArray(meta.list)
+    if (list.length === 0) return <div className={css.rows}>{row('无匹配待办', '', 'empty')}</div>
+    return (
+      <div className={css.rows}>
+        {list.map((item, index) => {
+          const todo = asRecord(item)
+          const tags = asArray(todo.tags).filter((tag): tag is string => typeof tag === 'string')
+          const overdue = todo.overdue === true
+          const status = statusLabel[asString(todo.status)] ?? asString(todo.status)
+          const sub = [
+            asString(todo.ddl) === '' ? '' : `${overdue ? '逾期 ' : ''}DDL ${asString(todo.ddl)}`,
+            asString(todo.assignee) === '' ? '' : `@${asString(todo.assignee)}`,
+            tags.length === 0 ? '' : tags.map(tag => `#${tag}`).join(' '),
+          ].filter(part => part !== '').join(' · ')
+          return row(asString(todo.title) === '' ? '(无标题)' : asString(todo.title), [status, sub].filter(part => part !== '').join(' · '), `t${index}`)
+        })}
+      </div>
+    )
+  }
+  // create / update / complete: friendly single-row summary + library link.
+  const rowsOut: ReactNode[] = []
+  const title = asString(meta.title)
+  const tags = asArray(meta.tags).filter((tag): tag is string => typeof tag === 'string')
+  const sub = [
+    asString(meta.ddl) === '' ? '' : `DDL ${asString(meta.ddl)}`,
+    tags.length === 0 ? '' : tags.map(tag => `#${tag}`).join(' '),
+  ].filter(part => part !== '').join(' · ')
+  if (toolName === 'yzj_todo_create') {
+    rowsOut.push(row(meta.idempotentHit === true ? `已存在：${title}` : `已创建：${title}`, sub, 'c'))
+  } else if (toolName === 'yzj_todo_complete') {
+    rowsOut.push(row(`已完成：${title}`, sub, 'd'))
+  } else {
+    const changes = asArray(meta.changes).filter((change): change is string => typeof change === 'string')
+    rowsOut.push(row(`已更新：${title}`, changes.join('；'), 'u'))
+  }
+  const library = asRecord(meta.library)
+  const link = asString(library.link)
+  if (link !== '') rowsOut.push(linkRow(link, '打开任务库', 'l'))
+  return <div className={css.rows}>{rowsOut}</div>
+}
+
 /** Contact-domain body (whoami / search / details). */
-function ContactBody(meta: UnknownRecord): ReactNode {
-  const list = asArray(meta.list)
+function ContactBody(meta: UnknownRecord): ReactNode {  const list = asArray(meta.list)
   const record = asRecord(meta.record)
   const users = list.length > 0 ? list : [record]
   if (users.length === 0 || (list.length === 0 && Object.keys(record).length === 0)) return null
@@ -433,6 +490,7 @@ function familyIcon(toolName: string): ReactNode {
   if (toolName.startsWith('yzj_im_')) return toolName === 'yzj_im_message_send' ? <IconSendOutline14 /> : <IconNewChatOutline16 />
   if (toolName.startsWith('yzj_contact_') || toolName === 'yzj_whoami') return <IconUserOutline16 />
   if (toolName.startsWith('yzj_sheet_')) return <IconDataOutline16 />
+  if (toolName.startsWith('yzj_todo_')) return <IconListPenOutline16 />
   if (toolName.startsWith('yzj_calendar_')) return <IconChecklistOutline14 />
   if (toolName.startsWith('yzj_file_')) return <IconRefreshOutline14 />
   return <IconFolderOpenOutline16 />
@@ -480,6 +538,7 @@ export function YzjToolCard({ toolName, block, openPanel }: ToolCallViewProps & 
   else if (toolName.startsWith('yzj_doc_')) body = DocBody(meta, jump, toolName === 'yzj_doc_workspace_list' || toolName === 'yzj_doc_workspace_get' ? 'workspace' : 'doc')
   else if (toolName.startsWith('yzj_sheet_')) body = SheetBody(meta)
   else if (toolName.startsWith('yzj_calendar_')) body = CalendarBody(meta, jump)
+  else if (toolName.startsWith('yzj_todo_')) body = TodoBody(meta, toolName)
   else if (toolName.startsWith('yzj_im_')) body = ImBody(meta, jump)
   else if (toolName.startsWith('yzj_contact_') || toolName === 'yzj_whoami') body = ContactBody(meta)
   if (body === null) body = ActionBody(meta, toolName)

@@ -39,6 +39,14 @@ export interface YzjPanelInject {
   sendMessage: (groupId: string, content: string | undefined, opts?: YzjPanelInject['sendMessageOpts']) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Upload a local file (base64) to Yunzhijia; returns the fileId. */
   uploadFile: (name: string, base64: string, size: number) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Todo library snapshot (demo-stage sheet backend via the yzjTodo core). */
+  todoState: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** One-click provision of the todo library (empty-state action). */
+  ensureTodo: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Quick-create one todo from the panel (user-direct write). */
+  createTodo: (input: { title: string; ddl?: string; priority?: string; tags?: string[] }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Toggle complete / reopen one todo (user-direct write). */
+  toggleTodo: (todoId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** One write-confirmation record for a tool call (undefined when not gated). */
   fetchWrite: (sessionId: string, callId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Settle one pending write-confirmation decision. */
@@ -85,6 +93,15 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
       ...(opts?.replyMsgId === undefined ? {} : { replyMsgId: opts.replyMsgId }),
     }),
     uploadFile: (name, base64, size) => call('file-upload', { name, base64, size }),
+    todoState: () => call('todo-state', {}),
+    ensureTodo: () => call('todo-ensure', {}),
+    createTodo: (input) => call('todo-create', {
+      title: input.title,
+      ...(input.ddl === undefined ? {} : { ddl: input.ddl }),
+      ...(input.priority === undefined ? {} : { priority: input.priority }),
+      ...(input.tags === undefined || input.tags.length === 0 ? {} : { tags: input.tags }),
+    }),
+    toggleTodo: (todoId) => call('todo-toggle', { todoId }),
     fetchWrite: (sessionId, callId) => call('write-list', { sessionId, callId }),
     decideWrite: (writeId, outcome) => call('write-decide', { writeId, outcome }),
   }

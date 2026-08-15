@@ -72,9 +72,22 @@ export function openPanelTarget(target: YzjJumpTarget, anchorMsgId?: string): vo
     void c.inject.fetchDocs(target.workspaceId).then((result) => {
       if (result.ok) actions.setDocs(asArray(result.value))
     })
+  } else if (target.kind === 'todo') {
+    actions.setTab('todo')
+    void c.inject.todoState().then((result) => {
+      if (!result.ok) return
+      const value = asRecord(result.value)
+      const library = asRecord(value.library)
+      actions.setTodoState(
+        asArray(value.todos),
+        value.ready === true,
+        typeof library.link === 'string' ? library.link : '',
+      )
+    })
   } else {
     actions.setTab('calendar')
-    const date = new Date(target.event.startDate)
+    // A zero startDate (fallback from write-card jumps) keeps the current month.
+    const date = target.event.startDate > 0 ? new Date(target.event.startDate) : new Date()
     const year = date.getFullYear()
     const month = date.getMonth() + 1
     const pad = (n: number): string => String(n).padStart(2, '0')

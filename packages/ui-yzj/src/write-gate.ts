@@ -114,6 +114,7 @@ export function domainOf(toolName: string): string {
   if (toolName.startsWith('yzj_doc_workspace_')) return 'kb'
   if (toolName.startsWith('yzj_doc_')) return 'doc'
   if (toolName.startsWith('yzj_sheet_')) return 'sheet'
+  if (toolName.startsWith('yzj_todo_')) return 'todo'
   if (toolName.startsWith('yzj_calendar_')) return 'calendar'
   if (toolName.startsWith('yzj_file_')) return 'file'
   return 'other'
@@ -220,7 +221,9 @@ export function applyWriteGate(ctx: Context): {
       if (record.callId === exec.callId && record.status === 'approved') {
         record.status = result.isError === true ? 'failed' : 'done'
         if (result.isError === true) {
-          record.error = String(result.content?.[0]?.text ?? '工具执行失败')
+          const first = result.content?.[0]
+          const text = first !== undefined && 'text' in first ? first.text : undefined
+          record.error = String(text ?? '工具执行失败')
         } else {
           delete record.error
         }

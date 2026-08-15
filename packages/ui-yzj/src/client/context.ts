@@ -27,6 +27,10 @@ function asString(value: unknown): string {
   return typeof value === 'string' ? value : ''
 }
 
+function asTagsOf(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+}
+
 /** Compact clock for event ms timestamps. */
 function clock(ms: unknown): string {
   if (typeof ms !== 'number') return ''
@@ -66,7 +70,7 @@ export async function fetchRefContext(
 
   const lines: string[] = []
   const kindLabel: Record<string, string> = {
-    workspace: '知识库', doc: '文档', group: '会话', event: '日程', contact: '联系人', message: '消息',
+    workspace: '知识库', doc: '文档', group: '会话', event: '日程', contact: '联系人', message: '消息', todo: '待办',
   }
   lines.push(`【云之家·${kindLabel[ref.kind] ?? ref.kind}】${ref.title}`)
 
@@ -155,6 +159,36 @@ export async function fetchRefContext(
           const user = asRecord(users[0] ?? result.value)
           const parts = [asString(user.department), asString(user.jobTitle), asString(user.jobNo) === '' ? '' : `工号 ${asString(user.jobNo)}`]
           lines.push(parts.filter(part => part !== '').join(' · '))
+        }
+        break
+      }
+      case 'todo': {
+        // Demo-stage todo library: resolve the current record by todo_id so
+        // the agent always sees live status, not the drag-time snapshot.
+        const result = await inject.todoState()
+        if (result.ok) {
+          const value = asRecord(result.value)
+          const todo = asArray(value.todos).map(asRecord).find(item => asString(item.todoId) === ref.id)
+          if (todo !== undefined) {
+            const parts: string[] = [`状态：${asString(todo.status)}`]
+            if (asString(todo.ddl) !== '') parts.push(`DDL：${asString(todo.ddl)}${todo.overdue === true ? '（已逾期）' : ''}`)
+            if (asString(todo.priority) !== '') parts.push(`优先级：${asString(todo.priority)}`)
+            if (asTagsOf(todo.tags).length > 0) parts.push(`标签：${asTagsOf(todo.tags).map(tag => `#${tag}`).join(' ')}`)
+            if (asString(todo.assignee) !== '') parts.push(`负责人：${asString(todo.assignee)}`)
+            lines.push(parts.join(' · '))
+            const log = asString(todo.log)
+            if (log !== '') {
+              const tail = log.split('\n').slice(-3)
+              lines.push(`推进日志（最近）：\n${tail.map(line => `- ${line}`).join('\n')}`)
+            }
+            const library = asRecord(value.library)
+            if (asString(library.link) !== '') lines.push(`任务库：${asString(library.link)}`)
+            lines.push('（可用 yzj_todo_list / yzj_todo_update 跟进；标签可用于聚合筛选）')
+          } else {
+            lines.push('（该待办已不存在，可能已被删除；不要编造内容）')
+          }
+        } else {
+          lines.push('（待办库暂不可读，可让用户确认任务库状态）')
         }
         break
       }

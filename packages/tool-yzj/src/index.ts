@@ -17,6 +17,9 @@ import { applySheetTools } from './sheet.ts'
 import { applyCalendarTools } from './calendar.ts'
 import { applyImTools } from './im.ts'
 import { applyFileTools } from './file.ts'
+import { applyTodoTools } from './todo.ts'
+import { YzjTodoService } from './todo.ts'
+import type { TodoConfig } from './todo.ts'
 import { applyApprovalGuard } from './guard.ts'
 import type { YzjToolBudget } from './shared.ts'
 
@@ -33,12 +36,23 @@ export interface Config {
   maxRenderChars?: number
   /** Cap on UI presentation payloads in characters. Defaults to 50000. */
   maxMetaChars?: number
+  /**
+   * Todo library binding (demo-stage sheet backend). Omitted fields are
+   * auto-discovered; the first write auto-provisions the 待办任务库 in the
+   * personal workspace (or the configured one).
+   */
+  todo?: TodoConfig
 }
 
 export const Config: z<Config> = z.object({
   timeoutMs: z.number().step(1).min(1).default(60_000),
   maxRenderChars: z.number().step(1).min(1).default(30_000),
   maxMetaChars: z.number().step(1).min(1).default(50_000),
+  todo: z.object({
+    workspace: z.string(),
+    docId: z.string(),
+    tableId: z.number(),
+  }),
 })
 
 /** Register the full yzj tool family and the approval guard. */
@@ -54,5 +68,9 @@ export function apply(ctx: Context, config: Config): void {
   applyCalendarTools(ctx, budget)
   applyImTools(ctx, budget)
   applyFileTools(ctx, budget)
+  // The yzjTodo service shares the todo core with the tools and backs the
+  // ui-yzj RPC channel (panel todo tab). Needs a real Cordis context.
+  new YzjTodoService(ctx, budget, config.todo ?? {})
+  applyTodoTools(ctx, budget, config.todo ?? {})
   applyApprovalGuard(ctx)
 }
