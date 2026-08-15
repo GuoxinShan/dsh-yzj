@@ -195,6 +195,20 @@ P0 消息回源、P1 门禁分级/确认卡（含真实 E2E）/通知层一三/s
 
 浏览器验收 `verify-ux-polish.mjs` **11/11 PASS**（隔离实例 :3091，真实登录态，含「切走再切回日程仍落今天」回归项）；全量测试 93 passed。
 
+## 19. v1.7 增补｜团队协作待办库（2026-08-15 第四轮）
+
+v1.6 §11.2 决策 1「双轨库」完整落地：
+
+| 能力 | 实现 | 验收 |
+|---|---|---|
+| 任务库切换器 | 待办 tab 顶部 pill：📋 个人 / 👥 团队 + 知识库名（当前激活库身份由 state() 经 doc-get + 5min 缓存的 workspace 索引廉价带出，不阻塞首屏）；点开列出发现的全部「待办任务库」（个人+企业扫描 ≤12+12，5min 缓存），active 项打勾 | 浏览器 PASS |
+| 团队库开通 | 「新建 / 选择团队任务库…」二级菜单列出企业知识库（permissionLevel 排序，>2 只读禁选并提示）；选定后 adopt-or-provision（已有同名库则复用，缺任务表则补建，全无则新建 dbt+任务表）并自动激活 | 真实企业库「六大场景内测」开通 PASS |
+| agent 跟随激活库 | 切换写入 host `TodoBindingHolder.override`，工具族与 RPC 同源共享——面板建的库 agent 写的库永远是同一个；失效库（被删）override 自动清除回落个人发现 | 单测：override 路由写入团队表 + 失效回落 |
+| 持久化 | 浏览器 localStorage 记住选择，面板重开自动重放 todo-select；headless 用 `todo` 配置钉默认库 | 浏览器重开恢复 PASS |
+| 团队语义 | 分派=assignee（姓名→openId 解析）；催办=IM 给负责人（确认卡）；多人共用 last-write-wins + 推进日志可追溯 | 既有能力组合 |
+
+浏览器验收 `verify-todo-team.mjs` **15/15 PASS**（真实企业库开通 → 面板建待办真实落入团队库（含 #团队 tag，CLI 交叉验证）→ 切回个人库恢复 → 探针清理，零页面错误）；全量测试 97 passed。RPC 端点 22→25（`todo-libraries`/`todo-select`/`todo-ensure-team`）。
+
 实测探针副产物（进迁移文档 §3）：`--records` 必须数组；`fields` 恒为 JSON 字符串；SingleSelect 需 `data.items` 预注册；MultipleSelect 动态值静默丢弃；Contact 写入 500；`sheet create` 带 `openWebUrl`；新 dbt 自带空默认表。工具数 41→45，写门禁 22→25，RPC 端点 18→22，面板回归四 tab（第四 tab＝待办）。
 
 ---

@@ -11,6 +11,138 @@
   gap: 8px;
 }
 
+/* --- library switcher ----------------------------------------------------- */
+
+.libRow {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.libSwitch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 1;
+  padding: 6px 10px;
+  cursor: pointer;
+  max-width: 240px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.libSwitch:hover,
+.libSwitchOpen {
+  border-color: var(--dsw-static-deepseek-500);
+  background: var(--dsw-static-deepseek-100);
+}
+
+.libName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.libCaret {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
+}
+
+.libMenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  min-width: 260px;
+  max-width: 320px;
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-base);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.22);
+  padding: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.libItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12.5px;
+  line-height: 1;
+  padding: 9px 10px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.libItem:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.libItem:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.libItemActive {
+  background: var(--dsw-static-deepseek-100);
+  color: var(--dsw-static-deepseek-600);
+}
+
+.libItemName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.libItemMeta {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.libCheck {
+  flex-shrink: 0;
+  color: var(--dsw-static-deepseek-500);
+  font-weight: 700;
+}
+
+.libBack {
+  border: none;
+  background: none;
+  color: var(--dsw-static-deepseek-500);
+  font-size: 12px;
+  padding: 7px 10px;
+  cursor: pointer;
+  text-align: left;
+  border-radius: 8px;
+}
+
+.libBack:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.libMenuHint {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 15px;
+  padding: 4px 10px 7px;
+}
+
 /* --- quick create ------------------------------------------------------- */
 
 .quick {

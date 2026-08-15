@@ -28,7 +28,7 @@ interface FakeBridge {
 }
 
 /** Build a fake ctx whose yzjBridge.run resolves from a command script. */
-function mount(script: (command: string[]) => unknown): { tools: CapturedTool[]; bridge: FakeBridge } {
+function mount(script: (command: string[]) => unknown, holder?: { override?: { docId: string; tableId: number; link: string } }): { tools: CapturedTool[]; bridge: FakeBridge } {
   const tools: CapturedTool[] = []
   const calls: string[][] = []
   const ctx = {
@@ -48,7 +48,7 @@ function mount(script: (command: string[]) => unknown): { tools: CapturedTool[];
       },
     },
   } as unknown as Context
-  applyTodoTools(ctx, BUDGET, {})
+  applyTodoTools(ctx, BUDGET, {}, holder)
   return { tools, bridge: { ctx, calls } }
 }
 
@@ -289,5 +289,72 @@ describe('yzj_todo_update / complete', () => {
 describe('sheet record digest regression (T0)', () => {
   it('todayStr is slash-formatted for overdue comparison', () => {
     expect(todayStr(new Date(2026, 7, 15))).toBe('2026/08/15')
+  })
+})
+
+describe('team libraries (active-binding override)', () => {
+  /** Script: personal ws has docP; team ws (wsT) has docT; both carry a
+   *  todo_id table. `sheet get` distinguishes docs by the --id argument. */
+  function teamScript() {
+    return (command: string[]) => {
+      const key = command.slice(0, 2).join(' ')
+      const idArg = command[command.indexOf('--id') + 1] ?? ''
+      if (key === 'doc workspace') {
+        return command.includes('enterprise')
+          ? ok({ list: [{ id: 'wsT', name: '六大场景内测', permissionLevel: 2 }] })
+          : ok({ list: [{ id: 'wsP', name: '我的知识' }] })
+      }
+      if (key === 'doc list') {
+        return command.includes('wsT')
+          ? ok([{ id: 'docT', title: '待办任务库', fileSuffix: 'dbt' }])
+          : ok([{ id: 'docP', title: '待办任务库', fileSuffix: 'dbt' }])
+      }
+      if (key === 'sheet get') {
+        const tableId = idArg === 'docT' ? 7 : 4
+        return ok({ sheets: [{ id: tableId, name: '任务', fields: [{ name: 'todo_id' }] }] })
+      }
+      if (key === 'sheet record' && command[2] === 'list') return ok({ page_token: '', records: [] })
+      if (key === 'sheet record') return ok({ records: [{ id: 'r1', fields: '{}' }] })
+      throw new Error(`unexpected ${command.join(' ')}`)
+    }
+  }
+
+  it('the holder override wins over personal discovery and routes writes to the team library', async () => {
+    const holder: { override?: { docId: string; tableId: number; link: string } } = {}
+    const { tools, bridge } = mount(teamScript(), holder)
+    holder.override = { docId: 'docT', tableId: 7, link: 'https://example/docT' }
+    const create = tools.find(tool => tool.name === 'yzj_todo_create')!
+    const result = await create.execute({ title: '团队任务' })
+    expect(result.content).toContain('created 待办')
+    const writeCall = bridge.calls.find(call => call.join(' ').startsWith('sheet record create'))
+    expect(writeCall!.includes('docT')).toBe(true)
+    expect(writeCall!.includes('7')).toBe(true)
+    expect(writeCall!.includes('docP')).toBe(false)
+  })
+
+  it('a stale override is cleared and resolution falls back to discovery', async () => {
+    const holder: { override?: { docId: string; tableId: number; link: string } } = {}
+    const script = (command: string[]) => {
+      const key = command.slice(0, 2).join(' ')
+      const idArg = command[command.indexOf('--id') + 1] ?? ''
+      if (key === 'doc workspace') return ok({ list: [{ id: 'wsP', name: '我的知识' }] })
+      if (key === 'doc list') return ok([{ id: 'docP', title: '待办任务库', fileSuffix: 'dbt' }])
+      if (key === 'sheet get') {
+        // docT (the stale override) answers with no todo_id table.
+        if (idArg === 'docT') return ok({ sheets: [{ id: 9, name: '别的表', fields: [{ name: '名称' }] }] })
+        return ok({ sheets: [{ id: 4, name: '任务', fields: [{ name: 'todo_id' }] }] })
+      }
+      if (key === 'sheet record' && command[2] === 'list') return ok({ page_token: '', records: [] })
+      if (key === 'sheet record') return ok({ records: [{ id: 'r1', fields: '{}' }] })
+      throw new Error(`unexpected ${command.join(' ')}`)
+    }
+    const { tools, bridge } = mount(script, holder)
+    holder.override = { docId: 'docT', tableId: 9, link: 'https://example/docT' }
+    const create = tools.find(tool => tool.name === 'yzj_todo_create')!
+    const result = await create.execute({ title: '降级' })
+    expect(result.content).toContain('created 待办')
+    expect(holder.override).toBeUndefined()
+    const writeCall = bridge.calls.find(call => call.join(' ').startsWith('sheet record create'))
+    expect(writeCall!.includes('docP')).toBe(true)
   })
 })

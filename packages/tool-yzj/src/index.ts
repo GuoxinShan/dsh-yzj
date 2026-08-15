@@ -68,9 +68,10 @@ export function apply(ctx: Context, config: Config): void {
   applyCalendarTools(ctx, budget)
   applyImTools(ctx, budget)
   applyFileTools(ctx, budget)
-  // The yzjTodo service shares the todo core with the tools and backs the
-  // ui-yzj RPC channel (panel todo tab). Needs a real Cordis context.
-  new YzjTodoService(ctx, budget, config.todo ?? {})
-  applyTodoTools(ctx, budget, config.todo ?? {})
+  // The yzjTodo service shares the todo core AND the active-library holder
+  // with the tools (panel switcher writes it; agent writes follow it), and
+  // backs the ui-yzj RPC channel. Needs a real Cordis context.
+  const todoService = new YzjTodoService(ctx, budget, config.todo ?? {})
+  applyTodoTools(ctx, budget, config.todo ?? {}, todoService.holder)
   applyApprovalGuard(ctx)
 }
