@@ -35,7 +35,7 @@ dsh plugin --profile web add <npm 包名或路径>
 - **contact**：whoami、通讯录搜索、用户详情
 - **im**：发消息（text/file/richText、@、回复、多图）、聊天记录、最近会话
 - **file**：上传（≤30MB、最多 5 并发）、下载（自动重命名 / 覆盖）
-- **todo**：语义化待办工具族（demo 阶段以多维表格「待办任务库」承载，首用自动开通）——`yzj_todo_list/create/update/complete`；稳定 ID 幂等、host 强制状态机、追加式推进日志；**核心理念 tag 自由聚合**（tag 可以是项目/群组/主题）；后端迁移架构见 `docs/待办后端迁移说明.md`
+- **todo**：语义化待办工具族（demo 阶段以多维表格「待办任务库」承载，首用自动开通）——`yzj_todo_list/create/update/complete`；稳定 ID 幂等、host 强制状态机、追加式推进日志；**核心理念 tag 自由聚合**（tag 可以是项目/群组/主题）；**团队协作**：面板任务库切换器一键切换个人/团队库或按需在企业知识库开通（权限标注），agent 写入跟随当前激活库，浏览器持久化选择；后端迁移架构见 `docs/待办后端迁移说明.md`
 
 ### 确认流（确认卡）
 

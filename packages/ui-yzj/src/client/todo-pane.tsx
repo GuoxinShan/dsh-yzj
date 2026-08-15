@@ -8,7 +8,7 @@
  * acts as the user's own hand); agent writes still go through the tool
  * confirmation flow. Data arrives through the /yzj RPC face only.
  */
-import { useMemo, useRef, useState, type DragEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import type { BakedActions } from '@deepseek-ai/dsh-client-ui-slots'
 import type { YzjPanelActions, YzjPanelState } from './stores.ts'
 import { YZJ_DRAG_MIME, type YzjDragRef } from './panel.tsx'
@@ -26,6 +26,10 @@ function asString(value: unknown): string {
 
 function asTags(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : []
 }
 
 /** Local today as `YYYY/MM/DD` for bucket math. */
@@ -154,11 +158,36 @@ export interface TodoPaneProps {
   libraryLink: string
   tagFilter: string
   loading: boolean
+  /** Active library identity for the switcher label (cheap, always present). */
+  libName: string
+  libScope: string
+  /** Active library docId (for the switcher's radio state). */
+  activeDocId: string
+  /** Discovered libraries from todo-state (may be absent on older hosts). */
+  libraries?: unknown[]
   actions: BakedActions<YzjPanelState, YzjPanelActions>
   todoState: () => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   ensureTodo: () => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   createTodo: (input: { title: string; ddl?: string; priority?: string; tags?: string[] }) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   toggleTodo: (todoId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
+  todoLibraries: () => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
+  selectTodoLibrary: (docId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
+  ensureTeamTodo: (workspace: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
+}
+
+/** Persisted library selection (docId) so the team library survives reloads
+ *  without hand-editing host config. */
+const LIB_PREF_KEY = 'dsh.yzj.todo.lib'
+
+function readLibPref(): string {
+  try { return window.localStorage.getItem(LIB_PREF_KEY) ?? '' } catch { return '' }
+}
+
+function writeLibPref(docId: string): void {
+  try {
+    if (docId === '') window.localStorage.removeItem(LIB_PREF_KEY)
+    else window.localStorage.setItem(LIB_PREF_KEY, docId)
+  } catch { /* storage unavailable — selection stays in-memory */ }
 }
 
 export function TodoPane(props: TodoPaneProps) {
@@ -168,7 +197,51 @@ export function TodoPane(props: TodoPaneProps) {
   const [busyId, setBusyId] = useState('')
   const [notice, setNotice] = useState('')
   const [expanded, setExpanded] = useState('')
+  const [switcherOpen, setSwitcherOpen] = useState(false)
+  const [teamPick, setTeamPick] = useState(false)
+  const [teamWorkspaces, setTeamWorkspaces] = useState<{ id: string; name: string; docCount: number; permissionLevel: number }[]>([])
+  const [switching, setSwitching] = useState(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
+  const switcherRef = useRef<HTMLDivElement | null>(null)
+
+  // Restore the persisted library selection on first mount (before the
+  // first state render takes over): the host override is per-process, the
+  // browser preference survives reloads.
+  useEffect(() => {
+    const pref = readLibPref()
+    if (pref === '' || pref === props.activeDocId) return
+    void props.selectTodoLibrary(pref).then((result) => {
+      if (!result.ok) writeLibPref('')
+    }).catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Load the switcher's library list once per mount (host caches ~5min; the
+  // scan is slow so it never blocks the todo list itself).
+  useEffect(() => {
+    void props.todoLibraries().then((result) => {
+      if (!result.ok) return
+      const value = asRecord(result.value)
+      props.actions.setTodoLibraries(
+        Array.isArray(value.libraries) ? value.libraries : [],
+        typeof value.activeDocId === 'string' ? value.activeDocId : props.activeDocId,
+      )
+    }).catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Close the switcher on outside clicks.
+  useEffect(() => {
+    if (!switcherOpen) return
+    const onDown = (event: MouseEvent): void => {
+      if (switcherRef.current !== null && !switcherRef.current.contains(event.target as Node)) {
+        setSwitcherOpen(false)
+        setTeamPick(false)
+      }
+    }
+    window.addEventListener('mousedown', onDown)
+    return () => window.removeEventListener('mousedown', onDown)
+  }, [switcherOpen])
 
   const todos = useMemo(() => props.todos.map(asRecord), [props.todos])
   const parsed = useMemo(() => parseQuickCreate(draft), [draft])
@@ -185,6 +258,19 @@ export function TodoPane(props: TodoPaneProps) {
   const visible = props.tagFilter === '' ? todos : todos.filter(todo => asTags(todo.tags).includes(props.tagFilter))
   const buckets = useMemo(() => bucketsOf(visible), [visible])
   const openCount = todos.filter(todo => asString(todo.status) !== 'done').length
+  // Label identity: cheap state-provided scope/name first (always present),
+  // then the picker's library list, then a neutral fallback.
+  const activeLib = useMemo(() => {
+    if (props.libScope === 'team' || props.libScope === 'personal') {
+      return { scope: props.libScope, workspaceName: props.libName }
+    }
+    for (const lib of (props.libraries ?? []).map(asRecord)) {
+      if (asString(lib.docId) === props.activeDocId) {
+        return { scope: asString(lib.scope), workspaceName: asString(lib.workspaceName) }
+      }
+    }
+    return undefined
+  }, [props.libScope, props.libName, props.libraries, props.activeDocId])
 
   const flash = (message: string): void => {
     setNotice(message)
@@ -194,13 +280,94 @@ export function TodoPane(props: TodoPaneProps) {
   const refresh = (): void => {
     void props.todoState().then((result) => {
       if (!result.ok) return
-      const value = asRecord(result.value)
-      const library = asRecord(value.library)
-      props.actions.setTodoState(
-        Array.isArray(value.todos) ? value.todos : [],
-        value.ready === true,
-        typeof library.link === 'string' ? library.link : '',
+      applyState(result.value)
+    })
+  }
+
+  const applyState = (value: unknown): void => {
+    const record = asRecord(value)
+    const library = asRecord(record.library)
+    props.actions.setTodoState(
+      Array.isArray(record.todos) ? record.todos : [],
+      record.ready === true,
+      typeof library.link === 'string' ? library.link : '',
+      typeof record.libraryName === 'string' ? record.libraryName : undefined,
+      typeof record.libraryScope === 'string' ? record.libraryScope : undefined,
+    )
+    if (Array.isArray(record.libraries) || typeof record.activeDocId === 'string') {
+      props.actions.setTodoLibraries(
+        Array.isArray(record.libraries) ? record.libraries : [],
+        typeof record.activeDocId === 'string' ? record.activeDocId : '',
       )
+    }
+  }
+
+  /** Pull the switcher list fresh (host cache was cleared by select/ensure). */
+  const refreshLibraries = (): void => {
+    void props.todoLibraries().then((result) => {
+      if (!result.ok) return
+      const value = asRecord(result.value)
+      props.actions.setTodoLibraries(
+        Array.isArray(value.libraries) ? value.libraries : [],
+        typeof value.activeDocId === 'string' ? value.activeDocId : '',
+      )
+    }).catch(() => {})
+  }
+
+  const onSelectLibrary = (docId: string): void => {
+    if (docId === props.activeDocId || switching) return
+    setSwitching(true)
+    void props.selectTodoLibrary(docId).then((result) => {
+      setSwitching(false)
+      setSwitcherOpen(false)
+      setTeamPick(false)
+      if (result.ok) {
+        writeLibPref(docId)
+        applyState(result.value)
+        refreshLibraries()
+        flash('已切换任务库')
+      } else {
+        flash(`切换失败：${result.error.message}`)
+      }
+    })
+  }
+
+  const openTeamPicker = (): void => {
+    setTeamPick(true)
+    if (teamWorkspaces.length === 0) {
+      void props.todoLibraries().then((result) => {
+        if (!result.ok) return
+        const list = asArray(asRecord(result.value).teamWorkspaces)
+        setTeamWorkspaces(list.map(item => {
+          const ws = asRecord(item)
+          return {
+            id: asString(ws.id),
+            name: asString(ws.name),
+            docCount: typeof ws.docCount === 'number' ? ws.docCount : 0,
+            permissionLevel: typeof ws.permissionLevel === 'number' ? ws.permissionLevel : 3,
+          }
+        }))
+      })
+    }
+  }
+
+  const onEnsureTeam = (workspace: string): void => {
+    if (switching) return
+    setSwitching(true)
+    void props.ensureTeamTodo(workspace).then((result) => {
+      setSwitching(false)
+      setSwitcherOpen(false)
+      setTeamPick(false)
+      if (result.ok) {
+        const library = asRecord(asRecord(result.value).library)
+        const docId = asString(library.docId)
+        if (docId !== '') writeLibPref(docId)
+        applyState(result.value)
+        refreshLibraries()
+        flash('团队任务库已就绪')
+      } else {
+        flash(`开通失败：${result.error.message}`)
+      }
     })
   }
 
@@ -268,8 +435,8 @@ export function TodoPane(props: TodoPaneProps) {
     event.dataTransfer.setData('text/plain', `【云之家·待办】${ref.title}${ref.sub === undefined ? '' : `（${ref.sub}）`}`)
   }
 
-  // --- Empty state: one-click provisioning ---
-  if (!props.ready) {
+  // --- Empty state: one-click provisioning (never flash while loading) ---
+  if (!props.ready && !props.loading) {
     return (
       <div className={css.body}>
         <div className={css.hero}>
@@ -289,6 +456,79 @@ export function TodoPane(props: TodoPaneProps) {
 
   return (
     <div className={css.body}>
+      {/* Library switcher: personal / team libraries, one-click team setup. */}
+      <div className={css.libRow} ref={switcherRef}>
+        <button
+          type="button"
+          className={switcherOpen ? `${css.libSwitch} ${css.libSwitchOpen}` : css.libSwitch}
+          onClick={() => { setSwitcherOpen(!switcherOpen); setTeamPick(false) }}
+          aria-haspopup="listbox"
+          aria-expanded={switcherOpen}
+          title="切换任务库（个人 / 团队）"
+        >
+          <span aria-hidden="true">{activeLib?.scope === 'team' ? '👥' : '📋'}</span>
+          <span className={css.libName}>{activeLib === undefined ? '任务库' : activeLib.scope === 'team' ? `团队 · ${activeLib.workspaceName === '' ? '共享库' : activeLib.workspaceName}` : `个人 · ${activeLib.workspaceName === '' ? '我的' : activeLib.workspaceName}`}</span>
+          <span className={css.libCaret} aria-hidden="true">▾</span>
+        </button>
+        <span className={css.tagRailSpace} />
+        {props.libraryLink !== '' && (
+          <a className={css.libraryLink} href={props.libraryLink} target="_blank" rel="noreferrer" title="在云之家打开任务库（多维表格）">
+            任务库 ↗
+          </a>
+        )}
+        {switcherOpen && (
+          <div className={css.libMenu} role="listbox" aria-label="任务库">
+            {!teamPick && (props.libraries ?? []).map(asRecord).map((lib) => {
+              const docId = asString(lib.docId)
+              const scope = asString(lib.scope)
+              const name = asString(lib.workspaceName)
+              return (
+                <button
+                  key={docId}
+                  type="button"
+                  role="option"
+                  aria-selected={docId === props.activeDocId}
+                  className={docId === props.activeDocId ? `${css.libItem} ${css.libItemActive}` : css.libItem}
+                  onClick={() => { onSelectLibrary(docId) }}
+                  disabled={switching}
+                >
+                  <span aria-hidden="true">{scope === 'team' ? '👥' : '📋'}</span>
+                  <span className={css.libItemName}>{scope === 'team' ? `团队 · ${name === '' ? '共享库' : name}` : `个人 · ${name === '' ? '我的' : name}`}</span>
+                  {docId === props.activeDocId && <span className={css.libCheck} aria-hidden="true">✓</span>}
+                </button>
+              )
+            })}
+            {!teamPick && (
+              <button type="button" className={css.libItem} onClick={openTeamPicker} disabled={switching}>
+                <span aria-hidden="true">➕</span>
+                <span className={css.libItemName}>新建 / 选择团队任务库…</span>
+              </button>
+            )}
+            {teamPick && (
+              <>
+                <button type="button" className={css.libBack} onClick={() => { setTeamPick(false) }}>‹ 返回</button>
+                <div className={css.libMenuHint}>选择团队知识库（将创建或复用其中的「待办任务库」，有编辑权限才可选）</div>
+                {teamWorkspaces.map(ws => (
+                  <button
+                    key={ws.id}
+                    type="button"
+                    className={css.libItem}
+                    onClick={() => { onEnsureTeam(ws.id) }}
+                    disabled={switching || ws.permissionLevel > 2}
+                    title={ws.permissionLevel > 2 ? '只读知识库，无法开通' : `在「${ws.name}」开通团队任务库`}
+                  >
+                    <span aria-hidden="true">👥</span>
+                    <span className={css.libItemName}>{ws.name}</span>
+                    <span className={css.libItemMeta}>{ws.permissionLevel > 2 ? '只读' : `${ws.docCount} 文档`}</span>
+                  </button>
+                ))}
+                {teamWorkspaces.length === 0 && <div className={css.libMenuHint}>（无可用的团队知识库）</div>}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Quick create: title + #tags + date fragments in one input. */}
       <div className={css.quick}>
         <span className={css.quickPlus} aria-hidden="true">+</span>
@@ -344,12 +584,6 @@ export function TodoPane(props: TodoPaneProps) {
               #{tag} · {count}
             </button>
           ))}
-          <span className={css.tagRailSpace} />
-          {props.libraryLink !== '' && (
-            <a className={css.libraryLink} href={props.libraryLink} target="_blank" rel="noreferrer" title="在云之家打开任务库（多维表格）">
-              任务库 ↗
-            </a>
-          )}
         </div>
       )}
 

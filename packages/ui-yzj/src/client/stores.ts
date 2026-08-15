@@ -44,6 +44,12 @@ export type YzjPanelState = {
   todos: unknown[]
   todoReady: boolean
   todoLink: string
+  /** Active library identity for the switcher label (cheap, always present). */
+  todoLibName: string
+  todoLibScope: string
+  /** Discoverable todo libraries + active docId (switcher). */
+  todoLibraries: unknown[]
+  todoActiveDocId: string
   /** Active tag filter ('' = all). */
   todoTag: string
   loading: boolean
@@ -75,7 +81,8 @@ export type YzjPanelActions = {
   prependMessages: (draft: YzjPanelState, messages: unknown[]) => void
   setAnchorMsgId: (draft: YzjPanelState, id: string) => void
   setUnreadTotal: (draft: YzjPanelState, total: number) => void
-  setTodoState: (draft: YzjPanelState, todos: unknown[], ready: boolean, link: string) => void
+  setTodoState: (draft: YzjPanelState, todos: unknown[], ready: boolean, link: string, libName?: string, libScope?: string) => void
+  setTodoLibraries: (draft: YzjPanelState, libraries: unknown[], activeDocId: string) => void
   patchTodo: (draft: YzjPanelState, todo: unknown) => void
   setTodoTag: (draft: YzjPanelState, tag: string) => void
   setLoading: (draft: YzjPanelState, loading: boolean) => void
@@ -112,8 +119,14 @@ export function createYzjStore(): EngineStoreHandle<YzjPanelState, YzjPanelActio
       todos: [],
       todoReady: false,
       todoLink: '',
+      todoLibName: '',
+      todoLibScope: '',
+      todoLibraries: [],
+      todoActiveDocId: '',
       todoTag: '',
-      loading: false,
+      // Start "loading" so the todo pane never flashes its provisioning hero
+      // for the single frame before loadTab kicks in.
+      loading: true,
       error: '',
     }),
     // v4: reset any legacy open:true / off-screen / stale-schema blobs
@@ -150,10 +163,16 @@ export function createYzjStore(): EngineStoreHandle<YzjPanelState, YzjPanelActio
       },
       setAnchorMsgId: (d: YzjPanelState, id: string) => { d.anchorMsgId = id },
       setUnreadTotal: (d: YzjPanelState, total: number) => { d.unreadTotal = total },
-      setTodoState: (d: YzjPanelState, todos: unknown[], ready: boolean, link: string) => {
+      setTodoState: (d: YzjPanelState, todos: unknown[], ready: boolean, link: string, libName?: string, libScope?: string) => {
         d.todos = todos
         d.todoReady = ready
         d.todoLink = link
+        if (libName !== undefined) d.todoLibName = libName
+        if (libScope !== undefined) d.todoLibScope = libScope
+      },
+      setTodoLibraries: (d: YzjPanelState, libraries: unknown[], activeDocId: string) => {
+        d.todoLibraries = libraries
+        d.todoActiveDocId = activeDocId
       },
       patchTodo: (d: YzjPanelState, todo: unknown) => {
         const todoId = String(asRecord(todo).todoId)

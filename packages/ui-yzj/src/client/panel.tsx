@@ -769,7 +769,10 @@ function loadTab(
           asArray(value.todos),
           value.ready === true,
           typeof library.link === 'string' ? library.link : '',
+          typeof value.libraryName === 'string' ? value.libraryName : undefined,
+          typeof value.libraryScope === 'string' ? value.libraryScope : undefined,
         )
+        props.actions.setTodoLibraries([], typeof value.activeDocId === 'string' ? value.activeDocId : '')
         props.actions.setLoading(false)
         if (typeof value.error === 'string' && value.error !== '') {
           props.actions.setError(`待办读取失败：${value.error}`)
@@ -2053,11 +2056,18 @@ export function YzjPanel(props: YzjPanelProps) {
           libraryLink={state.todoLink}
           tagFilter={state.todoTag}
           loading={state.loading}
+          activeDocId={state.todoActiveDocId}
+          libraries={state.todoLibraries}
+          libName={state.todoLibName}
+          libScope={state.todoLibScope}
           actions={props.actions}
           todoState={props.todoState}
           ensureTodo={props.ensureTodo}
           createTodo={props.createTodo}
           toggleTodo={props.toggleTodo}
+          todoLibraries={props.todoLibraries}
+          selectTodoLibrary={props.selectTodoLibrary}
+          ensureTeamTodo={props.ensureTeamTodo}
         />
       )}
 

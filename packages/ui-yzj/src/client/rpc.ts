@@ -47,6 +47,12 @@ export interface YzjPanelInject {
   createTodo: (input: { title: string; ddl?: string; priority?: string; tags?: string[] }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Toggle complete / reopen one todo (user-direct write). */
   toggleTodo: (todoId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Library switcher data: discovered libraries + provisionable team workspaces. */
+  todoLibraries: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Switch the active library (panel picker; agent writes follow it). */
+  selectTodoLibrary: (docId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Adopt-or-provision a team library in one enterprise workspace. */
+  ensureTeamTodo: (workspace: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** One write-confirmation record for a tool call (undefined when not gated). */
   fetchWrite: (sessionId: string, callId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Settle one pending write-confirmation decision. */
@@ -102,6 +108,9 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
       ...(input.tags === undefined || input.tags.length === 0 ? {} : { tags: input.tags }),
     }),
     toggleTodo: (todoId) => call('todo-toggle', { todoId }),
+    todoLibraries: () => call('todo-libraries', {}),
+    selectTodoLibrary: (docId) => call('todo-select', { docId }),
+    ensureTeamTodo: (workspace) => call('todo-ensure-team', { workspace }),
     fetchWrite: (sessionId, callId) => call('write-list', { sessionId, callId }),
     decideWrite: (writeId, outcome) => call('write-decide', { writeId, outcome }),
   }

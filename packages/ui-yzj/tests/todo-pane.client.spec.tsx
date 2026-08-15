@@ -31,11 +31,18 @@ function mountPane(over: Partial<TodoPaneProps> & { todos?: unknown[] }): Face {
     libraryLink: 'https://example/lib',
     tagFilter: '',
     loading: false,
+    libName: '',
+    libScope: '',
+    activeDocId: '',
+    libraries: [],
     actions: instance.actions,
     todoState: async () => ({ ok: true, value: { ready: true, library: { link: 'https://example/lib' }, todos: over.todos ?? [] } }) as Rpc,
     ensureTodo: async () => ({ ok: true, value: { ready: true, library: { link: 'https://example/lib' }, todos: [] } }) as Rpc,
     createTodo: async () => ({ ok: true, value: { todoId: 'T-1', title: 'x', status: 'pending', tags: [] } }) as Rpc,
     toggleTodo: async () => ({ ok: true, value: { todoId: 'T-1', title: 'x', status: 'done', tags: [] } }) as Rpc,
+    todoLibraries: async () => ({ ok: true, value: { libraries: [], activeDocId: '', teamWorkspaces: [] } }) as Rpc,
+    selectTodoLibrary: async () => ({ ok: true, value: { ready: true, library: { docId: 'docB', link: 'https://example/lib' }, todos: [] } }) as Rpc,
+    ensureTeamTodo: async () => ({ ok: true, value: { ready: true, library: { docId: 'docTeam', link: 'https://example/lib' }, todos: [] } }) as Rpc,
     ...over,
   }
   act(() => {
@@ -145,5 +152,44 @@ describe('TodoPane', () => {
   it('renders the demo-stage footnote', () => {
     const face = mountPane({})
     expect(face.container.textContent).toContain('演示阶段')
+  })
+
+  it('renders the library switcher with scope badges and switches on click', async () => {
+    const face = mountPane({
+      activeDocId: 'docP',
+      libraries: [
+        { scope: 'personal', workspaceName: '我的知识', docId: 'docP', tableId: 1, link: '' },
+        { scope: 'team', workspaceName: '六大场景内测', docId: 'docT', tableId: 2, link: '' },
+      ],
+    })
+    expect(face.container.textContent).toContain('个人 · 我的知识')
+    // Open the menu: both libraries with the active one checked.
+    const switcher = [...face.container.querySelectorAll('button')].find(button => (button.getAttribute('aria-haspopup') ?? '') === 'listbox')
+    expect(switcher).toBeDefined()
+    act(() => { switcher!.click() })
+    const text = face.container.textContent ?? ''
+    expect(text).toContain('团队 · 六大场景内测')
+    // Select the team library: the selection is persisted + RPC called.
+    const teamItem = [...face.container.querySelectorAll('[role="option"]')].find(option => (option.textContent ?? '').includes('团队'))
+    expect(teamItem).toBeDefined()
+    await act(async () => { teamItem!.click() })
+    expect(face.container.textContent).toContain('已切换任务库')
+  })
+
+  it('offers team provisioning from the switcher (second level)', async () => {
+    const face = mountPane({
+      activeDocId: 'docP',
+      libraries: [{ scope: 'personal', workspaceName: '我的知识', docId: 'docP', tableId: 1, link: '' }],
+    })
+    const switcher = [...face.container.querySelectorAll('button')].find(button => (button.getAttribute('aria-haspopup') ?? '') === 'listbox')
+    act(() => { switcher!.click() })
+    const provision = [...face.container.querySelectorAll('button')].find(button => (button.textContent ?? '').includes('新建 / 选择团队任务库'))
+    expect(provision).toBeDefined()
+    act(() => { provision!.click() })
+    // The workspace list loads asynchronously; after resolution at least the
+    // hint line of the second level is present.
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)) })
+    const text = face.container.textContent ?? ''
+    expect(text).toContain('选择团队知识库')
   })
 })

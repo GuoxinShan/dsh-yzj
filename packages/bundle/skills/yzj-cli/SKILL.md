@@ -46,6 +46,7 @@
 - **改**：`yzj_todo_update`（状态机：pending→in_progress→done，done→in_progress 重开，in_progress↔pending 打回；pending 不能直接 done——用 complete；推进日志 host 追加，不可改写）。
 - **完成**：`yzj_todo_complete`（任意状态→done，幂等）。
 - **规则**：id 一律来自 `yzj_todo_list`，不编造；所有写操作过确认卡；刻意**无删除工具**——需要废弃时与用户确认后走 `yzj_sheet_record_delete`（强确认）。
+- **团队协作**：待办库有「个人/团队」两种——面板待办 tab 顶部的任务库切换器可一键切换或在某个企业知识库开通团队库（有编辑权限才可选）；**你的写入始终落在用户当前激活的任务库**（切换器上有 👥/📋 徽标）。分派同事用 `assignee`（姓名唯一命中自动解析 openId）；催办=发 IM 给负责人（确认卡）。多人共用同一团队库时为 last-write-wins，推进日志保证可追溯。
 
 面板「待办」tab（用户直写）：分桶（逾期/今天/进行中/待办/已完成）、#tag 聚合过滤、快捷新建（支持 `#标签` 和日期片段）、勾选完成/重开；待办条目可拖入对话交给你跟进。
 

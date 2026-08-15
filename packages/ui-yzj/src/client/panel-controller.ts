@@ -83,6 +83,7 @@ export function openPanelTarget(target: YzjJumpTarget, anchorMsgId?: string): vo
         value.ready === true,
         typeof library.link === 'string' ? library.link : '',
       )
+      actions.setTodoLibraries([], typeof value.activeDocId === 'string' ? value.activeDocId : '')
     })
   } else {
     actions.setTab('calendar')

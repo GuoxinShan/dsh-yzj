@@ -73,6 +73,26 @@ export interface TodoBinding {
   link: string
 }
 
+/** One discoverable library for the panel picker. */
+export interface TodoLibraryRef {
+  scope: 'personal' | 'team'
+  workspaceId: string
+  workspaceName: string
+  docId: string
+  tableId: number
+  link: string
+}
+
+/** Mutable active-library holder shared by the tools and the yzjTodo service:
+ *  the panel switcher writes `override`; every write path (tools + RPC)
+ *  resolves through it so agent and user act on the same library. */
+export interface TodoBindingHolder {
+  override?: TodoBinding
+  /** Extra known libraries surfaced by the picker (e.g. previously selected
+   *  team libraries that a fresh personal scan would miss). */
+  known?: TodoLibraryRef[]
+}
+
 /** Input for creating one todo. */
 export interface TodoCreateInput {
   title: string
@@ -301,9 +321,11 @@ async function provisionTable(
 }
 
 /**
- * Resolve (and optionally provision) the todo library. Order: explicit
- * config binding → discovery by title in the configured/personal workspace.
- * Cached per core instance.
+ * Resolve (and optionally provision) the todo library. Order: panel-selected
+ * override (user's active library) → explicit config binding → discovery by
+ * title in the configured/personal workspaces. Cached per core instance.
+ * An override that no longer validates (library deleted) is cleared and
+ * resolution falls through.
  */
 export async function resolveLibrary(
   ctx: Context,
@@ -311,8 +333,23 @@ export async function resolveLibrary(
   config: TodoConfig,
   cache: { binding?: TodoBinding },
   allowProvision: boolean,
+  holder?: TodoBindingHolder,
 ): Promise<TodoBinding> {
   if (cache.binding !== undefined) return cache.binding
+
+  // 0. Panel-selected override: validate once, then trust (and remember).
+  if (holder?.override !== undefined) {
+    const ran = await runTodoJson(ctx, budget, 'sheet get', ['sheet', 'get', '--id', holder.override.docId])
+    const stillOk = ran.ok && asArray(asRecord(ran.json).sheets).some(table =>
+      asRecord(table).id === holder.override!.tableId
+      && asArray(asRecord(table).fields).some(field => asString(asRecord(field).name) === F.id))
+    if (stillOk) {
+      cache.binding = holder.override
+      return holder.override
+    }
+    // Stale override (library deleted or table removed): drop it.
+    delete holder.override
+  }
 
   // 1. Explicit binding from config.
   if (config.docId !== undefined && config.tableId !== undefined) {
@@ -493,10 +530,11 @@ export async function coreCreate(
   config: TodoConfig,
   cache: { binding?: TodoBinding },
   input: TodoCreateInput,
+  holder?: TodoBindingHolder,
 ): Promise<CoreCreateResult> {
   const title = input.title.trim()
   if (title === '') throw new Error('todo: title must not be empty')
-  const binding = await resolveLibrary(ctx, budget, config, cache, true)
+  const binding = await resolveLibrary(ctx, budget, config, cache, true, holder)
   if (input.todoId !== undefined) {
     const existing = await fetchTodoByTodoId(ctx, budget, binding, input.todoId)
     if (existing !== undefined) return { todo: existing, idempotent: true, assigneeNote: '', binding }
@@ -546,8 +584,9 @@ export async function coreSetStatus(
   todoId: string,
   target: TodoStatus,
   note?: string,
+  holder?: TodoBindingHolder,
 ): Promise<CoreStatusResult> {
-  const binding = await resolveLibrary(ctx, budget, config, cache, false)
+  const binding = await resolveLibrary(ctx, budget, config, cache, false, holder)
   const existing = await fetchTodoByTodoId(ctx, budget, binding, todoId)
   if (existing === undefined) {
     throw new Error(`todo: 待办 ${todoId} 不存在；先用 yzj_todo_list 查真实 id，不要猜测`)
@@ -590,6 +629,22 @@ export interface YzjTodoState {
   todos: YzjTodoView[]
   /** Set when the library is provisioned but reading it failed. */
   error?: string
+  /** Active library identity for the switcher label (cheap lookup). */
+  libraryName?: string
+  libraryScope?: 'personal' | 'team'
+  /** Discoverable libraries for the switcher (personal scan + known team). */
+  libraries?: TodoLibraryRef[]
+  /** docId of the active library (convenience for the switcher radio). */
+  activeDocId?: string
+}
+
+/** One enterprise workspace offered by the team-library provisioner. */
+export interface TodoTeamWorkspace {
+  id: string
+  name: string
+  docCount: number
+  /** 1 可管理 / 2 可编辑 / 3 可查看 — provisioning needs ≤2. */
+  permissionLevel: number
 }
 
 /** Host service exposing the todo core to the browser surface. */
@@ -597,6 +652,9 @@ export class YzjTodoService extends Service {
   private readonly budget: YzjToolBudget
   private readonly config: TodoConfig
   private readonly cache: { binding?: TodoBinding } = {}
+  /** Shared with the tool family so agent writes follow the active library. */
+  readonly holder: TodoBindingHolder = {}
+  private librariesCache: { at: number; list: TodoLibraryRef[] } | null = null
 
   constructor(ctx: Context, budget: YzjToolBudget, config: TodoConfig) {
     super(ctx, 'yzjTodo')
@@ -604,31 +662,189 @@ export class YzjTodoService extends Service {
     this.config = config
   }
 
-  /** Current state; `ready` false means the library is not provisioned yet. */
+  /** Current state; `ready` false means the library is not provisioned yet.
+   *  Libraries for the switcher are fetched separately (todo-libraries RPC)
+   *  so this stays fast — the discovery scan is slow. The ACTIVE library's
+   *  identity rides along via a cheap doc-get + cached workspace index. */
   async state(): Promise<YzjTodoState> {
     let binding: TodoBinding
     try {
-      binding = await resolveLibrary(this.ctx, this.budget, this.config, this.cache, false)
+      binding = await resolveLibrary(this.ctx, this.budget, this.config, this.cache, false, this.holder)
     } catch {
-      return { ready: false, library: null, todos: [] }
+      return { ready: false, library: null, todos: [], activeDocId: '' }
     }
+    const identity = await this.libraryIdentity(binding.docId)
     try {
       const todos = await fetchTodos(this.ctx, this.budget, binding)
-      return { ready: true, library: binding, todos: todos.map(viewOf) }
+      return { ready: true, library: binding, todos: todos.map(viewOf), activeDocId: binding.docId, ...identity }
     } catch (error) {
-      return { ready: true, library: binding, todos: [], error: String((error as Error).message) }
+      return { ready: true, library: binding, todos: [], error: String((error as Error).message), activeDocId: binding.docId, ...identity }
     }
   }
 
-  /** Provision the library on demand (one-click empty-state action). */
+  /** wsId → {name, scope} index from the two workspace lists (cached 5min). */
+  private wsIndexCache: { at: number; map: Map<string, { name: string; scope: 'personal' | 'team' }> } | null = null
+
+  private async workspaceIndex(): Promise<Map<string, { name: string; scope: 'personal' | 'team' }>> {
+    if (this.wsIndexCache !== null && Date.now() - this.wsIndexCache.at < 300_000) {
+      return this.wsIndexCache.map
+    }
+    const map = new Map<string, { name: string; scope: 'personal' | 'team' }>()
+    const scans: { cli: 'personal' | 'enterprise'; scope: 'personal' | 'team' }[] = [
+      { cli: 'personal', scope: 'personal' },
+      { cli: 'enterprise', scope: 'team' },
+    ]
+    for (const { cli, scope } of scans) {
+      const ran = await runTodoJson(this.ctx, this.budget, 'doc workspace list', ['doc', 'workspace', 'list', '--type', cli])
+      if (!ran.ok) continue
+      const list = Array.isArray(ran.json) ? ran.json : asArray(asRecord(ran.json).list)
+      for (const node of list) {
+        const row = asRecord(node)
+        const id = asString(row.id)
+        if (id !== '') map.set(id, { name: asString(row.name), scope })
+      }
+    }
+    this.wsIndexCache = { at: Date.now(), map }
+    return map
+  }
+
+  /** Cheap identity of one library doc: its workspace name + scope. */
+  private async libraryIdentity(docId: string): Promise<{ libraryName?: string; libraryScope?: 'personal' | 'team' }> {
+    try {
+      const ran = await runTodoJson(this.ctx, this.budget, 'doc get', ['doc', 'get', '--id', docId])
+      if (!ran.ok) return {}
+      const kbId = asString(asRecord(ran.json).kbId)
+      if (kbId === '') return {}
+      const meta = (await this.workspaceIndex()).get(kbId)
+      if (meta === undefined) return {}
+      return { libraryName: meta.name, libraryScope: meta.scope }
+    } catch {
+      return {}
+    }
+  }
+
+  /**
+   * Discover libraries for the switcher: every 待办任务库 across personal
+   * and enterprise workspaces (bounded scan) plus remembered team libraries.
+   * Cached ~5min — the scan is a dozen-plus CLI calls.
+   */
+  async listLibraries(): Promise<TodoLibraryRef[]> {
+    if (this.librariesCache !== null && Date.now() - this.librariesCache.at < 300_000) {
+      return this.librariesCache.list
+    }
+    const found: TodoLibraryRef[] = []
+    const seen = new Set<string>()
+    const scans: { cli: 'personal' | 'enterprise'; scope: 'personal' | 'team' }[] = [
+      { cli: 'personal', scope: 'personal' },
+      { cli: 'enterprise', scope: 'team' },
+    ]
+    for (const { cli, scope } of scans) {
+      const ran = await runTodoJson(this.ctx, this.budget, 'doc workspace list', ['doc', 'workspace', 'list', '--type', cli])
+      if (!ran.ok) continue
+      const list = Array.isArray(ran.json) ? ran.json : asArray(asRecord(ran.json).list)
+      for (const node of list.slice(0, 12)) {
+        const ws = asRecord(node)
+        const wsId = asString(ws.id)
+        if (wsId === '') continue
+        const docsRan = await runTodoJson(this.ctx, this.budget, 'doc list', ['doc', 'list', '--workspace', wsId])
+        if (!docsRan.ok) continue
+        const nodes = Array.isArray(docsRan.json) ? docsRan.json : asArray(asRecord(docsRan.json).list)
+        for (const doc of nodes) {
+          const row = asRecord(doc)
+          if (row.fileSuffix !== 'dbt' || asString(row.title) !== LIBRARY_TITLE) continue
+          const docId = asString(row.id)
+          if (docId === '' || seen.has(docId)) continue
+          const binding = await bindingForDoc(this.ctx, this.budget, docId)
+          if (binding === undefined) continue
+          seen.add(docId)
+          found.push({
+            scope,
+            workspaceId: wsId,
+            workspaceName: asString(ws.name),
+            docId,
+            tableId: binding.tableId,
+            link: binding.link,
+          })
+        }
+      }
+    }
+    // Remembered selections (e.g. team libraries in workspaces beyond the
+    // scan bound) stay visible in the picker.
+    for (const known of this.holder.known ?? []) {
+      if (!seen.has(known.docId)) {
+        seen.add(known.docId)
+        found.push(known)
+      }
+    }
+    this.librariesCache = { at: Date.now(), list: found }
+    return found
+  }
+
+  /** Enterprise workspaces offered when provisioning a team library. */
+  async teamWorkspaces(): Promise<TodoTeamWorkspace[]> {
+    const ran = await runTodoJson(this.ctx, this.budget, 'doc workspace list', ['doc', 'workspace', 'list', '--type', 'enterprise'])
+    if (!ran.ok) throw new Error(ran.value.content)
+    const list = Array.isArray(ran.json) ? ran.json : asArray(asRecord(ran.json).list)
+    return list
+      .map(node => {
+        const row = asRecord(node)
+        return {
+          id: asString(row.id),
+          name: asString(row.name),
+          docCount: typeof row.docCount === 'number' ? row.docCount : 0,
+          permissionLevel: typeof row.permissionLevel === 'number' ? row.permissionLevel : 3,
+        }
+      })
+      .filter(ws => ws.id !== '')
+      .sort((a, b) => (a.permissionLevel - b.permissionLevel) || a.name.localeCompare(b.name))
+  }
+
+  /** Switch the active library (panel picker). Validates before adopting. */
+  async select(docId: string): Promise<YzjTodoState> {
+    const binding = await bindingForDoc(this.ctx, this.budget, docId)
+    if (binding === undefined) throw new Error(`todo: 文档 ${docId} 不是可用的待办任务库（缺少任务表）`)
+    this.holder.override = binding
+    this.rememberLibrary(binding)
+    delete this.cache.binding
+    this.librariesCache = null
+    return this.state()
+  }
+
+  /** Adopt-or-provision a team library in one enterprise workspace, then
+   *  make it active. Returns the refreshed state. */
+  async ensureTeam(workspaceId: string): Promise<YzjTodoState> {
+    const ran = await runTodoJson(this.ctx, this.budget, 'doc list', ['doc', 'list', '--workspace', workspaceId])
+    if (!ran.ok) throw new Error(ran.value.content)
+    const nodes = Array.isArray(ran.json) ? ran.json : asArray(asRecord(ran.json).list)
+    const existing = nodes.find(node => asRecord(node).fileSuffix === 'dbt' && asString(asRecord(node).title) === LIBRARY_TITLE)
+    let binding: TodoBinding
+    if (existing !== undefined) {
+      const docId = asString(asRecord(existing).id)
+      const found = await bindingForDoc(this.ctx, this.budget, docId)
+      binding = found ?? await provisionTable(this.ctx, this.budget, docId)
+    } else {
+      const createRan = await runTodoJson(this.ctx, this.budget, 'sheet create', ['sheet', 'create', '--workspace', workspaceId, '--title', LIBRARY_TITLE])
+      if (!createRan.ok) throw new Error(createRan.value.content)
+      const docId = asString(asRecord(createRan.json).id)
+      if (docId === '') throw new Error('todo: 创建团队任务库未返回文档 id')
+      binding = await provisionTable(this.ctx, this.budget, docId)
+    }
+    this.holder.override = binding
+    this.rememberLibrary(binding, workspaceId)
+    delete this.cache.binding
+    this.librariesCache = null
+    return this.state()
+  }
+
+  /** Provision the personal library on demand (one-click empty-state action). */
   async ensure(): Promise<YzjTodoState> {
-    const binding = await resolveLibrary(this.ctx, this.budget, this.config, this.cache, true)
+    const binding = await resolveLibrary(this.ctx, this.budget, this.config, this.cache, true, this.holder)
     return { ready: true, library: binding, todos: [] }
   }
 
   /** Quick-create (panel composer path). */
   async create(input: TodoCreateInput): Promise<YzjTodoView> {
-    const result = await coreCreate(this.ctx, this.budget, this.config, this.cache, input)
+    const result = await coreCreate(this.ctx, this.budget, this.config, this.cache, input, this.holder)
     if (result.todo === null) throw new Error('todo: 创建成功但未能读回记录')
     return viewOf(result.todo)
   }
@@ -639,8 +855,24 @@ export class YzjTodoService extends Service {
     const existing = current.todos.find(todo => todo.todoId === todoId)
     if (existing === undefined) throw new Error(`todo: 待办 ${todoId} 不存在`)
     const target: TodoStatus = existing.status === 'done' ? 'in_progress' : 'done'
-    const result = await coreSetStatus(this.ctx, this.budget, this.config, this.cache, todoId, target, target === 'done' ? '面板勾选完成' : '面板重开')
+    const result = await coreSetStatus(this.ctx, this.budget, this.config, this.cache, todoId, target, target === 'done' ? '面板勾选完成' : '面板重开', this.holder)
     return viewOf(result.todo)
+  }
+
+  /** Keep a selected binding visible in the picker across scans. */
+  private rememberLibrary(binding: TodoBinding, workspaceId?: string): void {
+    const known = this.holder.known ?? []
+    if (!known.some(ref => ref.docId === binding.docId)) {
+      known.push({
+        scope: 'team',
+        workspaceId: workspaceId ?? '',
+        workspaceName: '',
+        docId: binding.docId,
+        tableId: binding.tableId,
+        link: binding.link,
+      })
+      this.holder.known = known
+    }
   }
 }
 
@@ -674,7 +906,7 @@ declare module '@deepseek-ai/cordis' {
 /** Register the semantic todo tool family. The yzjTodo service is
  * instantiated separately by the package entry (it needs a real Cordis
  * context); both share the same core operations. */
-export function applyTodoTools(ctx: Context, budget: YzjToolBudget, config: TodoConfig): void {
+export function applyTodoTools(ctx: Context, budget: YzjToolBudget, config: TodoConfig, holder?: TodoBindingHolder): void {
   const cache: { binding?: TodoBinding } = {}
 
   const libraryMeta = (binding: TodoBinding): JsonValue =>
@@ -695,7 +927,7 @@ export function applyTodoTools(ctx: Context, budget: YzjToolBudget, config: Todo
     async execute(args) {
       let binding: TodoBinding
       try {
-        binding = await resolveLibrary(ctx, budget, config, cache, false)
+        binding = await resolveLibrary(ctx, budget, config, cache, false, holder)
       } catch (error) {
         return { content: `(待办任务库未开通) ${String((error as Error).message)}`, truncated: false, data: { kind: 'todo-list', ready: false } }
       }
@@ -771,7 +1003,7 @@ export function applyTodoTools(ctx: Context, budget: YzjToolBudget, config: Todo
           priority: args.priority,
           tags: args.tags,
           refs: args.refs,
-        })
+        }, holder)
       } catch (error) {
         return { content: `yzj todo create failed: ${String((error as Error).message)}`, truncated: false, data: {} }
       }
@@ -823,7 +1055,7 @@ export function applyTodoTools(ctx: Context, budget: YzjToolBudget, config: Todo
     async execute(args) {
       let binding: TodoBinding
       try {
-        binding = await resolveLibrary(ctx, budget, config, cache, false)
+        binding = await resolveLibrary(ctx, budget, config, cache, false, holder)
       } catch (error) {
         return { content: `yzj todo update failed: ${String((error as Error).message)}`, truncated: false, data: {} }
       }
@@ -897,7 +1129,7 @@ export function applyTodoTools(ctx: Context, budget: YzjToolBudget, config: Todo
     async execute(args) {
       let result: CoreStatusResult
       try {
-        result = await coreSetStatus(ctx, budget, config, cache, args.todoId, 'done', args.note)
+        result = await coreSetStatus(ctx, budget, config, cache, args.todoId, 'done', args.note, holder)
       } catch (error) {
         return { content: `yzj todo complete failed: ${String((error as Error).message)}`, truncated: false, data: {} }
       }
