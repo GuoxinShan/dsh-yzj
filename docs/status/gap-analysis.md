@@ -244,7 +244,7 @@ v1.6 §11.2 决策 1「双轨库」完整落地：
 
 ---
 
-## 17. 机器人通道 R1（host 面，2026-08-16）
+## 20. 机器人通道 R1（host 面，2026-08-16）
 
 设计基线：`../spec/robot-channel-plan.md` §3.2/§3.6（DM 子集）。新增包 `packages/robot-yzj`（`ctx.yzjRobot`），bundle 第 5 行挂载。
 
