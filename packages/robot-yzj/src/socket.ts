@@ -69,9 +69,12 @@ const BACKOFF_CAP_MS = 30_000
  * and cancels every timer; both are idempotent.
  */
 export class RobotSocket {
-  private readonly options: Required<Pick<RobotSocketOptions, 'url' | 'heartbeatMs' | 'staleMs' | 'backoffBaseMs'>> & RobotSocketOptions
+  private readonly options: RobotSocketOptions
   private readonly timers: SocketTimers
   private readonly now: () => number
+  private readonly heartbeatMs: number
+  private readonly staleMs: number
+  private readonly backoffBaseMs: number
 
   private socket: WebSocketLike | null = null
   private heartbeat: unknown = null
@@ -83,6 +86,9 @@ export class RobotSocket {
 
   constructor(options: RobotSocketOptions) {
     this.options = options
+    this.heartbeatMs = options.heartbeatMs ?? DEFAULT_HEARTBEAT_MS
+    this.staleMs = options.staleMs ?? DEFAULT_STALE_MS
+    this.backoffBaseMs = options.backoffBaseMs ?? DEFAULT_BACKOFF_BASE_MS
     this.timers = options.timers ?? {
       setInterval: (h, ms) => setInterval(h, ms),
       clearInterval: h => clearInterval(h as ReturnType<typeof setInterval>),
@@ -162,11 +168,10 @@ export class RobotSocket {
 
   private startHeartbeat(): void {
     this.clearHeartbeat()
-    const { heartbeatMs, staleMs } = this.options
     this.heartbeat = this.timers.setInterval(() => {
       const socket = this.socket
       if (socket === null) return
-      if (this.now() - this.lastFrameAt >= staleMs) {
+      if (this.now() - this.lastFrameAt >= this.staleMs) {
         this.forceReconnect('stale connection')
         return
       }
@@ -175,7 +180,7 @@ export class RobotSocket {
       } catch (error) {
         this.forceReconnect(`heartbeat failed: ${String(error)}`)
       }
-    }, heartbeatMs)
+    }, this.heartbeatMs)
   }
 
   private clearHeartbeat(): void {
@@ -202,7 +207,7 @@ export class RobotSocket {
     if (this.stopped || this.reconnect !== null) return
     this.lastError = reason
     this.emitStatus()
-    const delay = Math.min(BACKOFF_CAP_MS, this.options.backoffBaseMs * 2 ** this.attempts)
+    const delay = Math.min(BACKOFF_CAP_MS, this.backoffBaseMs * 2 ** this.attempts)
     this.attempts += 1
     this.reconnect = this.timers.setTimeout(() => {
       this.reconnect = null

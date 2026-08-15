@@ -39,7 +39,7 @@
 
 ## 待办（yzj_todo_* 工具族，语义化——不要用裸 sheet 工具管理待办）
 
-待办有专属工具族，底层由多维表格「待办任务库」承载（demo 阶段，首用自动开通；后端将切换原生待办，见仓库 docs/待办后端迁移说明.md）。**核心理念是标签聚合：tag 可以是一个项目、一个群组、任何主题**，待办通过 tag 自由聚合（如 `#接口改造 #需求评审群`）。
+待办有专属工具族，底层由多维表格「待办任务库」承载（demo 阶段，首用自动开通；后端将切换原生待办，见仓库 docs/migration/todo-backend-migration.md）。**核心理念是标签聚合：tag 可以是一个项目、一个群组、任何主题**，待办通过 tag 自由聚合（如 `#接口改造 #需求评审群`）。
 
 - **查**：`yzj_todo_list`（`status: open/pending/in_progress/done/overdue/all`，`tag`、`assignee` 过滤，按 DDL 升序）。
 - **建**：`yzj_todo_create`（`title` 必填；`tags` 聚合标签；`ddl` `YYYY-MM-DD`；`assignee` 姓名（唯一命中通讯录时自动解析为 openId）；`refs` 传入来源引用 token 会记入日志并在确认卡展示；幂等：传 `todoId` 且已存在时直接返回原记录）。

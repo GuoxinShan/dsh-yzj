@@ -8,17 +8,17 @@
  * @module @dsh-yzj/robot-yzj/router
  */
 
-import type { Context } from '@deepseek-ai/cordis'
-import type { Agent, AgentHandle, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
+import { SessionId } from '@deepseek-ai/dsh-session'
+import type { Agent, AgentHandle, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
+import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { InboundDedupe, type RobotInboundMessage } from './protocol.ts'
 import type { RobotSendOptions, RobotSendResult } from './outbound.ts'
 
 /** The tiny agents-registry face the router needs (fake-able in tests). */
 export interface RouterAgentsFace {
   get(sessionId: SessionId): Agent | undefined
-  createAgent(ownerCtx: Context, options: CreateAgentOptions): Promise<AgentHandle>
+  create(options: CreateAgentOptions): Promise<AgentHandle>
 }
 
 /** Outbound face (RobotSender satisfies it). */
@@ -36,7 +36,6 @@ export type AllowFromResolver = () => Promise<readonly string[] | undefined>
 
 /** Router options; all faces are injectable. */
 export interface RobotRouterOptions {
-  readonly ownerCtx: Context
   readonly agents: RouterAgentsFace
   readonly sender: RouterSendFace
   /** Empty list denies everyone; the resolver may fill it lazily (whoami). */
@@ -45,6 +44,12 @@ export interface RobotRouterOptions {
   readonly denyText?: string
   readonly logger?: RouterLogger
 }
+
+const DEFAULT_ACK_TEXT = '收到，处理中…'
+const DEFAULT_DENY_TEXT = '抱歉，你不在本机器人的白名单内。'
+const COMMAND_NAMES = ['help', 'status', 'mute', 'unmute', 'restart'] as const
+type RobotCommand = typeof COMMAND_NAMES[number]
+const STANDALONE_COMMAND = /^!(help|status|mute|unmute|restart)\s*$/
 
 /** Stable session id for one (robot, user) DM channel. */
 export function dmSessionId(robotId: string, operatorOpenid: string): SessionId {
@@ -56,20 +61,25 @@ function slug(value: string): string {
   return cleaned === '' ? 'x' : cleaned.slice(0, 40)
 }
 
-const STANDALONE_COMMAND = /^!(help|status|mute|unmute|restart)\s*$/
-
 /**
  * The inbound brain. Construct once per robot connection; `handle` is called
- * for every classified robot message (dedupe happens here).
+ * for every classified robot message (dedupe happens here). `dispose()` tears
+ * down every agent this router created.
  */
 export class RobotRouter {
-  private readonly options: Required<Pick<RobotRouterOptions, 'ackText' | 'denyText'>> & RobotRouterOptions
+  private readonly agents: RouterAgentsFace
+  private readonly sender: RouterSendFace
+  private readonly allowFrom: AllowFromResolver
+  private readonly ackText: string
+  private readonly denyText: string
+  private readonly logger: RouterLogger | undefined
+
   private readonly dedupe = new InboundDedupe()
-  /** Handles for sessions this router created (restart needs the disposer). */
+  /** Handles for sessions this router created (dispose/restart need them). */
   private readonly handles = new Map<SessionId, AgentHandle>()
   /** Outbound msgId → owning session id (reply continuation). */
   private readonly outboundAnchor = new Map<string, SessionId>()
-  /** Session key → muted flag. */
+  /** Session id → muted flag. */
   private readonly muted = new Set<string>()
   /** Session id → highest assistant-event seq already pushed (no double sends). */
   private readonly pushedSeq = new Map<SessionId, number>()
@@ -77,10 +87,30 @@ export class RobotRouter {
   private allowFromCache: readonly string[] | undefined
 
   constructor(options: RobotRouterOptions) {
-    this.options = options
+    this.agents = options.agents
+    this.sender = options.sender
+    this.allowFrom = options.allowFrom
+    this.ackText = options.ackText ?? DEFAULT_ACK_TEXT
+    this.denyText = options.denyText ?? DEFAULT_DENY_TEXT
+    this.logger = options.logger
   }
 
-  /** Forget one session's live state (mute, watermark) — used on restart/dispose. */
+  /** Dispose every agent session this router created; clears all state. */
+  async dispose(): Promise<void> {
+    for (const [sessionId, handle] of this.handles) {
+      try {
+        await handle.dispose()
+      } catch (error) {
+        this.logger?.warn(`robot: dispose failed for ${sessionId}: ${String(error)}`)
+      }
+    }
+    this.handles.clear()
+    this.outboundAnchor.clear()
+    this.muted.clear()
+    this.pushedSeq.clear()
+  }
+
+  /** Forget one session's live state (mute, watermark) — used on restart. */
   forgetSession(sessionId: SessionId): void {
     this.pushedSeq.delete(sessionId)
     for (const [msgId, owner] of this.outboundAnchor) {
@@ -97,40 +127,37 @@ export class RobotRouter {
       replyPersonName: message.operatorName,
     }
     const command = STANDALONE_COMMAND.exec(message.content.trim())
-    if (command !== null) {
-      await this.runCommand(command[1] as 'help' | 'status' | 'mute' | 'unmute' | 'restart', message, replyAnchor)
+    const commandName = command?.[1] as RobotCommand | undefined
+    if (commandName !== undefined && COMMAND_NAMES.includes(commandName)) {
+      await this.runCommand(commandName, message, replyAnchor)
       return
     }
     if (!(await this.authorized(message.operatorOpenid))) {
-      await this.reply(this.options.denyText, replyAnchor)
+      await this.reply(this.denyText, replyAnchor)
       return
     }
-    const { sessionId } = this.resolveSession(message)
+    const sessionId = dmSessionId(message.robotId, message.operatorOpenid)
     if (this.muted.has(sessionId)) return
-    await this.reply(this.options.ackText, replyAnchor)
+    await this.reply(this.ackText, replyAnchor)
     await this.dispatchTurn(sessionId, message)
   }
 
   private async authorized(operatorOpenid: string): Promise<boolean> {
     if (this.allowFromCache === undefined) {
       try {
-        this.allowFromCache = await this.options.allowFrom()
+        const resolved = await this.allowFrom()
+        this.allowFromCache = resolved ?? []
       } catch (error) {
-        this.options.logger?.warn(`robot: allowFrom resolve failed: ${String(error)}`)
+        this.logger?.warn(`robot: allowFrom resolve failed: ${String(error)}`)
         this.allowFromCache = []
       }
     }
-    return this.allowFromCache.includes(operatorOpenid)
-  }
-
-  /** Resolve the owning session for one message (DM persistent + reply chain). */
-  private resolveSession(message: RobotInboundMessage): { sessionId: SessionId } {
-    const dmId = dmSessionId(message.robotId, message.operatorOpenid)
-    return { sessionId: dmId }
+    const allowFrom = this.allowFromCache
+    return allowFrom !== undefined && allowFrom.includes(operatorOpenid)
   }
 
   private async reply(text: string, anchor: RobotSendOptions): Promise<RobotSendResult> {
-    return this.options.sender.send(text, anchor)
+    return this.sender.send(text, anchor)
   }
 
   private async dispatchTurn(sessionId: SessionId, message: RobotInboundMessage): Promise<void> {
@@ -150,13 +177,13 @@ export class RobotRouter {
         source: { kind: 'plugin', plugin: 'robot-yzj' },
       }))
     } catch (error) {
-      this.options.logger?.warn(`robot: followup failed: ${String(error)}`)
+      this.logger?.warn(`robot: followup failed: ${String(error)}`)
       return
     }
     try {
       await agent.whenIdle()
     } catch (error) {
-      this.options.logger?.warn(`robot: agent idle wait failed: ${String(error)}`)
+      this.logger?.warn(`robot: agent idle wait failed: ${String(error)}`)
       return
     }
     const events = agent.session.events
@@ -174,27 +201,27 @@ export class RobotRouter {
   }
 
   private async ensureAgent(sessionId: SessionId): Promise<Agent | undefined> {
-    const existing = this.options.agents.get(sessionId)
+    const existing = this.agents.get(sessionId)
     if (existing !== undefined) return existing
     try {
-      const handle = await this.options.agents.createAgent(this.options.ownerCtx, { sessionId })
+      const handle = await this.agents.create({ sessionId })
       this.handles.set(sessionId, handle)
       return handle.agent
     } catch (error) {
-      this.options.logger?.warn(`robot: createAgent failed for ${sessionId}: ${String(error)}`)
+      this.logger?.warn(`robot: create agent failed for ${sessionId}: ${String(error)}`)
       return undefined
     }
   }
 
   private async runCommand(
-    command: 'help' | 'status' | 'mute' | 'unmute' | 'restart',
+    command: RobotCommand,
     message: RobotInboundMessage,
     anchor: RobotSendOptions,
   ): Promise<void> {
-    const { sessionId } = this.resolveSession(message)
+    const sessionId = dmSessionId(message.robotId, message.operatorOpenid)
     switch (command) {
       case 'help':
-        await this.reply(message, [
+        await this.reply([
           '可用命令（独立成句才生效）：',
           '!status — 查看机器人连接与会话状态',
           '!mute — 静音本会话（不再回复，!unmute 解除）',
@@ -203,8 +230,8 @@ export class RobotRouter {
         ].join('\n'), anchor)
         return
       case 'status': {
-        const agent = this.options.agents.get(sessionId)
-        await this.reply(message, [
+        const agent = this.agents.get(sessionId)
+        await this.reply([
           `会话 ${sessionId}`,
           `状态 ${agent === undefined ? '未创建' : agent.status}`,
           `静音 ${this.muted.has(sessionId) ? '是' : '否'}`,
@@ -213,11 +240,11 @@ export class RobotRouter {
       }
       case 'mute':
         this.muted.add(sessionId)
-        await this.reply(message, '已静音。发送 !unmute 解除。', anchor)
+        await this.reply('已静音。发送 !unmute 解除。', anchor)
         return
       case 'unmute':
         this.muted.delete(sessionId)
-        await this.reply(message, '已解除静音。', anchor)
+        await this.reply('已解除静音。', anchor)
         return
       case 'restart': {
         const handle = this.handles.get(sessionId)
@@ -225,12 +252,12 @@ export class RobotRouter {
           try {
             await handle.dispose()
           } catch (error) {
-            this.options.logger?.warn(`robot: dispose failed on restart: ${String(error)}`)
+            this.logger?.warn(`robot: dispose failed on restart: ${String(error)}`)
           }
           this.handles.delete(sessionId)
         }
         this.forgetSession(sessionId)
-        await this.reply(message, '会话已重启（历史保留在 DSH 中）。', anchor)
+        await this.reply('会话已重启（历史保留在 DSH 中）。', anchor)
         return
       }
     }

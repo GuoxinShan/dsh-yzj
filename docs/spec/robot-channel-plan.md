@@ -55,7 +55,7 @@
 - 密钥生命周期：appSecret 创建时一次性展示；泄露处理统一为删除重建（无轮换）。文档明示 webhook「仅管理员可见」。
 - 频控：群机器人 30 条/分钟（对话机器人未文档化，spike 观测）。
 
-### 1.6 顺带发现：官方待办 API（影响 `待办后端迁移说明.md`）
+### 1.6 顺带发现：官方待办 API（影响 `../migration/todo-backend-migration.md`）
 
 `/opendocs/docs/api/im/im-todo.md`：`generatetodo.json / action.json / checkcreatetodo.json` 三接口。
 
@@ -311,9 +311,9 @@ robotId 与 CLI groupId 的 ID 空间映射；创建流程的公网测试是否�
 
 ## 5. 对现有文档的修订项
 
-- `云之家-dsh集成整体方案.md` §5.3「下期替换：第一层轮询替换为真推送」→ 修正为混合模式（§3.1）；§8 补本文链接与建议卡协议。
-- `待办后端迁移说明.md` §4 迁移步骤 → 增加原生待办 API 后端选项及企业门槛/不可逆状态机注意事项（§1.6）；§5「变更 webhook」标注官方 API 亦无。
-- `gap-设计方案与实现对照.md` → 机器人通道立项后补对照节。
+- `integration-master-plan.md` §5.3「下期替换：第一层轮询替换为真推送」→ 修正为混合模式（§3.1）；§8 补本文链接与建议卡协议。
+- `../migration/todo-backend-migration.md` §4 迁移步骤 → 增加原生待办 API 后端选项及企业门槛/不可逆状态机注意事项（§1.6）；§5「变更 webhook」标注官方 API 亦无。
+- `../status/gap-analysis.md` → 机器人通道立项后补对照节。
 
 ## 6. 参考来源
 
@@ -322,3 +322,31 @@ robotId 与 CLI groupId 的 ID 空间映射；创建流程的公网测试是否�
 - openclaw-yzj v2026.4.9 源码（本地 `.openclaw-yzj/`，MIT）：`ws-url.ts`、`signature.ts`、`websocket-client.ts`、`dedupe-store.ts`、`monitor.ts`、`inbound-dispatcher.ts`、`onboarding.ts`
 - yzj-cli v0.1.3 实测：无 robot 命令（`unrecognized subcommand 'robot'`）
 - 整体方案 §8、§5.3、§5.5；待办后端迁移说明 v1.0
+
+---
+
+## 7. 实现状态（R1 MVP host 面已落地，2026-08-16）
+
+> 代码：`packages/robot-yzj`（host 包，bundle 第 5 行挂载，`ctx.yzjRobot` 服务）；验收证据见 `../status/gap-analysis.md` §17。设计基线 = 本文 §3.2/§3.6 的 DM 子集（S1 持久 session / S2 ack-then-push / S3 命令族子集 / S5 触发 / S8 命令解析安全）。
+
+### 7.1 已实现面
+
+| 模块 | 内容 |
+|---|---|
+| `src/protocol.ts` | 实测帧分类（`auth` / `pong` / `message+lastUpdateTime` / `directPush robotMessage` / `directPush msgChg`）、`deriveWebSocketUrl`、`msgParam` 回复链解析（含 `replyRootMsgId`）、TTL msgId 去重 |
+| `src/socket.ts` | 重连管理：30s `{cmd:"ping"}` 心跳、陈旧检测（120s 无帧强制重连）、指数退避（1s 起、30s 封顶）、停止清空全部定时器；socket/timer/clock 全可注入 |
+| `src/outbound.ts` | sendMsgUrl 出站：`msgtype:2` 信封、`param/paramType:3` 引用卡、`notifyParams` 定向、响应 msgId 提取、4000 字分片（上限实测 5000–6000，`1401002` 映射 too-long）、串行化限流（默认 1.2s/条） |
+| `src/router.ts` | 每 (robot, user) DM 持久 session（id `yzj-robot-<robot>-<user>`）；ack-then-push（ack 即 is-thinking 面；`whenIdle()` 后按 seq 水位收 `assistant/message` 文本推回，防重发）；独立成句 bang 命令 `!help/!status/!mute/!unmute/!restart`；allowFrom 鉴权（默认解析 CLI 登录用户 openId，其余拒绝且不建 session）；`dispose()` 清全部句柄 |
+| `src/index.ts` | `ctx.yzjRobot`（`getStatus/send/dmSession`）+ Config（`sendMsgUrl`/`enabled`/`allowFrom`）+ `ctx.effect` 生命周期（停用即断连清态） |
+
+### 7.2 挂机观察补充（探针 19 分钟）
+
+- WS 零断连（pong 30s 稳定）——spike ① 长稳定性的部分证据；
+- 新帧型 `extSystemMsg`（`user_status` 系统通知）——分类器按 `other` 容忍；
+- **未 ack 的 `msgChg`（`needAck:true, seq:N`）被服务端每 ~90s 重推同一 seq**——ack 帧格式未实测；MVP 不消费 msgChg，仅为日志噪音；**ack 实现列入 R2**（抓包确认形状后补）。
+
+### 7.3 未实现（对应 §3.5 分期）
+
+- 面板机器人设置卡 + `/yzj` RPC 端点（`robot-status`/`robot-send`/`robot-config`）→ R1 UI 半（下一步）；
+- 群场景（群聊锚定、`!fork`/`!routines`、ambient session、群内建议卡）→ R2；
+- 卡片消息（type 25）、watcher 混合角标 → R2/R3。

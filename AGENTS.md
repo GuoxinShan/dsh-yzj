@@ -1,6 +1,6 @@
 # AGENTS.md
 
-dsh-yzj 是 DeepSeek Harness 的独立插件 bundle 仓库：`yzj-cli` 桥接、六域 + todo 的模型面工具族（写确认流）、云之家浏览器 UI（富卡片 + 工作台面板）。一切能力经 Cordis 插件交付——bridge 提供服务、tool-yzj 注册工具、ui-yzj 双面呈现、bundle 挂成 profile patch 层；不修改 harness 本体。动手前先读 [README.md](README.md) 与 [docs/云之家-dsh集成整体方案.md](docs/云之家-dsh集成整体方案.md)；实现与设计的分歧记录在 [docs/gap-设计方案与实现对照.md](docs/gap-设计方案与实现对照.md)。
+dsh-yzj 是 DeepSeek Harness 的独立插件 bundle 仓库：`yzj-cli` 桥接、六域 + todo 的模型面工具族（写确认流）、云之家浏览器 UI（富卡片 + 工作台面板）。一切能力经 Cordis 插件交付——bridge 提供服务、tool-yzj 注册工具、ui-yzj 双面呈现、bundle 挂成 profile patch 层；不修改 harness 本体。**动手前先读 [docs/README.md](docs/README.md)（文档索引与阅读顺序）**；实现与设计的分歧记录在 [docs/status/gap-analysis.md](docs/status/gap-analysis.md)。
 
 ## Spec-driven：文档就是仓库的主体
 
@@ -8,11 +8,10 @@ dsh-yzj 是 DeepSeek Harness 的独立插件 bundle 仓库：`yzj-cli` 桥接、
 
 1. **文档先于代码**：新功能先在 `docs/` 落设计（目标、契约、验收口径），再写实现；实现过程中设计变更，**先改文档再改代码**，同一提交。
 2. **文档即接口**：下一个读这个仓库的是另一个 agent，它以 `docs/` 为首要输入。文档陈旧 = 下一个 agent 必然做错。每个提交自问：「只读 docs/ 的人（agent）能准确重建当前系统的行为吗？」不能，就补。
-3. **docs/ 目录义务**（各自职责，改动对应面时同提交更新）：
-   - `云之家-dsh集成整体方案.md` — 设计基线（需求、旅程、验收基准）；
-   - `待办功能设计.md` — todo 域设计与已拍板决策（§11.2 决策表）；
-   - `待办后端迁移说明.md` — demo 后端→原生后端的分层架构与格式事实（§3 实测清单）；
-   - `gap-设计方案与实现对照.md` — 设计×实现的分歧与验收证据，**每个功能提交都应在此留痕**；
+3. **docs/ 目录义务**（职责与阅读顺序见 [docs/README.md](docs/README.md)，改动对应面时同提交更新）：
+   - `spec/` — 设计基线：`integration-master-plan.md`（整体方案/验收基准）、`todo-design.md`（todo 域 + §11.2 决策表）、`robot-channel-plan.md`（机器人通道调研）；
+   - `migration/` — 架构演进：`todo-backend-migration.md`（demo→原生后端分层 + §3 实测格式事实）；
+   - `status/` — `gap-analysis.md`：设计×实现分歧与验收证据，**每个功能提交都应在此留痕**；
    - `pitfalls/` — 踩坑库（见 Conventions「踩坑记录制度」）。
 4. **决策必须留档**：拍板（设计取舍、风险分级、命名）写进对应设计文档的决策表，附理由；不允许只存在于提交信息或对话里的决策。
 5. **不写无人维护的文档**：文档要么随代码演进，要么删掉；「大概如此」的描述比没有更糟（下一个 agent 会信以为真）。
@@ -30,8 +29,11 @@ packages/       @dsh-yzj/* workspace 包（均 private、ESM）
   ui-yzj/         dsh.client 双面包：node half 为 /yzj RPC 通道 + write-gate，
                   browser half 为 toolview 富卡片 + 悬浮球工作台面板
   bundle/         可安装 profile patch 层（cordis.patch.yml）+ 改造版 yzj-cli skill
-docs/           中文设计文档（本仓库的主体，见「Spec-driven」）：整体方案、待办功能设计、gap 对照、待办后端迁移
-docs/pitfalls/    实现级坑库（pitfall-NNN-*.md，目录/文件名英文）——动手前先查，解决新坑后回写（见 Conventions「踩坑记录制度」）
+docs/           设计文档，本仓库的主体（见「Spec-driven」；索引与阅读顺序：docs/README.md）
+  spec/           设计基线：integration-master-plan / todo-design / robot-channel-plan
+  migration/       架构演进：todo-backend-migration（demo→原生后端分层 + 实测格式事实）
+  status/          gap-analysis：设计×实现分歧与验收证据（每功能提交留痕）
+  pitfalls/        实现级坑库（pitfall-NNN-*.md）——动手前先查，解决新坑后回写（见 Conventions「踩坑记录制度」）
 spike/          预研探针（robot/ 为机器人通道调研）
 .acceptance/    Playwright 浏览器验收脚本（verify-*.mjs）+ 提交为证据的截图（shots-*/）
 .openclaw-yzj/  未纳入 git 的本地参考工程（OpenClaw 机器人通道原型），不属于 workspace，勿改动
@@ -75,7 +77,7 @@ node .acceptance/verify-real-data.mjs   # 需运行中的 GUI + 已登录 yzj-cl
 - **有界输出**：每个工具产出有界 digest 并把裁剪后的结构化载荷经 `output.presentationMeta` 投影给 UI；上限（timeoutMs / maxRenderChars / maxMetaChars）是 schema 校验的 Config 字段，不是常量。
 - **RPC 通道只过无损 JSON**：`/yzj` 通道两向都不携带 harness 活对象；先取所需叶子字段，再构造自有数据对象，绝不整体序列化 Context/Session/Service。
 - **新工具清单**：域模块实现 → guard 风险表（若写）→ `cards.tsx` keyed 卡片视图 → 包 README 工具清单同步 → 测试。
-- **todo 为 demo 阶段**：后端是多维表格「待办任务库」（首用自动开通）；工具核、`ctx.yzjTodo` 服务与面板任务库切换器共享 active-library holder，agent 写入跟随当前激活库。迁移方案见 [docs/待办后端迁移说明.md](docs/待办后端迁移说明.md)。
+- **todo 为 demo 阶段**：后端是多维表格「待办任务库」（首用自动开通）；工具核、`ctx.yzjTodo` 服务与面板任务库切换器共享 active-library holder，agent 写入跟随当前激活库。迁移方案见 [docs/migration/todo-backend-migration.md](docs/migration/todo-backend-migration.md)。
 - **测试自跳过而非失败**：依赖真实登录 / CLI 的测试在缺失时 skip（`tools.spec.ts` 范式）；平台差异在测试内显式分支（bridge 的 fake CLI 在 Windows 经 `node` 路由）。
 - **踩坑记录制度**：[docs/pitfalls/](docs/pitfalls/README.md) 是实现级坑库，agent 必须维护它：(a) **动手前查索引**，命中相关条目先读再写代码；(b) **解决新坑必须回写**——排查中出现「现象与文档/预期不符」「超过一次构建-验证循环才定位」「jsdom/单测绿但真实环境异常」任一情形，修复后**同一提交**内新增 `pitfall-NNN-<english-slug>.md`（复现条件/根因/解法/回归覆盖四段）并更新 README 索引表；(c) 触发既有坑的解法变更时更新原条目而非另开新条。jsdom 测试通过不等于浏览器没问题（pitfall-001 的核心教训）。
 - **提交**：conventional commits（`feat(ui-yzj): …` / `fix(todo): …`），直推 main。

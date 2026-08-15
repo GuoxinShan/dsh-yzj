@@ -6,9 +6,9 @@ describe('chunkText', () => {
     expect(chunkText('hello', 100)).toEqual(['hello'])
   })
 
-  it('splits at a newline near the boundary when one exists', () => {
+  it('splits at a newline near the boundary, keeping the newline with its chunk', () => {
     const text = `${'a'.repeat(60)}\n${'b'.repeat(60)}`
-    expect(chunkText(text, 80)).toEqual(['a'.repeat(60), 'b'.repeat(60)])
+    expect(chunkText(text, 80)).toEqual([`${'a'.repeat(60)}\n`, 'b'.repeat(60)])
   })
 
   it('hard-splits when no newline sits near the boundary', () => {
