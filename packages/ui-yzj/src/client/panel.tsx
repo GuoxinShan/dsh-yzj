@@ -1102,9 +1102,20 @@ export function YzjPanel(props: YzjPanelProps) {
       ].filter(part => part !== '').join(' · ')
       const lines: string[] = []
       if (blocksResult.ok) {
-        // The CLI wraps blocks as { data: { blocks: [...] } }.
+        // The CLI wraps blocks as { data: { blocks: [...] } }. A CONTAINER
+        // block mirrors the same children twice — `childNodes` (tree) and
+        // `content` (flat array); a LEAF text node carries its string in
+        // `content`. Walk the tree when present; only descend into a
+        // container's `content` mirror when there is no tree, so every line
+        // is emitted exactly once.
         const blocksValue = asRecord(blocksResult.value)
-        const blocks = asArray(blocksValue.blocks ?? asRecord(blocksValue.data).blocks)
+        // The CLI wraps as { data: { blocks: [...] } } (blocks[0] is a
+        // root `doc` container whose only children live in its `content`
+        // array). A CONTAINER block mirrors children twice — `childNodes`
+        // (tree) and `content` (flat array); a LEAF text node carries its
+        // string in `content`. Walk the tree when present, otherwise the
+        // content array — never both — so each line emits exactly once.
+        const blocks = asArray(asRecord(blocksValue.data).blocks ?? blocksValue.blocks)
         const walk = (node2: unknown): void => {
           if (typeof node2 !== 'object' || node2 === null) return
           const record = node2 as Record<string, unknown>
@@ -1112,11 +1123,23 @@ export function YzjPanel(props: YzjPanelProps) {
             const text = record.content.trim()
             if (text !== '' && (record.type === 'heading' || record.type === 'paragraph' || record.type === 'code' || record.type === 'text' || record.type === 'title')) {
               lines.push(text)
+              return
             }
           }
-          for (const value of Object.values(record)) {
+          const children = record.childNodes
+          if (Array.isArray(children) && children.length > 0) {
+            for (const child of children) walk(child)
+            return
+          }
+          for (const [key, value] of Object.entries(record)) {
+            if (key === 'content') continue // never the mirror after a leaf check
             if (Array.isArray(value)) for (const item of value) walk(item)
             else if (typeof value === 'object' && value !== null) walk(value)
+          }
+          // Container with no childNodes (e.g. the root `doc` block): its
+          // `content` array IS the only child source — descend last.
+          if (Array.isArray(record.content)) {
+            for (const item of record.content) walk(item)
           }
         }
         for (const block of blocks) walk(block)

@@ -156,18 +156,20 @@ export default class YzjBridge extends Service {
    * passed verbatim to the CLI. A non-zero exit is a result, not a rejection.
    * @param command - argv after the executable and any configured `--profile`
    * prefix (e.g. `['doc', 'workspace', 'list']`).
-   * @param options - per-invocation timeout override and optional stdin body
-   * (closed immediately after writing; used for commands reading JSON from
-   * stdin).
+   * @param options - per-invocation overrides: timeout, optional stdin body
+   * (closed immediately after writing; used by commands reading JSON from
+   * stdin), and an output-char budget for legitimately large payloads (e.g.
+   * block dumps) that the default cap would truncate into unparseable JSON.
    * @returns the invocation result.
    */
   async run(
     command: readonly string[],
-    options?: { timeoutMs?: number; stdin?: string },
+    options?: { timeoutMs?: number; stdin?: string; maxOutputChars?: number },
   ): Promise<YzjRunResult> {
     const started = Date.now()
     const timeoutMs = options?.timeoutMs ?? this.config.timeoutMs
     const stdin = options?.stdin
+    const maxOutputChars = options?.maxOutputChars ?? this.config.maxOutputChars
     // On Windows, npm-global commands exist only as .cmd/.ps1/.sh shims that
     // `spawn` cannot execute; resolve the shim to its node entry once.
     const [executable, prefix] = await resolveBinary(this.config.binary)
@@ -188,9 +190,9 @@ export default class YzjBridge extends Service {
 
       const capture = (existing: string, chunk: Buffer): string => {
         const next = existing + chunk.toString('utf8')
-        if (next.length > this.config.maxOutputChars) {
+        if (next.length > maxOutputChars) {
           truncated = true
-          return next.slice(0, this.config.maxOutputChars)
+          return next.slice(0, maxOutputChars)
         }
         return next
       }
