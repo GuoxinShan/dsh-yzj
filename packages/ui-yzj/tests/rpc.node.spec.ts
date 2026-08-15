@@ -100,6 +100,46 @@ describe('createRpcHandler', () => {
     expect(result.ok).toBe(false)
   })
 
+  it('im-send forwards @ mentions with one at-open-id per @姓名 fragment (issue #4)', async () => {
+    const commands: string[][] = []
+    const ctx = new Context()
+    ;(ctx as unknown as { yzjBridge: { run: (command: readonly string[]) => Promise<RunResult> } }).yzjBridge = {
+      run: async (command: readonly string[]) => {
+        commands.push([...command])
+        return runOf({ msgId: 'm1' })
+      },
+    }
+    const gate: YzjWriteGateFace = { list: () => [], decide: () => false }
+    const handler = createRpcHandler(ctx, gate)
+    // Two @ fragments, two atOpenIds in order → forwarded verbatim.
+    const ok = await handler('im-send', {
+      groupId: 'g1', msgType: 'text', content: '@张三 评审下 @李四 的方案',
+      atOpenIds: ['open-zs', 'open-ls'],
+    }, undefined as never)
+    expect(ok.ok).toBe(true)
+    expect(commands[0]).toEqual([
+      'im', 'message', 'send', '--msg-type', 'text', '--group-id', 'g1',
+      '--content', '@张三 评审下 @李四 的方案',
+      '--at-open-id', 'open-zs', '--at-open-id', 'open-ls',
+    ])
+    // Count mismatch rejected.
+    const mismatch = await handler('im-send', {
+      groupId: 'g1', msgType: 'text', content: '@张三 评审下 @李四 的方案',
+      atOpenIds: ['open-zs'],
+    }, undefined as never)
+    expect(mismatch.ok).toBe(false)
+    // @all requires both the fragment and the flag together.
+    const all = await handler('im-send', {
+      groupId: 'g1', msgType: 'text', content: '@all 周四发布', atAll: true,
+    }, undefined as never)
+    expect(all.ok).toBe(true)
+    expect(commands[commands.length - 1]).toContain('--at-all')
+    const allNoFragment = await handler('im-send', {
+      groupId: 'g1', msgType: 'text', content: '周四发布', atAll: true,
+    }, undefined as never)
+    expect(allNoFragment.ok).toBe(false)
+  })
+
   it('write-gate + handler integrate end to end', async () => {
     const ctx = new Context()
     const gate = applyWriteGate(ctx)

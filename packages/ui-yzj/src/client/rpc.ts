@@ -28,12 +28,15 @@ export interface YzjPanelInject {
   fetchContact: (openId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** One file's data URL proxied through the authenticated CLI (fileId). */
   fetchFileData: (fileId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Send options beyond plain text (real IM: richText/file/reply/images). */
+  /** Send options beyond plain text (real IM: richText/file/reply/images/@). */
   sendMessageOpts?: {
     msgType?: 'text' | 'richText' | 'file'
     fileId?: string
     images?: string[]
     replyMsgId?: string
+    /** One per @姓名 fragment in content, in order (group chats only). */
+    atOpenIds?: string[]
+    atAll?: boolean
   }
   /** Send a message to a group from the panel composer. */
   sendMessage: (groupId: string, content: string | undefined, opts?: YzjPanelInject['sendMessageOpts']) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
@@ -97,6 +100,8 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
       ...(opts?.fileId === undefined ? {} : { fileId: opts.fileId }),
       ...(opts?.images === undefined ? {} : { images: opts.images }),
       ...(opts?.replyMsgId === undefined ? {} : { replyMsgId: opts.replyMsgId }),
+      ...(opts?.atOpenIds === undefined ? {} : { atOpenIds: opts.atOpenIds }),
+      ...(opts?.atAll !== true ? {} : { atAll: true }),
     }),
     uploadFile: (name, base64, size) => call('file-upload', { name, base64, size }),
     todoState: () => call('todo-state', {}),

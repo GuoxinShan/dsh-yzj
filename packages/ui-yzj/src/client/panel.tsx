@@ -5,7 +5,7 @@
  * fetch face and the shared store; verbs are the injected face and store
  * actions.
  */
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import {
   IconChecklistOutline14,
   IconFolderOpenOutline16,
@@ -507,16 +507,38 @@ function unreadTotalOf(value: unknown): number {
   }, 0)
 }
 
-/** Yunzhijia bracket-emoticon tokens → real emoji (messages use [握手] etc.). */
+/** Yunzhijia bracket-emoticon tokens → real emoji (messages use [握手] etc.).
+ *  Extended set (issue #1): classic IM expressions plus tokens observed in
+ *  real traffic (666/doge/衰/捂脸/裂开/机智/嘻嘻/气球/汽车/钟/话筒…).
+ *  Unmatched tokens fall back to the raw [text] — still readable. */
 const EMOJI_MAP: Record<string, string> = {
+  // smileys & emotions
   微笑: '😊', 呲牙: '😁', 大笑: '😂', 开心: '😄', 愉快: '😀', 调皮: '😜', 机智: '🤓', 得意: '😎',
   害羞: '😳', 难过: '😔', 大哭: '😭', 流泪: '😢', 愤怒: '😡', 惊讶: '😲', 惊恐: '😱', 发呆: '😶',
-  睡觉: '😴', 疑问: '🤔', 思考: '🤔', 奋斗: '💪', 加油: '💪', 强: '👊', 弱: '👎', 赞: '👍',
-  鼓掌: '👏', 抱拳: '🙏', 握手: '🤝', 胜利: '✌️', 耶: '✌️', OK: '👌', 勾: '✅', 叉: '❌',
-  心: '❤️', 爱心: '❤️', 玫瑰: '🌹', 咖啡: '☕', 茶: '🍵', 啤酒: '🍺', 干杯: '🍻', 蛋糕: '🎂',
-  庆祝: '🎉', 烟花: '🎆', 红包: '🧧', 礼物: '🎁', 飞机: '✈️', 汽车: '🚗', 太阳: '☀️', 月亮: '🌙',
-  星星: '⭐', 闪电: '⚡', 雨: '🌧️', 雪: '❄️', 云: '☁️', 风: '🍃', 西瓜: '🍉', 苹果: '🍎',
-  米饭: '🍚', 面: '🍜', 收到: '✅', 求抱抱: '🤗', 比心: '💗', 花朵: '🌸',
+  睡觉: '😴', 困: '🥱', 疑问: '🤔', 思考: '🤔', 晕: '😵', 憋气: '😤', 抓狂: '🤯', 黑线: '😑',
+  闷闷不乐: '🙁', 无语: '😮‍💨', 嘘: '🤫', 吐舌头: '😛', 委屈: '🥺', 鄙视: '🙄', 委屈哭: '🥹',
+  奋斗: '💪', 加油: '💪', 强: '👊', 弱: '👎', 赞: '👍', 差评: '👎', 鼓掌: '👏', 抱拳: '🙏',
+  握手: '🤝', 胜利: '✌️', 耶: '✌️', OK: '👌', 勾: '✅', 叉: '❌', 对: '✅', 错: '❌',
+  心: '❤️', 爱心: '❤️', 心碎: '💔', 玫瑰: '🌹', 郁金香: '🌷', 花朵: '🌸', 向日葵: '🌻',
+  咖啡: '☕', 茶: '🍵', 啤酒: '🍺', 干杯: '🍻', 蛋糕: '🎂', 汉堡: '🍔', 西瓜: '🍉', 苹果: '🍎',
+  米饭: '🍚', 面: '🍜', 火锅: '🍲', 粽子: '🍙', 月饼: '🥮',
+  庆祝: '🎉', 烟花: '🎆', 红包: '🧧', 礼物: '🎁', 蛋糕蜡烛: '🎂', 气球: '🎈', 撒花: '🎊',
+  飞机: '✈️', 汽车: '🚗', 火车: '🚄', 火箭: '🚀', 船: '⛵', 自行车: '🚲',
+  太阳: '☀️', 月亮: '🌙', 星星: '⭐', 闪电: '⚡', 雨: '🌧️', 雪: '❄️', 云: '☁️', 风: '🍃',
+  彩虹: '🌈', 伞: '☔',
+  收到: '✅', 求抱抱: '🤗', 比心: '💗', 亲亲: '😘', 飞吻: '😘', 拥抱: '🤗',
+  666: '6️⃣', doge: '🐕', 狗头: '🐕', 衰: '😞', 捂脸: '🤦', 裂开: '🥴', 嘻嘻: '😁',
+  哈哈: '😆', 嗯嗯: '😐', 呵呵: '🫤', 哦: '🫤', 无奈: '🤷', 耸肩: '🤷', 告辞: '👋',
+  再见: '👋', 拜拜: '👋', 你好: '👋', 来吧: '🤝', 稳: '👍', 牛: '🐂', 猪头: '🐷',
+  话筒: '🎤', 唱歌: '🎤', 音乐: '🎵', 跳舞: '💃', 电影: '🎬', 游戏: '🎮', 篮球: '🏀',
+  足球: '⚽', 乒乓球: '🏓', 奖杯: '🏆', 奖牌: '🏅', 第一: '🥇',
+  钟: '⏰', 闹钟: '⏰', 时间: '⏰', 日历: '📅', 电话: '📞', 手机: '📱', 电脑: '💻',
+  书: '📖', 笔: '✏️', 文件: '📄', 文档: '📄', 图片: '🖼️', 相机: '📷', 链接: '🔗',
+  定位: '📍', 家: '🏠', 公司: '🏢', 学校: '🏫', 医院: '🏥', 银行: '🏦',
+  提示: '💡', 灯泡: '💡', 火焰: '🔥', 炸弹: '💣', 刀: '🔪', 锤子: '🔨', 扳手: '🔧',
+  钥匙: '🔑', 锁: '🔒', 放大镜: '🔍', 眼睛: '👁️', 耳朵: '👂',
+  重要: '❗', 感叹号: '❗', 问号: '❓', 警告: '⚠️', 禁止: '🚫', 停止: '✋',
+  上: '⬆️', 下: '⬇️', 左: '⬅️', 右: '➡️', 完成: '✅', 进行中: '⏳', 等待: '⏳',
 }
 
 /** Render message text with [token] emoticons mapped to real emoji. */
@@ -850,6 +872,58 @@ export function YzjPanel(props: YzjPanelProps) {
     if (draft === '' && draftRef.current !== null) draftRef.current.style.height = 'auto'
   }, [draft])
 
+  // Live message sync for the OPEN conversation (issue #2): poll `type:new`
+  // anchored on the newest loaded msgId while the panel is open on the chat
+  // tab; append whatever arrived and keep the bottom pinned when the user
+  // is already there. ~30s matches the unread-badge cadence.
+  const atBottomRef = useRef(true)
+  useEffect(() => {
+    if (!open || activeTab !== 'chat' || state.groupId === '') return
+    const poll = (): void => {
+      const anchor = state.messages.length > 0
+        ? asString(asRecord(state.messages[state.messages.length - 1]).msgId)
+        : ''
+      const fetch = anchor === ''
+        ? props.fetchMessages(state.groupId, 20)
+        : props.fetchMessages(state.groupId, 20, { type: 'new', msgId: anchor })
+      void fetch.then((result) => {
+        if (!result.ok) return
+        const fresh = asArray(asRecord(result.value).list)
+        if (fresh.length === 0) return
+        const known = new Set(state.messages.map(message => String(asRecord(message).msgId)))
+        const delta = fresh.filter(message => !known.has(String(asRecord(message).msgId)))
+        if (delta.length === 0) return
+        props.actions.appendMessages(delta)
+        putMessageWindow(state.groupId, [...state.messages, ...delta], state.messagesMore)
+        // Opening the group already marks it read; also clear its row badge.
+        markGroupRead(state.groupId, delta.length)
+        props.actions.setGroups(state.groups.map(item =>
+          asString(asRecord(item).groupId) === state.groupId ? { ...asRecord(item), unreadCount: 0 } : item))
+        props.actions.setUnreadTotal(unreadTotalOf({ list: state.groups.map(item =>
+          asString(asRecord(item).groupId) === state.groupId ? { ...asRecord(item), unreadCount: 0 } : item) }))
+        if (atBottomRef.current) {
+          const list = listRef.current
+          if (list !== null) list.scrollTop = list.scrollHeight
+        }
+      })
+    }
+    const interval = window.setInterval(poll, 30_000)
+    return () => window.clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, activeTab, state.groupId, state.messages.length === 0])
+
+  // Track whether the message list is scrolled to the bottom (autoscroll
+  // follow vs. keep the user's reading position).
+  useEffect(() => {
+    const list = listRef.current
+    if (list === null || activeTab !== 'chat') return
+    const onScroll = (): void => {
+      atBottomRef.current = list.scrollHeight - list.scrollTop - list.clientHeight < 40
+    }
+    list.addEventListener('scroll', onScroll, { passive: true })
+    return () => list.removeEventListener('scroll', onScroll)
+  }, [activeTab, state.groupId])
+
   // External jumps (card 查看 → docs preview) set docId without the click
   // handler; fetch the preview when the id changes.
   useEffect(() => {
@@ -976,6 +1050,54 @@ export function YzjPanel(props: YzjPanelProps) {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [lightbox])
+
+  // @ mention candidates (issue #4): everyone who spoke in the current chat
+  // window (name → openId, deduped, self last). The CLI has no group-member
+  // list command; the speaker set is the practical roster for mentions.
+  const atCandidates = useMemo<{ name: string; openId: string }[]>(() => {
+    const seen = new Map<string, { name: string; openId: string }>()
+    for (const message of state.messages) {
+      const openId = asString(asRecord(message).fromOpenId)
+      if (openId === '') continue
+      const name = senderNames[openId] ?? ''
+      if (name !== '' && !seen.has(name)) seen.set(name, { name, openId })
+    }
+    return [...seen.values()].filter((candidate: { name: string; openId: string }) => candidate.openId !== myProfile.openId)
+  }, [state.messages, senderNames, myProfile.openId])
+
+  // @ menu state: open while the caret types an @fragment; query is the text
+  // after the last '@'.
+  const [atMenu, setAtMenu] = useState<{ query: string; replaceFrom: number } | null>(null)
+  const onDraftChange = (value: string, caret: number): void => {
+    setDraft(value)
+    if (state.groupId === '') { setAtMenu(null); return }
+    const before = value.slice(0, caret)
+    const at = before.lastIndexOf('@')
+    if (at >= 0) {
+      const query = before.slice(at + 1)
+      if (/^[\w\u4e00-\u9fa5.·-]*$/.test(query) && query.length <= 12) {
+        setAtMenu({ query, replaceFrom: at })
+        return
+      }
+    }
+    setAtMenu(null)
+  }
+  const pickAt = (candidate: { name: string; openId: string }): void => {
+    if (atMenu === null) return
+    const after = `${draft.slice(0, atMenu.replaceFrom)}@${candidate.name} ${draft.slice(atMenu.replaceFrom + 1 + atMenu.query.length)}`
+    setAtMenu(null)
+    setDraft(after)
+    draftRef.current?.focus()
+    requestAnimationFrame(() => {
+      const el = draftRef.current
+      if (el === null) return
+      const pos = atMenu.replaceFrom + candidate.name.length + 2
+      el.setSelectionRange(pos, pos)
+    })
+  }
+  const atMatches = atMenu === null ? [] : atCandidates
+    .filter(candidate => atMenu.query === '' || candidate.name.toLowerCase().includes(atMenu.query.toLowerCase()))
+    .slice(0, 6)
 
   // Esc dismisses layered UI first (emoji picker → reply bar), then closes
   // the panel itself — the standard floating-panel contract.
@@ -1346,6 +1468,8 @@ export function YzjPanel(props: YzjPanelProps) {
     replyMsgId?: string
     fileName?: string
     fileSize?: number
+    atOpenIds?: string[]
+    atAll?: boolean
   }): Promise<void> => {
     if (state.groupId === '') return
     const groupId = state.groupId
@@ -1354,6 +1478,8 @@ export function YzjPanel(props: YzjPanelProps) {
       ...(opts.fileId === undefined ? {} : { fileId: opts.fileId }),
       ...(opts.images === undefined ? {} : { images: opts.images }),
       ...(opts.replyMsgId === undefined ? {} : { replyMsgId: opts.replyMsgId }),
+      ...(opts.atOpenIds === undefined || opts.atOpenIds.length === 0 ? {} : { atOpenIds: opts.atOpenIds }),
+      ...(opts.atAll !== true ? {} : { atAll: true }),
     })
     if (!result.ok) {
       props.actions.setError(result.error.message)
@@ -1405,9 +1531,23 @@ export function YzjPanel(props: YzjPanelProps) {
   const submitMessage = (): void => {
     const content = draft.trim()
     if (content === '' || sending || uploading || state.groupId === '') return
+    // @ mentions (issue #4): one atOpenId per @姓名 fragment, in order —
+    // resolved against the chat's known senders (name → openId).
+    const atOpenIds: string[] = []
+    let atAll = false
+    for (const frag of content.match(/@[^@\s，,、]+/g) ?? []) {
+      if (frag === '@all') { atAll = true; continue }
+      const openId = atCandidates.find(candidate => frag === `@${candidate.name}`)?.openId ?? ''
+      if (openId === '') {
+        props.actions.setError(`未找到 @${frag.slice(1)} 的成员（候选来自本会话发言者）；请从 @ 菜单选择`)
+        return
+      }
+      atOpenIds.push(openId)
+    }
     setSending(true)
     const replyMsgId = replyTo?.msgId
-    void doSend(replyMsgId === undefined ? { content } : { content, replyMsgId })
+    const send = replyMsgId === undefined ? { content, atOpenIds, atAll } : { content, replyMsgId, atOpenIds, atAll }
+    void doSend(send)
       .finally(() => setSending(false))
   }
 
@@ -1988,21 +2128,65 @@ export function YzjPanel(props: YzjPanelProps) {
                     value={draft}
                     rows={1}
                     onChange={(event) => {
-                      setDraft(event.target.value)
+                      onDraftChange(event.target.value, event.target.selectionStart ?? event.target.value.length)
                       const el = event.target
                       el.style.height = 'auto'
                       el.style.height = `${Math.min(el.scrollHeight, 120)}px`
                     }}
+                    onBlur={(): void => { window.setTimeout(() => setAtMenu(null), 150) }}
                     onKeyDown={(event) => {
+                      if (atMenu !== null && atMatches.length > 0) {
+                        if (event.key === 'Escape') { setAtMenu(null); return }
+                        if (event.key === 'Tab' || (event.key === 'Enter' && !event.nativeEvent.isComposing && !event.shiftKey)) {
+                          event.preventDefault()
+                          pickAt(atMatches[0]!)
+                          return
+                        }
+                      }
                       if (event.key === 'Enter' && !event.nativeEvent.isComposing && !event.shiftKey) {
                         event.preventDefault()
                         submitMessage()
                       }
                     }}
-                    placeholder="输入消息，回车发送…"
+                    placeholder="输入消息，回车发送…（@ 提及群友，输入 @all @所有人）"
                     aria-label="输入消息"
                     disabled={sending || uploading}
                   />
+                  {atMenu !== null && (
+                    <div className={css.atMenu} role="listbox" aria-label="提及成员">
+                      {atMatches.length === 0 && (
+                        <div className={css.atHint}>{atCandidates.length === 0 ? '本会话暂无已知成员（发过言才可 @）' : '无匹配成员'}</div>
+                      )}
+                      {atMatches.map(candidate => (
+                        <button
+                          key={candidate.openId}
+                          type="button"
+                          role="option"
+                          className={css.atItem}
+                          onMouseDown={(event) => { event.preventDefault() }}
+                          onClick={() => { pickAt(candidate) }}
+                        >
+                          <span className={css.atGlyph}>{candidate.name.slice(0, 1)}</span>
+                          <span>{candidate.name}</span>
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        className={css.atItem}
+                        onMouseDown={(event) => { event.preventDefault() }}
+                        onClick={() => {
+                          if (atMenu === null) return
+                          const after = `${draft.slice(0, atMenu.replaceFrom)}@all ${draft.slice(atMenu.replaceFrom + 1 + atMenu.query.length)}`
+                          setAtMenu(null)
+                          setDraft(after)
+                          draftRef.current?.focus()
+                        }}
+                      >
+                        <span className={css.atGlyph}>@</span>
+                        <span>所有人（@all）</span>
+                      </button>
+                    </div>
+                  )}
                   <button
                     type="button"
                     className={css.composerSend}

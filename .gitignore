@@ -3,6 +3,9 @@ lib/
 *.tsbuildinfo
 dist/
 
+# sibling checkouts cloned into the workspace root (never part of this repo)
+.openclaw-yzj/
+
 # acceptance artifacts
-.acceptance/shots/
+.acceptance/shots*/
 .DS_Store

@@ -102,7 +102,9 @@ describe('todo pure helpers', () => {
   })
 
   it('sequences ids per day and appends log lines', () => {
-    expect(nextTodoId(['T-20260815-003', 'T-20260814-001'])).toBe('T-20260815-004')
+    const today = todayStr().replace(/\//g, '')
+    expect(nextTodoId([`T-${today}-003`, 'T-20200101-001'])).toBe(`T-${today}-004`)
+    expect(nextTodoId(['T-20200101-009'])).toBe(`T-${today}-001`)
     expect(appendLog('', 'first')).toBe('first')
     expect(appendLog('first', 'second')).toBe('first\nsecond')
   })

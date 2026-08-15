@@ -260,13 +260,20 @@
   white-space: nowrap;
 }
 
-/* Active row in the left list. */
+/* Active row in the left list: brand bar + bolder title + tinted ground —
+ * clearly distinct from hover (issue #3). */
 .itemActive {
   background: var(--dsw-static-deepseek-100);
+  box-shadow: inset 3px 0 0 var(--dsw-static-deepseek-500);
 }
 
 .itemActive:hover {
   background: var(--dsw-static-deepseek-100);
+}
+
+.itemActive .itemTitleText {
+  font-weight: 700;
+  color: var(--dsw-static-deepseek-600);
 }
 
 /* ── Status strips ───────────────────────────────────────────────────── */
@@ -1325,9 +1332,68 @@
 }
 
 .composerRow {
+  position: relative;
   display: flex;
   align-items: flex-end;
   gap: 6px;
+}
+
+/* @ mention menu (issue #4): floats above the composer row. */
+.atMenu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  min-width: 180px;
+  max-width: 260px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-base);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.2);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.atHint {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 15px;
+  padding: 5px 8px;
+}
+
+.atItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12.5px;
+  line-height: 1;
+  padding: 7px 8px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.atItem:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.atGlyph {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--dsw-static-deepseek-100);
+  color: var(--dsw-static-deepseek-600);
+  font-size: 11px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .composerInput {

@@ -79,6 +79,7 @@ export type YzjPanelActions = {
   setMessagesMore: (draft: YzjPanelState, more: boolean) => void
   setMessagesAnchor: (draft: YzjPanelState, anchor: string) => void
   prependMessages: (draft: YzjPanelState, messages: unknown[]) => void
+  appendMessages: (draft: YzjPanelState, messages: unknown[]) => void
   setAnchorMsgId: (draft: YzjPanelState, id: string) => void
   setUnreadTotal: (draft: YzjPanelState, total: number) => void
   setTodoState: (draft: YzjPanelState, todos: unknown[], ready: boolean, link: string, libName?: string, libScope?: string) => void
@@ -163,6 +164,10 @@ export function createYzjStore(): EngineStoreHandle<YzjPanelState, YzjPanelActio
       prependMessages: (d: YzjPanelState, messages: unknown[]) => {
         const seen = new Set(d.messages.map(message => String(asRecord(message).msgId)))
         d.messages = [...messages.filter(message => !seen.has(String(asRecord(message).msgId))), ...d.messages]
+      },
+      appendMessages: (d: YzjPanelState, messages: unknown[]) => {
+        const seen = new Set(d.messages.map(message => String(asRecord(message).msgId)))
+        d.messages = [...d.messages, ...messages.filter(message => !seen.has(String(asRecord(message).msgId)))]
       },
       setAnchorMsgId: (d: YzjPanelState, id: string) => { d.anchorMsgId = id },
       setUnreadTotal: (d: YzjPanelState, total: number) => { d.unreadTotal = total },
