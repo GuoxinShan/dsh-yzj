@@ -3,7 +3,7 @@
  * ("待办任务库" dbt) acting as the shadow task store — every invariant
  * (stable id, state machine, append-only log, #tag aggregation) is enforced
  * host-side so the backend can later be swapped for a native todo API
- * without changing the tool surface (see docs/待办后端迁移说明.md).
+ * without changing the tool surface (see docs/migration/todo-backend-migration.md).
  *
  * The same core backs the `ctx.yzjTodo` service consumed by the ui-yzj RPC
  * channel, so the conversation tools and the panel share one implementation.

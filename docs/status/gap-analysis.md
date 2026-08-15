@@ -1,6 +1,6 @@
 # 云之家-dsh 集成：设计方案 × 已有实现 对照与 Gap 分析
 
-> 对齐对象：`docs/云之家-dsh集成整体方案.md`（v1.7，预研稿，**最终验收基准**；v1.4 基础上补齐工具清单、「一切皆可拖」原则与全量拖拽完整规格）↔ 本仓库现有实现（`packages/bridge`、`packages/tool-yzj`、`packages/ui-yzj`、`packages/bundle`）
+> 对齐对象：`../spec/integration-master-plan.md`（v1.7，预研稿，**最终验收基准**；v1.4 基础上补齐工具清单、「一切皆可拖」原则与全量拖拽完整规格）↔ 本仓库现有实现（`packages/bridge`、`packages/tool-yzj`、`packages/ui-yzj`、`packages/bundle`）
 > 核验日期：2026-08-14 之后（实现开发期）
 > v1.4 增补：**UI 后续演化对照**（git `08fc7b1` → `af3bf5d`，19 个 ui-yzj commit）——面板四 tab→三 tab、悬浮球唯一入口、面板真 IM composer（用户直写）、拖入快捷动作移除、确认卡去 ID 化、未读持久化；新增 §16。v1.3 增补：**最终验收状态**（git `de3c058`）——全部可开发缺口完成：锚点定位高亮、@ 候选三组、拖入即处理引导均已落地；剩余仅机制受限项（多 chip 合并、通知卡、确认卡事件族，均为 harness 契约边界）与待拍板项（合并确认、快照决策）。全量 build/typecheck/test 通过（58 passed）。v1.2 增补：实现进展状态全量刷新（git 至 `491db61`）——P0 消息回源、P1 门禁分级 + 确认卡、通知层一/三、skill、影子任务库、dbt 预览均已落地；剩余缺口见 §15 更新清单。v1.1 增补：补全实现侧全部工具明细（§2）；新增设计补强「悬浮窗全量拖拽 → composer」（§2A，用户思路）。
 
@@ -165,7 +165,7 @@ P0 消息回源、P1 门禁分级/确认卡（含真实 E2E）/通知层一三/s
 
 ## 17. v1.5 增补｜待办功能落地（2026-08-15，用户授权自主决策后开工）
 
-§11.2 待拍板项全部拍板（结论见 `docs/待办功能设计.md` §11.2），随后完成开发：
+§11.2 待拍板项全部拍板（结论见 `../spec/todo-design.md` §11.2），随后完成开发：
 
 | 项 | 实现 | 状态 |
 |---|---|---|
@@ -173,7 +173,7 @@ P0 消息回源、P1 门禁分级/确认卡（含真实 E2E）/通知层一三/s
 | T1 todo 工具族 | `todo.ts`：`yzj_todo_list/create/update/complete` + `ctx.yzjTodo` 服务（state/ensure/create/toggle）；稳定 ID 幂等、host 状态机、追加日志、自动发现/开通任务库（`todo` 配置可显式绑定团队库）；guard +3（25 写工具） | ✅ 14 项单测（fake bridge） |
 | tag 核心理念 | `#tag` tokens 存储 + host 归一化；`yzj_todo_list(tag)` 聚合 + 面板标签轨 chips 过滤 + chip 回源携带 tags | ✅ |
 | T2 面板待办 tab | 分桶（逾期/今天/进行中/待办/已完成）+ 标签聚合 + 快捷新建（`#tag`/日期片段解析）+ 一键开通 hero + 勾选完成/重开（乐观更新）+ 整行拖 chip；`todo-state/ensure/create/toggle` RPC；确认卡 `todo` 域（状态/负责人/DDL/标签/refs）；工具卡 todo 族（45 keyed）；codec `kind:'todo'` 回源 | ✅ 8 项组件测试 |
-| demo 阶段声明与迁移 | `docs/待办后端迁移说明.md`：四层架构（工具/核心/服务/浏览器 不变 ↔ 存储适配层可换）、字段映射、8 条实测格式事实、迁移五步、API 需求清单 | ✅ |
+| demo 阶段声明与迁移 | `../migration/todo-backend-migration.md`：四层架构（工具/核心/服务/浏览器 不变 ↔ 存储适配层可换）、字段映射、8 条实测格式事实、迁移五步、API 需求清单 | ✅ |
 | T3 闭环（逾期播报/催办实测） | 链路已通（schedule + `yzj_todo_list overdue` + 催办消息走确认卡）；真实使用走查待续 | ⏳ |
 
 **第二轮验收证据（2026-08-15，隔离实例 :3091，3080 全程未动）**：
@@ -239,5 +239,25 @@ v1.6 §11.2 决策 1「双轨库」完整落地：
 
 ### 16.2 实测新发现（2026-08-15，真实库探针）
 
-- **`yzj_sheet_record_list` 丢字段值**：CLI list 输出 `records[].fields` 为 JSON 字符串，`recordLine` 解析吃成空对象，digest 只剩 record id（UI `clipJson` 同样只当文本）；此前冒烟未覆盖 sheet 记录故未暴露。修复列入待办 T0（见 `docs/待办功能设计.md` §11.1）。
+- **`yzj_sheet_record_list` 丢字段值**：CLI list 输出 `records[].fields` 为 JSON 字符串，`recordLine` 解析吃成空对象，digest 只剩 record id（UI `clipJson` 同样只当文本）；此前冒烟未覆盖 sheet 记录故未暴露。修复列入待办 T0（见 `../spec/todo-design.md` §11.1）。
 - Date 字段真实值形态为 `YYYY/MM/DD` 字符串；Contact 字段无真实实例可考，写入格式待探针（待办设计 §3/§11.3）。
+
+---
+
+## 17. 机器人通道 R1（host 面，2026-08-16）
+
+设计基线：`../spec/robot-channel-plan.md` §3.2/§3.6（DM 子集）。新增包 `packages/robot-yzj`（`ctx.yzjRobot`），bundle 第 5 行挂载。
+
+| 设计项 | 实现状态 | 证据 |
+|---|---|---|
+| WS 入站（spike ①③⑦a 协议） | ✅ `protocol.ts` 帧分类 + `socket.ts` 心跳/陈旧/退避重连 | `tests/protocol.spec.ts`（11）、`tests/socket.spec.ts`（6，含停止清定时器） |
+| 出站 sendMsgUrl（§2.3 语义） | ✅ `outbound.ts` 信封/引用卡/notify/分片/限流/msgId 提取 | `tests/outbound.spec.ts`（9） |
+| S1 DM 持久 session + replyRootMsgId 锚定素材 | ✅ `router.ts`（session id `yzj-robot-<r>-<u>`；`outboundAnchor` 记录出站 msgId） | `tests/router.spec.ts`（7） |
+| S2 ack-then-push + seq 水位防重发 | ✅ ack 即时引用回复；`whenIdle()` 后按 `assistant/message` seq 水位推回 | `router.spec.ts`（watermark 两用例） |
+| S3 命令族子集 `!help/!status/!mute/!unmute/!restart` | ✅ 独立成句才生效；restart dispose 旧 session | `router.spec.ts`（help/mute 两用例） |
+| S5/S8 触发与安全 | ✅ allowFrom 默认 CLI 登录用户（经 bridge `contact user get`）；非白名单拒绝且不建 session | `router.spec.ts`（拒绝用例） |
+| 生命周期无残留 | ✅ `ctx.effect` → stop → socket 停 + router dispose | `socket.spec.ts`（stop 清定时器） |
+
+已知缺口（转 §7.3 / R2）：msgChg `needAck` 的 ack 帧未实现（服务端 ~90s 重推，仅噪音）；面板设置卡与 `/yzj` robot 端点未做（R1 UI 半）；群场景全未做。
+
+验收口径（真实通道，待 GUI 集成后走）：在「个人助手」DM 发非命令消息 → 3s 内 ack（引用原消息）→ agent 轮次收敛 → 回答以机器人身份引用推回；`!mute` 后静默、直接再发解除；非白名单账号拒绝。

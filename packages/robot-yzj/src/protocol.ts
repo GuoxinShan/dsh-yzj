@@ -100,6 +100,7 @@ export function classifyFrame(raw: string): RobotFrame {
     if (msg === null || typeof msg !== 'object') return { kind: 'other', raw }
     const m = msg as Record<string, unknown>
     if (typeof m.msgId !== 'string' || typeof m.content !== 'string') return { kind: 'other', raw }
+    const msgParam = typeof m.msgParam === 'string' ? m.msgParam : undefined
     const message: RobotInboundMessage = {
       type: typeof m.type === 'number' ? m.type : 2,
       robotId: typeof m.robotId === 'string' ? m.robotId : '',
@@ -111,9 +112,9 @@ export function classifyFrame(raw: string): RobotFrame {
       content: m.content,
       groupType: typeof m.groupType === 'number' ? m.groupType : 3,
       groupId: typeof m.groupId === 'string' ? m.groupId : '',
-      ...(typeof m.msgParam === 'string' ? { msgParam: m.msgParam } : {}),
+      ...(msgParam === undefined ? {} : { msgParam }),
     }
-    return { kind: 'robot-message', message, ...parseReplyMeta(m.msgParam) }
+    return { kind: 'robot-message', message, ...parseReplyMeta(msgParam) }
   }
   if (cmd === 'directPush' && record.type === 'msgChg') {
     const msg = record.msg

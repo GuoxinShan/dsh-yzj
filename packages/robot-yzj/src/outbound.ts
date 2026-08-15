@@ -152,8 +152,10 @@ export function chunkText(text: string, maxChars: number): string[] {
   while (rest.length > maxChars) {
     let cut = rest.lastIndexOf('\n', maxChars)
     if (cut < Math.floor(maxChars / 2)) cut = maxChars
-    chunks.push(rest.slice(0, cut))
-    rest = rest.slice(cut)
+    // Keep a boundary newline with the chunk it ends (concatenation stays lossless).
+    const includeSep = cut < maxChars && rest[cut] === '\n' ? 1 : 0
+    chunks.push(rest.slice(0, cut + includeSep))
+    rest = rest.slice(cut + includeSep)
   }
   if (rest !== '') chunks.push(rest)
   return chunks

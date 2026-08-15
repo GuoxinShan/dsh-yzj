@@ -17,7 +17,7 @@ function fakeAgents(getStatus: () => 'idle' | 'running') {
   return {
     created,
     get: () => undefined,
-    createAgent: async () => {
+    create: async () => {
       const agent = {
         status: getStatus(),
         followup: vi.fn(),

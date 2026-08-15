@@ -26,7 +26,7 @@ CLI 0.1.3 的 JSON 输出**没有统一信封**，同一条命令族里混着三
 
 - 解析层一律**双形态兼容**：`Array.isArray(json) ? json : (json.list ?? json.data?.xxx ?? [])`。
 - 需要新字段/新命令时，**先用真实 CLI 打一发看原始 JSON**（`.acceptance/` 下留了探针脚本传统），不要照工具的 `--help` 描述写。
-- 每条格式事实同时是正式待办 API 的需求证据，回写 `docs/待办后端迁移说明.md` §3。
+- 每条格式事实同时是正式待办 API 的需求证据，回写 `../migration/todo-backend-migration.md` §3。
 
 ## 回归覆盖
 

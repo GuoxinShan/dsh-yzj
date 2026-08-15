@@ -94,19 +94,19 @@ export class YzjRobot extends Service {
 
   /** Start the channel (idempotent); called by apply() and by later restarts. */
   start(): void {
-    if (this.socket !== null || this.config.sendMsgUrl === '' || !this.config.enabled) return
-    const sender = new RobotSender({ sendMsgUrl: this.config.sendMsgUrl })
+    const url = this.config.sendMsgUrl
+    if (this.socket !== null || url === undefined || url === '' || !this.config.enabled) return
+    const sender = new RobotSender({ sendMsgUrl: url })
     const router = new RobotRouter({
-      ownerCtx: this.ctx,
       agents: this.ctx.agents,
       sender,
-      allowFrom: () => this.resolveAllowFrom(),
+      allowFrom: async () => this.resolveAllowFrom(),
       ackText: DEFAULT_ACK_TEXT,
       denyText: DEFAULT_DENY_TEXT,
       logger: { warn: message => this.ctx.logger.warn(message) },
     })
     const socket = new RobotSocket({
-      url: deriveWebSocketUrl(this.config.sendMsgUrl),
+      url: deriveWebSocketUrl(url),
       onMessage: message => {
         void router.handle(message)
       },
@@ -120,12 +120,14 @@ export class YzjRobot extends Service {
     socket.start()
   }
 
-  /** Stop and clear the channel (idempotent). */
+  /** Stop and clear the channel (idempotent). Disposes router-owned agents. */
   stop(): void {
     this.socket?.stop()
     this.socket = null
-    this.router = null
     this.sender = null
+    const router = this.router
+    this.router = null
+    if (router !== null) void router.dispose()
   }
 
   /** allowFrom policy: explicit config list, else the CLI login user once. */

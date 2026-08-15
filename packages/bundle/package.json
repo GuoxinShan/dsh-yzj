@@ -29,6 +29,7 @@
   },
   "dependencies": {
     "@dsh-yzj/bridge": "link:../bridge",
+    "@dsh-yzj/robot-yzj": "link:../robot-yzj",
     "@dsh-yzj/tool-yzj": "link:../tool-yzj",
     "@dsh-yzj/ui-yzj": "link:../ui-yzj"
   }

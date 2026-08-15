@@ -47,12 +47,36 @@ importers:
       '@dsh-yzj/bridge':
         specifier: link:../bridge
         version: link:../bridge
+      '@dsh-yzj/robot-yzj':
+        specifier: link:../robot-yzj
+        version: link:../robot-yzj
       '@dsh-yzj/tool-yzj':
         specifier: link:../tool-yzj
         version: link:../tool-yzj
       '@dsh-yzj/ui-yzj':
         specifier: link:../ui-yzj
         version: link:../ui-yzj
+
+  packages/robot-yzj:
+    dependencies:
+      '@deepseek-ai/cordis':
+        specifier: link:../../../deepseek-harness/vendor/cordis
+        version: link:../../../deepseek-harness/vendor/cordis
+      '@deepseek-ai/dsh-agent':
+        specifier: link:../../../deepseek-harness/packages/core/agent
+        version: link:../../../deepseek-harness/packages/core/agent
+      '@deepseek-ai/dsh-llm':
+        specifier: link:../../../deepseek-harness/packages/llm/llm
+        version: link:../../../deepseek-harness/packages/llm/llm
+      '@deepseek-ai/dsh-session':
+        specifier: link:../../../deepseek-harness/packages/core/session
+        version: link:../../../deepseek-harness/packages/core/session
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../deepseek-harness/vendor/schemastery
+        version: link:../../../deepseek-harness/vendor/schemastery
+      '@dsh-yzj/bridge':
+        specifier: workspace:^
+        version: link:../bridge
 
   packages/tool-yzj:
     dependencies:
