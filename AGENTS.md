@@ -2,6 +2,21 @@
 
 dsh-yzj 是 DeepSeek Harness 的独立插件 bundle 仓库：`yzj-cli` 桥接、六域 + todo 的模型面工具族（写确认流）、云之家浏览器 UI（富卡片 + 工作台面板）。一切能力经 Cordis 插件交付——bridge 提供服务、tool-yzj 注册工具、ui-yzj 双面呈现、bundle 挂成 profile patch 层；不修改 harness 本体。动手前先读 [README.md](README.md) 与 [docs/云之家-dsh集成整体方案.md](docs/云之家-dsh集成整体方案.md)；实现与设计的分歧记录在 [docs/gap-设计方案与实现对照.md](docs/gap-设计方案与实现对照.md)。
 
+## Spec-driven：文档就是仓库的主体
+
+**本仓库由 agent 维护、面向 agent 消费——不会有任何人类阅读这里的代码。** 一切设计、决策与知识都以文档形态沉淀，代码只是文档的机器执行形式。由此推出 agent 的硬性义务：
+
+1. **文档先于代码**：新功能先在 `docs/` 落设计（目标、契约、验收口径），再写实现；实现过程中设计变更，**先改文档再改代码**，同一提交。
+2. **文档即接口**：下一个读这个仓库的是另一个 agent，它以 `docs/` 为首要输入。文档陈旧 = 下一个 agent 必然做错。每个提交自问：「只读 docs/ 的人（agent）能准确重建当前系统的行为吗？」不能，就补。
+3. **docs/ 目录义务**（各自职责，改动对应面时同提交更新）：
+   - `云之家-dsh集成整体方案.md` — 设计基线（需求、旅程、验收基准）；
+   - `待办功能设计.md` — todo 域设计与已拍板决策（§11.2 决策表）；
+   - `待办后端迁移说明.md` — demo 后端→原生后端的分层架构与格式事实（§3 实测清单）；
+   - `gap-设计方案与实现对照.md` — 设计×实现的分歧与验收证据，**每个功能提交都应在此留痕**；
+   - `pitfalls/` — 踩坑库（见 Conventions「踩坑记录制度」）。
+4. **决策必须留档**：拍板（设计取舍、风险分级、命名）写进对应设计文档的决策表，附理由；不允许只存在于提交信息或对话里的决策。
+5. **不写无人维护的文档**：文档要么随代码演进，要么删掉；「大概如此」的描述比没有更糟（下一个 agent 会信以为真）。
+
 ## Pre-release stance：地基优先于爆炸半径
 
 **首个 tag 发布时删除本节。** 0.x 无外部消费者，优先做对的地基而非兼容垫片：可自由重命名并同步所有引用。发布前必须把各包指向 `../deepseek-harness` 的 `link:` 依赖替换为已发布版本范围，并验证 `dsh plugin add` 能从 registry 安装（见 README「已知限制」）。
@@ -15,7 +30,7 @@ packages/       @dsh-yzj/* workspace 包（均 private、ESM）
   ui-yzj/         dsh.client 双面包：node half 为 /yzj RPC 通道 + write-gate，
                   browser half 为 toolview 富卡片 + 悬浮球工作台面板
   bundle/         可安装 profile patch 层（cordis.patch.yml）+ 改造版 yzj-cli skill
-docs/           中文设计文档：整体方案、待办功能设计、gap 对照、待办后端迁移
+docs/           中文设计文档（本仓库的主体，见「Spec-driven」）：整体方案、待办功能设计、gap 对照、待办后端迁移
 docs/pitfalls/    实现级坑库（pitfall-NNN-*.md，目录/文件名英文）——动手前先查，解决新坑后回写（见 Conventions「踩坑记录制度」）
 spike/          预研探针（robot/ 为机器人通道调研）
 .acceptance/    Playwright 浏览器验收脚本（verify-*.mjs）+ 提交为证据的截图（shots-*/）
@@ -65,7 +80,7 @@ node .acceptance/verify-real-data.mjs   # 需运行中的 GUI + 已登录 yzj-cl
 - **踩坑记录制度**：[docs/pitfalls/](docs/pitfalls/README.md) 是实现级坑库，agent 必须维护它：(a) **动手前查索引**——任务涉及面板 hooks/浏览器渲染（React #310 前向引用形状）、store 持久化 schema 变更（整体替换回放）、解析 CLI 输出（三种形态/静默丢弃）、bridge 大载荷（上限截断成空结果）时，先读对应 pitfall 条目再写代码；(b) **解决新坑必须回写**——排查中出现「现象与文档/预期不符」「超过一次构建-验证循环才定位」「jsdom/单测绿但真实环境异常」任一情形，修复后**同一提交**内新增 `pitfall-NNN-<english-slug>.md`（复现条件/根因/解法/回归覆盖四段）并更新 README 索引表；(c) 触发既有坑的解法变更时更新原条目而非另开新条。jsdom 测试通过不等于浏览器没问题（pitfall-001 的核心教训）。
 - **提交**：conventional commits（`feat(ui-yzj): …` / `fix(todo): …`），直推 main。
 - 文件以恰好一个换行符结尾。
-- **文档随代码走**：行为变化（工具面、配置键、RPC 端点、确认流）同提交更新根 README 与对应包 README；实现与设计分歧更新 gap 对照文档。
+- **文档随代码走**（Spec-driven 的执行面，与「Spec-driven」节配合）：行为变化（工具面、配置键、RPC 端点、确认流、面板交互）同提交更新根 README、对应包 README 与 `docs/` 对应文档；实现与设计分歧更新 gap 对照文档；新功能先文档后代码。
 
 ## Type safety and documentation
 
