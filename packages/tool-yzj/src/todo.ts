@@ -334,21 +334,29 @@ export async function resolveLibrary(
     throw new Error(`todo: 配置的库 doc=${config.docId} table=${config.tableId} 校验失败（不存在或缺少 ${F.id} 字段）；请修正 todo 配置或清空以走自动发现`)
   }
 
-  // 2. Pick the workspace to search/create in.
-  let workspace = config.workspace
-  if (workspace === undefined) {
+  // 2. Pick the workspace(s) to search/create in: all personal workspaces
+  // (the CLI's first entry is not necessarily 我的知识), bounded to 8.
+  let workspaces: { id: string; name: string }[] = []
+  if (config.workspace !== undefined) {
+    workspaces = [{ id: config.workspace, name: '' }]
+  } else {
     const ran = await runTodoJson(ctx, budget, 'doc workspace list', ['doc', 'workspace', 'list', '--type', 'personal'])
     if (!ran.ok) throw new Error(ran.value.content)
     // The CLI returns a bare array here (unlike most list commands).
     const list = Array.isArray(ran.json) ? ran.json : asArray(asRecord(ran.json).list)
-    const first = asRecord(list[0])
-    workspace = asString(first.id)
-    if (workspace === '') throw new Error('todo: 未找到个人知识库，无法定位待办任务库；请在 todo 配置中显式指定 workspace')
+    workspaces = list
+      .map(node => { const row = asRecord(node); return { id: asString(row.id), name: asString(row.name) } })
+      .filter(ws => ws.id !== '')
+      .slice(0, 8)
+    if (workspaces.length === 0) throw new Error('todo: 未找到个人知识库，无法定位待办任务库；请在 todo 配置中显式指定 workspace')
   }
 
-  // 3. Find an existing 待办任务库 doc with a usable table.
-  const listRan = await runTodoJson(ctx, budget, 'doc list', ['doc', 'list', '--workspace', workspace])
-  if (listRan.ok) {
+  // 3. Find an existing 待办任务库 doc with a usable table (scan every
+  // candidate workspace before provisioning, so a library in any personal
+  // KB is found instead of duplicated).
+  for (const ws of workspaces) {
+    const listRan = await runTodoJson(ctx, budget, 'doc list', ['doc', 'list', '--workspace', ws.id])
+    if (!listRan.ok) continue
     // `doc list` also returns a bare array of nodes.
     const nodes = Array.isArray(listRan.json) ? listRan.json : asArray(asRecord(listRan.json).list)
     for (const node of nodes) {
@@ -373,9 +381,9 @@ export async function resolveLibrary(
     throw new Error('todo: 待办任务库尚未开通；创建第一条待办即可自动开通')
   }
 
-  // 4. Provision the whole library.
+  // 4. Provision the whole library in the first candidate workspace.
   const createRan = await runTodoJson(ctx, budget, 'sheet create', [
-    'sheet', 'create', '--workspace', workspace, '--title', LIBRARY_TITLE,
+    'sheet', 'create', '--workspace', workspaces[0]!.id, '--title', LIBRARY_TITLE,
   ])
   if (!createRan.ok) throw new Error(createRan.value.content)
   const docId = asString(asRecord(createRan.json).id)

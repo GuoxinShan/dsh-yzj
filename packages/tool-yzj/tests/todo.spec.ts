@@ -183,6 +183,38 @@ describe('yzj_todo_create', () => {
     expect(records[0]!.fieldsValue['todo_id']).toMatch(/^T-\d{8}-001$/)
   })
 
+  it('scans every personal workspace before provisioning — a library in the second workspace is found, not duplicated', async () => {
+    let provisioned = false
+    const { tools, bridge } = mount((command) => {
+      const key = command.slice(0, 2).join(' ')
+      if (key === 'doc workspace') {
+        return ok({ list: [{ id: 'wsA', name: 'AI速记知识库' }, { id: 'wsB', name: '我的知识' }] })
+      }
+      if (key === 'doc list') {
+        // wsA has no library; wsB has one with a usable 任务 table.
+        return command.includes('wsA')
+          ? ok({ list: [{ id: 'other', title: '速记', fileSuffix: 'otl' }] })
+          : ok({ list: [{ id: 'docB', title: '待办任务库', fileSuffix: 'dbt' }] })
+      }
+      if (key === 'sheet get') {
+        return command.includes('docB')
+          ? ok({ sheets: [{ id: 2, name: '任务', fields: [{ name: 'todo_id' }] }] })
+          : new Error('sheet get on unexpected doc')
+      }
+      if (key === 'sheet create') { provisioned = true; return new Error('must not provision') }
+      if (key === 'sheet record' && command[2] === 'list') return ok({ page_token: '', records: [] })
+      if (key === 'sheet record') return ok({ records: [{ id: 'r1', fields: '{}' }] })
+      throw new Error(`unexpected ${command.join(' ')}`)
+    })
+    const create = tools.find(tool => tool.name === 'yzj_todo_create')!
+    const result = await create.execute({ title: '复用既有库' })
+    expect(result.content).toContain('created 待办')
+    expect(provisioned).toBe(false)
+    const writeCall = bridge.calls.find(call => call.join(' ').startsWith('sheet record create'))
+    expect(writeCall!.includes('docB')).toBe(true)
+    expect(writeCall!.includes('wsA')).toBe(false)
+  })
+
   it('returns the existing todo on an idempotent hit', async () => {
     const { tools } = mount(resolvedLibraryScript({
       'sheet record': (command) => {
