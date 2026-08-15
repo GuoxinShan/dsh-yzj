@@ -1,7 +1,7 @@
 /**
  * Wire protocol for the Yunzhijia robot channel: inbound frame shapes measured
  * against `wss://<host>/xuntong/websocket?yzjtoken=…` (see
- * docs/机器人通道调研与双向打通方案.md §4.1), the sendMsgUrl derivation, and
+ * docs/spec/robot-channel-plan.md §4.1), the sendMsgUrl derivation, and
  * the inbound msgId dedupe store. Pure functions and plain data only — no
  * sockets, no timers, so every rule here is directly unit-testable.
  * @module @dsh-yzj/robot-yzj/protocol

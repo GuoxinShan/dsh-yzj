@@ -28,17 +28,18 @@ packages/       @dsh-yzj/* workspace 包（均 private、ESM）
   tool-yzj/       模型面工具族 + 写操作确认 guard（风险表）+ ctx.yzjTodo 服务
   ui-yzj/         dsh.client 双面包：node half 为 /yzj RPC 通道 + write-gate，
                   browser half 为 toolview 富卡片 + 悬浮球工作台面板
+  robot-yzj/      机器人通道（入站 WS + 出站 webhook，见 docs/spec/robot-channel-plan.md）
   bundle/         可安装 profile patch 层（cordis.patch.yml）+ 改造版 yzj-cli skill
 docs/           设计文档，本仓库的主体（见「Spec-driven」；索引与阅读顺序：docs/README.md）
   spec/           设计基线：integration-master-plan / todo-design / robot-channel-plan
   migration/       架构演进：todo-backend-migration（demo→原生后端分层 + 实测格式事实）
   status/          gap-analysis：设计×实现分歧与验收证据（每功能提交留痕）
   pitfalls/        实现级坑库（pitfall-NNN-*.md）——动手前先查，解决新坑后回写（见 Conventions「踩坑记录制度」）
-spike/          预研探针（robot/ 为机器人通道调研）
-.acceptance/    Playwright 浏览器验收脚本（verify-*.mjs）+ 提交为证据的截图（shots-*/）
-.openclaw-yzj/  未纳入 git 的本地参考工程（OpenClaw 机器人通道原型），不属于 workspace，勿改动
+.acceptance/    Playwright 浏览器验收脚本（verify-*.mjs）+ 验收证据截图
 tsdown.shared.ts  客户端 closure-factory bundle 预设（与 harness client 预设对齐）
 ```
+
+本机可能存在但不属于仓库的内容（如兄弟参考工程、spike 本地状态）由 `.gitignore` 表达，不在此罗列。
 
 ## Commands
 
