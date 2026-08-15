@@ -9,3 +9,8 @@ dist/
 # acceptance artifacts
 .acceptance/shots*/
 .DS_Store
+
+# robot spike local state — credentials and tools never enter git
+spike/robot/secret.local.json
+spike/robot/bin/
+spike/robot/logs/
