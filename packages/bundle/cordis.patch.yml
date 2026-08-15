@@ -18,3 +18,8 @@
     # graph by the modules registry).
     - id: ui-yzj
       name: '@dsh-yzj/ui-yzj'
+
+    # Robot channel: measured WebSocket inbound + sendMsgUrl outbound, per-DM
+    # agent sessions (reply-chain continuation, bang commands, ack-then-push).
+    - id: robot-yzj
+      name: '@dsh-yzj/robot-yzj'
