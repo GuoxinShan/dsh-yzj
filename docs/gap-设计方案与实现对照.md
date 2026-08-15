@@ -174,7 +174,14 @@ P0 消息回源、P1 门禁分级/确认卡（含真实 E2E）/通知层一三/s
 | tag 核心理念 | `#tag` tokens 存储 + host 归一化；`yzj_todo_list(tag)` 聚合 + 面板标签轨 chips 过滤 + chip 回源携带 tags | ✅ |
 | T2 面板待办 tab | 分桶（逾期/今天/进行中/待办/已完成）+ 标签聚合 + 快捷新建（`#tag`/日期片段解析）+ 一键开通 hero + 勾选完成/重开（乐观更新）+ 整行拖 chip；`todo-state/ensure/create/toggle` RPC；确认卡 `todo` 域（状态/负责人/DDL/标签/refs）；工具卡 todo 族（45 keyed）；codec `kind:'todo'` 回源 | ✅ 8 项组件测试 |
 | demo 阶段声明与迁移 | `docs/待办后端迁移说明.md`：四层架构（工具/核心/服务/浏览器 不变 ↔ 存储适配层可换）、字段映射、8 条实测格式事实、迁移五步、API 需求清单 | ✅ |
-| T3 闭环（逾期播报/催办实测） | 链路已通（schedule + `yzj_todo_list overdue` + 催办消息走确认卡） | ⏳ 待真实使用走查 |
+| T3 闭环（逾期播报/催办实测） | 链路已通（schedule + `yzj_todo_list overdue` + 催办消息走确认卡）；真实使用走查待续 | ⏳ |
+
+**第二轮验收证据（2026-08-15，隔离实例 :3091，3080 全程未动）**：
+
+- **浏览器旅程 14/14 PASS**（`verify-todo-browser.mjs`）：悬浮球 → 四 tab → 待办 tab 真实库加载（非开通 hero）→ 快捷新建（`#tag`+日期片段解析预览「将创建」）→ 创建落库 → 标签轨过滤 → 勾选完成 → 拖拽行就绪 → demo 声明与任务库链接 → 零页面错误。
+- **视觉健全性 6/6 PASS**（`verify-todo-style.mjs`，DOM 计算样式）：快捷创建圆角卡片、品牌蓝添加按钮、分桶标题、圆形状态点、grab 拖拽光标、四 tab 布局——CSS Modules 真实生效。
+- **确认卡 agent E2E 12/12 PASS**（`verify-todo-confirm-e2e.mjs`，真实 agent + 真实放行）：`yzj_todo_create` → approval/asked → 确认卡（新建待办/标题/#e2e 标签/四动词）→ 点击确认 → approval/decided → 工具真实落库（含标签与推进日志）→ 动态发现任务库交叉验证 → 探针清理 → 零页面错误。
+- **第二轮修复的真 bug**：库发现只扫第一个个人知识库（CLI 首项是 AI速记知识库而非我的知识），导致重复开通第二个任务库——已改为扫描全部个人知识库（≤8）再决定开通（`todo.ts` resolveLibrary，新增多库扫描单测）。会话日志诊断还证实第一轮 E2E 实际成功（approval/decided → created T-…-005），首报 FAIL 为脚本自身硬编码旧库 ID 与结算检测缺陷，均已修复。
 
 实测探针副产物（进迁移文档 §3）：`--records` 必须数组；`fields` 恒为 JSON 字符串；SingleSelect 需 `data.items` 预注册；MultipleSelect 动态值静默丢弃；Contact 写入 500；`sheet create` 带 `openWebUrl`；新 dbt 自带空默认表。工具数 41→45，写门禁 22→25，RPC 端点 18→22，面板回归四 tab（第四 tab＝待办）。
 
