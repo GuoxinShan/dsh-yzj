@@ -17,6 +17,11 @@ import { deriveWebSocketUrl } from './protocol.ts'
 import { RobotSender } from './outbound.ts'
 import { RobotRouter, dmSessionId } from './router.ts'
 
+/** Plugin name used by loader diagnostics. */
+export const name = 'robot-yzj'
+/** Required services: the CLI bridge (allowFrom resolution) and the agent registry (DM sessions). */
+export const inject = ['yzjBridge', 'agents']
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     yzjRobot: YzjRobot
@@ -31,12 +36,18 @@ export interface Config {
   enabled?: boolean
   /** openIds allowed to drive the robot; defaults to the CLI login user. */
   allowFrom?: string[]
+  /** Provider route for robot DM agent sessions (e.g. 'opencode-go'). Empty = the harness default. */
+  provider?: string
+  /** Model id for robot DM agent sessions (e.g. 'deepseek-v4-flash'). Empty = the harness default. */
+  model?: string
 }
 
 const ConfigSchema: z<Config> = z.object({
   sendMsgUrl: z.string().default(''),
   enabled: z.boolean().default(true),
   allowFrom: z.array(z.string()).default([]),
+  provider: z.string().default(''),
+  model: z.string().default(''),
 })
 
 const DEFAULT_ACK_TEXT = '收到，处理中…'
@@ -57,7 +68,7 @@ export interface RobotStatus {
  */
 export class YzjRobot extends Service {
   static Config: z<Config> = ConfigSchema
-  static inject = ['yzjBridge']
+  static inject = ['yzjBridge', 'agents']
 
   private readonly config: Config
   private socket: RobotSocket | null = null
@@ -97,10 +108,15 @@ export class YzjRobot extends Service {
     const url = this.config.sendMsgUrl
     if (this.socket !== null || url === undefined || url === '' || !this.config.enabled) return
     const sender = new RobotSender({ sendMsgUrl: url })
+    const agentOptions = {
+      ...(this.config.provider === undefined || this.config.provider === '' ? {} : { provider: this.config.provider }),
+      ...(this.config.model === undefined || this.config.model === '' ? {} : { model: this.config.model }),
+    }
     const router = new RobotRouter({
       agents: this.ctx.agents,
       sender,
       allowFrom: async () => this.resolveAllowFrom(),
+      ...(Object.keys(agentOptions).length === 0 ? {} : { agentOptions }),
       ackText: DEFAULT_ACK_TEXT,
       denyText: DEFAULT_DENY_TEXT,
       logger: { warn: message => this.ctx.logger.warn(message) },

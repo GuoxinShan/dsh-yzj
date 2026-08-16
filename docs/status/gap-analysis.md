@@ -261,3 +261,16 @@ v1.6 §11.2 决策 1「双轨库」完整落地：
 已知缺口（转 §7.3 / R2）：msgChg `needAck` 的 ack 帧未实现（服务端 ~90s 重推，仅噪音）；面板设置卡与 `/yzj` robot 端点未做（R1 UI 半）；群场景全未做。
 
 验收口径（真实通道，待 GUI 集成后走）：在「个人助手」DM 发非命令消息 → 3s 内 ack（引用原消息）→ agent 轮次收敛 → 回答以机器人身份引用推回；`!mute` 后静默、直接再发解除；非白名单账号拒绝。
+
+### 20.1 E2E 收口（2026-08-16 10:25，真实通道全绿）
+
+web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.patch.yml` 持 sendMsgUrl（凭据不入库）。隔离验证实例（端口 3093）跑通完整旅程：
+
+```
+用户 DM「你好5（全链路最终验证）」(10:25:56)
+→ 秒回「收到，处理中…」（引用原消息）
+→ agent 轮次真实执行（opencode-go/deepseek-v4-flash，测试期临时配置；agent 还自主调了 yzj_whoami 核身份）
+→ 10:26 完整回答以机器人身份引用推回 DM
+```
+
+修复链（各配 pitfall）：loader inject 声明（pitfall-005）→ resume-before-create + `meta.cwd`（pitfall-006）。34 单测全绿。**测试期 provider/model 配置已撤**（回 harness 默认路由），正式模型路由待拍板。残留：`_no-cwd` 下旧坏 session 已删；3093 验证实例供群机器人接入复用。

@@ -17,12 +17,21 @@ function fakeAgents(getStatus: () => 'idle' | 'running') {
   return {
     created,
     get: () => undefined,
+    resume: async () => Promise.reject(new Error('no persisted log')),
     create: async () => {
+      const listeners: ((payload: unknown) => void)[] = []
       const agent = {
+        id: `agent-${created.length}`,
         status: getStatus(),
         followup: vi.fn(),
         whenIdle: async () => {},
         session: { events: [] },
+        ctx: {
+          on: (_type: string, listener: (payload: unknown) => void) => {
+            listeners.push(listener)
+            return () => { const i = listeners.indexOf(listener); if (i >= 0) listeners.splice(i, 1) }
+          },
+        },
       }
       created.push(agent)
       return { agent, dispose: async () => {} }
@@ -67,10 +76,12 @@ describe('RobotRouter', () => {
     const { router, sendCalls } = makeRouter([])
     const message = inbound('重复消息')
     await router.handle(message)
-    await router.handle(message)
-    // First call created no agent (empty events → no answer), so only the ack went out once.
-    expect(sendCalls).toHaveLength(1)
+    // Empty-events fake: ack + the no-answer diagnostic once…
+    expect(sendCalls).toHaveLength(2)
     expect(sendCalls[0]!.text).toBe('收到，处理中…')
+    await router.handle(message)
+    // …and the duplicate adds nothing.
+    expect(sendCalls).toHaveLength(2)
   })
 
   it('mutes and unmutes the DM session', async () => {
@@ -80,6 +91,20 @@ describe('RobotRouter', () => {
     expect(sendCalls).toHaveLength(1)
     await router.handle(inbound('!unmute'))
     expect(sendCalls).toHaveLength(2)
+  })
+
+  it('prefers resume over create for a persisted DM session', async () => {
+    const order: string[] = []
+    const agents = {
+      get: () => undefined,
+      resume: async () => { order.push('resume'); throw new Error('not here') },
+      create: async () => { order.push('create'); throw new Error('boom') },
+    }
+    const { router } = makeRouter([], agents as never)
+    await router.handle(inbound('触发'))
+    // resume is attempted first; its failure falls back to create (which we
+    // let fail here so the deny-path message goes out without an agent).
+    expect(order).toEqual(['resume', 'create'])
   })
 
   it('acks with a reply anchor to the inbound msgId', async () => {

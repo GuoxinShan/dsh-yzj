@@ -12,6 +12,8 @@
 | 2 | 持久化 store 整体替换：旧 blob 缺字段 → undefined 崩溃 | stores.ts / store schema 演进 | [pitfall-002-store-rehydration.md](pitfall-002-store-rehydration.md) |
 | 3 | CLI 输出的三重形态：裸数组 / data 信封 / fields JSON 字符串 | bridge / 任何解析 CLI 输出的代码 | [pitfall-003-cli-output-shapes.md](pitfall-003-cli-output-shapes.md) |
 | 4 | 大载荷被默认输出上限截断成不可解析 JSON | bridge maxOutputChars / doc-blocks 类端点 | [pitfall-004-output-cap-truncation.md](pitfall-004-output-cap-truncation.md) |
+| 5 | 函数插件模块必须模块级 `export const inject`——Service 类的 `static inject` 不被 loader 读取 | 任何 host 包经 dsh profile 加载 | [pitfall-005-module-inject-for-loader-entries.md](pitfall-005-module-inject-for-loader-entries.md) |
+| 6 | agent 轮次静默无回答的两大来源：session id 碰撞须 resume 不能 create；`_no-cwd` session 过不了 persona 模板 | robot-yzj router / 任何程序化创建 DSH agent 的通道 | [pitfall-006-programmatic-agent-sessions.md](pitfall-006-programmatic-agent-sessions.md) |
 
 ## 维护规则
 
