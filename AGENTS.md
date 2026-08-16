@@ -9,7 +9,7 @@ dsh-yzj 是 DeepSeek Harness 的独立插件 bundle 仓库：`yzj-cli` 桥接、
 1. **文档先于代码**：新功能先在 `docs/` 落设计（目标、契约、验收口径），再写实现；实现过程中设计变更，**先改文档再改代码**，同一提交。
 2. **文档即接口**：下一个读这个仓库的是另一个 agent，它以 `docs/` 为首要输入。文档陈旧 = 下一个 agent 必然做错。每个提交自问：「只读 docs/ 的人（agent）能准确重建当前系统的行为吗？」不能，就补。
 3. **docs/ 目录义务**（职责与阅读顺序见 [docs/README.md](docs/README.md)，改动对应面时同提交更新）：
-   - `spec/` — 设计基线：`integration-master-plan.md`（整体方案/验收基准）、`todo-design.md`（todo 域 + §11.2 决策表）、`robot-channel-plan.md`（机器人通道调研）；
+   - `spec/` — 设计基线：`integration-master-plan.md`（整体方案/人在闭环验收基准）、`dsh-home-session.md`（DSH 唯一会话家园 + 会话对象，v1.8 产品法）、`todo-design.md`（todo 域 + §11.2 决策表）、`robot-channel-plan.md`（机器人通道协议；会话落点以 dsh-home-session 为准）；
    - `migration/` — 架构演进：`todo-backend-migration.md`（demo→原生后端分层 + §3 实测格式事实）；
    - `status/` — `gap-analysis.md`：设计×实现分歧与验收证据，**每个功能提交都应在此留痕**；
    - `pitfalls/` — 踩坑库（见 Conventions「踩坑记录制度」）。
@@ -36,7 +36,7 @@ packages/       @dsh-yzj/* workspace 包（均 private、ESM；开发态，发�
   cordis.patch.yml 行名用子路径（@dsh-yzj/bundle/<row>）；发布 = 构建 + tag
   （见 docs/release.md）
 docs/           设计文档，本仓库的主体（见「Spec-driven」；索引与阅读顺序：docs/README.md）
-  spec/           设计基线：integration-master-plan / todo-design / robot-channel-plan
+  spec/           设计基线：integration-master-plan / dsh-home-session / todo-design / robot-channel-plan
   migration/       架构演进：todo-backend-migration（demo→原生后端分层 + 实测格式事实）
   status/          gap-analysis：设计×实现分歧与验收证据（每功能提交留痕）
   pitfalls/        实现级坑库（pitfall-NNN-*.md）——动手前先查，解决新坑后回写（见 Conventions「踩坑记录制度」）
@@ -79,7 +79,7 @@ node .acceptance/verify-real-data.mjs   # 需运行中的 GUI + 已登录 yzj-cl
 - **兄弟 checkout 是唯一事实源**：所有 `@deepseek-ai/*` 依赖以 `link:` 相对路径指向 `../deepseek-harness`；vitest 经 alias 把 client 包解析到 harness 的 TS 源。harness 接口变化在本仓库直接体现为类型/测试失败，就地适配，不复制其代码。
 - **两面包界限**：host 面（bridge、tool-yzj、ui-yzj node half）产出普通 ESM `lib/index.js`；browser half 经 `tsdown.shared.ts` 产出 closure-factory bundle（`window.__ModuleLoader__.load` 注入），其纯度门禁禁止跨插件值导入——协作只走 cordis 服务与 `/yzj` RPC。
 - **注册即效应**：一切贡献经 `ctx.effect()` / `ctx.on()` 或返回 disposer 的官方 API；bundle 卸载 / profile 移除后必须无残留（harness 全局约定，此处同样成立）。
-- **写路径两分**：确认卡只门控 **agent 发起的写**——`tools/pre-execute` → `guard.ts` 的 `WRITE_SPECS` 风险表（删除类 strong，其余 standard）→ host 侧 write-gate 应答 `approval/request`；用户在面板的直接操作是用户本人意志，走 `/yzj` 直写端点（`im-send`/`file-upload`），不经确认卡。新增写工具必须同提交进 `WRITE_SPECS`。
+- **写路径两分**（产品法已拍板，见 [docs/spec/dsh-home-session.md](docs/spec/dsh-home-session.md) §8）：确认卡只门控 **agent 发起的写**——`tools/pre-execute` → `guard.ts` 的 `WRITE_SPECS` 风险表（删除类 strong，其余 standard）→ host 侧 write-gate 应答 `approval/request`；**用户从 DSH 发出**（及现行面板 composer 过渡态、待办勾选等直写）是用户本人意志，走 `/yzj` 直写端点（`im-send`/`file-upload`），不经确认卡。会话家园目标是绑定 DSH 会话，不是面板第二 IM。新增写工具必须同提交进 `WRITE_SPECS`。
 - **禁止绕过桥接**：仓库内禁止以 bash 直调 `yzj-cli` 执行写命令；代码里唯一的子进程路径是 bridge 的 argv 数组 spawn（无 shell 插值）。`bundle/skills/yzj-cli/SKILL.md` 的红线（结构化工具优先、禁止编造 ID、写前先查）与之一致，改动工具面时同步维护。
 - **有界输出**：每个工具产出有界 digest 并把裁剪后的结构化载荷经 `output.presentationMeta` 投影给 UI；上限（timeoutMs / maxRenderChars / maxMetaChars）是 schema 校验的 Config 字段，不是常量。
 - **RPC 通道只过无损 JSON**：`/yzj` 通道两向都不携带 harness 活对象；先取所需叶子字段，再构造自有数据对象，绝不整体序列化 Context/Session/Service。

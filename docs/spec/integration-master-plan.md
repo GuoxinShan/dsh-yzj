@@ -1,7 +1,8 @@
 # 云之家 × DeepSeek Harness 集成整体方案（人在闭环版）
 
-> 版本：v1.7（预研稿）
-> 日期：2026-08-15
+> 版本：v1.8（预研稿 + 会话家园指针）
+> 日期：2026-08-17
+> v1.8 变更：**产品法拍板（Guoxin Shan）**——北极星「DSH 是唯一对话家园；云之家消息是该 transcript 的一等公民，不是侧车 IM」。会话对象、四类节点、面板降为挑选器、@Claude 召唤、丢进群、写路径成文，**独立成** [`dsh-home-session.md`](dsh-home-session.md)（总方案再塞会不可读）。本文 v1.7 及更早段落不改写：§1.3「机器人=下期」、§5.2 面板 IM composer、§5.5「待拍板」、§8「无人值守下期」均属当时基线；**现行实现仍是三面并行**，目标与阻塞缺口见 [`../status/gap-analysis.md`](../status/gap-analysis.md) §22。写路径两分（用户发=无卡 / agent 发=确认卡 / 删除=强确认）在会话家园 D9 成文，不再待拍板。
 > v1.7 变更：**实现对齐修订**——验收（v1.6）后 UI 演化回写设计：悬浮球为唯一入口（§5.2）；面板由四 tab 改三 tab（「我的」移除，**待拍板**）；会话 tab 内置真 IM composer，确立「用户直写」路径——确认卡门控 **agent 发起的写**，用户面板直操作不经确认卡（§5.5，原则**待拍板成文**）；拖入即处理引导实现后移除（硬性要求 4 降为「已移除，终局待拍板」）；确认卡目标去 ID 化（名称展示）；未读改为 CLI unreadCount + 本地已读持久化（§5.3）。逐项对照见 gap 文档 §16。
 > v1.6 变更：设计收口为可验收的完整设计——§5.1 工具清单主表补「实现工具（已落地）」映射列（设计名 ↔ 实现名，验收对照用）；§5.2 拖放小节扩为「全条目拖拽」完整规格（条目回源对照表 + 四条硬性要求：消息必带 groupId、dbt 附表结构、doc 摘要深度提示、拖入即处理引导）；悬浮窗改为四 tab 设计；§5.4 mention 规则补「消息 ref 必须携带 groupId」；§6 Phase 2 产出与验收同步全量拖拽。
 > v1.5 变更：工具清单补齐实现侧已落地的补充工具（§5.1 表后）；公共原则新增第五条「**一切皆可拖**」——悬浮窗内全部条目（知识库/文档/多维表格/日程/会话/消息/联系人）均可拖入 composer 成为带上下文的 chip，统一交给 agent 处理（§4、§5.2）；§1.2 目标 2「拽得动」同步泛化；与实现的逐项对照见 `../status/gap-analysis.md`。
@@ -43,6 +44,8 @@
 | 机器人 webhook 通道（群消息自动触发 agent、回复推回群） | 需机器人与常驻 webhook 服务，下期 |
 | 推送到云之家侧的播报 / 待办推送 | 无人值守的写推送，依赖机器人，下期（dsh 内部的通知播报属本期，见 §5.3） |
 | 待办创建/推进的自动写入 | 待办功能本身处于预研，尚无能力源；本期的「起草待办」可走确认卡 |
+
+> **v1.8 覆盖（不改上表原文）**：机器人通道已作为协议面落地（[`robot-channel-plan.md`](robot-channel-plan.md)），不再是「下期才存在的能力」。产品落点改判：通道是投递/入站，**对话家园是 DSH 绑定会话**（[`dsh-home-session.md`](dsh-home-session.md)），不是侧车 IM，也不是隐藏 `yzj-robot-*` 平行面。上表「不做」不再当作现行产品范围。
 
 ---
 
@@ -137,7 +140,7 @@ interface ReferenceCodec {
 | 参照 | 状态 | 对本方案的意义 |
 |---|---|---|
 | 飞书 CLI + feishu-claude-code-bridge / lark-channel-bridge / CCBot | 成熟开源生态 | 「IM CLI + agent harness」模式已被完整验证；其发消息前交互确认的做法与本方案确认卡一致 |
-| openclaw-yzj（kingdee 官方 org，约 10 星） | 仅消息通道，宿主为 OpenClaw | 证明云之家机器人 HTTP API + Webhook 双向链路可行（下期 channel 的直接参照） |
+| openclaw-yzj（kingdee 官方 org，约 10 星） | 仅消息通道，宿主为 OpenClaw | 证明云之家机器人 HTTP API + Webhook 双向链路可行（当时作下期 channel 参照；**v1.8：通道已落地，家园见 [`dsh-home-session.md`](dsh-home-session.md)**） |
 | 云之家 V11 官方 AI（小云） | 封闭官方功能 | 验证消息摘要/纪要转待办需求成立；本方案差异化 = 开放可编程 + 可观测（Trajectory 溯源）+ 确认卡门控 |
 | dsh 插件生态 | 刚开闸，无企业 IM 插件 | 「云之家 × dsh」是空白品类，先发即卡位 |
 
@@ -331,6 +334,8 @@ composer 输入 `@` → 候选三组（同事 order=0 / 群 order=1 / 文档 ord
 
 **悬浮窗**：注册进 `shell.overlay`，悬浮球为唯一入口（hover 快捷坞、持久化显隐、未读角标）。展开为三 tab——知识库（双栏：工作区/文档树 + 文档内容预览）、日程（当日）、会话（最近群 → 完整 IM：正序气泡、媒体/文件预览、回复、锚点定位；**内置 IM composer，文本/图片/文件/回复/表情，经 `/yzj im-send` 以本人身份直发**——用户直写，见 §5.5）。原「我的」tab（身份 + 通讯录搜索）v1.7 已移除：身份经 `yzj_whoami`，找人经 @ 候选；是否恢复待拍板。每个 tab 带手动刷新，会话 tab 支持双向分页。数据经 `/yzj` RPC 通道。
 
+> **v1.8**：上段是现行实现（三面之一：面板 IM）。产品法下面板是挑选器/历史/引用面，「挑群」打开或切换绑定 DSH 会话，**无第二套 IM composer**；用户以本人身份发进群发生在绑定 DSH 会话（见 [`dsh-home-session.md`](dsh-home-session.md) §4）。composer 移除/降级列为 gap §22，本文不假装已改。
+
 **@ 候选源**：实现 `InputTriggerSource` 注册进 `ctx.inputTriggers`；`candidates()` 实时调 `yzj_contact_search` / `yzj_group_list` / 知识库检索（防抖 + AbortSignal）；`onPick()` 返回 `ReferenceInsert`。
 
 **ReferenceCodec**：`serialize(ref)` → 调 `yzjReader` → 返回带来源的文本块：
@@ -384,6 +389,8 @@ dsh 当前无任何 Notification API 封装（全仓核验为零），由 yzj-ui
 
 **下期替换**：webhook/机器人通道落地后，第一层轮询替换为真推送，第二层筛选逻辑不变（只是触发源从定时器换成事件）。
 
+> **v1.8**：机器人通道已落地；混合模式（机器人群推送 + 其余 CLI 轮询）见 [`robot-channel-plan.md`](robot-channel-plan.md) §3.1。会话家园仍是 DSH，不是用推送另开一面。
+
 ### 5.4 mention token 协议
 
 ```
@@ -399,7 +406,7 @@ type = msg    → id 为 {groupId}:{msgId}     （拖入的消息）
 
 ### 5.5 安全与权限
 
-- **写动作单点门控**：**agent 发起的**全部写工具（消息/文档/知识库/日程/文件/表格）收敛到同一道 pre-execute ask 门禁 + 风险分级表，无旁路；skill 层再声明一次。**用户直写路径（v1.7 新增，原则待拍板成文）**：用户在面板的直接操作——IM composer 发送，及规划中的待办勾选/新建——即用户本人意志，经 `/yzj` 直写端点（`im-send`/`file-upload`）执行，不经确认卡；两条路径不混（agent 永远走工具 + 确认卡）；
+- **写动作单点门控**：**agent 发起的**全部写工具（消息/文档/知识库/日程/文件/表格）收敛到同一道 pre-execute ask 门禁 + 风险分级表，无旁路；skill 层再声明一次。**用户直写路径（v1.7 新增；v1.8 已拍板成文，见 [`dsh-home-session.md`](dsh-home-session.md) D9/§8）**：用户从 DSH 发出（及现行面板 composer 过渡态、待办勾选/新建）即用户本人意志，经 `/yzj` 直写端点（`im-send`/`file-upload`）执行，不经确认卡；agent 发起的发送走确认卡；删除类强确认；两条路径不混（agent 永远走工具 + 确认卡）；
 - **身份**：发送即用户本人身份，无机器人冒充问题；确认卡必须展示完整目标与全文，不允许折叠截断；**v1.7 注：目标已去 ID 化**（ID 解析为群名/人名展示，原型风格；同名目标可辨识性待拍板——可主显名称 + 可展开 ID 明文）；
 - **数据边界**：@同事拉上下文 = 当前登录用户有权查看的范围，UI 明示；
 - **凭据**：复用 yzj-cli 的 OS 密钥链，插件不接触 token 明文；
@@ -464,6 +471,8 @@ yzj-cli doc workspace list                 # 验证知识库
 - **机器人入站通道**：参照 openclaw-yzj（HTTP API + Webhook + msgId 去重），群消息 → `followup()` 进 session；本期确认卡的事件族设计可直接复用为「机器人建议动作→人远程确认」；
 - **真·实时通知**：webhook/机器人落地后替换轮询（§5.3 第一层触发源由定时器换成事件，第二层筛选逻辑不变）；推送到云之家侧的播报需机器人；
 - **待办**：CLI 待办命令缺失，正是预研功能的 API 需求输入——建议正式待办功能自带：稳定 ID、状态机、幂等创建、变更 webhook、deep link；mention 协议届时扩展 `type = todo`。
+
+> **v1.8**：通道已落地，上段「下期」不再表示「机器人不存在」。入站仍 `followup()`，但目标必须是 [`dsh-home-session.md`](dsh-home-session.md) 的**绑定 DSH 会话**，禁止隐藏平行 `yzj-robot-*` 家园；协议细节继续读 [`robot-channel-plan.md`](robot-channel-plan.md)。
 
 ---
 
