@@ -65,6 +65,7 @@ pnpm 从 GitHub 拉仓库根包（`@dsh-yzj/bundle`，`dsh.bundle` 声明被 rec
 
 | 版本 | 日期 | 形态 | 内容 |
 |---|---|---|---|
+| v0.1.1 | 2026-08-16 | monobundle + git | **修复 web profile 启动崩溃**：client bundle 注册 id 与 loader 行名对齐（`@dsh-yzj/bundle/ui-yzj`），v0.1.0 因 ab714b2 行名改名后 tsdown id 未同步，browser half 挂载即报 `loaded without registering`；新增 bundle 契约测试 + pitfall-010。Release：https://github.com/GuoxinShan/dsh-yzj/releases/tag/v0.1.1 |
 | v0.1.0 | 2026-08-16 | monobundle + git | 全量功能（桥/命令族/定时/记忆/模型默认链），六行聚合 + client bundle，git 可装；**GitHub 安装全链路验收通过**（六行挂载 + client bundle 200）；Release 说明见 https://github.com/GuoxinShan/dsh-yzj/releases/tag/v0.1.0 |
 
 ## 6. 发布 note 维护
