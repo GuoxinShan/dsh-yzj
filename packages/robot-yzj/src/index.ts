@@ -20,6 +20,8 @@ import { RobotSender } from './outbound.ts'
 import { RobotRouter, dmSessionId } from './router.ts'
 import { OverrideStore } from './overrides.ts'
 import { ConfirmBroker, type ConfirmApprovalRequest, type ConfirmAskPending } from './confirm.ts'
+import { PushHub, type PushSessionEvent } from './push.ts'
+import { MemoryStore } from './memory.ts'
 
 /** Plugin name used by loader diagnostics. */
 export const name = 'robot-yzj'
@@ -126,6 +128,8 @@ export class YzjRobot extends Service {
   private readonly channels: RunningChannel[] = []
   private readonly overrides = new OverrideStore()
   private readonly confirm = new ConfirmBroker()
+  private readonly hub = new PushHub()
+  private readonly memory = new MemoryStore()
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'yzjRobot')
@@ -249,6 +253,12 @@ export class YzjRobot extends Service {
       ...(Object.keys(agentOptions).length === 0 ? {} : { agentOptions }),
       resolveOverride: key => this.overrides.get(key),
       confirm: this.confirm,
+      push: this.hub,
+      memory: {
+        lines: key => this.memory.lines(key),
+        remember: (key, line) => this.memory.remember(key, line),
+        forget: (key, substring) => this.memory.forget(key, substring),
+      },
       ackText: DEFAULT_ACK_TEXT,
       denyText: DEFAULT_DENY_TEXT,
       logger: { warn: message => this.ctx.logger.warn(message) },
@@ -275,6 +285,22 @@ export class YzjRobot extends Service {
     this.channels.length = 0
     this.confirm.dispose()
     void this.overrides.close()
+    void this.memory.close()
+  }
+
+  /** Firehose slice for robot sessions (plugin entry). */
+  noteSessionEvent(sessionId: string, event: PushSessionEvent): void {
+    this.hub.noteEvent(sessionId, event)
+  }
+
+  /** Agent-idle slice for robot sessions (plugin entry): flush the answer. */
+  noteAgentIdle(sessionId: string): void {
+    this.hub.noteIdle(sessionId)
+  }
+
+  /** Agent-error slice for robot sessions (plugin entry). */
+  noteAgentError(sessionId: string, error: unknown): void {
+    this.hub.noteError(sessionId, error)
   }
 
   /** Open the override store once the storage hub has the domain form. */
@@ -283,6 +309,7 @@ export class YzjRobot extends Service {
     if (facility === undefined) return
     try {
       await this.overrides.open(facility as never)
+      await this.memory.open(facility as never)
     } catch (error) {
       this.ctx.logger.warn(`robot: override store failed to open: ${String(error)}`)
     }
@@ -345,6 +372,24 @@ export function apply(ctx: Context, config: Config): void {
   })
   ctx.on('approval/request', (req, next) => {
     return robot.handleApproval(req, next)
+  })
+  // Event-driven push: robot-session output (any turn source — interactive,
+  // scheduled, watcher) reaches its conversation through the shared hub.
+  ctx.on('session/event', (session, event) => {
+    const id = String(session.id)
+    if (!id.startsWith('yzj-robot-')) return
+    robot.noteSessionEvent(id, event as PushSessionEvent)
+  })
+  ctx.on('agent/status', payload => {
+    if (payload.status !== 'idle') return
+    const id = String(payload.agent.id)
+    if (!id.startsWith('yzj-robot-')) return
+    robot.noteAgentIdle(id)
+  })
+  ctx.on('agent/error', payload => {
+    const id = String(payload.agent.id)
+    if (!id.startsWith('yzj-robot-')) return
+    robot.noteAgentError(id, payload.error)
   })
   ctx.effect(() => {
     return () => robot.stop()

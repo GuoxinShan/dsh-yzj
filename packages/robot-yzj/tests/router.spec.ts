@@ -25,6 +25,7 @@ function fakeAgents(getStatus: () => 'idle' | 'running') {
         id: `agent-${created.length}`,
         status: getStatus(),
         followup: vi.fn(),
+        inject: vi.fn(),
         whenIdle: async () => {},
         session: { events: [] },
         ctx: {
@@ -41,7 +42,12 @@ function fakeAgents(getStatus: () => 'idle' | 'running') {
   }
 }
 
-function makeRouter(sends: RobotSendResult[], agents = fakeAgents(() => 'idle'), allowFrom = ['u-allowed']) {
+function makeRouter(
+  sends: RobotSendResult[],
+  agents = fakeAgents(() => 'idle'),
+  allowFrom = ['u-allowed'],
+  extra: { memory?: { lines: (key: string) => readonly string[]; remember: (key: string, line: string) => Promise<{ lines: readonly string[]; note: string }>; forget: (key: string, substring: string) => Promise<{ lines: readonly string[]; note: string }> } } = {},
+) {
   const sendCalls: { text: string; options?: RobotSendOptions }[] = []
   const sender = {
     send: async (text: string, options?: RobotSendOptions): Promise<RobotSendResult> => {
@@ -50,12 +56,33 @@ function makeRouter(sends: RobotSendResult[], agents = fakeAgents(() => 'idle'),
     },
   }
   const router = new RobotRouter({
-    ownerCtx: {} as never,
     agents: agents as never,
     sender,
     allowFrom: async () => allowFrom,
+    ...(extra.memory === undefined ? {} : { memory: extra.memory }),
   })
   return { router, sendCalls, agents }
+}
+
+function fakeMemory(initial: string[] = []) {
+  const store = new Map<string, string[]>([['dm:BOT-r:u-allowed', [...initial]]])
+  const keyOf = (message: RobotInboundMessage): string => message.groupId.startsWith('BOT-') ? `dm:${message.robotId}:${message.operatorOpenid}` : `g:${message.groupId}`
+  return {
+    store,
+    lines: (key: string) => store.get(key) ?? [],
+    remember: async (key: string, line: string) => {
+      const lines = store.get(key) ?? []
+      if (!lines.includes(line)) lines.push(line)
+      store.set(key, lines)
+      return { lines, note: '已记住' }
+    },
+    forget: async (key: string, substring: string) => {
+      const lines = (store.get(key) ?? []).filter(line => !line.includes(substring))
+      store.set(key, lines)
+      return { lines, note: '已处理' }
+    },
+    keyOf,
+  }
 }
 
 describe('RobotRouter', () => {
@@ -78,12 +105,12 @@ describe('RobotRouter', () => {
     const { router, sendCalls } = makeRouter([])
     const message = inbound('重复消息')
     await router.handle(message)
-    // Empty-events fake: ack + the no-answer diagnostic once…
-    expect(sendCalls).toHaveLength(2)
-    expect(sendCalls[0]!.text).toBe('收到，处理中…')
+    // Ack only (the PushHub owns answer pushes; none without events)…
+    expect(sendCalls).toHaveLength(1)
+    expect(sendCalls[0]!.text).toContain('收到，处理中')
     await router.handle(message)
     // …and the duplicate adds nothing.
-    expect(sendCalls).toHaveLength(2)
+    expect(sendCalls).toHaveLength(1)
   })
 
   it('mutes and unmutes the DM session', async () => {
@@ -112,9 +139,12 @@ describe('RobotRouter', () => {
   it('anchors a fresh group session per top-level message and continues it on replies', async () => {
     const agents = fakeAgents(() => 'idle')
     const { router, sendCalls } = makeRouter([], agents)
-    // Top-level group @: groupId without the BOT- prefix.
+    // Top-level group @: groupId without the BOT- prefix. The first group
+    // message runs the intro turn (S7) instead of the raw content.
     await router.handle(inbound('群任务A', { groupId: 'gid-test', msgId: 'root-1' }))
     expect(agents.created).toHaveLength(1)
+    const firstFollowup = (agents.created[0] as { followup: { mock: { calls: unknown[][] } } }).followup.mock.calls
+    expect(String(firstFollowup[0]![0]!.content[0]!.text)).toContain('自我介绍')
     // Ack carried notifyParams targeting the asker (group surface).
     const ack = sendCalls[0]!.options
     expect(ack?.notifyOpenIds).toEqual(['u-allowed'])
@@ -126,9 +156,40 @@ describe('RobotRouter', () => {
     }))
     expect(agents.created).toHaveLength(1)
     expect((agents.created[0] as { followup: { mock: { calls: unknown[][] } } }).followup.mock.calls).toHaveLength(2)
-    // A different top-level message anchors its own session.
+    // A different top-level message anchors its own session (no second intro).
     await router.handle(inbound('另一个话题', { groupId: 'gid-test', msgId: 'root-2' }))
     expect(agents.created).toHaveLength(2)
+    const secondFollowup = (agents.created[1] as { followup: { mock: { calls: unknown[][] } } }).followup.mock.calls
+    expect(String(secondFollowup[0]![0]!.content[0]!.text)).toBe('另一个话题')
+  })
+
+  it('rides the task summary in the ack (C12) for long-enough prompts', async () => {
+    const { router, sendCalls } = makeRouter([])
+    await router.handle(inbound('帮我总结一下今天上午的会议纪要并分发'))
+    expect(sendCalls[0]!.text).toContain('收到，处理中')
+    expect(sendCalls[0]!.text).toContain('帮我总结一下今天上午的会议纪要')
+  })
+
+  it('stores and lists conversation memory via verbs (S4)', async () => {
+    const memory = fakeMemory()
+    const { router, sendCalls } = makeRouter([], fakeAgents(() => 'idle'), ['u-allowed'], { memory })
+    await router.handle(inbound('记住 周报一律发成表格'))
+    expect(sendCalls.at(-1)!.text).toContain('已记住')
+    expect(memory.lines('dm:BOT-r:u-allowed')).toEqual(['周报一律发成表格'])
+    await router.handle(inbound('你记住了什么'))
+    expect(sendCalls.at(-1)!.text).toContain('周报一律发成表格')
+    await router.handle(inbound('忘掉 周报'))
+    expect(memory.lines('dm:BOT-r:u-allowed')).toEqual([])
+  })
+
+  it('injects stored memory as instructions context on turns (S4)', async () => {
+    const memory = fakeMemory(['周报一律发成表格'])
+    const agents = fakeAgents(() => 'idle')
+    const { router } = makeRouter([], agents, ['u-allowed'], { memory })
+    await router.handle(inbound('帮我写周报'))
+    const agent = agents.created[0] as { inject: { mock: { calls: unknown[][] } } }
+    expect(agent.inject.mock.calls).toHaveLength(1)
+    expect(String(agent.inject.mock.calls[0]![0]!.content[0]!.text)).toContain('周报一律发成表格')
   })
 
   it('acks with a reply anchor to the inbound msgId', async () => {
