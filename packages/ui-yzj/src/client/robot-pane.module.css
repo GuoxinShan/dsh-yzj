@@ -362,3 +362,20 @@
 .guideBox .hint {
   line-height: 1.6;
 }
+
+.groupFiles {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--dsw-surface, #fff);
+  border: 1px solid var(--dsw-border, #d4d4d8);
+}
+
+.groupFilesTitle {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dsw-text-primary);
+}

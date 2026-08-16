@@ -49,13 +49,16 @@ function groupSurfacesOf(channel: unknown): { groupId: string; robotName: string
   })
 }
 
-/** Group display name from the chat-tab cache, else the raw id. */
+/** Group display name from the chat-tab cache; falls back to a short id. */
 function groupNameOf(groups: unknown[], groupId: string): string {
   for (const group of asArray(groups)) {
     const record = asRecord(group)
-    if (asString(record.groupId) === groupId) return asString(record.name)
+    if (asString(record.groupId) === groupId) {
+      const name = asString(record.name)
+      if (name !== '') return name
+    }
   }
-  return groupId
+  return `${groupId.slice(0, 10)}…`
 }
 
 /** Human-relative timestamp: 今天/昨天 HH:mm, else M月d日 HH:mm. */
@@ -271,16 +274,64 @@ function RobotDetail(outer: { props: RobotPaneProps; index: number; onBack: () =
   const [route, setRoute] = useState({ provider: asString(channel.provider), model: asString(channel.model) })
   // Per-group override drafts (groupId → {provider, model}).
   const [overrideDrafts, setOverrideDrafts] = useState<Record<string, { provider: string; model: string }>>({})
-  // Shared workspace browse + write.
-  const [shareGroup, setShareGroup] = useState('')
-  const [shareDir, setShareDir] = useState('')
-  const [shareFiles, setShareFiles] = useState<{ name: string; size: number; mtime: number }[] | null>(null)
-  const [shareLoading, setShareLoading] = useState(false)
-  const [shareFilename, setShareFilename] = useState('')
-  const [shareContent, setShareContent] = useState('')
-  const [shareNote, setShareNote] = useState('')
+  // Per-group shared files (each group card owns its own browse + write state).
+  const [shareByGroup, setShareByGroup] = useState<Record<string, { dir: string; files: { name: string; size: number; mtime: number }[] | null; loading: boolean; note: string }>>({})
+  const [shareInputs, setShareInputs] = useState<Record<string, { filename: string; content: string }>>({})
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [note, setNote] = useState('')
+
+  const loadShareFor = (groupId: string): void => {
+    setShareByGroup(prev => ({ ...prev, [groupId]: { dir: '', files: null, loading: true, note: '' } }))
+    void props.robotShareList(groupId, index).then(result => {
+      setShareByGroup(prev => {
+        const current = prev[groupId] ?? { dir: '', files: null, loading: false, note: '' }
+        if (!result.ok) return { ...prev, [groupId]: { ...current, loading: false, note: `读取失败：${result.error.message}` } }
+        const record = asRecord(result.value)
+        return {
+          ...prev,
+          [groupId]: {
+            dir: asString(record.dir),
+            files: asArray(record.files).map(file => {
+              const entry = asRecord(file)
+              return {
+                name: asString(entry.name),
+                size: typeof entry.size === 'number' ? entry.size : 0,
+                mtime: typeof entry.mtime === 'number' ? entry.mtime : 0,
+              }
+            }),
+            loading: false,
+            note: current.note,
+          },
+        }
+      })
+    })
+  }
+
+  const writeShareFor = (groupId: string): void => {
+    const input = shareInputs[groupId]
+    if (input === undefined || input.filename === '' || input.content === '') return
+    setShareByGroup(prev => ({ ...prev, [groupId]: { ...(prev[groupId] ?? { dir: '', files: null, loading: false, note: '' }), note: '' } }))
+    void props.robotShareWrite({ groupId, filename: input.filename, content: input.content, robotIndex: index }).then(result => {
+      setShareByGroup(prev => {
+        const current = prev[groupId] ?? { dir: '', files: null, loading: false, note: '' }
+        if (!result.ok) return { ...prev, [groupId]: { ...current, note: `写入失败：${result.error.message}` } }
+        const record = asRecord(result.value)
+        if (record.ok !== true) return { ...prev, [groupId]: { ...current, note: `写入失败：${asString(record.error)}` } }
+        const name = asString(record.name)
+        setShareInputs(prevInputs => ({ ...prevInputs, [groupId]: { filename: '', content: '' } }))
+        return {
+          ...prev,
+          [groupId]: {
+            ...current,
+            note: record.existed === true
+              ? `已存入 ${name}（同名文件已存在，自动加序号；原文件未动）`
+              : `已存入 ${name}`,
+          },
+        }
+      })
+      loadShareFor(groupId)
+    })
+  }
 
   const saveChannels = (robots: Parameters<RobotPaneProps['robotChannelsSave']>[0]['robots'], onSaved?: () => void): void => {
     setNote('')
@@ -353,46 +404,6 @@ function RobotDetail(outer: { props: RobotPaneProps; index: number; onBack: () =
     })
   }
 
-  const loadShare = (groupId: string): void => {
-    setShareGroup(groupId)
-    setShareFiles(null)
-    setShareDir('')
-    setShareNote('')
-    if (groupId === '') return
-    setShareLoading(true)
-    void props.robotShareList(groupId, index).then(result => {
-      setShareLoading(false)
-      if (!result.ok) { setShareNote(`读取失败：${result.error.message}`); return }
-      const record = asRecord(result.value)
-      setShareDir(asString(record.dir))
-      setShareFiles(asArray(record.files).map(file => {
-        const entry = asRecord(file)
-        return {
-          name: asString(entry.name),
-          size: typeof entry.size === 'number' ? entry.size : 0,
-          mtime: typeof entry.mtime === 'number' ? entry.mtime : 0,
-        }
-      }))
-    })
-  }
-
-  const writeShare = (): void => {
-    if (shareGroup === '' || shareFilename === '' || shareContent === '') return
-    setShareNote('')
-    void props.robotShareWrite({ groupId: shareGroup, filename: shareFilename, content: shareContent, robotIndex: index }).then(result => {
-      if (!result.ok) { setShareNote(`写入失败：${result.error.message}`); return }
-      const record = asRecord(result.value)
-      if (record.ok !== true) { setShareNote(`写入失败：${asString(record.error)}`); return }
-      const name = asString(record.name)
-      setShareNote(record.existed === true
-        ? `已写入 ${name}（同名文件已存在，自动唯一化；原文件未动）`
-        : `已写入 ${name}`)
-      setShareFilename('')
-      setShareContent('')
-      loadShare(shareGroup)
-    })
-  }
-
   return (
     <div className={css.pane}>
       <section className={css.section}>
@@ -434,11 +445,13 @@ function RobotDetail(outer: { props: RobotPaneProps; index: number; onBack: () =
 
       <section className={css.section}>
         <h3 className={css.sectionTitle}>机器人服务的群（{groups.length}）</h3>
-        <p className={css.hint}>在群里 @机器人 发过消息的群会出现在这里（机器人只收 @ 它的消息）。每个群可以单独指定使用的模型。</p>
+        <p className={css.hint}>在群里 @机器人 发过消息的群会出现在这里（机器人只收 @ 它的消息）。每个群可以单独指定模型，并拥有自己的公共文件区。</p>
         {groups.length === 0 && <p className={css.hint}>该机器人还没有收到过任何群消息。</p>}
         <ul className={css.overrideList}>
           {groups.map(group => {
             const draft = overrideDrafts[group.groupId] ?? overrideOf(props.overrides, group.groupId) ?? { provider: '', model: '' }
+            const share = shareByGroup[group.groupId]
+            const input = shareInputs[group.groupId] ?? { filename: '', content: '' }
             return (
               <li key={group.groupId} className={css.groupCard}>
                 <div className={css.groupCardHead}>
@@ -466,81 +479,60 @@ function RobotDetail(outer: { props: RobotPaneProps; index: number; onBack: () =
                     <option value="">（跟随 provider 默认）</option>
                     {catalog.find(entry => entry.provider === draft.provider)?.models.map(id => <option key={id} value={id}>{id}</option>)}
                   </select>
-                  <button type="button" className={css.secondary} onClick={() => { saveGroupOverride(group.groupId, draft) }}>保存</button>
+                  <button type="button" className={css.secondary} onClick={() => { saveGroupOverride(group.groupId, draft) }}>保存模型</button>
+                  <button type="button" className={css.secondary} onClick={() => { loadShareFor(group.groupId) }}>刷新文件</button>
+                </div>
+                <div className={css.groupFiles}>
+                  <h4 className={css.groupFilesTitle}>这个群的公共文件</h4>
+                  <p className={css.hint}>
+                    机器人在这个群处理文件任务时（比如把表格整理成报告、写脚本），产物会存放在这里，群里任何对话都能读取、继续处理；
+                    同名文件自动加序号，不会互相覆盖。你也可以直接放文件进来（你的本人操作，不需要确认）。
+                  </p>
+                  {share !== undefined && share.dir !== '' && <p className={css.hint} title={share.dir}>目录：{share.dir}</p>}
+                  {share?.loading === true && <p className={css.hint}>加载中…</p>}
+                  {share !== undefined && !share.loading && share.files !== null && (
+                    share.files.length === 0
+                      ? <p className={css.hint}>这个群还没有公共文件。</p>
+                      : (
+                        <ul className={css.shareList}>
+                          {share.files.map(file => (
+                            <li key={file.name} className={css.shareRow}>
+                              <span className={css.shareName}>{file.name}</span>
+                              <span className={css.shareMeta}>{formatSize(file.size)} · {new Date(file.mtime).toLocaleString()}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )
+                  )}
+                  <div className={css.addRow}>
+                    <input
+                      className={css.input}
+                      value={input.filename}
+                      onChange={(event) => { setShareInputs({ ...shareInputs, [group.groupId]: { ...input, filename: event.target.value } }) }}
+                      placeholder="文件名（同名自动加序号）"
+                    />
+                    <button
+                      type="button"
+                      className={css.primary}
+                      disabled={input.filename === '' || input.content === ''}
+                      onClick={() => { writeShareFor(group.groupId) }}
+                    >
+                      存入公共文件区
+                    </button>
+                  </div>
+                  <textarea
+                    className={css.textarea}
+                    value={input.content}
+                    onChange={(event) => { setShareInputs({ ...shareInputs, [group.groupId]: { ...input, content: event.target.value } }) }}
+                    rows={2}
+                    placeholder="要放进公共文件区的文本…"
+                  />
+                  {share !== undefined && share.note !== '' && <p className={css.note} role="status">{share.note}</p>}
                 </div>
               </li>
             )
           })}
         </ul>
-      </section>
-
-      <section className={css.section}>
-        <h3 className={css.sectionTitle}>群的公共文件区</h3>
-        <p className={css.hint}>
-          机器人在群里干活时产生的文件（草稿、报告等）会存放在每个群自己的公共目录里：同一个群的任何对话都能读取、继续处理；
-          同名文件自动加序号（report.md → report-2.md），不会互相覆盖。面板里直接放文件是你的本人操作，不需要确认。
-        </p>
-        <div className={css.editor}>
-          <label className={css.field}>
-            <span className={css.fieldLabel}>群</span>
-            <select className={css.select} value={shareGroup} onChange={(event) => { loadShare(event.target.value) }}>
-              <option value="">— 选择群 —</option>
-              {groups.map(group => (
-                <option key={group.groupId} value={group.groupId}>群 · {groupNameOf(props.groups, group.groupId)}</option>
-              ))}
-            </select>
-          </label>
-          {shareGroup !== '' && (
-            <>
-              {shareDir !== '' && <p className={css.hint} title={shareDir}>公共文件目录（一般不用管）：{shareDir}</p>}
-              {shareLoading && <p className={css.hint}>加载中…</p>}
-              {!shareLoading && shareFiles !== null && (
-                shareFiles.length === 0
-                  ? <p className={css.hint}>共享区暂无文件。</p>
-                  : (
-                    <ul className={css.shareList}>
-                      {shareFiles.map(file => (
-                        <li key={file.name} className={css.shareRow}>
-                          <span className={css.shareName}>{file.name}</span>
-                          <span className={css.shareMeta}>{formatSize(file.size)} · {new Date(file.mtime).toLocaleString()}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )
-              )}
-              <label className={css.field}>
-                <span className={css.fieldLabel}>文件名</span>
-                <input
-                  className={css.input}
-                  value={shareFilename}
-                  onChange={(event) => { setShareFilename(event.target.value) }}
-                  placeholder="report.md（同名自动变 report-2.md）"
-                />
-              </label>
-              <label className={css.field}>
-                <span className={css.fieldLabel}>内容</span>
-                <textarea
-                  className={css.textarea}
-                  value={shareContent}
-                  onChange={(event) => { setShareContent(event.target.value) }}
-                  rows={3}
-                  placeholder="要放进公共文件区的文本…"
-                />
-              </label>
-              <div className={css.actions}>
-                <button
-                  type="button"
-                  className={css.primary}
-                  disabled={shareFilename === '' || shareContent === ''}
-                  onClick={writeShare}
-                >
-                  存入公共文件区
-                </button>
-              </div>
-              {shareNote !== '' && <p className={css.note} role="status">{shareNote}</p>}
-            </>
-          )}
-        </div>
       </section>
 
       <section className={css.section}>
