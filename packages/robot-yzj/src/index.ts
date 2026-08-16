@@ -219,7 +219,10 @@ export class YzjRobot extends Service {
       ...robot,
       ...(robot.provider === undefined || robot.provider === '' ? (defaults.defaultProvider === undefined || defaults.defaultProvider === '' ? {} : { provider: defaults.defaultProvider }) : {}),
       ...(robot.model === undefined || robot.model === '' ? (defaults.defaultModel === undefined || defaults.defaultModel === '' ? {} : { model: defaults.defaultModel }) : {}),
-      ...(robot.cwd === undefined || robot.cwd === '' ? (defaults.defaultCwd === undefined || defaults.defaultCwd === '' ? {} : { cwd: defaults.defaultCwd }) : {}),
+      // cwd: explicit robot cwd > defaultCwd > auto-assigned workspace root
+      // (~/.dsh/robot-workspaces/…, design §8.5) — never the bare host cwd,
+      // so shared/private dirs stay self-contained.
+      ...(robot.cwd === undefined || robot.cwd === '' ? (defaults.defaultCwd === undefined || defaults.defaultCwd === '' ? { cwd: deriveRobotWorkspace(robot.sendMsgUrl) } : { cwd: defaults.defaultCwd }) : {}),
     })
     const configured = source !== undefined
       ? source.robots
@@ -721,6 +724,18 @@ function firstNonEmpty(...values: (string | undefined)[]): string | undefined {
     if (value !== undefined && value !== '') return value
   }
   return undefined
+}
+
+/**
+ * Auto-assigned workspace root for a robot without an explicit cwd (§8.5):
+ * `~/.dsh/robot-workspaces/robot-<yzjtype>-<token8>` — stable per
+ * sendMsgUrl, self-contained (group shared/private dirs live under it),
+ * and never the bare host cwd.
+ */
+export function deriveRobotWorkspace(sendMsgUrl: string): string {
+  const type = /yzjtype=(\d+)/.exec(sendMsgUrl)?.[1] ?? 'x'
+  const token = /yzjtoken=([a-f0-9]+)/i.exec(sendMsgUrl)?.[1] ?? 'x'
+  return join(homedir(), '.dsh', 'robot-workspaces', `robot-${type}-${token.slice(0, 8)}`)
 }
 
 /**

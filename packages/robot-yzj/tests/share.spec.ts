@@ -55,9 +55,12 @@ describe('writeShareFile / listShareFiles (design §8.4)', () => {
     expect(readdirSync(dir)).toHaveLength(0)
   })
 
-  it('lists files newest first with size and mtime', () => {
+  it('lists files newest first with size and mtime', async () => {
     const dir = tmpBase()
     writeShareFile(dir, 'a.txt', 'aaa', false)
+    // Back-to-back writes can share an mtime tick, which makes the
+    // newest-first order unstable — space the two writes out.
+    await new Promise(resolve => setTimeout(resolve, 25))
     writeShareFile(dir, 'b.txt', 'bb', false)
     const listed = listShareFiles(dir)
     expect(listed.ok).toBe(true)
