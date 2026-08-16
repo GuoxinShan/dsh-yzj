@@ -310,3 +310,12 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 - **应用类（msgType:1）确认为 webhook 唯一视觉卡片**：标题/主次内容/`webpageUrl` 跳转；与引用锚互斥（param 争用，实测 D/E 两变体）。**确认卡已用此形态上线**（`RobotSender.sendCard`，群内实测卡片标题/工具/确认提示三层结构 + ✅ 卡片回执）。
 - **真交互卡片 = Adaptive Cards 1.4，开放平台通道**：重保群（698439d1e4b0d221d736ee42）告警平台卡片只读样本——`param.interactiveCard.cardJson` 内联完整 Adaptive 协议（Action.Submit 按钮/Input.Text/ChoiceSet/`_secondConfirm` 二次确认），回传走卡片平台→模板回调地址。R3 上 Adaptive 确认卡的协议依据已锁定，等 D 层协调。
 - 设计文档 §4.1 spike⑥/§1.7 C 层/§3.5 R3 三处同步修正。
+
+### 20.7 R2.5：Claude Tag 对齐收口（2026-08-16，`0bb88e3`）
+
+- **PushHub（事件驱动推送）**：router 只排队轮次（ack 后即返回），**全部推送**由 `session/event` firehose + `agent/status`/`agent/error` 驱动——**任何触发源**（交互/定时/看板）的产出都会推回会话（C11 投递缺口补上）；水位防重发、长任务每 5 个工具步推里程碑（`⏳ 进行中…`）、错误以有界失败行呈现（C4 完整）。
+- **群记忆（C9/S4）**：`robot_yzj_memory` 域——「记住 …」存（去重、上限 30）、「忘掉 …」删、`!memory` 列；存储行以 instructions 上下文注入每轮。实测：记住→查询→注入生效全通。
+- **入群自我介绍（S7/C14）**：每群首个会话跑 intro 轮（读群历史+提建议任务），进程内去重。
+- **任务署名 ack（C12）**：ack 带任务摘要（`收到，处理中…（帮我演示…）`）。
+- **对齐终局**：14 项中 12 项 ✅ 等价或更强、1 项 ⚠️（C3 群内须带 @，协议限制已文档化）、1 项 ➖（C7 自静音显式放弃）；`!fork` 仍留观察。51 单测绿。
+- 遗留观察：取消确认卡后部分轮次无收尾推送（agent 收尾产出为空的情形），非阻塞，下轮观察。
