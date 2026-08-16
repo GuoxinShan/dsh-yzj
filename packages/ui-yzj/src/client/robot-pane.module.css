@@ -349,3 +349,16 @@
   justify-content: space-between;
   gap: 8px;
 }
+
+.guideBox {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--dsw-surface-raised);
+}
+
+.guideBox .hint {
+  line-height: 1.6;
+}

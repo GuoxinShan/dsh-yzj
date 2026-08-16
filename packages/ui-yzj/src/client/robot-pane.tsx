@@ -208,11 +208,12 @@ function RobotList(outer: { props: RobotPaneProps; onOpen: (index: number) => vo
 
       <section className={css.section}>
         <h3 className={css.sectionTitle}>添加机器人</h3>
-        <p className={css.hint}>
-          创建：个人机器人在
-          <a href="https://www.yunzhijia.com/im/personalRobotCreate" target="_blank" rel="noreferrer">个人机器人创建页</a>
-          零门槛创建（群对话机器人需群管理员）；创建后复制 sendMsgUrl 粘贴到这里。
-        </p>
+        <div className={css.guideBox}>
+          <p className={css.hint}><strong>方式一 · 个人机器人（推荐，本机即可用）</strong>：在
+            <a href="https://www.yunzhijia.com/im/personalRobotCreate" target="_blank" rel="noreferrer">个人机器人创建页</a>
+            零门槛创建，不需要任何公网地址；创建后复制 sendMsgUrl 粘贴到下面。</p>
+          <p className={css.hint}><strong>方式二 · 群对话机器人（需群管理员）</strong>：创建时云之家要求填「消息接收地址」（公网 HTTPS）并立即发一次测试请求——本机用临时隧道（ngrok/frp）把任意可达地址填进去即可通过；创建成功后收消息走我们自己的长连接，<strong>公网地址可以弃用、隧道可关</strong>。创建时给的 appSecret 不需要配置（我们的通道凭据在 sendMsgUrl 里）。</p>
+        </div>
         {addOpen ? (
           <div className={css.editor}>
             <label className={css.field}>
