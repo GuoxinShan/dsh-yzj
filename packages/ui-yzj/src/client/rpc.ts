@@ -82,6 +82,8 @@ export interface YzjPanelInject {
   robotShareList: (groupId: string, robotIndex?: number) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Panel-direct write into a group's shared workspace (user's own will; auto-unique names unless overwrite). */
   robotShareWrite: (input: { groupId: string; filename: string; content: string; overwrite?: boolean; robotIndex?: number }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Persist the FULL channel configuration to the channels file (§8.5); takes effect after a GUI restart. */
+  robotChannelsSave: (input: { defaultProvider?: string; defaultModel?: string; robots: { sendMsgUrl: string; provider?: string; model?: string; cwd?: string; enabled?: boolean; allowFrom?: string[] }[] }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
 }
 
 /** Build the inject face from a connection handle; unavailable → failed calls. */
@@ -170,6 +172,11 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
       content: input.content,
       ...(input.overwrite === undefined ? {} : { overwrite: input.overwrite }),
       ...(input.robotIndex === undefined ? {} : { robotIndex: input.robotIndex }),
+    }),
+    robotChannelsSave: (input: { defaultProvider?: string; defaultModel?: string; robots: { sendMsgUrl: string; provider?: string; model?: string; cwd?: string; enabled?: boolean; allowFrom?: string[] }[] }) => call('robot-channels-save', {
+      ...(input.defaultProvider === undefined ? {} : { defaultProvider: input.defaultProvider }),
+      ...(input.defaultModel === undefined ? {} : { defaultModel: input.defaultModel }),
+      robots: input.robots,
     }),
   }
 }

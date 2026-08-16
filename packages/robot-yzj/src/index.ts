@@ -189,6 +189,8 @@ export class YzjRobot extends Service {
   private readonly hub: PushHub
   private readonly memory = new MemoryStore()
   private readonly guiUrl: string
+  /** Config snapshot for the settings-card save path (seed fallback). */
+  private readonly config: Config
   /** The settings card's channel file (design §8.5); undefined = file not configured. */
   private readonly channelsFile: string | undefined
   /** Operator-side fork sessions created from robot conversations (owned here). */
@@ -196,6 +198,7 @@ export class YzjRobot extends Service {
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'yzjRobot')
+    this.config = config
     this.guiUrl = config.guiUrl ?? ''
     this.hub = new PushHub(this.guiUrl === '' ? undefined : this.guiUrl)
     this.channelsFile = config.channelsFile === undefined || config.channelsFile === '' ? undefined : config.channelsFile
@@ -245,23 +248,8 @@ export class YzjRobot extends Service {
         return { ok: false, error: '每个通道必须有 sendMsgUrl' }
       }
     }
-    const existing = loadChannelsFile(this.channelsFile)
-    const previous = existing ?? {
-      defaultProvider: this.config.defaultProvider,
-      defaultModel: this.config.defaultModel,
-    }
-    const doc = {
-      ...(firstNonEmpty(input.defaultProvider, previous?.defaultProvider, this.config.defaultProvider) === undefined ? {} : { defaultProvider: firstNonEmpty(input.defaultProvider, previous?.defaultProvider, this.config.defaultProvider) }),
-      ...(firstNonEmpty(input.defaultModel, previous?.defaultModel, this.config.defaultModel) === undefined ? {} : { defaultModel: firstNonEmpty(input.defaultModel, previous?.defaultModel, this.config.defaultModel) }),
-      robots: input.robots.map(robot => ({
-        sendMsgUrl: robot.sendMsgUrl,
-        ...(robot.enabled === undefined ? {} : { enabled: robot.enabled }),
-        ...(robot.allowFrom === undefined || robot.allowFrom.length === 0 ? {} : { allowFrom: robot.allowFrom }),
-        ...(robot.provider === undefined || robot.provider === '' ? {} : { provider: robot.provider }),
-        ...(robot.model === undefined || robot.model === '' ? {} : { model: robot.model }),
-        ...(robot.cwd === undefined || robot.cwd === '' ? {} : { cwd: robot.cwd }),
-      })),
-    }
+    const previous = loadChannelsFile(this.channelsFile)
+    const doc = buildChannelsDoc(input, previous, this.config)
     try {
       mkdirSync(dirname(this.channelsFile), { recursive: true })
       const tmp = join(dirname(this.channelsFile), `.robot-channels-${Date.now().toString(36)}.tmp`)
@@ -679,6 +667,78 @@ export function listShareFiles(
     return { ok: true, dir, files }
   } catch (error) {
     return { ok: false, dir, files: [], error: `读取共享区失败：${String(error)}` }
+  }
+}
+
+/** Parsed channels-file document (design §8.5). */
+export interface ChannelsFileDoc {
+  defaultProvider?: string
+  defaultModel?: string
+  defaultCwd?: string
+  robots: RobotChannelConfig[]
+}
+
+/**
+ * Read and parse the channels file; undefined when missing, unreadable, or
+ * invalid JSON — the caller falls back to the patch-level config.
+ */
+export function loadChannelsFile(path: string): ChannelsFileDoc | undefined {
+  let raw: string
+  try {
+    raw = readFileSync(path, 'utf8')
+  } catch {
+    return undefined
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return undefined
+  }
+  const record = typeof parsed === 'object' && parsed !== null ? parsed as Record<string, unknown> : {}
+  const robots = Array.isArray(record.robots)
+    ? record.robots.filter((item): item is RobotChannelConfig => {
+        const candidate = item as Record<string, unknown> | null
+        return candidate !== null && typeof candidate === 'object' && typeof candidate.sendMsgUrl === 'string'
+      })
+    : []
+  return {
+    ...(typeof record.defaultProvider === 'string' && record.defaultProvider !== '' ? { defaultProvider: record.defaultProvider } : {}),
+    ...(typeof record.defaultModel === 'string' && record.defaultModel !== '' ? { defaultModel: record.defaultModel } : {}),
+    ...(typeof record.defaultCwd === 'string' && record.defaultCwd !== '' ? { defaultCwd: record.defaultCwd } : {}),
+    robots,
+  }
+}
+
+/** First non-empty string of the candidates (settings-card seed fallback chain). */
+function firstNonEmpty(...values: (string | undefined)[]): string | undefined {
+  for (const value of values) {
+    if (value !== undefined && value !== '') return value
+  }
+  return undefined
+}
+
+/**
+ * Build the channels-file document for one save (§8.5): `default*` resolve
+ * input > existing file > patch config (the seed migration); robots carry
+ * only non-empty fields so the file stays minimal.
+ */
+export function buildChannelsDoc(
+  input: { defaultProvider?: string; defaultModel?: string; robots: RobotChannelConfig[] },
+  previous: ChannelsFileDoc | undefined,
+  configDefaults: { defaultProvider?: string; defaultModel?: string },
+) {
+  return {
+    ...(firstNonEmpty(input.defaultProvider, previous?.defaultProvider, configDefaults.defaultProvider) === undefined ? {} : { defaultProvider: firstNonEmpty(input.defaultProvider, previous?.defaultProvider, configDefaults.defaultProvider) }),
+    ...(firstNonEmpty(input.defaultModel, previous?.defaultModel, configDefaults.defaultModel) === undefined ? {} : { defaultModel: firstNonEmpty(input.defaultModel, previous?.defaultModel, configDefaults.defaultModel) }),
+    robots: input.robots.map(robot => ({
+      sendMsgUrl: robot.sendMsgUrl,
+      ...(robot.enabled === undefined ? {} : { enabled: robot.enabled }),
+      ...(robot.allowFrom === undefined || robot.allowFrom.length === 0 ? {} : { allowFrom: robot.allowFrom }),
+      ...(robot.provider === undefined || robot.provider === '' ? {} : { provider: robot.provider }),
+      ...(robot.model === undefined || robot.model === '' ? {} : { model: robot.model }),
+      ...(robot.cwd === undefined || robot.cwd === '' ? {} : { cwd: robot.cwd }),
+    })),
   }
 }
 

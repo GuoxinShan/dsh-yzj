@@ -250,3 +250,51 @@
   outline: none;
   border-color: var(--dsw-accent, #2563eb);
 }
+
+.routeEditor {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.miniSelect {
+  padding: 3px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-border, #d4d4d8);
+  background: var(--dsw-surface, #fff);
+  color: var(--dsw-text-primary);
+  font-size: 11px;
+  max-width: 130px;
+}
+
+.miniSelect:disabled {
+  opacity: 0.5;
+}
+
+.danger {
+  padding: 3px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  border: 1px solid var(--dsw-border, #d4d4d8);
+  background: transparent;
+  color: var(--dsw-status-danger, #ef4444);
+  cursor: pointer;
+}
+
+.dangerActive {
+  background: var(--dsw-status-danger, #ef4444);
+  color: var(--dsw-text-on-accent, #fff);
+  border-color: transparent;
+}
+
+.addRow {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.addRow .field {
+  flex: 1;
+  min-width: 0;
+}
