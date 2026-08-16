@@ -563,6 +563,35 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
           return internalError(`robot-share-write failed: ${String(error)}`)
         }
       }
+      case 'robot-channels-save': {
+        const robot = ctx.get('yzjRobot')
+        if (robot === undefined) return internalError('robot-channels-save: yzjRobot 服务不可用（robot-yzj 未挂载）')
+        const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
+        const robotsRaw = Array.isArray(record.robots) ? record.robots : []
+        const robots = robotsRaw.flatMap(item => {
+          const entry = typeof item === 'object' && item !== null ? item as Record<string, unknown> : {}
+          const sendMsgUrl = stringField(entry, 'sendMsgUrl')
+          if (sendMsgUrl === undefined || sendMsgUrl === '') return []
+          return [{
+            sendMsgUrl,
+            ...(typeof entry.enabled === 'boolean' ? { enabled: entry.enabled } : {}),
+            ...(Array.isArray(entry.allowFrom) ? { allowFrom: entry.allowFrom.filter((value): value is string => typeof value === 'string') } : {}),
+            ...(stringField(entry, 'provider') === undefined ? {} : { provider: stringField(entry, 'provider') }),
+            ...(stringField(entry, 'model') === undefined ? {} : { model: stringField(entry, 'model') }),
+            ...(stringField(entry, 'cwd') === undefined ? {} : { cwd: stringField(entry, 'cwd') }),
+          }]
+        })
+        try {
+          const result = await robot.saveChannels({
+            ...(stringField(record, 'defaultProvider') === undefined ? {} : { defaultProvider: stringField(record, 'defaultProvider') }),
+            ...(stringField(record, 'defaultModel') === undefined ? {} : { defaultModel: stringField(record, 'defaultModel') }),
+            robots,
+          })
+          return { ok: true, value: result }
+        } catch (error) {
+          return internalError(`robot-channels-save failed: ${String(error)}`)
+        }
+      }
       case 'robot-diagnostics': {
         const robot = ctx.get('yzjRobot')
         if (robot === undefined) return internalError('robot-diagnostics: yzjRobot 服务不可用（robot-yzj 未挂载）')

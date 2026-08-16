@@ -2376,6 +2376,7 @@ export function YzjPanel(props: YzjPanelProps) {
           deleteRobotOverride={props.deleteRobotOverride}
           robotShareList={props.robotShareList}
           robotShareWrite={props.robotShareWrite}
+          robotChannelsSave={props.robotChannelsSave}
         />
       )}
 

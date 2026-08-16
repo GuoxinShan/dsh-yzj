@@ -85,6 +85,8 @@ export interface RobotPaneProps {
   robotShareList: (groupId: string, robotIndex?: number) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   /** Panel-direct write into a group's shared workspace (user's own will). */
   robotShareWrite: (input: { groupId: string; filename: string; content: string; overwrite?: boolean; robotIndex?: number }) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
+  /** Persist the FULL channel configuration to the channels file (§8.5). */
+  robotChannelsSave: (input: { defaultProvider?: string; defaultModel?: string; robots: { sendMsgUrl: string; provider?: string; model?: string; cwd?: string; enabled?: boolean; allowFrom?: string[] }[] }) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
 }
 
 export function RobotPane(props: RobotPaneProps): React.ReactNode {
@@ -105,6 +107,67 @@ export function RobotPane(props: RobotPaneProps): React.ReactNode {
   const [shareFilename, setShareFilename] = useState('')
   const [shareContent, setShareContent] = useState('')
   const [shareNote, setShareNote] = useState('')
+  // Channel management (§8.5): inline route drafts per row + add form + delete.
+  const [routeDrafts, setRouteDrafts] = useState<Record<number, { provider: string; model: string }>>({})
+  const [confirmingDelete, setConfirmingDelete] = useState<number | null>(null)
+  const [addUrl, setAddUrl] = useState('')
+  const [addProvider, setAddProvider] = useState('')
+  const [addModel, setAddModel] = useState('')
+  const [addCwd, setAddCwd] = useState('')
+  const [channelNote, setChannelNote] = useState('')
+
+  /** The full channel list as the settings file expects it (live values + row drafts). */
+  const currentChannels = (): { sendMsgUrl: string; provider?: string; model?: string; cwd?: string; enabled?: boolean; allowFrom?: string[] }[] =>
+    asArray(props.channels).map((channel, index) => {
+      const record = asRecord(channel)
+      const draft = routeDrafts[index]
+      const provider = draft?.provider ?? asString(record.provider)
+      const model = draft?.model ?? asString(record.model)
+      return {
+        sendMsgUrl: asString(record.sendMsgUrl),
+        enabled: record.enabled === true,
+        ...(Array.isArray(record.allowFrom) ? { allowFrom: record.allowFrom.filter((value): value is string => typeof value === 'string') } : {}),
+        ...(provider === '' ? {} : { provider }),
+        ...(model === '' ? {} : { model }),
+        ...(asString(record.cwd) === '' ? {} : { cwd: asString(record.cwd) }),
+      }
+    }).filter(item => item.sendMsgUrl !== '')
+
+  /** Persist channels; on success run the callback (e.g. clearing the add form). */
+  const saveChannels = (robots: { sendMsgUrl: string; provider?: string; model?: string; cwd?: string; enabled?: boolean; allowFrom?: string[] }[], onSaved?: () => void): void => {
+    setChannelNote('')
+    void props.robotChannelsSave({ robots }).then(result => {
+      if (!result.ok) { setChannelNote(`保存失败：${result.error.message}`); return }
+      const record = asRecord(result.value)
+      if (record.ok !== true) { setChannelNote(`保存失败：${asString(record.error)}`); return }
+      setChannelNote(`已保存 ${asString(record.count)} 个通道到通道配置文件（${asString(record.path)}），重启 GUI 后生效`)
+      setConfirmingDelete(null)
+      setRouteDrafts({})
+      onSaved?.()
+    })
+  }
+
+  const removeChannel = (index: number): void => {
+    if (confirmingDelete !== index) { setConfirmingDelete(index); return }
+    const next = currentChannels().filter((_, i) => i !== index)
+    saveChannels(next)
+  }
+
+  const addChannel = (): void => {
+    if (addUrl === '') return
+    const next = [...currentChannels(), {
+      sendMsgUrl: addUrl,
+      ...(addProvider === '' ? {} : { provider: addProvider }),
+      ...(addModel === '' ? {} : { model: addModel }),
+      ...(addCwd === '' ? {} : { cwd: addCwd }),
+    }]
+    saveChannels(next, () => {
+      setAddUrl('')
+      setAddProvider('')
+      setAddModel('')
+      setAddCwd('')
+    })
+  }
 
   /** Group surfaces the selected channel has actually seen (shared dir exists per surface). */
   const shareGroups = useMemo(() => {
@@ -228,7 +291,11 @@ export function RobotPane(props: RobotPaneProps): React.ReactNode {
   return (
     <div className={css.pane}>
       <section className={css.section}>
-        <h3 className={css.sectionTitle}>通道状态</h3>
+        <h3 className={css.sectionTitle}>通道管理</h3>
+        <p className={css.hint}>
+          注册/删除机器人通道与默认路由（作用于该通道全部会话；按会话覆盖可再细配）。保存写入通道配置文件，<strong>重启 GUI 后生效</strong>。创建机器人：个人机器人
+          <a href="https://www.yunzhijia.com/im/personalRobotCreate" target="_blank" rel="noreferrer">个人机器人创建页</a>零门槛，复制 sendMsgUrl 粘贴下方；群对话机器人需群管理员。
+        </p>
         {asArray(props.channels).length === 0 && props.loading && <p className={css.hint}>加载中…</p>}
         {asArray(props.channels).length === 0 && !props.loading && (
           <p className={css.hint}>{props.error === '' ? '没有已配置的机器人通道（robot-yzj 未配置 sendMsgUrl）。' : `通道读取失败：${props.error}`}</p>
@@ -238,23 +305,81 @@ export function RobotPane(props: RobotPaneProps): React.ReactNode {
             const record = asRecord(channel)
             const connected = record.connected === true
             const lastError = asString(record.lastError)
-            const defProvider = asString(record.provider)
-            const defModel = asString(record.model)
             const cwd = asString(record.cwd)
+            const draft = routeDrafts[index] ?? { provider: asString(record.provider), model: asString(record.model) }
             return (
               <li key={index} className={css.channelRow}>
                 <span className={connected ? css.dotOn : css.dotOff} aria-hidden="true" />
                 <span className={css.channelName}>{channelLabel(record)}</span>
-                <span className={css.channelMeta}>
-                  {connected ? '已连接' : '未连接'}
-                  {defProvider !== '' || defModel !== '' ? ` · 默认 ${defProvider}/${defModel}` : ' · 默认 harness 路由'}
-                </span>
+                <span className={css.channelMeta}>{connected ? '已连接' : '未连接'}</span>
                 <span className={css.channelCwd} title={cwd}>cwd: {cwd}</span>
                 {lastError !== '' && <span className={css.channelError} title={lastError}>!</span>}
+                <span className={css.routeEditor}>
+                  <select
+                    className={css.miniSelect}
+                    value={draft.provider}
+                    onChange={(event) => { setRouteDrafts({ ...routeDrafts, [index]: { provider: event.target.value, model: '' } }) }}
+                  >
+                    <option value="">默认路由</option>
+                    {catalog.map(entry => <option key={entry.provider} value={entry.provider}>{entry.provider}</option>)}
+                  </select>
+                  <select
+                    className={css.miniSelect}
+                    value={draft.model}
+                    disabled={draft.provider === ''}
+                    onChange={(event) => { setRouteDrafts({ ...routeDrafts, [index]: { ...draft, model: event.target.value } }) }}
+                  >
+                    <option value="">（跟随默认）</option>
+                    {catalog.find(entry => entry.provider === draft.provider)?.models.map(id => <option key={id} value={id}>{id}</option>)}
+                  </select>
+                  <button type="button" className={css.secondary} onClick={() => { saveChannels(currentChannels()) }}>保存</button>
+                  <button
+                    type="button"
+                    className={confirmingDelete === index ? `${css.danger} ${css.dangerActive}` : css.danger}
+                    onClick={() => { removeChannel(index) }}
+                  >
+                    {confirmingDelete === index ? '确认删除?' : '删除'}
+                  </button>
+                </span>
               </li>
             )
           })}
         </ul>
+        <div className={css.editor}>
+          <label className={css.field}>
+            <span className={css.fieldLabel}>sendMsgUrl（粘贴创建机器人时给的地址）</span>
+            <input
+              className={css.input}
+              value={addUrl}
+              onChange={(event) => { setAddUrl(event.target.value) }}
+              placeholder="https://www.yunzhijia.com/gateway/robot/webhook/send?yzjtoken=…"
+            />
+          </label>
+          <div className={css.addRow}>
+            <label className={css.field}>
+              <span className={css.fieldLabel}>Provider</span>
+              <select className={css.select} value={addProvider} onChange={(event) => { setAddProvider(event.target.value); setAddModel('') }}>
+                <option value="">（默认路由）</option>
+                {catalog.map(entry => <option key={entry.provider} value={entry.provider}>{entry.provider}</option>)}
+              </select>
+            </label>
+            <label className={css.field}>
+              <span className={css.fieldLabel}>模型</span>
+              <select className={css.select} value={addModel} disabled={addProvider === ''} onChange={(event) => { setAddModel(event.target.value) }}>
+                <option value="">（跟随默认）</option>
+                {catalog.find(entry => entry.provider === addProvider)?.models.map(id => <option key={id} value={id}>{id}</option>)}
+              </select>
+            </label>
+            <label className={css.field}>
+              <span className={css.fieldLabel}>cwd（可选）</span>
+              <input className={css.input} value={addCwd} onChange={(event) => { setAddCwd(event.target.value) }} placeholder="留空 = 宿主 cwd" />
+            </label>
+          </div>
+          <div className={css.actions}>
+            <button type="button" className={css.primary} disabled={addUrl === ''} onClick={addChannel}>添加机器人通道</button>
+          </div>
+          {channelNote !== '' && <p className={css.note} role="status">{channelNote}</p>}
+        </div>
       </section>
 
       <section className={css.section}>
