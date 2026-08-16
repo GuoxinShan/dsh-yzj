@@ -9,12 +9,14 @@ import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { YzjToolCard, YZJ_TOOL_NAMES } from './cards.tsx'
 import { YzjComposerDock, dragInsertRequest, type YzjDropInjected } from './composer.tsx'
 import { applyYzjAtSource } from './input-source.ts'
 import { YzjPanel, YzjFloatBall } from './panel.tsx'
+import { YzjSettingsSection } from './settings-section.tsx'
 import { createYzjStore } from './stores.ts'
 import { createYzjPanelInject } from './rpc.ts'
 import { openPanelTarget } from './panel-controller.ts'
@@ -85,6 +87,15 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('shell.overlay', () => ctx.slots.register(
     { name: 'shell.overlay', id: 'yzj-panel', order: 100, store, inject: () => panelInject },
     YzjPanel,
+  ))
+
+  // 云之家 settings section (设置 → 云之家): the management home for the
+  // robot channels and the memory vault — NOT workspace-panel tabs (user
+  // decision). `slots.inject` defers until the settings shell declares the
+  // seat, so compositions without the settings UI simply skip it.
+  ctx.slots.inject('settings.section', () => ctx.slots.register(
+    { name: 'settings.section', id: 'yzj', order: 25, label: '云之家', inject: () => panelInject },
+    YzjSettingsSection,
   ))
 
   // Floating ball entry: the ONLY panel entry (no sidebar button). Shares the

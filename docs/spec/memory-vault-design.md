@@ -1,10 +1,13 @@
 # 记忆库组件设计：memory-yzj（vault 模型 + dream 固化 + 定时任务对接）
 
-> v0.2 · 2026-08-16 · 状态：v0.1 已实现；v0.2 增补（dream 开关/进程内执行器/插件默认模型）已实现
+> v0.2 · 2026-08-16 · 状态：v0.1 已实现；v0.2 增补（dream 开关/进程内执行器/插件默认模型）已实现；v0.3（管理面迁入设置）已实现
 >
 > v0.2 变更（2026-08-16）：dream 增加**运行时开关（默认关闭）**与**可设置模型**，固化主路径从
 > dsh-routines routine 改为**进程内执行器**（`ctx.agents` one-shot 会话），新增插件级默认模型
 > 包 `@dsh-yzj/model-yzj`（`ctx.yzjModels`）并接入 robot-yzj 模型解析链。见 §7.1 与决策表 D12-D15。
+>
+> v0.3 变更（2026-08-16）：机器人/记忆的管理与配置面迁入 **设置 → 云之家**（`settings.section`
+> 插槽，分段「机器人｜记忆库」），工作台面板回到四个运营页签（用户决策，见 D16）。
 >
 > 参考输入：
 > - **dream-vault 导出包**（用户提供，`dream-vault-<uuid>.zip`）：sections / entities /
@@ -44,15 +47,16 @@
 - 面板的 dream 手动触发（固化仍只由 routine 发起；面板只读 + 手动记观察）；
 - 与生态记忆插件互操作或迁移。
 
-### v0.1 增补（2026-08-16）：浏览器记忆面板（随用户要求提前）
+### v0.1 增补（2026-08-16）：记忆管理面（随用户要求提前；v0.3 迁入设置）
 
-原「浏览器管理面板」非目标提前转正为 ui-yzj 工作台第六 tab「记忆」（只读浏览 +
-用户直写），交付面：
+原「浏览器管理面板」非目标提前转正（只读浏览 + 用户直写）。**v0.3 起管理面在
+设置 → 云之家 · 记忆库**（与机器人管理同处一个设置节，分段切换；用户决策：管理/
+配置不占工作台页签）。交付面：
 
 - `/yzj` RPC +3：`memory-scope`（readScope 视图）、`memory-log`（log.md 尾部，
   服务新增 `dreamLogTail`）、`memory-observe`（**面板直写 = 用户本人意志**，与
   im-send/todo-create 直写同语义，不经确认卡；source 标 `panel`）；
-- 记忆 tab：sections/entities 展开浏览、open observations 全文、注入上限与
+- 记忆管理页：sections/entities 展开浏览、open observations 全文、注入上限与
   open/archived 计数、dream 日志尾部（「记录何时被分析过」对用户透明）、
   「记一条」快捷新增（写观察草稿区）；
 - 工具卡：`memory_*` 五工具进 cards.tsx keyed 视图（简单摘要形态）。
@@ -258,6 +262,7 @@ interface YzjMemoryService {
 | D13 | dream 执行 | 进程内执行器（ctx.agents one-shot 会话）为主，dsh-routines routine 降为备选 | 实读确认 dsh-routines 无 per-routine 模型字段——routine 路径模型不可控；进程内会话同样有完整会话日志（审计不降级），且模型链/开关/每日定时全部可配 |
 | D14 | dream/robot 模型链 | dream.json 显式路由 > 插件默认（ctx.yzjModels）> harness 默认；robot 链尾部同接插件默认 | 用户拍板「插件范围内的默认模型把已有地方搞过来」；一次设置全插件生效，局部显式配置仍可覆盖 |
 | D15 | 插件默认模型归属 | 新包 `@dsh-yzj/model-yzj`（`~/.dsh/yzj-model.json`） | memory 与 robot 互不依赖，共享默认必须有独立底层包；明文 JSON 手改热生效，与 vault 同哲学 |
+| D16 | 机器人/记忆管理面落位 | **设置 → 云之家**（settings.section，分段切换），不占工作台页签 | 用户决策：管理/配置与运营性内容分家；面板四页签（知识库/日程/会话/待办）保持运营定位；两个 pane 组件复用零改动（包装器自取数 + verb 包装刷新） |
 
 ## 11. 验收口径
 

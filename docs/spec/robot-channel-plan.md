@@ -146,7 +146,7 @@ robotId 与 CLI groupId 的 ID 空间映射；创建流程的公网测试是否�
 | 现有结构 | 结合方式 |
 |---|---|
 | `/yzj` RPC 通道（`ui-yzj/src/index.ts`） | 新增端点：`robot-status`（连接状态/最近入站）、`robot-send`（面板直发，用户直写语义）、`robot-config`（读写机器人配置 + 连接测试） |
-| 面板 tab（`panel.tsx` TABS） | 不加第六 tab；在**悬浮球快捷坞**加「机器人」入口 → 设置卡（sendMsgUrl 粘贴即推导 WS 地址、连接状态灯、allowFrom 管理、创建引导文案——把 §1.2 的 Web 操作步骤内置成图文向导） |
+| 面板 tab（`panel.tsx` TABS） | **不加页签**（v0.3 定稿：管理/配置不进工作台页签）；机器人管理在 **设置 → 云之家 · 机器人**（与记忆库管理同处一个设置节，分段切换；`settings.section` 插槽，注册 id `yzj`）。设置卡：sendMsgUrl 粘贴即推导 WS 地址、连接状态灯、allowFrom 管理、创建引导文案——把 §1.2 的 Web 操作步骤内置成图文向导 |
 | 未读角标聚合（`stores.ts` + unreadTotalOf） | 机器人入站消息计数并入聚合：来源标记 `robot`，点开落对应群的会话 tab（有映射时）或机器人会话视图 |
 | write-gate（`write-gate.ts` approval/request） | 机器人触发的写**不经 GUI 确认卡**（人不在 GUI 前）——走 §3.4 的群内确认协议；write-gate 保持只服务 GUI 路径，不混 |
 | ConversationNodeDefinition 卡片族 | 入站消息在 session 里渲染为带群/发送人上下文的轮次；机器人回复带「已推送到群」终态标记 |
@@ -426,7 +426,7 @@ robotId 与 CLI groupId 的 ID 空间映射；创建流程的公网测试是否�
 
 ### 8.5 通道管理设置卡 + `channelsFile`（2026-08-16 决策）
 
-> 解决两个盲区：注册/删除/启停机器人通道没有 UI（只能手改 cordis.patch.yml + 重启），通道默认路由（provider/model）也没有 UI 配置入口（只能按会话覆盖）。代码：`packages/robot-yzj`（`channelsFile` 读取 + `saveChannels`）+ `packages/ui-yzj`（机器人 tab「通道管理」section）。gap-analysis §20.12。
+> 解决两个盲区：注册/删除/启停机器人通道没有 UI（只能手改 cordis.patch.yml + 重启），通道默认路由（provider/model）也没有 UI 配置入口（只能按会话覆盖）。代码：`packages/robot-yzj`（`channelsFile` 读取 + `saveChannels`）+ `packages/ui-yzj`（**设置 → 云之家 · 机器人**「通道管理」section；v0.3 起管理面与记忆库同处设置节，不再占工作台页签）。gap-analysis §20.12。
 
 **配置来源语义**：
 
@@ -437,7 +437,7 @@ robotId 与 CLI groupId 的 ID 空间映射；创建流程的公网测试是否�
 - JSON 结构：`{defaultProvider?, defaultModel?, robots: [{sendMsgUrl, provider?, model?, cwd?, enabled?, allowFrom?}]}`；写回时保留文件里已有的 `default*`（设置卡 v1 不编辑全局默认）；
 - **生效方式**：保存 = 原子写文件（tmp + rename），**当前进程通道不变，重启 GUI 后生效**（与改 host 代码同体验）；不做热生效（动态增删 WS 通道需要改造通道生命周期，风险大，列为后续）。
 
-**设置卡 UI（机器人 tab，两级结构）**：
+**设置卡 UI（设置 → 云之家 · 机器人，两级结构）**：
 
 - **一级（机器人列表）**：每行 = 状态灯 + 类型名 + 连接状态 + 自动 cwd + **群数徽标**（该机器人见过的群数）；点击进入详情；底部「添加机器人」表单（sendMsgUrl 粘贴 + 可选默认 Provider/Model，**无 cwd 输入——工作目录自动分配**），内置**两条创建路径引导**：
   - 方式一 · 个人机器人（推荐，本机可用）：个人创建页零门槛，无需公网地址；

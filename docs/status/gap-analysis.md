@@ -442,3 +442,12 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 - **全链路（子代理在 GUI 进程内经工具执行）**：observe（obs-20260816211751-c465，open 1/200）→ read → search「周报」命中 → dream_load → dream_apply（提升 1 · 段写 2 · 拒绝 0，无 rev 冲突）→ read 复核（work_context 段建立，观察转 archived）。观察无 rev 属设计（rev 只护 sections/entities 的读改写；观察按 id 一次性处置）。
 - **闭环**：固化后的 `work_context` 段在下一轮提示组装中作为 `yzj-memory` runtime-context 出现（验收会话自身可见）——注入现算、无陈旧镜像实证。
 - **待用户点验（面板交互，无自动化覆盖）**：记忆 tab「立即固化」（dreamRun 进程内执行器，one-shot dream 会话 + lastNote 回写）与「插件默认模型」选择器（robot 兜底路由热生效）。dream.json 当前 enabled=true 且未设 dailyAt（不自动跑）；用户可在面板设每日时间或关闸。
+
+### 21.4 机器人/记忆管理迁入设置（2026-08-16 v0.3，用户决策）
+
+用户要求：机器人、记忆的管理/配置不要单独占工作台页签，放进设置里。
+
+- **设置 → 云之家**（`settings.section` 插槽，id `yzj`，label「云之家」，order 25）：分段控件「机器人｜记忆库」复用 RobotPane / MemoryPane（props 不变）；包装组件挂载即自取数，RPC verb 包装器更新本地 state——面板内刷新路径（observe 提交、dream 运行、覆盖项编辑）自然重渲染。
+- **工作台面板回到四页签**（知识库/日程/会话/待办）：`TABS`/`DOCK_ITEMS` 删机器人/记忆，`YzjTab` 收窄，store 删 robot/memory 字段与动作（自愈清单同步收窄，旧 blob 判坏重置）；浮动球快捷坞同步。
+- **依赖**：ui-yzj 新增 link 依赖 `@deepseek-ai/dsh-client-ui-settings`（仅类型，slot 契约经 `ctx.slots.inject` 延迟注册，无该壳的组合理应静默跳过）。
+- **验收**：settings-section 3 组件测试（分段渲染 + 双 pane 挂载自取数 + verb 包装刷新路径）；全仓 255 绿；typecheck/build/bundle 通过。真实走查（设置导航出现「云之家」、四页签面板、球坞）待 web profile 重启后进行。

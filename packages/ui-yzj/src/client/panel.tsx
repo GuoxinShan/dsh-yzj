@@ -24,8 +24,6 @@ import {
 import { emitYzjDropRequest } from './drop-bus.ts'
 import { registerPanelController } from './panel-controller.ts'
 import { TodoPane } from './todo-pane.tsx'
-import { RobotPane } from './robot-pane.tsx'
-import { MemoryPane } from './memory-pane.tsx'
 import css from './panel.module.css'
 
 /** The props shares the panel reads. */
@@ -486,33 +484,10 @@ const TABS: { key: YzjTab; label: string; icon: () => ReactNode }[] = [
   { key: 'calendar', label: '日程', icon: () => <IconChecklistOutline14 /> },
   { key: 'chat', label: '会话', icon: () => <IconNewChatOutline16 /> },
   { key: 'todo', label: '待办', icon: () => <IconListPenOutline16 /> },
-  { key: 'robot', label: '机器人', icon: () => <IconRobot16 /> },
-  { key: 'memory', label: '记忆', icon: () => <IconMemory16 /> },
 ]
 
-/** Memory-vault glyph (local: layered note stack mark). */
-function IconMemory16(): ReactNode {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <rect x="4" y="5" width="12" height="9" rx="2" stroke="currentColor" strokeWidth="1.8" />
-      <path d="M8 18h9a3 3 0 0 0 3-3v-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M7.5 9.5h5M7.5 12h3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-    </svg>
-  )
-}
-
-/** Robot-channel glyph (local: ui-primitives ships no bot icon). */
-function IconRobot16(): ReactNode {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <rect x="4" y="8" width="16" height="12" rx="3" stroke="currentColor" strokeWidth="2" />
-      <path d="M12 8V5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-      <circle cx="12" cy="4" r="1.5" fill="currentColor" />
-      <circle cx="9" cy="14" r="1.5" fill="currentColor" />
-      <circle cx="15" cy="14" r="1.5" fill="currentColor" />
-    </svg>
-  )
-}
+// 机器人/记忆管理页已迁移至 设置 → 云之家（settings-section.tsx）；工作台页签
+// 只保留运营性内容（用户决策）。
 
 /** The sidebar-foot toggle; label and open state ride the store shares. */
 export interface YzjPanelButtonProps {
@@ -662,8 +637,6 @@ const DOCK_ITEMS: { key: YzjTab; label: string; icon: () => ReactNode }[] = [
   { key: 'todo', label: '待办', icon: () => <IconListPenOutline16 /> },
   { key: 'calendar', label: '日程', icon: () => <IconChecklistOutline14 /> },
   { key: 'docs', label: '知识库', icon: () => <IconFolderOpenOutline16 /> },
-  { key: 'robot', label: '机器人', icon: () => <IconRobot16 /> },
-  { key: 'memory', label: '记忆', icon: () => <IconMemory16 /> },
 ]
 
 /** Common emojis for the composer picker (real-IM habit). */
@@ -831,55 +804,6 @@ function loadTab(
         }
       } else fail(result.error.message)
     })
-  } else if (tab === 'robot') {
-    // Channel statuses, persisted overrides, and the provider/model catalog
-    // in parallel; group names for the robot detail ALWAYS come from a fresh
-    // multi-page group list (the chat-tab cache may be stale or miss a
-    // robot's group entirely — a robot's group can sit outside the newest
-    // 20 conversations).
-    const loadGroupsFresh = async (): Promise<void> => {
-      const pages: unknown[][] = []
-      for (let page = 1; page <= 3; page += 1) {
-        const result = await props.fetchGroups(20, page)
-        if (!result.ok) break
-        pages.push(asArray(asRecord(result.value).list))
-        if (asRecord(result.value).more !== true) break
-      }
-      const seen = new Set<string>()
-      const merged = pages.flat().filter(item => {
-        const id = asString(asRecord(item).groupId)
-        if (id === '' || seen.has(id)) return false
-        seen.add(id)
-        return true
-      })
-      putGroupWindow(merged, false)
-      props.actions.setGroups(merged)
-    }
-    void Promise.all([
-      props.robotStatus(),
-      props.robotOverrides(),
-      props.robotModels(),
-      loadGroupsFresh(),
-    ]).then(([status, overrides, models]) => {
-      if (!status.ok) { fail(status.error.message); return }
-      if (!overrides.ok) { fail(overrides.error.message); return }
-      props.actions.setRobotData(
-        asArray(asRecord(status.value).channels),
-        asArray(asRecord(overrides.value).overrides),
-        models.ok ? asArray(asRecord(models.value).catalog) : [],
-      )
-      props.actions.setLoading(false)
-      if (!models.ok) props.actions.setError(`模型目录读取失败：${models.error.message}`)
-    })
-  } else if (tab === 'memory') {
-    // Read view + dream log tail in parallel; an unavailable memory-yzj
-    // service surfaces as the pane's error hint (install guidance).
-    void Promise.all([props.memoryScope(), props.memoryLog()]).then(([scope, log]) => {
-      if (!scope.ok) { fail(scope.error.message); return }
-      props.actions.setMemory(asRecord(scope.value).view, log.ok ? asString(asRecord(log.value).log) : '')
-      props.actions.setLoading(false)
-      if (!log.ok) props.actions.setError(`固化日志读取失败：${log.error.message}`)
-    })
   }
 }
 
@@ -887,8 +811,8 @@ function loadTab(
 export function YzjPanel(props: YzjPanelProps) {
   const open = props.useStore(state => state.open)
   const tab = props.useStore(state => state.tab)
-  // Persisted tabs may hold the removed 'me'; fall back to the docs tab.
-  const activeTab: YzjTab = tab === 'docs' || tab === 'calendar' || tab === 'chat' || tab === 'todo' || tab === 'robot' || tab === 'memory' ? tab : 'docs'
+  // Persisted tabs may hold removed keys (me/robot/memory); fall back to docs.
+  const activeTab: YzjTab = tab === 'docs' || tab === 'calendar' || tab === 'chat' || tab === 'todo' ? tab : 'docs'
   const anchorActive = props.useStore(state => state.anchorMsgId !== '')
   const state = props.useStore(s => s)
   const panelRef = useRef<HTMLDivElement | null>(null)
@@ -2391,51 +2315,6 @@ export function YzjPanel(props: YzjPanelProps) {
           todoLibraries={props.todoLibraries}
           selectTodoLibrary={props.selectTodoLibrary}
           ensureTeamTodo={props.ensureTeamTodo}
-        />
-      )}
-
-      {activeTab === 'robot' && (
-        <RobotPane
-          channels={state.robotChannels}
-          overrides={state.robotOverrides}
-          catalog={state.robotCatalog}
-          selectedKey={state.robotSelKey}
-          groups={state.groups}
-          loading={state.loading}
-          error={state.error}
-          onSelectKey={key => { props.actions.setRobotSelKey(key) }}
-          onOverridesRefreshed={overrides => {
-            props.actions.setRobotData(state.robotChannels, overrides, state.robotCatalog)
-          }}
-          robotStatus={props.robotStatus}
-          robotOverrides={props.robotOverrides}
-          robotModels={props.robotModels}
-          setRobotOverride={props.setRobotOverride}
-          deleteRobotOverride={props.deleteRobotOverride}
-          robotShareList={props.robotShareList}
-          robotShareRead={props.robotShareRead}
-          robotOpenFolder={props.robotOpenFolder}
-          robotShareWrite={props.robotShareWrite}
-          robotChannelsSave={props.robotChannelsSave}
-        />
-      )}
-
-      {activeTab === 'memory' && (
-        <MemoryPane
-          view={state.memoryView}
-          log={state.memoryLog}
-          loading={state.loading}
-          error={state.error}
-          memoryScope={() => props.memoryScope()}
-          memoryLog={() => props.memoryLog()}
-          memoryObserve={(content, tags) => props.memoryObserve(content, tags)}
-          dreamState={() => props.dreamState()}
-          dreamSet={partial => props.dreamSet(partial)}
-          dreamRun={() => props.dreamRun()}
-          modelDefault={() => props.modelDefault()}
-          modelSetDefault={(provider, model) => props.modelSetDefault(provider, model)}
-          modelClearDefault={() => props.modelClearDefault()}
-          modelCatalog={() => props.modelCatalog()}
         />
       )}
 
