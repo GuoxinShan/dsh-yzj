@@ -10,7 +10,7 @@
 
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import type { Agent, AgentHandle, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
+import type { Agent, AgentHandle, CreateAgentOptions, ResumeAgentOptions } from '@deepseek-ai/dsh-agent'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { InboundDedupe, type RobotInboundMessage } from './protocol.ts'
 import type { RobotSendOptions, RobotSendResult } from './outbound.ts'
@@ -19,6 +19,8 @@ import type { RobotSendOptions, RobotSendResult } from './outbound.ts'
 export interface RouterAgentsFace {
   get(sessionId: SessionId): Agent | undefined
   create(options: CreateAgentOptions): Promise<AgentHandle>
+  /** Resume an agent on a persisted session log; rejects when none exists. */
+  resume(options: ResumeAgentOptions): Promise<AgentHandle>
 }
 
 /** Outbound face (RobotSender satisfies it). */
@@ -40,6 +42,8 @@ export interface RobotRouterOptions {
   readonly sender: RouterSendFace
   /** Empty list denies everyone; the resolver may fill it lazily (whoami). */
   readonly allowFrom: AllowFromResolver
+  /** Provider/model override for created agent sessions; absent = harness default. */
+  readonly agentOptions?: { provider?: string; model?: string }
   readonly ackText?: string
   readonly denyText?: string
   readonly logger?: RouterLogger
@@ -70,6 +74,7 @@ export class RobotRouter {
   private readonly agents: RouterAgentsFace
   private readonly sender: RouterSendFace
   private readonly allowFrom: AllowFromResolver
+  private readonly agentOptions: { provider?: string; model?: string } | undefined
   private readonly ackText: string
   private readonly denyText: string
   private readonly logger: RouterLogger | undefined
@@ -90,6 +95,7 @@ export class RobotRouter {
     this.agents = options.agents
     this.sender = options.sender
     this.allowFrom = options.allowFrom
+    this.agentOptions = options.agentOptions
     this.ackText = options.ackText ?? DEFAULT_ACK_TEXT
     this.denyText = options.denyText ?? DEFAULT_DENY_TEXT
     this.logger = options.logger
@@ -171,6 +177,15 @@ export class RobotRouter {
       return
     }
     const markerSeq = lastSeq(agent.session.events)
+    let lastError: string | undefined
+    const errorListener = (payload: { agent?: { id?: string }; error?: unknown }): void => {
+      if (payload.agent?.id === agent.id) {
+        this.logger?.warn(`robot: agent error in ${sessionId}: ${String(payload.error)}`)
+        lastError = String(payload.error)
+      }
+    }
+    // ctx.on returns the disposer; detach it on every exit below.
+    const detach = agent.ctx.on('agent/error', errorListener as never)
     try {
       agent.followup(createUserMessage({
         content: [{ type: 'text', text: message.content }],
@@ -178,20 +193,32 @@ export class RobotRouter {
       }))
     } catch (error) {
       this.logger?.warn(`robot: followup failed: ${String(error)}`)
+      detach()
       return
     }
     try {
       await agent.whenIdle()
     } catch (error) {
       this.logger?.warn(`robot: agent idle wait failed: ${String(error)}`)
+      detach()
       return
     }
+    detach()
     const events = agent.session.events
     const afterSeq = Math.max(markerSeq, this.pushedSeq.get(sessionId) ?? -1)
     const answer = collectAssistantText(events, afterSeq)
     const highest = highestAssistantSeq(events, afterSeq)
     if (highest >= 0) this.pushedSeq.set(sessionId, highest)
-    if (answer === '') return
+    const histogram = events.filter(e => e.seq > markerSeq).map(e => e.type).join(',')
+    this.logger?.warn(`robot: turn done for ${sessionId} events=[${histogram}] answer=${answer.length}ch${lastError === undefined ? '' : ` err=${lastError.slice(0, 200)}`}`)
+    if (answer === '') {
+      await this.reply(lastError === undefined ? '本轮没有产出回答（会话已记录，可在 DSH 中查看）。' : `处理失败：${lastError.slice(0, 300)}`, {
+        replyMsgId: message.msgId,
+        replySummary: message.content.slice(0, 60),
+        replyPersonName: message.operatorName,
+      })
+      return
+    }
     const result = await this.reply(answer, {
       replyMsgId: message.msgId,
       replySummary: message.content.slice(0, 60),
@@ -203,14 +230,24 @@ export class RobotRouter {
   private async ensureAgent(sessionId: SessionId): Promise<Agent | undefined> {
     const existing = this.agents.get(sessionId)
     if (existing !== undefined) return existing
-    try {
-      const handle = await this.agents.create({ sessionId })
-      this.handles.set(sessionId, handle)
-      return handle.agent
-    } catch (error) {
-      this.logger?.warn(`robot: create agent failed for ${sessionId}: ${String(error)}`)
-      return undefined
-    }
+    const agentOptions = this.agentOptions
+    // Robot DM sessions live under the dsh-yzj checkout: the persona prompt
+    // section requires {{cwd}} to resolve, and a bare `_no-cwd` session would
+    // fail prompt assembly on its first turn.
+    const meta = { cwd: process.cwd() }
+    // A robot DM session is durable across host restarts: prefer resuming the
+    // persisted log, fall back to a fresh create when none exists. Creating
+    // over an existing log is a hard id-collision error in the session store.
+    const handle = await this.agents
+      .resume({ resumeSessionId: sessionId, ...(agentOptions === undefined ? {} : { agentOptions }) })
+      .catch(() => this.agents.create({ sessionId, meta, ...(agentOptions === undefined ? {} : { agentOptions }) }))
+      .catch(error => {
+        this.logger?.warn(`robot: create/resume agent failed for ${sessionId}: ${String(error)}`)
+        return undefined
+      })
+    if (handle === undefined) return undefined
+    this.handles.set(sessionId, handle)
+    return handle.agent
   }
 
   private async runCommand(
