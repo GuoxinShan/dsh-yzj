@@ -12,10 +12,8 @@
 
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import { foldScheduleEvents, registerScheduleTools } from '@deepseek-ai/dsh-schedule'
-import { ScheduleRuntime } from '@deepseek-ai/dsh-schedule/src/runtime.ts'
-import type { Context } from '@deepseek-ai/cordis'
-import type { Agent, AgentHandle, AgentSetup, CreateAgentOptions, ResumeAgentOptions } from '@deepseek-ai/dsh-agent'
+import { foldScheduleEvents } from '@deepseek-ai/dsh-schedule'
+import type { Agent, AgentHandle, CreateAgentOptions, ResumeAgentOptions } from '@deepseek-ai/dsh-agent'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { InboundDedupe, parseReplyMeta, type RobotInboundMessage } from './protocol.ts'
 import type { RobotCardOptions, RobotSendOptions, RobotSendResult } from './outbound.ts'
@@ -73,8 +71,6 @@ export interface RobotRouterOptions {
   readonly push?: PushHub
   /** Per-conversation memory; absent = memory verbs are inert. */
   readonly memory?: RouterMemoryFace
-  /** Host root context owning schedule tool registration (rootCtx param). */
-  readonly rootCtx?: Context
   /** Zero-based channel index; scopes persisted surface keys. */
   readonly channelIndex?: number
   /** Working directory for created sessions; defaults to the host process cwd. */
@@ -186,7 +182,6 @@ export class RobotRouter {
   private readonly confirm: ConfirmBroker | undefined
   private readonly push: PushHub | undefined
   private readonly memory: RouterMemoryFace | undefined
-  private readonly rootCtx: Context | undefined
   private readonly surface: SurfaceStoreFace | undefined
   private readonly channelIndex: number
   private readonly cwd: string
@@ -203,8 +198,6 @@ export class RobotRouter {
   private readonly inboundAnchor = new Map<string, SessionId>()
   /** Session id → muted flag. */
   private readonly muted = new Set<string>()
-  /** Agent ids that already carry the schedule-tool registration. */
-  private readonly scheduledAgents = new Set<string>()
   /** AllowFrom cache once resolved. */
   private allowFromCache: readonly string[] | undefined
   /** groupId → last seen surface identity (in-memory mirror of the store). */
@@ -223,7 +216,6 @@ export class RobotRouter {
     this.confirm = options.confirm
     this.push = options.push
     this.memory = options.memory
-    this.rootCtx = options.rootCtx
     this.surface = options.surface
     this.channelIndex = options.channelIndex ?? 0
     this.cwd = options.cwd ?? process.cwd()
@@ -654,67 +646,19 @@ export class RobotRouter {
     // requires {{cwd}} to resolve, and a bare `_no-cwd` session would fail
     // prompt assembly on its first turn.
     const meta = { cwd: this.cwd }
-    // The bare programmatic scope has no tools service in its graph, so the
-    // schedule tools (registered into agent.ctx later) would never surface
-    // (pitfall-007). The publication setup injects `tools` into the scope so
-    // the assembly consults the registry the attach writes into.
-    const setup: AgentSetup = agentCtx => {
-      agentCtx.inject(['tools'], () => undefined)
-    }
     // A robot session is durable across host restarts: prefer resuming the
     // persisted log, fall back to a fresh create when none exists. Creating
     // over an existing log is a hard id-collision error in the session store.
-    // Every live agent (created or resumed) gets the harness schedule tools
-    // registered into its scoped world — routines live in the session log.
     const handle = await this.agents
-      .resume({ resumeSessionId: sessionId, setup, ...(agentOptions === undefined ? {} : { agentOptions }) })
-      .catch(() => this.agents.create({ sessionId, meta, setup, ...(agentOptions === undefined ? {} : { agentOptions }) }))
+      .resume({ resumeSessionId: sessionId, ...(agentOptions === undefined ? {} : { agentOptions }) })
+      .catch(() => this.agents.create({ sessionId, meta, ...(agentOptions === undefined ? {} : { agentOptions }) }))
       .catch(error => {
         this.logger?.warn(`robot: create/resume agent failed for ${sessionId}: ${String(error)}`)
         return undefined
       })
     if (handle === undefined) return undefined
     this.handles.set(sessionId, handle)
-    this.attachScheduleTools(handle.agent)
     return handle.agent
-  }
-
-  /**
-   * Install the harness Schedule subsystem onto one live robot agent —
-   * mirroring the schedule plugin's own root-agent mount: tools + runtime +
-   * idle-drive listener, all riding the agent scope (unwind with it). The
-   * schedule plugin skips non-root agents (roots().includes check), so
-   * externally created robot agents must attach here.
-   */
-  private attachScheduleTools(agent: Agent): void {
-    const rootCtx = this.rootCtx
-    if (rootCtx === undefined) return
-    if (this.scheduledAgents.has(agent.id)) return
-    this.scheduledAgents.add(agent.id)
-    try {
-      const runtime = new ScheduleRuntime(rootCtx, agent)
-      agent.ctx.effect(() => {
-        const disposeTools = registerScheduleTools(rootCtx, agent.ctx, agent, () => { runtime.requestDrive() })
-        const stopStatus = agent.ctx.on('agent/status', ({ status }: { status: string }) => {
-          if (status === 'idle' && agent.session.events.some(event => event.type === 'schedule/change')) {
-            runtime.requestDrive()
-          }
-        })
-        runtime.start()
-        return async () => {
-          stopStatus()
-          disposeTools()
-          try {
-            await runtime.dispose()
-          } finally {
-            this.scheduledAgents.delete(agent.id)
-          }
-        }
-      }, 'robot-yzj: schedule runtime')
-    } catch (error) {
-      this.scheduledAgents.delete(agent.id)
-      this.logger?.warn(`robot: schedule attach failed for ${agent.id}: ${String(error)}`)
-    }
   }
 
   /** Execute one parsed memory verb and reply with the outcome. */
@@ -766,7 +710,7 @@ export class RobotRouter {
             this.logger?.warn(`robot: routines fold failed: ${String(error)}`)
           }
         }
-        await this.reply(lines.length === 0 ? '本会话暂无定时提醒（让 agent 用 schedule_create 建立提醒）。' : `本会话的定时提醒：\n${lines.join('\n')}`, anchor)
+        await this.reply(lines.length === 0 ? '本会话暂无定时提醒（定时任务由 dsh-routines 管理：在对应 profile 用 `dsh routines list` 查看）。' : `本会话的定时提醒：\n${lines.join('\n')}`, anchor)
         return
       }
       case 'status': {

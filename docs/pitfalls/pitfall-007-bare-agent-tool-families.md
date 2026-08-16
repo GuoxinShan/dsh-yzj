@@ -25,25 +25,16 @@ bare agent scope's graph — `agent.ctx.inject(['tools'])` never resolves, or
 the registration context is not the tool-registry context the agent's
 requests consult).
 
-## 解法（Fix — 部分落地，2026-08-16 R2.6）
+## 解法（Fix — 已退役，2026-08-16 R2.7）
 
-The verified mechanism mirrors the schedule plugin's root-agent mount: after
-publication, `registerScheduleTools(rootCtx, agent.ctx, agent, cb)` +
-`ScheduleRuntime` + the idle-drive listener, all inside `agent.ctx.effect`.
-That landed in `router.ts::attachScheduleTools` and the runtime pieces work
-(flush barrier ok=true at tool time, jsonl coordinator persists robot sessions
-in real time, cursor advances).
+该路线已废弃：定时任务改由**外部独立插件 dsh-routines**（专用 `ops` daemon
+profile）+ 自研 `ctx.chatnode` 投递实现（`docs/spec/routines-delivery.md`，
+提交 `640f205` 后全链路实测通过）。`robot-yzj` 里的会话内 schedule 挂载
+（`attachScheduleTools`/ScheduleRuntime/registerScheduleTools、flush 屏障监听）
+已随清理提交移除；`!routines` 空态文案指向 `dsh routines list`。
 
-**Still open (live-confirmed)**: the schedule tools do NOT surface in the
-assembled tool list of freshly created robot agents (`schedule_create` →
-`unknown tool`; the yzj tools ARE visible because they register on the host
-registry). Adding `setup: agentCtx => agentCtx.inject(['tools'], ...)` to
-create/resume (per the original next-step) did NOT change this — scoped
-registrations on the programmatic agent's context still do not reach the
-assembly this harness version consults. Remaining candidate directions:
-register the schedule tools on the HOST registry for robot-owned session ids
-(visible to every agent — needs an agent-id guard inside the tool bodies), or
-find the assembly path programmatic agents actually consult.
+保留本条目作为历史记录：程序化创建的 agent 拿不到 harness 会话内工具族的事实
+依然成立（scoped 注册对非 root agent 不可见），只是本仓库不再走这条路。
 
 ## 回归覆盖（Regression coverage）
 

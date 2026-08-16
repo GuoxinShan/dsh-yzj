@@ -358,7 +358,6 @@ export class YzjRobot extends Service {
       resolveOverride: key => this.overrides.get(key),
       confirm: this.confirm,
       push: this.hub,
-      rootCtx: this.ctx,
       channelIndex,
       cwd: robotConfig.cwd ?? process.cwd(),
       surface: this.surfaces,
@@ -510,13 +509,6 @@ export function apply(ctx: Context, config: Config): void {
     const id = String(session.id)
     if (!id.startsWith('yzj-robot-')) return
     robot.noteSessionEvent(id, event as PushSessionEvent)
-  })
-  // The session/flush barrier: the jsonl coordinator's own listener already
-  // persists robot sessions (measured), and this listener guarantees the
-  // barrier reports a participating listener so schedule_* never degrades to
-  // persistence_uncertain on listener-count semantics.
-  ctx.on('session/flush', session => {
-    if (!String(session.id).startsWith('yzj-robot-')) return
   })
   ctx.on('agent/status', payload => {
     if (payload.status !== 'idle') return
