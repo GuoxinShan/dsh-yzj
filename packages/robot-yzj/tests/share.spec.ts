@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { listShareFiles, writeShareFile } from '../src/index.ts'
+import { listShareFiles, readShareFile, writeShareFile } from '../src/index.ts'
 
 const bases: string[] = []
 function tmpBase(): string {
@@ -74,5 +74,23 @@ describe('writeShareFile / listShareFiles (design §8.4)', () => {
     const listed = listShareFiles(dir)
     expect(listed.ok).toBe(false)
     expect(listed.files).toEqual([])
+  })
+
+  it('reads a shared file back and truncates beyond the preview cap', () => {
+    const dir = tmpBase()
+    writeShareFile(dir, 'note.txt', 'hello world', false)
+    const read = readShareFile(dir, 'note.txt')
+    expect(read.ok).toBe(true)
+    expect(read.content).toBe('hello world')
+    expect(read.truncated).toBe(false)
+    const long = 'x'.repeat(30_000)
+    writeShareFile(dir, 'long.txt', long, false)
+    const capped = readShareFile(dir, 'long.txt')
+    expect(capped.ok).toBe(true)
+    expect(capped.truncated).toBe(true)
+    expect(capped.content?.length).toBe(20_000)
+    // Missing file and unsafe names fail cleanly.
+    expect(readShareFile(dir, 'nope.txt').ok).toBe(false)
+    expect(readShareFile(dir, '../evil.txt').ok).toBe(false)
   })
 })

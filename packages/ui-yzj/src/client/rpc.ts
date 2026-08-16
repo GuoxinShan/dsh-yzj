@@ -80,6 +80,8 @@ export interface YzjPanelInject {
   robotFork: (sessionId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** List one group's shared workspace files (name/size/mtime). */
   robotShareList: (groupId: string, robotIndex?: number) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Read one shared file's text content (bounded preview). */
+  robotShareRead: (groupId: string, filename: string, robotIndex?: number) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Panel-direct write into a group's shared workspace (user's own will; auto-unique names unless overwrite). */
   robotShareWrite: (input: { groupId: string; filename: string; content: string; overwrite?: boolean; robotIndex?: number }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Persist the FULL channel configuration to the channels file (§8.5); takes effect after a GUI restart. */
@@ -164,6 +166,11 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
     robotFork: (sessionId: string) => call('robot-fork', { sessionId }),
     robotShareList: (groupId: string, robotIndex?: number) => call('robot-share-list', {
       groupId,
+      ...(robotIndex === undefined ? {} : { robotIndex }),
+    }),
+    robotShareRead: (groupId: string, filename: string, robotIndex?: number) => call('robot-share-read', {
+      groupId,
+      filename,
       ...(robotIndex === undefined ? {} : { robotIndex }),
     }),
     robotShareWrite: (input: { groupId: string; filename: string; content: string; overwrite?: boolean; robotIndex?: number }) => call('robot-share-write', {
