@@ -188,9 +188,9 @@ web profile (web-app + robot-yzj 机器人模式)
 
 | 场景 | 动作 |
 |---|---|
-| 每天开机 | ops 调度器**自动**（登录自启）；GUI 双击 `C:/Users/rocks/.dsh/start-prod.cmd` |
-| 重启 GUI（升级/换代码后） | 关旧 GUI → 双击 `start-prod.cmd`（ops 已在跑会自动跳过，只起 GUI） |
-| ops 意外没了（重启宿主未重新登录等） | 双击 `C:/Users/rocks/.dsh/ops-daemon.cmd`（幂等）或直接跑 `start-prod.cmd` |
+| **`dsh web` 启动** | **自动带起 ops daemon**（web patch `autoStartOps: true` → robot-yzj spawn `~/.dsh/ops-wrapper.mjs`，pid 文件 `ops.pid` 幂等）——**唯一入口就是 dsh web** |
+| 每天开机 | 登录自启 `start-all.cmd`（ops + GUI 全自动；同样 pid 幂等） |
+| ops 意外没了（未重启 web/未登录） | 双击 `C:/Users/rocks/.dsh/ops-daemon.cmd`（pid 幂等）或重启 web |
 | 全链路自检 | 群里每 5 分钟收到 `[completed] c11-prod` 巡检 digest；或看 `~/.dsh/routines/runs/` 有新记录 |
 | 暂停/查看定时任务 | `dsh --profile ops routines list / pause c11-prod`（ops profile 下） |
 
