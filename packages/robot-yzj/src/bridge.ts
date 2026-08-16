@@ -166,15 +166,21 @@ export class ChatnodeBridgeClient extends Service implements ChatnodeService {
     } catch (error) {
       throw new Error(`yzj chatnode bridge unreachable: ${error instanceof Error ? error.message : String(error)}`)
     }
-    let data: { error?: unknown } | null = null
+    let data: { ok?: unknown; error?: unknown } | null = null
     try {
-      data = await res.json() as { error?: unknown }
+      data = await res.json() as { ok?: unknown; error?: unknown }
     } catch {
       // Non-JSON error body — the status line still carries the failure.
     }
     if (!res.ok) {
       const detail = typeof data?.error === 'string' ? ` ${data.error}` : ''
       throw new Error(`yzj chatnode bridge: HTTP ${res.status}${detail}`)
+    }
+    // A 2xx body that is not `{ok:true}` (e.g. the web SPA fallback answering
+    // an unregistered route with index.html) is a delivery failure, not a
+    // success — the digest never reached a robot channel.
+    if (data?.ok !== true) {
+      throw new Error('yzj chatnode bridge: listener answered 2xx without ok:true — route not active?')
     }
   }
 }

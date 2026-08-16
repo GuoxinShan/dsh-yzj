@@ -136,9 +136,20 @@ web profile (web-app + robot-yzj 机器人模式)
   - `routines-scheduler`：`dshBin: C:/Users/rocks/.dsh/dsh-run.mjs`（re-spawn
     包装）、`runModule: file:///C:/Users/rocks/.dsh/profiles/ops/node_modules/@dsh-routines/bundle/lib/run.js`、
     `tickIntervalMs: 15000`；
-  - `robot-yzj`：`bridgeTarget: http://127.0.0.1:3080/yzj/chatnode` +
-    `bridgeToken: <同一口令>`（client 模式，无 robots）；
+  - `robot-yzj`：**必须 `- insert:`**（ops 组合没有 @dsh-yzj/bundle 层，裸
+    `- id:` 会静默丢弃）——`bridgeTarget: http://127.0.0.1:3080/yzj/chatnode` +
+    `bridgeToken: <同一口令>`（client 模式，无 robots）；包本体以 junction 挂在
+    profile node_modules（`pnpm add link:` 会因往 harness 里装传递依赖被拒
+    EPERM，见 pitfall）；
   - `routines-cli` 保留（`dsh --profile ops routines list/run/…` 从这里跑）。
+- **peers 必须 link: 到 harness checkout**：profile 模板的 `pnpm-workspace.yaml`
+  写死 `autoInstallPeers: false`，bundle 的 `@deepseek-ai/*` peer 不会装；手动开
+  `autoInstallPeers: true` 会从 registry 装 rc.6，与 harness 本体的 rc.5 双份并存
+  （Service 单例分裂风险）。生产做法：在 profile 里 `pnpm add link:<harness 包
+  路径>`（cordis/timer/schemastery 在 `vendor/`，agent/session 在
+  `packages/core/`，jobs/llm 在 `packages/{jobs,llm}/{jobs,llm}`，cmdline 在
+  `packages/boot/cmdline`）——与 `@dsh-yzj/*` 的 link: 依赖同一模式，解析全部
+  落到 harness checkout 单份（验证：`createRequire(profileDir).resolve(...)`）。
 - **routine 文件**：`C:/Users/rocks/.dsh/routines/*.yaml`（global 目录，store
   默认扫描）；run 记录落在 `<routine.cwd>/.dsh/routines/runs/`。
 - **dsh-run.mjs**（`C:/Users/rocks/.dsh/`）：`realSpawn` 对 `.mjs` 用 node 直启，
@@ -182,5 +193,11 @@ run 记录（`runs/<runId>.json`）：`trigger: schedule`、`status: completed`�
    配 `file:///…/lib/run.js` 文件 URL。
 4. **patch 新增行必须 `- insert:`**：`- id: robot-yzj name: …` 对不存在的行报
    `entry not found`（静默丢弃整行，后果是 chatnode 没装上且无报错迹象）。
-5. **调度器 tick 首跑时机**：`every 1m` 的首次触发在启动后约 1 分钟（
-   `nextAfter(base=now)` 严格大于 now），验证时别在启动瞬间断言。
+5. **`every Nm` 首次触发需要播种**：全新 state 下 `next = now + interval > now`
+   恒跳过，调度永不触发（§5.1 旧注「首跑在启动后约 1 分钟」不成立，见
+   `../pitfalls/pitfall-009`）；先 `dsh routines run <name>` 播种
+   `lastRunAt`，且**播种后必须重启 daemon**（state 只读一次进内存，他进程写的
+   state.json 不热更）。
+6. **桥未注册时 2xx 假阳性**：webServer 的 SPA fallback 对未匹配路由回
+   200+index.html——client 必须校验 body `{ok:true}`，仅查状态码会把「没送达」
+   记成 ok（见 `../pitfalls/pitfall-009` 第 3 条）。
