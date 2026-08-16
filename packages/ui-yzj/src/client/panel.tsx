@@ -2036,7 +2036,7 @@ export function YzjPanel(props: YzjPanelProps) {
                 <GroupHead groups={state.groups} groupId={state.groupId} />
               </div>
               <div className={css.panelBanner} role="note">
-                快捷发进群：家园在 DSH 绑定会话（挑群会打开那条会话）。此处发送写入绑定日志 ②，不叫 Claude。
+                快捷发进群：家园在 DSH 绑定会话（挑群会打开那条会话）。此处发送写入绑定日志 ②，不叫助手。
               </div>
               {anchorActive && (
                 <div className={css.anchorHint} role="status">

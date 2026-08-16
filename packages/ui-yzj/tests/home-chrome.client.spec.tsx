@@ -38,7 +38,7 @@ describe('YzjHomeChrome', () => {
     const { container } = mount(true)
     await act(async () => { await Promise.resolve() })
     expect(container.textContent).toContain('发进群')
-    expect(container.textContent).toContain('发给 Claude')
+    expect(container.textContent).toContain('发给助手')
     expect(container.textContent).not.toContain('丢进群')
   })
 
@@ -46,7 +46,7 @@ describe('YzjHomeChrome', () => {
     const { container } = mount(false)
     await act(async () => { await Promise.resolve() })
     expect(container.textContent).toContain('丢进群')
-    expect(container.textContent).toContain('只给 Claude')
+    expect(container.textContent).toContain('只给助手')
     expect(container.textContent).not.toContain('发进群')
   })
 
