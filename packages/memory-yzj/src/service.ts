@@ -20,11 +20,13 @@ import { dateStr } from './frontmatter.ts'
 /** Valid scope ids: `user` or `group:<id>` with a filesystem-safe group id. */
 const SCOPE_RE = /^(user|group:[A-Za-z0-9_-]{1,64})$/
 
-/** One memory-observing tool call's input (tags/source optional). */
+/** One memory-observing tool call's input (tags/source/durable optional). */
 export interface ObserveInput {
   readonly content: string
   readonly tags?: readonly string[]
   readonly source?: string
+  /** `true` = 长期候选（dream 单源可提升）；`false` = 便签（默认丢弃）。 */
+  readonly durable?: boolean
 }
 
 /** Result of one observation write. */
@@ -165,7 +167,7 @@ export class MemoryCore {
     if (existing !== undefined) {
       return { id: existing.id, duplicate: true, openCount: open.length, capacity: this.config.observationsMax }
     }
-    const id = vault.createObservation({ content, tags, source }, now)
+    const id = vault.createObservation({ content, tags, source, ...(input.durable === undefined ? {} : { durable: input.durable }) }, now)
     return { id, duplicate: false, openCount: open.length + 1, capacity: this.config.observationsMax }
   }
 

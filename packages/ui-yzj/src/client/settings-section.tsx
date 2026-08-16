@@ -121,7 +121,7 @@ export function YzjSettingsSection(props: YzjSettingsSectionProps): React.ReactN
   const memoryVerbs = {
     memoryScope: async (): Promise<Rpc> => { const r = await face.memoryScope(); if (r.ok) setMemoryView(asRecord(r.value).view); return r },
     memoryLog: async (): Promise<Rpc> => { const r = await face.memoryLog(); if (r.ok) setMemoryLog(String(asRecord(r.value).log ?? '')); return r },
-    memoryObserve: (content: string, tags?: string[], scope?: string) => face.memoryObserve(content, tags, scope),
+    memoryObserve: (content: string, tags?: string[], durable?: boolean) => face.memoryObserve(content, tags, undefined, durable),
     dreamState: () => face.dreamState(),
     dreamSet: (partial: { enabled?: boolean; provider?: string; model?: string; dailyAt?: string }) => face.dreamSet(partial),
     dreamRun: async (): Promise<Rpc> => {

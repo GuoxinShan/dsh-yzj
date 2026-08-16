@@ -103,12 +103,12 @@ describe('createRpcHandler', () => {
     // With a scripted service: scope view, log tail, and the panel-direct
     // observe write (user's own will — no gate involvement).
     const ctx = new Context()
-    const observed: { scope: string; content: string; source: string }[] = []
+    const observed: { scope: string; content: string; source: string; durable?: boolean }[] = []
     ctx.provide('yzjMemory', {
       readScope: (scope: string) => ({ scope, cap: 6000, sections: [], entities: [], observations: [], archivedCount: 0 }),
       dreamLogTail: (scope: string, max: number) => `log ${scope} ${max}`,
-      observe: (scope: string, content: string, opts: { source: string }) => {
-        observed.push({ scope, content, source: opts.source })
+      observe: (scope: string, content: string, opts: { source: string; durable?: boolean }) => {
+        observed.push({ scope, content, source: opts.source, ...(opts.durable === undefined ? {} : { durable: opts.durable }) })
         return { id: 'obs-1', duplicate: false, openCount: 1, capacity: 200 }
       },
     })
@@ -121,6 +121,9 @@ describe('createRpcHandler', () => {
     const write = await handler('memory-observe', { content: '偏好表格周报', tags: ['work', 7] }, undefined as never)
     expect(write.ok).toBe(true)
     expect(observed).toEqual([{ scope: 'user', content: '偏好表格周报', source: 'panel' }])
+    const durableWrite = await handler('memory-observe', { content: '长期偏好', durable: true }, undefined as never)
+    expect(durableWrite.ok).toBe(true)
+    expect(observed[1]).toEqual({ scope: 'user', content: '长期偏好', source: 'panel', durable: true })
   })
 
   it('dream and model-default endpoints project their services', async () => {

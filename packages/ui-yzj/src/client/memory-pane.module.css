@@ -241,6 +241,22 @@
   cursor: default;
 }
 
+.durableWrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.durableCheck {
+  accent-color: var(--dsw-static-deepseek-500);
+  cursor: pointer;
+}
+
 .quickNote {
   flex-basis: 100%;
   color: var(--dsw-alias-label-tertiary);

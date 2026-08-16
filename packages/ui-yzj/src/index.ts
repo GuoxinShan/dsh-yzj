@@ -688,7 +688,11 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
         const scope = stringField(record, 'scope') ?? 'user'
         const tags = Array.isArray(record.tags) ? record.tags.filter((value): value is string => typeof value === 'string') : []
         try {
-          return { ok: true, value: memory.observe(scope, content, { tags, source: 'panel' }) }
+          return { ok: true, value: memory.observe(scope, content, {
+            tags,
+            source: 'panel',
+            ...(typeof record.durable === 'boolean' ? { durable: record.durable } : {}),
+          }) }
         } catch (error) {
           return internalError(`memory-observe failed: ${String(error)}`)
         }

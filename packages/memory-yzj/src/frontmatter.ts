@@ -65,6 +65,15 @@ export function fmNumber(frontmatter: Frontmatter, key: string): number | undefi
   return Number.isFinite(parsed) ? parsed : undefined
 }
 
+/** Read one scalar as a boolean; only the literal `true`/`false` count. */
+export function fmBool(frontmatter: Frontmatter, key: string): boolean | undefined {
+  const raw = fmString(frontmatter, key)
+  if (raw === undefined) return undefined
+  if (raw.trim() === 'true') return true
+  if (raw.trim() === 'false') return false
+  return undefined
+}
+
 /**
  * Parse a note file: an optional leading `---` fence of `key: value` entries
  * (with `  - item` list continuations), then the body. Tolerant by design —

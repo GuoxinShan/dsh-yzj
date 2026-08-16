@@ -39,7 +39,7 @@ function mountPane(over: Partial<MemoryPaneProps> = {}): Face {
   const container = document.createElement('div')
   document.body.appendChild(container)
   const root = createRoot(container)
-  const calls = { observe: [] as string[], scope: 0, dreamSet: [] as Record<string, unknown>[], dreamRun: 0, modelSet: [] as { provider: string; model: string }[], modelClear: 0 }
+  const calls = { observe: [] as string[], durableFlags: [] as (boolean | null)[], scope: 0, dreamSet: [] as Record<string, unknown>[], dreamRun: 0, modelSet: [] as { provider: string; model: string }[], modelClear: 0 }
   const base: MemoryPaneProps = {
     view: viewFixture(),
     log: '## [2026-08-16 ab12] dream\n\n提升 1 · 丢弃 0',
@@ -47,7 +47,7 @@ function mountPane(over: Partial<MemoryPaneProps> = {}): Face {
     error: '',
     memoryScope: async () => { calls.scope += 1; return { ok: true, value: { view: viewFixture() } } as Rpc },
     memoryLog: async () => ({ ok: true, value: { log: '' } }) as Rpc,
-    memoryObserve: async (content: string) => { calls.observe.push(content); return { ok: true, value: { id: 'obs-9', duplicate: false } } as Rpc },
+    memoryObserve: async (content: string, tags?: string[], durable?: boolean) => { calls.observe.push(content); calls.durableFlags.push(durable ?? null); return { ok: true, value: { id: 'obs-9', duplicate: false } } as Rpc },
     dreamState: async () => ({ ok: true, value: { state: { enabled: false } } }) as Rpc,
     dreamSet: async (partial: Record<string, unknown>) => { calls.dreamSet.push(partial); return { ok: true, value: { state: { enabled: partial.enabled === true, ...(partial.dailyAt === undefined ? {} : { dailyAt: partial.dailyAt }) } } } as Rpc },
     dreamRun: async () => { calls.dreamRun += 1; return { ok: true, value: { ok: true, sessionId: 'dream-1', note: '固化完成：提升 1' } } as Rpc },
@@ -112,12 +112,24 @@ describe('MemoryPane', () => {
 
   it('submits the observe composer and reports the new id', async () => {
     const face = mountPane()
-        const textarea = face.container.querySelector('textarea') as HTMLTextAreaElement
+    const textarea = face.container.querySelector('textarea') as HTMLTextAreaElement
     expect(textarea).toBeDefined()
     act(() => { setAreaValue(textarea, '用户偏好表格周报') })
     await act(async () => { clickButton(face.container, '记下') })
     expect(face.calls.observe).toEqual(['用户偏好表格周报'])
+    expect(face.calls.durableFlags).toEqual([null])
     expect(face.container.textContent).toContain('已记录 obs-9')
+  })
+
+  it('the 长期 checkbox marks the observation as durable', async () => {
+    const face = mountPane()
+    const textarea = face.container.querySelector('textarea') as HTMLTextAreaElement
+    act(() => { setAreaValue(textarea, '用户偏好深夜办公') })
+    const checkbox = face.container.querySelector('input[type="checkbox"]') as HTMLInputElement
+    act(() => { checkbox.click() })
+    await act(async () => { clickButton(face.container, '记下') })
+    expect(face.calls.durableFlags).toEqual([true])
+    expect(face.container.textContent).toContain('已记录 obs-9（长期）')
   })
 
   it('surfaces a duplicate note without clearing the draft', async () => {

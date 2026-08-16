@@ -108,20 +108,21 @@
 | **dream（routine 会话）** | sections / entities / index / log / observations 处置 | `memory_dream_load` + `memory_dream_apply` | 结构化决策逐条校验 + rev 乐观锁；完整会话日志即审计 |
 | **人类** | 任意文件（记忆主权） | 文本编辑器 | 无（dream 以当下磁盘状态为基线，不覆盖未读过的内容——见 D6） |
 
-**固化规则（dream prompt 承载，工具不硬编码）**，继承 dream-vault 的佐证哲学：
+**固化规则（dream prompt 承载，工具不硬编码）**，继承 dream-vault 的佐证哲学，并叠加
+**durable 意图标记**（v0.4，D17）——agent/用户在写入时即可表达「这条该进长期记忆」：
 
-- 单日单源信号 → 留在 observations（不提升）；
-- 被既有 section/entity 佐证（信息已反映）→ 丢弃（drop，移入 archived）；
-- 多源/跨日佐证，或明确稳定的事实/偏好 → 提升（promote：并入 section，必要时
-  建/更实体页）；
-- 过时/矛盾 → update_section / upsert_entity 重写，log 记录变更理由。
+- **durable=true（长期候选）** → 单源也可提升（明确意图优先，仍写成自包含陈述句）；
+- **durable=false（便签）** → 默认丢弃，仅当构成尚未反映的新稳定事实且被佐证才提升；
+- **未标记（中性）** → 原佐证规则：单日单源留观；已覆盖丢弃；多源/跨日佐证或明确
+  稳定事实/偏好提升；过时/矛盾 update_section 重写。
+- 面板「记一条」勾选「长期」即写 durable=true；不勾 = 中性（面板不做便签标记）。
 
 ## 4. 服务契约：`ctx.yzjMemory`
 
 ```ts
 interface YzjMemoryService {
-  /** 写入一条观察（草稿区），返回 id。 */
-  observe(scope: string, input: { content: string; tags?: string[]; source?: string }): { id: string; duplicate: boolean; openCount: number; capacity: number }
+  /** 写入一条观察（草稿区），返回 id。durable: true=长期候选 / false=便签 / 省略=中性。 */
+  observe(scope: string, input: { content: string; tags?: string[]; source?: string; durable?: boolean }): { id: string; duplicate: boolean; openCount: number; capacity: number }
   /** 读一个 scope 的当前状态（sections/entities/open observations，有界）。 */
   readScope(scope: string): YzjMemoryScopeView
   /** 组装注入投影：按段 frontmatter 的 order 拼段，受 inject_char_cap 截断。 */
@@ -263,6 +264,7 @@ interface YzjMemoryService {
 | D14 | dream/robot 模型链 | dream.json 显式路由 > 插件默认（ctx.yzjModels）> harness 默认；robot 链尾部同接插件默认 | 用户拍板「插件范围内的默认模型把已有地方搞过来」；一次设置全插件生效，局部显式配置仍可覆盖 |
 | D15 | 插件默认模型归属 | 新包 `@dsh-yzj/model-yzj`（`~/.dsh/yzj-model.json`） | memory 与 robot 互不依赖，共享默认必须有独立底层包；明文 JSON 手改热生效，与 vault 同哲学 |
 | D16 | 机器人/记忆管理面落位 | **设置 → 云之家**（settings.section，分段切换），不占工作台页签 | 用户决策：管理/配置与运营性内容分家；面板四页签（知识库/日程/会话/待办）保持运营定位；两个 pane 组件复用零改动（包装器自取数 + verb 包装刷新） |
+| D17 | 观察意图标记 | `memory_observe` 的 `durable` 布尔（frontmatter `durable: true/false`） | 用户问「agent 怎么标记哪些需要 dream」：写入时表达意图，dream 规则据此加权（长期单源可提升/便签默认丢弃），避免 dream 从头重猜；面板「记一条」勾选「长期」对应 true，不勾 = 中性 |
 
 ## 11. 验收口径
 

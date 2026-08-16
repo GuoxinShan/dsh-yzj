@@ -11,7 +11,7 @@
 import { existsSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import {
-  atomicWrite, dateStr, fmList, fmNumber, fmString, parseNote, readText,
+  atomicWrite, dateStr, fmBool, fmList, fmNumber, fmString, parseNote, readText,
   revOf, safeName, serializeNote, timestampId,
 } from './frontmatter.ts'
 
@@ -58,6 +58,11 @@ export interface ObservationEntry {
   readonly source: string
   /** `open` while awaiting a dream decision; `archived` after disposal. */
   readonly status: 'open' | 'archived'
+  /**
+   * Agent/user intent mark: `true` = 长期候选（dream 单源也可提升）；
+   * `false` = 便签（dream 默认丢弃除非被佐证）；undefined = 中性。
+   */
+  readonly durable?: boolean
   readonly content: string
 }
 
@@ -252,22 +257,24 @@ export class MemoryVault {
     if (raw === undefined) return undefined
     const note = parseNote(raw)
     const parsedStatus = fmString(note.frontmatter, 'status')
+    const durable = fmBool(note.frontmatter, 'durable')
     return {
       id,
       created: fmString(note.frontmatter, 'created') ?? '',
       tags: fmList(note.frontmatter, 'tags'),
       source: fmString(note.frontmatter, 'source') ?? 'agent',
       status: parsedStatus === 'archived' ? 'archived' : 'open',
+      ...(durable === undefined ? {} : { durable }),
       content: note.body,
     }
   }
 
   /**
    * Create one observation file (pure create; never read-modify-write).
-   * Content is trimmed and capped; tags/source are metadata only.
+   * Content is trimmed and capped; tags/source/durable are metadata only.
    * @throws when the open pool is at capacity.
    */
-  createObservation(input: { content: string; tags: string[]; source: string }, now = new Date()): string {
+  createObservation(input: { content: string; tags: string[]; source: string; durable?: boolean }, now = new Date()): string {
     const content = input.content.trim().slice(0, 2000)
     const open = this.listObservations('open')
     if (open.length >= this.observationsMax) {
@@ -280,6 +287,7 @@ export class MemoryVault {
       status: 'open',
       ...(input.tags.length === 0 ? {} : { tags: input.tags }),
       ...(input.source === '' ? {} : { source: input.source }),
+      ...(input.durable === undefined ? {} : { durable: String(input.durable) }),
     }, content)
     atomicWrite(this.observationPath(id, false), raw)
     return id
@@ -300,6 +308,7 @@ export class MemoryVault {
       status: 'archived',
       ...(open.tags.length === 0 ? {} : { tags: open.tags }),
       ...(open.source === '' ? {} : { source: open.source }),
+      ...(open.durable === undefined ? {} : { durable: String(open.durable) }),
     }, open.content)
     atomicWrite(this.observationPath(id, true), raw)
     try {

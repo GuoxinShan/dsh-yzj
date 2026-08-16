@@ -112,6 +112,20 @@ describe('vault initialization and observe', () => {
     // scope isolation: the user vault does not see the group observation
     expect(core.readScope('user').observations.some(item => item.content.includes('周报'))).toBe(false)
   })
+
+  it('persists the durable intent mark and preserves it through archive', () => {
+    const durable = core.observe('user', { content: '用户偏好剧情驱动合作游戏（长期）', durable: true })
+    const note = core.observe('user', { content: '今天处理报表（便签）', durable: false })
+    const neutral = core.observe('user', { content: '中性信号' })
+    const view = core.readScope('user')
+    expect(view.observations.find(item => item.id === durable.id)?.durable).toBe(true)
+    expect(view.observations.find(item => item.id === note.id)?.durable).toBe(false)
+    expect(view.observations.find(item => item.id === neutral.id)?.durable).toBeUndefined()
+    // archive preserves the mark (read back from the archived slot)
+    core.dreamApply('user', [{ type: 'drop_observation', observationId: durable.id }], 'archive durable')
+    const archivedRaw = readFileSync(join(root, 'user', 'observations', 'archived', `${durable.id}.md`), 'utf8')
+    expect(archivedRaw).toContain('durable: true')
+  })
 })
 
 describe('projection', () => {
