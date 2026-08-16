@@ -105,6 +105,8 @@ export interface RobotPaneProps {
   robotShareList: (groupId: string, robotIndex?: number) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   /** Read one shared file's text content (bounded preview). */
   robotShareRead: (groupId: string, filename: string, robotIndex?: number) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
+  /** Open a robot workspace folder in the OS file manager (user's own click). */
+  robotOpenFolder: (groupId: string | undefined, robotIndex?: number) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   /** Panel-direct write into a group's shared workspace (user's own will). */
   robotShareWrite: (input: { groupId: string; filename: string; content: string; overwrite?: boolean; robotIndex?: number }) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   /** Persist the FULL channel configuration to the channels file (§8.5). */
@@ -326,6 +328,16 @@ function RobotDetail(outer: { props: RobotPaneProps; index: number; onBack: () =
     })
   }
 
+  /** Open a folder in the OS file manager (undefined groupId = workspace root). */
+  const openFolder = (groupId: string | undefined): void => {
+    void props.robotOpenFolder(groupId, index).then(result => {
+      if (!result.ok) { setNote(`打开失败：${result.error.message}`); return }
+      const record = asRecord(result.value)
+      if (record.ok !== true) { setNote(`打开失败：${asString(record.error)}`); return }
+      setNote(`已在文件管理器中打开：${asString(record.path)}`)
+    })
+  }
+
   const saveChannels = (robots: Parameters<RobotPaneProps['robotChannelsSave']>[0]['robots'], onSaved?: () => void): void => {
     setNote('')
     void props.robotChannelsSave({ robots }).then(result => {
@@ -442,6 +454,7 @@ function RobotDetail(outer: { props: RobotPaneProps; index: number; onBack: () =
             >
               保存推送地址
             </button>
+            <button type="button" className={css.secondary} onClick={() => { openFolder(undefined) }}>打开工作目录</button>
           </div>
         </div>
         <p className={css.hint} title={cwd}>工作目录（自动分配，一般不用管）：{cwd}</p>
@@ -511,6 +524,7 @@ function RobotDetail(outer: { props: RobotPaneProps; index: number; onBack: () =
                   </select>
                   <button type="button" className={css.secondary} onClick={() => { saveGroupOverride(group.groupId, draft) }}>保存模型</button>
                   <button type="button" className={css.secondary} onClick={() => { loadShareFor(group.groupId) }}>刷新文件</button>
+                  <button type="button" className={css.secondary} onClick={() => { openFolder(group.groupId) }}>打开文件夹</button>
                 </div>
                 <div className={css.groupFiles}>
                   <h4 className={css.groupFilesTitle}>这个群的公共文件</h4>

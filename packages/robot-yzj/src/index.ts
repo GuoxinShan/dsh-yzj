@@ -14,6 +14,7 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -375,6 +376,42 @@ export class YzjRobot extends Service {
   }
 
   /**
+   * Open one robot's workspace folder in the OS file manager (user's own
+   * click from the panel — no approval). With a groupId it opens that
+   * group's shared dir; without, the channel's workspace root. Paths are
+   * derived internally (never user-supplied), so no injection surface.
+   */
+  openFolder(robotIndex: number, groupId: string | undefined): { ok: boolean; path?: string; error?: string } {
+    const channel = this.channels[robotIndex]
+    if (channel === undefined) return { ok: false, error: `no robot channel at index ${robotIndex}` }
+    let dir: string
+    if (groupId === undefined || groupId === '') {
+      dir = channel.router.workdir()
+    } else {
+      const target = this.shareTarget(robotIndex, groupId)
+      if ('error' in target) return { ok: false, error: target.error }
+      dir = target.dir
+    }
+    try {
+      mkdirSync(dir, { recursive: true })
+    } catch (error) {
+      return { ok: false, error: `无法创建目录：${String(error)}` }
+    }
+    try {
+      if (process.platform === 'win32') {
+        spawn('explorer', [dir], { detached: true, stdio: 'ignore' }).unref()
+      } else if (process.platform === 'darwin') {
+        spawn('open', [dir], { detached: true, stdio: 'ignore' }).unref()
+      } else {
+        spawn('xdg-open', [dir], { detached: true, stdio: 'ignore' }).unref()
+      }
+      return { ok: true, path: dir }
+    } catch (error) {
+      return { ok: false, error: `打开文件夹失败：${String(error)}` }
+    }
+  }
+
+  /**
    * DSH-side conversation continuation: fabricate an operator turn on one
    * channel and run it through the full inbound pipeline (ack + agent turn +
    * push to the conversation).
@@ -498,6 +535,9 @@ export class YzjRobot extends Service {
       sender,
       allowFrom: () => this.resolveAllowFrom(robotConfig),
       ...(Object.keys(agentOptions).length === 0 ? {} : { agentOptions }),
+      // Plugin-wide default model (model-yzj) as the chain's last link:
+      // consulted live so editing yzj-model.json applies without restart.
+      fallbackRoute: () => this.ctx.get('yzjModels')?.get(),
       resolveOverride: key => this.overrides.get(key),
       confirm: this.confirm,
       push: this.hub,

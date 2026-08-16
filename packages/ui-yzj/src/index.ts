@@ -552,6 +552,13 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
         const result = robot.shareRead(numberField(record, 'robotIndex') ?? 0, groupId, filename)
         return { ok: true, value: result }
       }
+      case 'robot-open-folder': {
+        const robot = ctx.get('yzjRobot')
+        if (robot === undefined) return internalError('robot-open-folder: yzjRobot 服务不可用（robot-yzj 未挂载）')
+        const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
+        const result = robot.openFolder(numberField(record, 'robotIndex') ?? 0, stringField(record, 'groupId'))
+        return { ok: true, value: result }
+      }
       case 'robot-share-write': {
         const robot = ctx.get('yzjRobot')
         if (robot === undefined) return internalError('robot-share-write: yzjRobot 服务不可用（robot-yzj 未挂载）')
@@ -685,6 +692,70 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
         } catch (error) {
           return internalError(`memory-observe failed: ${String(error)}`)
         }
+      }
+      case 'dream-state': {
+        const memory = ctx.get('yzjMemory')
+        if (memory === undefined) return internalError('dream-state: yzjMemory 服务不可用（memory-yzj 未挂载）')
+        return { ok: true, value: { state: memory.dreamState() } }
+      }
+      case 'dream-set': {
+        const memory = ctx.get('yzjMemory')
+        if (memory === undefined) return internalError('dream-set: yzjMemory 服务不可用（memory-yzj 未挂载）')
+        const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
+        if (record.enabled !== undefined && typeof record.enabled !== 'boolean') return internalError('dream-set: enabled must be a boolean')
+        const str = (key: string): string | undefined => {
+          const value = record[key]
+          return typeof value === 'string' ? value : undefined
+        }
+        try {
+          const state = memory.setDreamState({
+            ...(record.enabled === undefined ? {} : { enabled: record.enabled === true }),
+            ...(str('provider') === undefined ? {} : { provider: str('provider') }),
+            ...(str('model') === undefined ? {} : { model: str('model') }),
+            ...(str('dailyAt') === undefined ? {} : { dailyAt: str('dailyAt') }),
+          })
+          return { ok: true, value: { state } }
+        } catch (error) {
+          return internalError(`dream-set failed: ${String(error)}`)
+        }
+      }
+      case 'dream-run': {
+        const memory = ctx.get('yzjMemory')
+        if (memory === undefined) return internalError('dream-run: yzjMemory 服务不可用（memory-yzj 未挂载）')
+        try {
+          return { ok: true, value: await memory.dreamRun('panel') }
+        } catch (error) {
+          return internalError(`dream-run failed: ${String(error)}`)
+        }
+      }
+      case 'model-default': {
+        const models = ctx.get('yzjModels')
+        if (models === undefined) return internalError('model-default: yzjModels 服务不可用（model-yzj 未挂载）')
+        return { ok: true, value: { route: models.get(), path: models.path } }
+      }
+      case 'model-default-set': {
+        const models = ctx.get('yzjModels')
+        if (models === undefined) return internalError('model-default-set: yzjModels 服务不可用（model-yzj 未挂载）')
+        const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
+        const provider = stringField(record, 'provider')
+        const model = stringField(record, 'model')
+        if (provider === undefined || model === undefined) return internalError('model-default-set endpoint requires provider and model payloads')
+        try {
+          return { ok: true, value: { route: await models.setDefault(provider, model) } }
+        } catch (error) {
+          return internalError(`model-default-set failed: ${String(error)}`)
+        }
+      }
+      case 'model-default-clear': {
+        const models = ctx.get('yzjModels')
+        if (models === undefined) return internalError('model-default-clear: yzjModels 服务不可用（model-yzj 未挂载）')
+        await models.clear()
+        return { ok: true, value: { route: undefined } }
+      }
+      case 'model-catalog': {
+        const models = ctx.get('yzjModels')
+        if (models === undefined) return internalError('model-catalog: yzjModels 服务不可用（model-yzj 未挂载）')
+        return { ok: true, value: { catalog: await models.catalog() } }
       }
       default:
         return internalError(`unknown /yzj endpoint ${endpoint}`)
