@@ -16,6 +16,7 @@
     "./memory-yzj": "./lib/memory-yzj.mjs",
     "./model-yzj": "./lib/model-yzj.mjs",
     "./client": "./lib/client.js",
+    "./ui-yzj/package.json": "./package.json",
     "./package.json": "./package.json"
   },
   "files": [
