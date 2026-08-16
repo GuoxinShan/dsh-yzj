@@ -157,6 +157,7 @@ describe('approval guard', () => {
       'yzj_doc_block_insert', 'yzj_doc_block_update', 'yzj_sheet_create',
       'yzj_sheet_table_create', 'yzj_sheet_table_rename', 'yzj_sheet_record_create',
       'yzj_sheet_record_update', 'yzj_calendar_event_create', 'yzj_calendar_event_update',
+      'robot_share_write',
     ]
     for (const name of names) {
       const decision = await listener({ name, callId: `c${name}`, arguments: {} }, async () => ({ kind: 'allow' }))
@@ -164,6 +165,14 @@ describe('approval guard', () => {
     }
     expect(pending.length).toBe(names.length)
     expect(pending.every(entry => entry.level === 'standard')).toBe(true)
+  })
+
+  it('asks for robot_share_write with the workspace confirmation prefix', async () => {
+    const { listener, pending } = guard()
+    const decision = await listener({ name: 'robot_share_write', callId: 'c1', arguments: { filename: 'report.md' } }, async () => ({ kind: 'allow' }))
+    expect(decision.kind).toBe('ask')
+    expect((decision as { reason: string }).reason).toContain('工作区写操作确认')
+    expect(pending[0]).toMatchObject({ toolName: 'robot_share_write', level: 'standard', args: { filename: 'report.md' } })
   })
 
   it('delegates non-dangerous tools', async () => {

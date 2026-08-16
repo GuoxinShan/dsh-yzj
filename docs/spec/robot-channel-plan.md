@@ -268,7 +268,7 @@ robotId 与 CLI groupId 的 ID 空间映射；创建流程的公网测试是否�
 | C10 DM/频道双身份 | 私聊=CLI 用户身份上下文，群=机器人身份 | ✅ |
 | C11 routines | S6 schedule + watcher | ✅ |
 | C12 任务署名 | 回复首行任务摘要（文本等价） | ✅ |
-| C13 沙箱闲置即弃 | DSH session 常驻 | ✅ 更强 |
+| C13 沙箱闲置即弃 | DSH session 常驻 + §8.4 三层工作区（话题私有 cwd + 群共享区） | ✅ 更强（per-thread 隔离语义经私有工作区达成，常驻替代闲置即弃） |
 | C14 入群自我介绍 | S7 | ✅ |
 
 
@@ -328,6 +328,7 @@ robotId 与 CLI groupId 的 ID 空间映射；创建流程的公网测试是否�
 ## 7. 实现状态（R1 MVP host 面已落地，2026-08-16）
 
 > 代码：`packages/robot-yzj`（host 包，bundle 第 5 行挂载，`ctx.yzjRobot` 服务）；验收证据见 `../status/gap-analysis.md` §17。设计基线 = 本文 §3.2/§3.6 的 DM 子集（S1 持久 session / S2 ack-then-push / S3 命令族子集 / S5 触发 / S8 命令解析安全）。
+> **本节为 R1 快照**：群场景（R2）与双向控制（R2.6+）已落地，现状以 gap-analysis §20 与本文 §8 为准。
 
 ### 7.1 已实现面
 
@@ -365,6 +366,8 @@ robotId 与 CLI groupId 的 ID 空间映射；创建流程的公网测试是否�
 | `robot_notify` | 主动通知：文本推送到通道会话（群机器人推群、个人机器人推 DM），无 agent 轮次 | 服务 `notify()` → `RobotSender.send` |
 | `robot_continue` | 双向续接：以操作者身份向会话注入一条消息，走**完整入站管线**（ack、鉴权、确认卡裁决、记忆动词、intro 判定、agent 轮次、PushHub 推回） | 构造 `synthetic` 入站消息 → `router.handle()` |
 | `robot_fork` | 把机器人会话 fork 成**操作者侧新根会话**（继承已完成回合 + cwd + parentSession），出现在 DSH 会话列表可继续处理 | `agents.create({seed, meta})` |
+| `robot_share_write` | 把文本写入**群共享工作区**（`<cwd>/groups/<groupId>/shared/`）：默认存在即自动唯一名防冲突，`overwrite:true` 才显式覆盖；经确认卡门控 | 宿主直写，见 §8.4 |
+| `robot_share_list` | 列出群共享工作区文件（名/大小/mtime） | 直读共享区目录，见 §8.4 |
 
 ### 8.2 关键决策
 
@@ -374,7 +377,7 @@ robotId 与 CLI groupId 的 ID 空间映射；创建流程的公网测试是否�
 | 续接的身份 | allowFrom 解析出的首个 openId（默认 CLI 登录用户），`operatorName` 标记 `DSH 控制台` | 与入站鉴权同一策略，操作者即白名单首人 |
 | synthetic 消息的出站锚点 | **不带** replyMsgId（真实入站才带） | synthetic msgId 服务端不存在，引用卡无法解析；群面仍带 `notifyOpenIds` 定向提醒 |
 | synthetic 会话续接 | 复用该群面最后锚定的 session（`lastSession` 表）；重启后从持久 `robot_yzj_surface` 域恢复 | 避免 fake msgId 锚出新线程；跨重启续接真实会话 |
-| 工作目录 | 新配置键 `cwd`（逐机器人 / `defaultCwd` 全局默认），缺省 = DSH 宿主进程 cwd；`robot_status` 可见 | 机器人会话的 `{{cwd}}` 与文件工具落点显式化、可配置 |
+| 工作目录 | **三层模型**（§8.4）：`cwd`/`defaultCwd` 为通道根；DM 会话落通道根；群话题会话落 `<根>/groups/<groupId>/<rootMsgId>/`（私有工作区）；群共享区 `<根>/groups/<groupId>/shared/`。`robot_status` 可见通道根 | 对齐 Claude Tag per-thread 沙箱的隔离语义（话题间结构性无冲突）；共享区等价其「文件同步到持久存储」；写共享区经 `robot_share_write`（唯一通道），session 权限保持 workspace-write 不动 |
 | fork 的 seed | 最后一个 `turn/end` 之前的完整前缀（与 harness fork 子代理同一边界） | 平衡完成回合前缀才能被会话边界校验接受 |
 | fork 生命周期 | 服务持有 handle，插件卸载时一并 dispose | 根会话随通道插件生命周期，不泄漏 |
 
@@ -383,4 +386,38 @@ robotId 与 CLI groupId 的 ID 空间映射；创建流程的公网测试是否�
 - 表 `surfaces`：键 `surface:<channelIndex>:<groupId>` → `{robotId, robotName, groupType, time, lastSessionId?}`；
 - 表 `meta`：键 `recent:<channelIndex>` → 最近群面 groupId；
 - 作用：重启后 `robot_continue`/`robot_fork` 无需等待新入站即可解析真实 robotId/groupId 与最后会话（续接真实会话的前提）。
+
+### 8.4 群工作区三层模型与共享区（2026-08-16 决策）
+
+> 代码：`packages/robot-yzj/src/share.ts`（工具）+ `router.ts`（session cwd 解析与共享区指令注入）；决策背景见 §3.6.4 C13 行与 gap-analysis §20.9。
+
+**目录模型**：
+
+```
+<通道cwd>/                                DM 会话（每 (robot, user) 一个持久 session，落通道根）
+<通道cwd>/groups/<groupId>/shared/        群共享区（显式协作，跨话题可见）
+<通道cwd>/groups/<groupId>/<rootMsgId>/   群话题会话私有工作区（该 session 的 cwd）
+```
+
+- 群话题会话 cwd = `<通道cwd>/groups/<groupId>/<rootMsgId>/`（创建时递归 mkdir；rootMsgId 即链根，跨重启稳定）；DM 会话维持通道根不动；
+- **隔离语义**：私有工作区按话题隔离——`write report.md` 只落在本话题目录，话题间**结构性无冲突**（对齐 Claude Tag per-thread 沙箱的隔离价值）；同群续接（回复链）= 同 session = 同目录，不受影响；
+- **共享区**：群共享文件落在 `shared/`，是跨话题协作的唯一显式通道（等价 Claude Tag 的「文件同步到持久存储」；我们无同步集成，用可见目录承担）；记忆按群（memory 域）与共享区按群同粒度，文本上下文与文件产物一致；
+- **resume/迁移**：resume 旧 session 沿用 header.cwd，只有新话题落新布局；`!restart` 锚新链根 = 新私有目录，旧目录留存当历史。
+
+**权限模型（session 权限不动）**：
+
+- 机器人会话保持 workspace-write：harness 内置 `write`/`edit` 被沙箱限制在 session workspace（私有 cwd 树）内，共享区在 workspace 外，**内置工具写共享区被拒**——权限边界 = 通道边界；
+- 共享区唯一写通道是 `robot_share_write`（插件宿主进程直写，不受 session 沙箱约束）；读共享区用内置 `read`/`glob`（只读操作不受沙箱限制，零新工具）；
+- 写门控：`robot_share_write` 进 `WRITE_SPECS`（standard 级），GUI 会话走 GUI 确认卡、`yzj-robot-*` 会话走群内建议卡——复用既有确认链路，零新机制。
+
+**工具面（注册于 robot-yzj，所有会话可用，不禁机器人会话——区别于 §8.2 的 operator-only）**：
+
+| 工具 | 语义 |
+|---|---|
+| `robot_share_write(groupId?, filename, content, overwrite?)` | 写 `<cwd>/groups/<groupId>/shared/<filename>`；filename 防穿越（拒 `/`、`\`、`..`、空名）；**冲突策略：目标已存在默认自动唯一名（`name-2.ext`），`overwrite:true` 才显式覆盖**；临时文件 + rename 原子写；返回实际路径与原有文件提示 |
+| `robot_share_list(groupId?)` | 列共享区文件（名/大小/mtime），供写前查重 |
+
+- `groupId` 缺省 = 该通道最近见过的群表面；`robotIndex` 缺省 0；
+- 每轮对**群会话**注入共享区指令（绝对路径 + 「写共享区必须用 `robot_share_write`，禁止裸文件工具写绝对路径」），DM 不注入；
+- 验证点（落地实测后回写此处）：内置 `read`/`glob` 对 workspace 外绝对路径放行、内置 `write` 对共享区路径被沙箱拒——两条共同决定「内置只读可读共享区」成立。
 

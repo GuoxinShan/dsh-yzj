@@ -14,6 +14,8 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { AgentHandle } from '@deepseek-ai/dsh-agent'
 import type { SocketStatus } from './socket.ts'
 import { RobotSocket } from './socket.ts'
@@ -28,6 +30,7 @@ import { MemoryStore } from './memory.ts'
 import { YzjChatnode } from './chatnode.ts'
 import { ChatnodeBridge, ChatnodeBridgeClient } from './bridge.ts'
 import { applyRobotControlTools } from './control.ts'
+import { applyRobotShareTools } from './share.ts'
 
 /** Plugin name used by loader diagnostics. */
 export const name = 'robot-yzj'
@@ -243,6 +246,49 @@ export class YzjRobot extends Service {
     if (channel === undefined) return { ok: false, error: `no robot channel at index ${robotIndex}` }
     if (!(channel.config.enabled ?? true)) return { ok: false, error: `robot channel ${robotIndex} is disabled` }
     return channel.sender.sendCard(card)
+  }
+
+  /**
+   * Resolve one channel's shared dir and target group (design §8.4); an
+   * omitted groupId defaults to the channel's most recent surface. The dir is
+   * created on demand.
+   */
+  private shareTarget(robotIndex: number, groupId: string | undefined): { dir: string; groupId: string } | { error: string } {
+    const channel = this.channels[robotIndex]
+    if (channel === undefined) return { error: `no robot channel at index ${robotIndex}` }
+    if (!(channel.config.enabled ?? true)) return { error: `robot channel ${robotIndex} is disabled` }
+    const target = groupId ?? channel.router.surfaceSummary()[0]?.groupId
+    if (target === undefined || target === '') {
+      return { error: groupId === undefined
+        ? '该机器人尚未收到任何入站消息，没有可用的群表面'
+        : `机器人没有见过群 ${groupId} 的消息` }
+    }
+    return { dir: channel.router.shareDir(target), groupId: target }
+  }
+
+  /**
+   * Write one UTF-8 text file into a group's shared workspace — the ONLY
+   * write channel outside session sandboxes (design §8.4). Existing
+   * same-named files get an automatic unique suffix unless `overwrite` is
+   * explicit; writes are atomic (tmp file + rename).
+   */
+  async shareWrite(
+    robotIndex: number,
+    groupId: string | undefined,
+    filename: string,
+    content: string,
+    overwrite: boolean,
+  ): Promise<{ ok: boolean; path?: string; name?: string; existed?: boolean; error?: string }> {
+    const target = this.shareTarget(robotIndex, groupId)
+    if ('error' in target) return { ok: false, error: target.error }
+    return writeShareFile(target.dir, filename, content, overwrite)
+  }
+
+  /** List one group's shared workspace files (name/size/mtime, newest first). */
+  shareList(robotIndex: number, groupId: string | undefined): { ok: boolean; dir?: string; files?: { name: string; size: number; mtime: number }[]; error?: string } {
+    const target = this.shareTarget(robotIndex, groupId)
+    if ('error' in target) return { ok: false, error: target.error }
+    return listShareFiles(target.dir)
   }
 
   /**
@@ -496,6 +542,68 @@ export class YzjRobot extends Service {
   }
 }
 
+/** File names allowed in the shared workspace: no path separators or Windows-reserved characters. */
+const SHARE_NAME = /^[^\\/:*?"<>|\u0000-\u001f]+$/
+
+/** First non-colliding `base-N.ext` for an existing shared file name. */
+function uniqueShareName(dir: string, filename: string): string {
+  const dot = filename.lastIndexOf('.')
+  const base = dot > 0 ? filename.slice(0, dot) : filename
+  const ext = dot > 0 ? filename.slice(dot) : ''
+  let n = 2
+  while (existsSync(join(dir, `${base}-${n}${ext}`))) n += 1
+  return `${base}-${n}${ext}`
+}
+
+/**
+ * Write one UTF-8 text file into a shared dir (design §8.4). Rejects unsafe
+ * names, resolves conflicts with an automatic unique suffix unless
+ * `overwrite` is explicit, and writes atomically (tmp file + rename). Pure
+ * host-side helper so the collision/validation rules are unit-testable.
+ */
+export function writeShareFile(
+  dir: string,
+  filename: string,
+  content: string,
+  overwrite: boolean,
+): { ok: boolean; path?: string; name?: string; existed?: boolean; error?: string } {
+  if (filename === '.' || filename === '..' || !SHARE_NAME.test(filename)) {
+    return { ok: false, error: '文件名不合法：禁止路径分隔符、Windows 保留字符与空名' }
+  }
+  let name = filename
+  let existed = existsSync(join(dir, filename))
+  if (existed && !overwrite) name = uniqueShareName(dir, filename)
+  const full = join(dir, name)
+  const tmp = join(dir, `.robot-share-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.tmp`)
+  try {
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(tmp, content, 'utf8')
+    renameSync(tmp, full)
+  } catch (error) {
+    try { rmSync(tmp, { force: true }) } catch { /* best-effort cleanup */ }
+    return { ok: false, error: `写入共享区失败：${String(error)}` }
+  }
+  return { ok: true, path: full, name, existed }
+}
+
+/** List one shared dir's files (name/size/mtime, newest first). */
+export function listShareFiles(
+  dir: string,
+): { ok: boolean; dir: string; files: { name: string; size: number; mtime: number }[]; error?: string } {
+  try {
+    const files = readdirSync(dir, { withFileTypes: true })
+      .filter(entry => entry.isFile())
+      .map(entry => {
+        const stat = statSync(join(dir, entry.name))
+        return { name: entry.name, size: stat.size, mtime: stat.mtimeMs }
+      })
+      .sort((a, b) => b.mtime - a.mtime)
+    return { ok: true, dir, files }
+  } catch (error) {
+    return { ok: false, dir, files: [], error: `读取共享区失败：${String(error)}` }
+  }
+}
+
 /** Plugin entry: expose the service and own every channel's lifecycle. */
 export function apply(ctx: Context, config: Config): void {
   // Bridge-client mode: this profile holds no robot channels — it only
@@ -530,6 +638,11 @@ export function apply(ctx: Context, config: Config): void {
   // continuation, and session fork, exposed as model tools on every session
   // (guarded inside so robot sessions cannot drive themselves).
   applyRobotControlTools(ctx, robot)
+  // Group shared-workspace tools (robot_share_write / robot_share_list): the
+  // sole write channel into a group's shared directory. Callable from every
+  // session; the write tool rides the same approval guard as the yzj family
+  // (GUI card for GUI sessions, in-group suggestion card for robot sessions).
+  applyRobotShareTools(ctx, robot)
   // The chatnode delivery contract scheduled-agent engines (dsh-routines)
   // consume: digests land in the robot conversation via notify.
   new YzjChatnode(ctx, robot, config.chatnodeRobotIndex ?? 0)

@@ -245,7 +245,7 @@ function sameConversation(card: PendingCard, message: RobotInboundMessage): bool
 function digestOf(args: Record<string, unknown> | undefined, reason: string): string {
   const parts: string[] = []
   if (args !== undefined) {
-    for (const key of ['content', 'title', 'name', 'records']) {
+    for (const key of ['content', 'title', 'name', 'records', 'filename']) {
       const value = args[key]
       if (typeof value === 'string' && value !== '') parts.push(value.slice(0, 80))
       else if (Array.isArray(value)) parts.push(JSON.stringify(value).slice(0, 80))

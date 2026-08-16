@@ -19,6 +19,8 @@ interface DangerousSpec {
   level: YzjRiskLevel
   /** Optional predicate over the parsed call arguments; defaults to always ask. */
   when?: (args: Record<string, unknown>) => boolean
+  /** Confirmation-prefix override for non-yzj tools (e.g. the shared workspace); defaults to the yzj wording. */
+  prefix?: string
 }
 
 /** Tool name → confirmation spec for every write tool in the yzj family. */
@@ -51,6 +53,8 @@ const WRITE_SPECS: Record<string, DangerousSpec> = {
   yzj_todo_create: { reason: '在待办任务库创建待办（首用时会自动开通任务库）', level: 'standard' },
   yzj_todo_update: { reason: '更新待办（状态/负责人/DDL/标签/日志）', level: 'standard' },
   yzj_todo_complete: { reason: '完成待办（状态置 done）', level: 'standard' },
+  // --- robot-yzj group shared workspace (design robot-channel-plan §8.4) ---
+  robot_share_write: { reason: '写入群共享工作区文件（<cwd>/groups/<groupId>/shared/）', level: 'standard', prefix: '工作区写操作确认' },
 }
 
 /** The host-internal ask-pending event the guard emits before returning ask. */
@@ -82,7 +86,7 @@ export function applyApprovalGuard(ctx: Context): void {
       ? exec.arguments as Record<string, unknown>
       : {}
     if (spec.when !== undefined && !spec.when(args)) return next()
-    const reason = `云之家操作确认：${spec.reason}`
+    const reason = `${spec.prefix ?? '云之家操作确认'}：${spec.reason}`
     ctx.emit('yzj/ask-pending', {
       callId: exec.callId,
       toolName: exec.name,
