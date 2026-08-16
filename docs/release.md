@@ -76,4 +76,4 @@ git tag v0.1.0 && git push origin release/v0.1.0 --tags
 
 | 版本 | 日期 | 形态 | 内容 |
 |---|---|---|---|
-| （未发布） | — | — | 0.x pre-release，全部功能在 main |
+| v0.1.0 | 2026-08-16 | 路线 A（GitHub + tag） | 全量功能快照（六包 + bundle；桥/命令族/定时/记忆/模型默认链），255 测试绿；**不可对外安装**（link:/workspace: 依赖未替换） |
