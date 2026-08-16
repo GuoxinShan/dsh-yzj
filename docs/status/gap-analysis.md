@@ -281,4 +281,11 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 - **群锚定实测**（对齐 §3.6 S1）：顶层 `@DSH-YZJ-TEST 你好` → 秒回 ack（引用+定向 @提问者）→ 完整回答 BOT 身份推回；**引用机器人回答**追问「群里都在说啥」→ 同一 session 续接（agent 多工具轮次、自我纠错、跨 5 群摘要报告）；`replyRootMsgId` 链根锚定生效，ack 本身也入锚（回复 ack 同样续接）。
 - **免公网坐实**：隧道早已杀掉，群消息纯 WS 入站——spike ① 群场景收口。
 - 35 单测全绿；测试期 provider/model（opencode-go/deepseek-v4-flash）标注于 profile patch 注释，正式路由待拍板。
-- 待办（R2 余项）：`!fork`/`!routines`、群内建议卡协议、面板设置卡、`/yzj` robot 端点、msgChg ack。
+- 待办（R2 余项）：`!fork`/`!routines`、群内建议卡协议、msgChg ack。
+
+### 20.3 按会话模型覆盖（2026-08-16，UI 落地，`0a424fb`）
+
+- **架构**：`OverrideStore`（storage-domain `robot_yzj_overrides`，json backend 落 `~/.dsh/storages`）——键 `g:<groupId>` / `dm:<robotId>:<openId>`；解析序**会话覆盖 > 通道默认 > harness 默认**，在 agent 创建时应用（已存在会话 `!restart` 后采用）。
+- **面**：`/yzj` RPC 5 个 robot 端点（status/overrides/set/delete/models）；面板第五个「机器人」tab（dock+TABS）——通道状态灯、覆盖编辑器（群选择器显示群名、provider/model 下拉来自 live 目录）、覆盖列表（变更后主动重拉）。
+- **验收**：`verify-robot-pane.mjs` **10/10 PASS**（含 保存→切 tab 重载→持久化→删除 全环）；截图 `.acceptance/shots-robot/`（gitignored）。
+- **决策留档**：provider 目录合并 `listProviders()`（已激活路由）与 `listConfigurableProviders()`（休眠可选）——UI 可选全部 harness provider；未激活 provider 的模型列表可能为空（选择后由 agent 轮次按需暴露错误）。
