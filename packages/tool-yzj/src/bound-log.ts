@@ -380,7 +380,7 @@ export function isPluginFollowup(event: FusedSessionEvent): boolean {
 }
 
 /** Latest user/message source kind on a session log (write-gate split). */
-export function latestUserSourceKind(events: readonly FusedSessionEvent[]): 'user' | 'plugin' | 'none' {
+export function latestUserSourceKind(events: readonly { type: string; data: unknown }[]): 'user' | 'plugin' | 'none' {
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index]
     if (event === undefined || event.type !== 'user/message') continue

@@ -10,7 +10,7 @@ import {
   cliMessageList, cliMessageToEntry, extractSendMsgId, localMsgId, mergeFused,
   type BoundLogLimits, type FusedItem, type FusedPending, type FusedSessionEvent,
   type YzjBoundMessageLog, type YzjLogEntry, type YzjLogMsgType,
-} from '@dsh-yzj/tool-yzj'
+} from '@dsh-yzj/tool-yzj/src/bound-log.ts'
 import { digestCandidates, type DigestCandidate } from './handoff-digest.ts'
 import { openBoundHome, type HomeOpenAgents, type HomeOpenFace } from './home-open.ts'
 import type { YzjWriteRecord } from './write-gate.ts'
@@ -397,7 +397,10 @@ export async function handoffToGroup(options: {
     atAll: false,
   })
   if (!sent.ok) return { error: sent.error }
-  const agent = options.agents.get(opened.sessionId)
+  const live = options.agents.get(opened.sessionId)
+  const agent = typeof live === 'object' && live !== null
+    ? live as { inject?: (message: unknown) => void; followup?: (message: unknown) => void }
+    : undefined
   const window = options.home.formatSummonWindow(options.groupId)
   try {
     if (window !== '') agent?.inject?.(pluginTurn(window))

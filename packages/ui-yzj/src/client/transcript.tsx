@@ -87,13 +87,12 @@ export function YzjFusedView(props: YzjFusedInjected) {
       setError('')
       const raw = asRecord(result.value)
       const items = Array.isArray(raw.items) ? raw.items as FusedViewItem[] : []
-      setValue({
-        bound: raw.bound === true,
-        items,
-        ...(typeof raw.binding === 'object' && raw.binding !== null
-          ? { binding: raw.binding as FusedViewValue['binding'] }
-          : {}),
-      })
+      const binding = typeof raw.binding === 'object' && raw.binding !== null
+        ? raw.binding as NonNullable<FusedViewValue['binding']>
+        : undefined
+      setValue(binding === undefined
+        ? { bound: raw.bound === true, items }
+        : { bound: raw.bound === true, items, binding })
     }
     void load(true)
     const timer = window.setInterval(() => { void load(false) }, 800)
