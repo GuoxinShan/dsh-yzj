@@ -274,3 +274,11 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 ```
 
 修复链（各配 pitfall）：loader inject 声明（pitfall-005）→ resume-before-create + `meta.cwd`（pitfall-006）。34 单测全绿。**测试期 provider/model 配置已撤**（回 harness 默认路由），正式模型路由待拍板。残留：`_no-cwd` 下旧坏 session 已删；3093 验证实例供群机器人接入复用。
+
+### 20.2 R2 群场景收口（2026-08-16 10:37，金蝶最小DSH交流群实测）
+
+- **多机器人架构**：`robots[]` 配置数组，每通道独立 WS/sender/router（commit `b1c8104`）；本机双通道并挂（个人助手 BOT-69ccc7 + 群机器人 BOT-6a80d097 = DSH-YZJ-TEST）。
+- **群锚定实测**（对齐 §3.6 S1）：顶层 `@DSH-YZJ-TEST 你好` → 秒回 ack（引用+定向 @提问者）→ 完整回答 BOT 身份推回；**引用机器人回答**追问「群里都在说啥」→ 同一 session 续接（agent 多工具轮次、自我纠错、跨 5 群摘要报告）；`replyRootMsgId` 链根锚定生效，ack 本身也入锚（回复 ack 同样续接）。
+- **免公网坐实**：隧道早已杀掉，群消息纯 WS 入站——spike ① 群场景收口。
+- 35 单测全绿；测试期 provider/model（opencode-go/deepseek-v4-flash）标注于 profile patch 注释，正式路由待拍板。
+- 待办（R2 余项）：`!fork`/`!routines`、群内建议卡协议、面板设置卡、`/yzj` robot 端点、msgChg ack。
