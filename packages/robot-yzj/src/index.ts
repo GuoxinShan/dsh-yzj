@@ -26,12 +26,13 @@ import { ConfirmBroker, type ConfirmApprovalRequest, type ConfirmAskPending } fr
 import { PushHub, type PushSessionEvent } from './push.ts'
 import { MemoryStore } from './memory.ts'
 import { YzjChatnode } from './chatnode.ts'
+import { ChatnodeBridge, ChatnodeBridgeClient } from './bridge.ts'
 import { applyRobotControlTools } from './control.ts'
 
 /** Plugin name used by loader diagnostics. */
 export const name = 'robot-yzj'
-/** Required services: the CLI bridge (allowFrom resolution), the agent registry (robot sessions), and the tools registry (robot_* controls). */
-export const inject = ['yzjBridge', 'agents', 'tools']
+/** Required services: the agent registry (robot sessions) and the tools registry (robot_* controls). The CLI bridge is optional (allowFrom resolution only). */
+export const inject = ['agents', 'tools']
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -87,6 +88,21 @@ export interface Config {
   cwd?: string
   /** Which channel `ctx.chatnode.send` pushes to (dsh-routines digests); default 0. */
   chatnodeRobotIndex?: number
+  /**
+   * Shared bearer token enabling the chatnode bridge listener: an exact
+   * `POST /yzj/chatnode` route on the profile's `webServer` (when present)
+   * that pushes bridge calls through this plugin's own robot channel. The
+   * ops scheduler daemon delivers digests through this route instead of
+   * holding its own robot connection.
+   */
+  bridgeToken?: string
+  /**
+   * Bridge client target URL (`http://127.0.0.1:<port>/yzj/chatnode`). When
+   * set, the plugin runs in bridge-client mode: no robot channels, no
+   * WebSocket, no sessions — it only provides `ctx.chatnode` as an HTTP
+   * client to the listener. Requires `bridgeToken`.
+   */
+  bridgeTarget?: string
 }
 
 const RobotChannelSchema: z<RobotChannelConfig> = z.object({
@@ -110,6 +126,8 @@ const ConfigSchema: z<Config> = z.object({
   model: z.string().default(''),
   cwd: z.string().default(''),
   chatnodeRobotIndex: z.number().default(0),
+  bridgeToken: z.string().default(''),
+  bridgeTarget: z.string().default(''),
 })
 
 const DEFAULT_ACK_TEXT = '收到，处理中…'
@@ -146,7 +164,7 @@ interface RunningChannel {
  */
 export class YzjRobot extends Service {
   static Config: z<Config> = ConfigSchema
-  static inject = ['yzjBridge', 'agents', 'tools']
+  static inject = ['agents', 'tools']
 
   private readonly channels: RunningChannel[] = []
   private readonly overrides = new OverrideStore()
@@ -480,6 +498,18 @@ export class YzjRobot extends Service {
 
 /** Plugin entry: expose the service and own every channel's lifecycle. */
 export function apply(ctx: Context, config: Config): void {
+  // Bridge-client mode: this profile holds no robot channels — it only
+  // delivers `ctx.chatnode` calls to the web profile's bridge listener. Used
+  // by the ops scheduler daemon so scheduling never opens its own robot
+  // connection or touches robot credentials.
+  if (config.bridgeTarget !== undefined && config.bridgeTarget !== '') {
+    if (config.bridgeToken === undefined || config.bridgeToken === '') {
+      throw new Error('robot-yzj: bridgeTarget requires bridgeToken (the shared listener secret)')
+    }
+    new ChatnodeBridgeClient(ctx, config.bridgeTarget, config.bridgeToken)
+    ctx.logger.info(`robot-yzj: bridge client mode → ${config.bridgeTarget}`)
+    return
+  }
   const robot = new YzjRobot(ctx, config)
   // The override store opens as soon as the storage hub mounts the domain
   // form (web profile: json backend under the harness home). Routers read it
@@ -503,6 +533,35 @@ export function apply(ctx: Context, config: Config): void {
   // The chatnode delivery contract scheduled-agent engines (dsh-routines)
   // consume: digests land in the robot conversation via notify.
   new YzjChatnode(ctx, robot, config.chatnodeRobotIndex ?? 0)
+  // The chatnode bridge listener: an exact HTTP route on the profile's
+  // webServer that pushes bridge calls through this plugin's own channels —
+  // the shared delivery path for the ops scheduler daemon (bridge client
+  // mode above). Opt-in via bridgeToken; absent webServer logs and skips.
+  if (config.bridgeToken !== undefined && config.bridgeToken !== '') {
+    const webServer = ctx.get('webServer') as
+      | {
+          register(route: {
+            kind: 'exact' | 'prefix'
+            path: string
+            handler: (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void | Promise<void>
+          }): () => void
+        }
+      | undefined
+    if (webServer === undefined) {
+      ctx.logger.warn('robot-yzj: bridgeToken set but no webServer service present; /yzj/chatnode route not registered')
+    } else {
+      const bridge = new ChatnodeBridge({
+        robot,
+        defaultRobotIndex: config.chatnodeRobotIndex ?? 0,
+        token: config.bridgeToken,
+      })
+      ctx.effect(() => webServer.register({
+        kind: 'exact',
+        path: '/yzj/chatnode',
+        handler: (req, res) => bridge.handle(req, res),
+      }), 'robot-yzj: chatnode bridge route')
+    }
+  }
   // Event-driven push: robot-session output (any turn source — interactive,
   // scheduled, watcher) reaches its conversation through the shared hub.
   ctx.on('session/event', (session, event) => {
