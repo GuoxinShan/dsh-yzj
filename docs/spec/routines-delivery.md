@@ -184,6 +184,16 @@ web profile (web-app + robot-yzj 机器人模式)
 - 端到端验证依赖 web profile 重启（web patch 生效才有桥路由）；重启后
   ops 下一次 tick 即完成 ops→桥→群全链路。
 
+### 6.1 日常运维（操作者速查）
+
+| 场景 | 动作 |
+|---|---|
+| 每天开机 | ops 调度器**自动**（登录自启）；GUI 双击 `C:/Users/rocks/.dsh/start-prod.cmd` |
+| 重启 GUI（升级/换代码后） | 关旧 GUI → 双击 `start-prod.cmd`（ops 已在跑会自动跳过，只起 GUI） |
+| ops 意外没了（重启宿主未重新登录等） | 双击 `C:/Users/rocks/.dsh/ops-daemon.cmd`（幂等）或直接跑 `start-prod.cmd` |
+| 全链路自检 | 群里每 5 分钟收到 `[completed] c11-prod` 巡检 digest；或看 `~/.dsh/routines/runs/` 有新记录 |
+| 暂停/查看定时任务 | `dsh --profile ops routines list / pause c11-prod`（ops profile 下） |
+
 ## 5. 实测记录（2026-08-16，隔离 DSH_HOME `~/.dsh-test` 全链路）
 
 **验收通过**：routine `c11-yzj`（`every 1m`，prompt=一句话回复）在 ops daemon 里被
