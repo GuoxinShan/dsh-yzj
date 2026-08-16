@@ -25,6 +25,7 @@ import { SurfaceStore } from './surface.ts'
 import { ConfirmBroker, type ConfirmApprovalRequest, type ConfirmAskPending } from './confirm.ts'
 import { PushHub, type PushSessionEvent } from './push.ts'
 import { MemoryStore } from './memory.ts'
+import { YzjChatnode } from './chatnode.ts'
 import { applyRobotControlTools } from './control.ts'
 
 /** Plugin name used by loader diagnostics. */
@@ -84,6 +85,8 @@ export interface Config {
   model?: string
   /** Legacy single-robot cwd (applies to the synthesized robot #0). */
   cwd?: string
+  /** Which channel `ctx.chatnode.send` pushes to (dsh-routines digests); default 0. */
+  chatnodeRobotIndex?: number
 }
 
 const RobotChannelSchema: z<RobotChannelConfig> = z.object({
@@ -106,6 +109,7 @@ const ConfigSchema: z<Config> = z.object({
   provider: z.string().default(''),
   model: z.string().default(''),
   cwd: z.string().default(''),
+  chatnodeRobotIndex: z.number().default(0),
 })
 
 const DEFAULT_ACK_TEXT = '收到，处理中…'
@@ -497,6 +501,9 @@ export function apply(ctx: Context, config: Config): void {
   // continuation, and session fork, exposed as model tools on every session
   // (guarded inside so robot sessions cannot drive themselves).
   applyRobotControlTools(ctx, robot)
+  // The chatnode delivery contract scheduled-agent engines (dsh-routines)
+  // consume: digests land in the robot conversation via notify.
+  new YzjChatnode(ctx, robot, config.chatnodeRobotIndex ?? 0)
   // Event-driven push: robot-session output (any turn source — interactive,
   // scheduled, watcher) reaches its conversation through the shared hub.
   ctx.on('session/event', (session, event) => {

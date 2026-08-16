@@ -49,6 +49,10 @@ personal (or group) Yunzhijia robot and DSH agent sessions.
 - `send(text)` — proactive push (routines, digests, reminders).
 - `notify(text, robotIndex?)` / `notifyCard(card, robotIndex?)` — DSH-side
   proactive notification on one channel.
+- **`ctx.chatnode`** — the scheduled-engine delivery contract (dsh-routines):
+  `send({text, title})` pushes a digest into the configured channel
+  (`chatnodeRobotIndex` config; title prefixed as the first line). One chatnode
+  provider per profile. See docs/spec/routines-delivery.md.
 - `continueConversation(text, {robotIndex?, groupId?})` — inject an operator
   turn through the full inbound pipeline (ack, memory, agent turn, push back).
 - `forkSession(sessionId)` — fork a robot conversation into a new
