@@ -369,4 +369,4 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 - **权限模型（session 权限不动）**：机器人会话保持 workspace-write；共享区在 session workspace 外，内置写工具被沙箱拒，`robot_share_write`（插件宿主直写）是唯一写通道；读共享区用内置 `read`/`glob`（只读不受沙箱限制，零新工具）。
 - **工具面**：`robot_share_write`（默认存在即自动唯一名 `name-2.ext`、`overwrite:true` 才覆盖、临时文件 + rename 原子写、filename 防穿越）+ `robot_share_list`（名/大小/mtime）；进 `WRITE_SPECS`（standard），机器人会话自动走群内建议卡；工具不禁机器人会话（区别于 §8.2 operator-only）。
 - **注入**：每轮对群会话注入共享区指令（绝对路径 + 强制走 `robot_share_write`），DM 不注入。
-- **验收**：单测覆盖群/DM cwd 解析、回复续接复用同目录、共享区指令只注入群会话、唯一名/覆盖/穿越拒绝；沙箱行为（内置 `read` 放行共享区绝对路径、内置 `write` 拒绝共享区路径）待真实机器人会话实测，结论回写此处与 spec §8.4 验证点。
+- **验收**：单测覆盖群/DM cwd 解析、回复续接复用同目录、共享区指令只注入群会话、唯一名/覆盖/穿越拒绝；**沙箱行为实测（2026-08-16，3081 测试实例 + 假通道 overlay）**：内置 `write` 对 cwd 外非临时区路径被拒（`D:/dsh-share-outside/…`）、cwd 内放行；`robot_share_list` 无表面时正确报错（工具注册/接线/错误语义）；`robot_share_write` 确认卡（「工作区写操作确认」+ 拒绝/允许一次）→ 允许 → 落盘 `<cwd>/groups/probe-g1/shared/hello.md` → `robot_share_list` 回读可见，端到端全通。**边界条件（实测发现）**：workspace-write 豁免平台临时区（`%TEMP%`）——通道 `cwd` 配置在临时区下时共享区可被内置工具写，「唯一写通道」不成立；默认宿主 cwd 不受影响，部署注意（spec §8.4 已记录）。
