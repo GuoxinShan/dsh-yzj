@@ -819,19 +819,33 @@ function loadTab(
     })
   } else if (tab === 'robot') {
     // Channel statuses, persisted overrides, and the provider/model catalog
-    // in parallel; group names for the picker ride the chat-tab cache when
-    // present (fetched fresh otherwise).
+    // in parallel; group names for the robot detail ride a FRESH multi-page
+    // group list when the chat-tab cache is absent (a robot's groups may
+    // sit outside the newest 20 conversations).
+    const loadGroupsFresh = async (): Promise<void> => {
+      const pages: unknown[][] = []
+      for (let page = 1; page <= 3; page += 1) {
+        const result = await props.fetchGroups(20, page)
+        if (!result.ok) break
+        pages.push(asArray(asRecord(result.value).list))
+        if (asRecord(result.value).more !== true) break
+      }
+      const seen = new Set<string>()
+      const merged = pages.flat().filter(item => {
+        const id = asString(asRecord(item).groupId)
+        if (id === '' || seen.has(id)) return false
+        seen.add(id)
+        return true
+      })
+      putGroupWindow(merged, false)
+      props.actions.setGroups(merged)
+    }
     void Promise.all([
       props.robotStatus(),
       props.robotOverrides(),
       props.robotModels(),
-      getGroupWindow() === undefined ? props.fetchGroups(20, 1) : Promise.resolve({ ok: true as const, value: undefined as unknown }),
-    ]).then(([status, overrides, models, groupsResult]) => {
-      if (getGroupWindow() === undefined && groupsResult.ok) {
-        const groups = asArray(asRecord(groupsResult.value).list)
-        putGroupWindow(groups, asRecord(groupsResult.value).more === true)
-        props.actions.setGroups(groups)
-      }
+      getGroupWindow() === undefined ? loadGroupsFresh() : Promise.resolve(undefined),
+    ]).then(([status, overrides, models]) => {
       if (!status.ok) { fail(status.error.message); return }
       if (!overrides.ok) { fail(overrides.error.message); return }
       props.actions.setRobotData(
