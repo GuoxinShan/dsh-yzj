@@ -86,3 +86,40 @@ interface ChatnodeService {
 | chatnode 归属 | robot-yzj 包内（同一插件行提供） | 通道自包含；无需新增 bundle 行；与机器人生命周期一致 |
 | 目标通道 | Config `chatnodeRobotIndex`（默认 0） | 群/个人机器人可配；与 notify 的 robotIndex 语义一致 |
 | 与未来微信节点共存 | 文档禁止同 profile 双 chatnode | Cordis 同名服务冲突；与 wechat 单 poller 同理 |
+
+## 5. 实测记录（2026-08-16，隔离 DSH_HOME `~/.dsh-test` 全链路）
+
+**验收通过**：routine `c11-yzj`（`every 1m`，prompt=一句话回复）在 ops daemon 里被
+调度器 tick 触发 → headless 子进程跑独立会话 → digest 产出 →
+`ctx.chatnode.send` → robot 推送到「金蝶最小DSH交流群」。群里实测收到：
+
+```
+dsh-routines: c11-yzj
+[completed] c11-yzj
+定时任务 chatnode 投递测试通过。
+```
+
+run 记录（`runs/<runId>.json`）：`trigger: schedule`、`status: completed`、
+`deliveries: [{type: file, ok: true}, {type: chatnode, ok: true}]`；失败轮次如实
+记录 `[failed] … (no digest)` 并推送到群（失败语义符合设计）。
+
+### 5.1 实测踩坑（全部已绕过，写在这里避免重踩）
+
+1. **web profile 会因 jobs 控制器缺失崩溃**：web-app 层禁用了 `tool-jobs`
+   （模型面控件移到 preset 后），routines 调度器的 `ctx.jobs.start` 抛
+   "background jobs unavailable" → tick 未捕获 → **整个 web 进程退出**。
+   → 调度器必须跑在 base-only 的专用 profile（`ops` daemon）；web profile 里
+   三行 routines 全部 `disabled: true`。
+2. **routines-cli 与 web 应用抢命令行**：cli 插件注入 `cmdlineArgs` 并自行 parse，
+   与 web 的 `--port` 冲突（`unknown option '--port'`）→ web profile 禁用
+   `routines-cli`；CLI 从专用 profile 跑（`dsh --profile ops routines list`）。
+3. **Windows + 源码布局的子进程启动**：默认 `dshBin`（`process.argv[1]` 为
+   `apps/cli/src/bin.ts`）spawn 报 `EFTYPE`；`runModule` 裸 Windows 路径报
+   `ERR_UNSUPPORTED_ESM_URL_SCHEME`；tsx 解析器对 cwd 敏感（cwd 不在 harness
+   时 cordis 解析到错误副本）。解法：`dshBin` 指一个 re-spawn 包装
+   （`node --import <tsx 绝对路径> <bin> <args>`，cwd=harness），`runModule`
+   配 `file:///…/lib/run.js` 文件 URL。
+4. **patch 新增行必须 `- insert:`**：`- id: robot-yzj name: …` 对不存在的行报
+   `entry not found`（静默丢弃整行，后果是 chatnode 没装上且无报错迹象）。
+5. **调度器 tick 首跑时机**：`every 1m` 的首次触发在启动后约 1 分钟（
+   `nextAfter(base=now)` 严格大于 now），验证时别在启动瞬间断言。
