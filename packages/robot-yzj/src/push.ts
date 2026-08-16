@@ -63,11 +63,16 @@ const MILESTONE_EVERY = 5
 /**
  * The hub. One instance per host process, shared by every channel router;
  * conversation ids (session ids) are globally unique.
+ * @param guiUrl - optional DSH GUI base URL; final answers get a
+ * session-record line (S2 deep-link analogue — the GUI has no session URL
+ * route, so the link is the GUI root plus the searchable session id).
  */
 export class PushHub {
   private readonly conversations = new Map<string, PushConversation>()
   private readonly stashes = new Map<string, TurnStash>()
   private readonly watermarks = new Map<string, number>()
+
+  constructor(private readonly guiUrl: string | undefined = undefined) {}
 
   /** Routers call this on every authorized inbound message. */
   register(sessionId: SessionId, conversation: PushConversation): void {
@@ -117,8 +122,11 @@ export class PushHub {
     if (conversation === undefined || stash === undefined) return
     this.stashes.delete(sessionId)
     if (stash.topSeq >= 0) this.watermarks.set(sessionId, stash.topSeq)
-    const answer = stash.parts.join('')
+    let answer = stash.parts.join('')
     if (answer === '') return
+    if (this.guiUrl !== undefined && this.guiUrl !== '') {
+      answer += `\n\n📎 本任务完整记录：${this.guiUrl}（DSH 会话 ${sessionId}）`
+    }
     void this.sendSafely(conversation, answer, true)
   }
 

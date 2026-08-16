@@ -260,7 +260,7 @@ robotId 与 CLI groupId 的 ID 空间映射；创建流程的公网测试是否�
 | C2 任何人可发起 | S1（allowFrom 白名单内任何成员） | ✅ |
 | C3 链内免 @ steering | 引用回复接续 session；DM 已实测（引用消息必达）；群内免 @ 待群机器人补测 | ✅ DM / ⚠️ 群 |
 | C4 进度/checklist/全记录链接 | S2 ack+里程碑推送 + DSH 会话 deep link；原地更新→R3 卡片 | ✅ / R3 增强 |
-| C5 命令族 7 条 | S3 全量实现（!fork 跨群交接降级） | ⚠️ !fork 未实现（§20.5/§20.10，价值待评估）；!configure/!feedback 未实现 |
+| C5 命令族 7 条 | S3 全量实现（!fork 跨群交接降级） | ✅（R2.10 补齐 !fork/!configure/!feedback；会话 deep link 降级为 guiUrl + 会话 id 文本行，见 S2） |
 | C6 触发三档 | 私聊/链内/@（保守档） | ✅（判断档 N/A） |
 | C7 自静音 | N/A（无全量流，价值由 routines 覆盖） | ➖ 显式放弃 |
 | C8 编辑/删除语义 | N/A（协议无事件） | ➖ |
@@ -421,4 +421,25 @@ robotId 与 CLI groupId 的 ID 空间映射；创建流程的公网测试是否�
 - 每轮对**群会话**注入共享区指令（绝对路径 + 「写共享区必须用 `robot_share_write`，禁止裸文件工具写绝对路径」），DM 不注入；
 - **实测结论（2026-08-16，3081 测试实例 + 假通道）**：内置 `write` 在 workspace-write 下对 cwd 外路径被沙箱拒（`D:/dsh-share-outside/…` 实测拒绝）、cwd 内放行——「读用内置、写走工具」成立；内置 `read`/`glob` 只读不受沙箱约束（工具面无 `sandbox_permissions`，fs-sandbox 只拦 write/edit）。
 - **边界条件（实测发现）**：workspace-write 豁免**平台临时区**（`%TEMP%` 等，fs-sandbox 既有语义）——通道 `cwd` 若配置在临时区下，共享区落入豁免区、内置 `write` 可写，「唯一写通道」不成立。**部署注意：通道 `cwd` 不要配置在平台临时区**（默认宿主 cwd 不受影响）。
+
+### 8.5 通道管理设置卡 + `channelsFile`（2026-08-16 决策）
+
+> 解决两个盲区：注册/删除/启停机器人通道没有 UI（只能手改 cordis.patch.yml + 重启），通道默认路由（provider/model）也没有 UI 配置入口（只能按会话覆盖）。代码：`packages/robot-yzj`（`channelsFile` 读取 + `saveChannels`）+ `packages/ui-yzj`（机器人 tab「通道管理」section）。gap-analysis §20.12。
+
+**配置来源语义**：
+
+- Config 新增可选键 `channelsFile`（字符串路径，如 `~/.dsh/robot-channels.json`）：
+  - **文件存在且可读 → 文件是唯一来源**（`defaultProvider`/`defaultModel`/`robots` 全从文件读，`config.robots` 与 `config.default*` 被忽略——手改 patch 请改文件，语义写进 README）；
+  - 文件不存在 → 退回 `config.robots`（现状兼容，行为不变）；
+- **种子化迁移**：设置卡首次保存时若文件不存在，先写入当前生效配置（`config.robots` + `config.default*`）作为种子，再应用修改——现有两条真实通道自动进文件、之后可编辑，用户无感；
+- JSON 结构：`{defaultProvider?, defaultModel?, robots: [{sendMsgUrl, provider?, model?, cwd?, enabled?, allowFrom?}]}`；写回时保留文件里已有的 `default*`（设置卡 v1 不编辑全局默认）；
+- **生效方式**：保存 = 原子写文件（tmp + rename），**当前进程通道不变，重启 GUI 后生效**（与改 host 代码同体验）；不做热生效（动态增删 WS 通道需要改造通道生命周期，风险大，列为后续）。
+
+**设置卡 UI（机器人 tab「通道管理」section，放最前）**：
+
+- 已注册通道列表（每行）：状态灯 + 类型名 + 已连接 + **内联默认路由编辑**（Provider/Model 下拉，来自 live catalog，保存即写文件）+ 删除按钮；
+- 「添加机器人」表单：`sendMsgUrl` 粘贴（必填）+ 可选 Provider/Model/cwd；内置**创建引导文案**：个人机器人 `yunzhijia.com/im/personalRobotCreate` 零门槛创建 → 复制 sendMsgUrl → 粘贴；群对话机器人需群管理员、创建时需公网测试地址（本机用临时隧道过创建，此后 WS 免公网）；
+- 保存后提示「已保存，重启 GUI 后生效」；列表显示**当前生效**通道（内存），重启后与文件一致。
+
+**与「按会话指定模型」的关系**：通道管理设置默认路由（作用于该通道全部会话）；按会话覆盖仍是更细粒度（同通道不同群不同模型），保留——两档配置语义：通道默认 > 会话覆盖 > harness 默认。
 

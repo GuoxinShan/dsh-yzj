@@ -14,8 +14,8 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import type { AgentHandle } from '@deepseek-ai/dsh-agent'
 import type { SocketStatus } from './socket.ts'
 import { RobotSocket } from './socket.ts'
@@ -106,6 +106,17 @@ export interface Config {
    * client to the listener. Requires `bridgeToken`.
    */
   bridgeTarget?: string
+  /** DSH GUI base URL; `!configure` and final-answer session records use it. */
+  guiUrl?: string
+  /**
+   * Optional JSON file holding the FULL channel configuration
+   * (`{defaultProvider?, defaultModel?, robots: [...]}`). When the file
+   * exists and is readable it is the sole source of truth — `config.robots`
+   * and `config.default*` are ignored (design §8.5). The settings card
+   * writes here; changes take effect after a GUI restart (channels are built
+   * at startup).
+   */
+  channelsFile?: string
 }
 
 const RobotChannelSchema: z<RobotChannelConfig> = z.object({
@@ -131,6 +142,8 @@ const ConfigSchema: z<Config> = z.object({
   chatnodeRobotIndex: z.number().default(0),
   bridgeToken: z.string().default(''),
   bridgeTarget: z.string().default(''),
+  guiUrl: z.string().default(''),
+  channelsFile: z.string().default(''),
 })
 
 const DEFAULT_ACK_TEXT = '收到，处理中…'
@@ -173,32 +186,96 @@ export class YzjRobot extends Service {
   private readonly overrides = new OverrideStore()
   private readonly surfaces = new SurfaceStore()
   private readonly confirm = new ConfirmBroker()
-  private readonly hub = new PushHub()
+  private readonly hub: PushHub
   private readonly memory = new MemoryStore()
+  private readonly guiUrl: string
+  /** The settings card's channel file (design §8.5); undefined = file not configured. */
+  private readonly channelsFile: string | undefined
   /** Operator-side fork sessions created from robot conversations (owned here). */
   private readonly forked = new Map<string, AgentHandle>()
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'yzjRobot')
+    this.guiUrl = config.guiUrl ?? ''
+    this.hub = new PushHub(this.guiUrl === '' ? undefined : this.guiUrl)
+    this.channelsFile = config.channelsFile === undefined || config.channelsFile === '' ? undefined : config.channelsFile
+    // When the channels file exists it is the sole source of truth
+    // (§8.5); otherwise the patch-level config applies (legacy behavior).
+    const source = this.channelsFile === undefined ? undefined : loadChannelsFile(this.channelsFile)
+    const defaults = source ?? {
+      defaultProvider: config.defaultProvider,
+      defaultModel: config.defaultModel,
+      defaultCwd: config.defaultCwd,
+    }
     const fillDefaults = (robot: RobotChannelConfig): RobotChannelConfig => ({
       ...robot,
-      ...(robot.provider === undefined || robot.provider === '' ? (config.defaultProvider === undefined || config.defaultProvider === '' ? {} : { provider: config.defaultProvider }) : {}),
-      ...(robot.model === undefined || robot.model === '' ? (config.defaultModel === undefined || config.defaultModel === '' ? {} : { model: config.defaultModel }) : {}),
-      ...(robot.cwd === undefined || robot.cwd === '' ? (config.defaultCwd === undefined || config.defaultCwd === '' ? {} : { cwd: config.defaultCwd }) : {}),
+      ...(robot.provider === undefined || robot.provider === '' ? (defaults.defaultProvider === undefined || defaults.defaultProvider === '' ? {} : { provider: defaults.defaultProvider }) : {}),
+      ...(robot.model === undefined || robot.model === '' ? (defaults.defaultModel === undefined || defaults.defaultModel === '' ? {} : { model: defaults.defaultModel }) : {}),
+      ...(robot.cwd === undefined || robot.cwd === '' ? (defaults.defaultCwd === undefined || defaults.defaultCwd === '' ? {} : { cwd: defaults.defaultCwd }) : {}),
     })
-    const robots = config.robots !== undefined && config.robots.length > 0
-      ? config.robots.map(fillDefaults)
-      : config.sendMsgUrl === undefined || config.sendMsgUrl === ''
-        ? []
-        : [fillDefaults({
-            sendMsgUrl: config.sendMsgUrl,
-            enabled: config.enabled ?? true,
-            allowFrom: config.allowFrom ?? [],
-            provider: config.provider ?? '',
-            model: config.model ?? '',
-            cwd: config.cwd ?? '',
-          })]
-    this.startAll(robots)
+    const configured = source !== undefined
+      ? source.robots
+      : config.robots !== undefined && config.robots.length > 0
+        ? config.robots
+        : config.sendMsgUrl === undefined || config.sendMsgUrl === ''
+          ? []
+          : [{
+              sendMsgUrl: config.sendMsgUrl,
+              enabled: config.enabled ?? true,
+              allowFrom: config.allowFrom ?? [],
+              provider: config.provider ?? '',
+              model: config.model ?? '',
+              cwd: config.cwd ?? '',
+            }]
+    this.startAll(configured.map(fillDefaults))
+  }
+
+  /**
+   * Persist the FULL channel configuration to the channels file (§8.5):
+   * seeds the file from the current config when it does not exist yet
+   * (existing channels migrate transparently), then writes the payload.
+   * Changes apply after a GUI restart — live channels are not touched.
+   */
+  async saveChannels(input: { defaultProvider?: string; defaultModel?: string; robots: RobotChannelConfig[] }): Promise<{ ok: boolean; path?: string; count?: number; error?: string }> {
+    if (this.channelsFile === undefined) {
+      return { ok: false, error: 'channelsFile 未配置：robot-yzj config 加 channelsFile 指向 JSON 文件后才可保存通道' }
+    }
+    for (const robot of input.robots) {
+      if (robot.sendMsgUrl === undefined || robot.sendMsgUrl === '') {
+        return { ok: false, error: '每个通道必须有 sendMsgUrl' }
+      }
+    }
+    const existing = loadChannelsFile(this.channelsFile)
+    const previous = existing ?? {
+      defaultProvider: this.config.defaultProvider,
+      defaultModel: this.config.defaultModel,
+    }
+    const doc = {
+      ...(firstNonEmpty(input.defaultProvider, previous?.defaultProvider, this.config.defaultProvider) === undefined ? {} : { defaultProvider: firstNonEmpty(input.defaultProvider, previous?.defaultProvider, this.config.defaultProvider) }),
+      ...(firstNonEmpty(input.defaultModel, previous?.defaultModel, this.config.defaultModel) === undefined ? {} : { defaultModel: firstNonEmpty(input.defaultModel, previous?.defaultModel, this.config.defaultModel) }),
+      robots: input.robots.map(robot => ({
+        sendMsgUrl: robot.sendMsgUrl,
+        ...(robot.enabled === undefined ? {} : { enabled: robot.enabled }),
+        ...(robot.allowFrom === undefined || robot.allowFrom.length === 0 ? {} : { allowFrom: robot.allowFrom }),
+        ...(robot.provider === undefined || robot.provider === '' ? {} : { provider: robot.provider }),
+        ...(robot.model === undefined || robot.model === '' ? {} : { model: robot.model }),
+        ...(robot.cwd === undefined || robot.cwd === '' ? {} : { cwd: robot.cwd }),
+      })),
+    }
+    try {
+      mkdirSync(dirname(this.channelsFile), { recursive: true })
+      const tmp = join(dirname(this.channelsFile), `.robot-channels-${Date.now().toString(36)}.tmp`)
+      writeFileSync(tmp, JSON.stringify(doc, null, 2), 'utf8')
+      renameSync(tmp, this.channelsFile)
+    } catch (error) {
+      return { ok: false, error: `写入通道配置失败：${String(error)}` }
+    }
+    return { ok: true, path: this.channelsFile, count: input.robots.length }
+  }
+
+  /** The configured channels file path, when present (settings-card hint). */
+  channelsFilePath(): string | undefined {
+    return this.channelsFile
   }
 
   /** Status of every configured channel (config order). */
@@ -433,6 +510,7 @@ export class YzjRobot extends Service {
       ackText: DEFAULT_ACK_TEXT,
       denyText: DEFAULT_DENY_TEXT,
       logger: { warn: message => this.ctx.logger.warn(message) },
+      ...(this.guiUrl === '' ? {} : { guiUrl: this.guiUrl }),
     })
     const status: SocketStatus = { connected: false, attempts: 0, lastError: null, lastFrameAt: 0 }
     const socket = new RobotSocket({
@@ -597,7 +675,7 @@ export function listShareFiles(
         const stat = statSync(join(dir, entry.name))
         return { name: entry.name, size: stat.size, mtime: stat.mtimeMs }
       })
-      .sort((a, b) => b.mtime - a.mtime)
+      .sort((a, b) => b.mtime - a.mtime || a.name.localeCompare(b.name))
     return { ok: true, dir, files }
   } catch (error) {
     return { ok: false, dir, files: [], error: `读取共享区失败：${String(error)}` }
