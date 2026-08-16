@@ -448,24 +448,20 @@ export class YzjRobot extends Service {
   }
 
   /**
-   * Provider/model catalog for the UI picker: active adapter routes
-   * (`listProviders`) merged with the configurable directory
-   * (`listConfigurableProviders` — dormant-but-selectable providers), each
-   * with its model list when it can be enumerated.
+   * Provider/model catalog for the UI picker: only ACTIVE adapter routes
+   * (`listProviders`) — dormant-but-configurable providers are not offered
+   * (user decision: an unconfigured provider in the picker is noise; the
+   * config file can still reference one).
    */
   async modelCatalog(): Promise<{ provider: string; models: string[] }[]> {
     const llm = this.ctx.get('llm') as
       | {
           listProviders(): { provider?: string }[]
-          listConfigurableProviders(): { provider?: string }[]
           listModels(provider: string): Promise<{ id?: string; model?: string }[]>
         }
       | undefined
     if (llm === undefined) return []
-    const names = [...new Set([
-      ...llm.listProviders().map(entry => String(entry.provider ?? '')),
-      ...llm.listConfigurableProviders().map(entry => String(entry.provider ?? '')),
-    ].filter(name => name !== ''))]
+    const names = [...new Set(llm.listProviders().map(entry => String(entry.provider ?? '')).filter(name => name !== ''))]
     return Promise.all(names.map(async provider => {
       try {
         const models = await llm.listModels(provider)

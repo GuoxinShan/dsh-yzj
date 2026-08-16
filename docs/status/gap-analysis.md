@@ -288,7 +288,7 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 - **架构**：`OverrideStore`（storage-domain `robot_yzj_overrides`，json backend 落 `~/.dsh/storages`）——键 `g:<groupId>` / `dm:<robotId>:<openId>`；解析序**会话覆盖 > 通道默认 > harness 默认**，在 agent 创建时应用（已存在会话 `!restart` 后采用）。
 - **面**：`/yzj` RPC 5 个 robot 端点（status/overrides/set/delete/models）；面板第五个「机器人」tab（dock+TABS）——通道状态灯、覆盖编辑器（群选择器显示群名、provider/model 下拉来自 live 目录）、覆盖列表（变更后主动重拉）。
 - **验收**：`verify-robot-pane.mjs` **10/10 PASS**（含 保存→切 tab 重载→持久化→删除 全环）；截图 `.acceptance/shots-robot/`（gitignored）。
-- **决策留档**：provider 目录合并 `listProviders()`（已激活路由）与 `listConfigurableProviders()`（休眠可选）——UI 可选全部 harness provider；未激活 provider 的模型列表可能为空（选择后由 agent 轮次按需暴露错误）。
+- **决策留档**：provider 目录合并 `listProviders()`（已激活路由）与 `listConfigurableProviders()`（休眠可选）——UI 可选全部 harness provider；未激活 provider 的模型列表可能为空（选择后由 agent 轮次按需暴露错误）。**决策反转（用户否决，2026-08-16）**：目录只列 `listProviders()`（已激活）——未配置的 provider 出现在选择器里是噪音；配置文件（channelsFile / patch）仍可引用未激活 provider。
 
 ### 20.4 通道默认模型可配置（2026-08-16，`50bc120`）
 

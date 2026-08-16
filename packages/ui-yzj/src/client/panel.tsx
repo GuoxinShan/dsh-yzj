@@ -819,9 +819,10 @@ function loadTab(
     })
   } else if (tab === 'robot') {
     // Channel statuses, persisted overrides, and the provider/model catalog
-    // in parallel; group names for the robot detail ride a FRESH multi-page
-    // group list when the chat-tab cache is absent (a robot's groups may
-    // sit outside the newest 20 conversations).
+    // in parallel; group names for the robot detail ALWAYS come from a fresh
+    // multi-page group list (the chat-tab cache may be stale or miss a
+    // robot's group entirely — a robot's group can sit outside the newest
+    // 20 conversations).
     const loadGroupsFresh = async (): Promise<void> => {
       const pages: unknown[][] = []
       for (let page = 1; page <= 3; page += 1) {
@@ -844,7 +845,7 @@ function loadTab(
       props.robotStatus(),
       props.robotOverrides(),
       props.robotModels(),
-      getGroupWindow() === undefined ? loadGroupsFresh() : Promise.resolve(undefined),
+      loadGroupsFresh(),
     ]).then(([status, overrides, models]) => {
       if (!status.ok) { fail(status.error.message); return }
       if (!overrides.ok) { fail(overrides.error.message); return }
