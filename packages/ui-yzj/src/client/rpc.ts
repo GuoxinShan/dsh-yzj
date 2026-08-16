@@ -82,6 +82,8 @@ export interface YzjPanelInject {
   robotShareList: (groupId: string, robotIndex?: number) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Read one shared file's text content (bounded preview). */
   robotShareRead: (groupId: string, filename: string, robotIndex?: number) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Open a robot workspace folder in the OS file manager (user's own click). */
+  robotOpenFolder: (groupId: string | undefined, robotIndex?: number) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Panel-direct write into a group's shared workspace (user's own will; auto-unique names unless overwrite). */
   robotShareWrite: (input: { groupId: string; filename: string; content: string; overwrite?: boolean; robotIndex?: number }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Persist the FULL channel configuration to the channels file (§8.5); takes effect after a GUI restart. */
@@ -92,6 +94,20 @@ export interface YzjPanelInject {
   memoryLog: (scope?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Memory vault: panel-direct observation write (user's own will; no confirm card). */
   memoryObserve: (content: string, tags?: string[], scope?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Memory vault: dream runtime state (switch / model / schedule). */
+  dreamState: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Memory vault: merge a partial dream-state update (empty strings clear). */
+  dreamSet: (partial: { enabled?: boolean; provider?: string; model?: string; dailyAt?: string }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Memory vault: run one dream consolidation now (in-process executor). */
+  dreamRun: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Plugin-wide default model route (model-yzj). */
+  modelDefault: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Set the plugin-wide default model route. */
+  modelSetDefault: (provider: string, model: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Clear the plugin-wide default model route. */
+  modelClearDefault: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Provider/model catalog for the pickers (active adapter routes). */
+  modelCatalog: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
 }
 
 /** Build the inject face from a connection handle; unavailable → failed calls. */
@@ -179,6 +195,10 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
       filename,
       ...(robotIndex === undefined ? {} : { robotIndex }),
     }),
+    robotOpenFolder: (groupId: string | undefined, robotIndex?: number) => call('robot-open-folder', {
+      ...(groupId === undefined || groupId === '' ? {} : { groupId }),
+      ...(robotIndex === undefined ? {} : { robotIndex }),
+    }),
     robotShareWrite: (input: { groupId: string; filename: string; content: string; overwrite?: boolean; robotIndex?: number }) => call('robot-share-write', {
       groupId: input.groupId,
       filename: input.filename,
@@ -198,5 +218,17 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
       ...(tags === undefined || tags.length === 0 ? {} : { tags }),
       ...(scope === undefined ? {} : { scope }),
     }),
+    dreamState: () => call('dream-state', {}),
+    dreamSet: (partial) => call('dream-set', {
+      ...(partial.enabled === undefined ? {} : { enabled: partial.enabled }),
+      ...(partial.provider === undefined ? {} : { provider: partial.provider }),
+      ...(partial.model === undefined ? {} : { model: partial.model }),
+      ...(partial.dailyAt === undefined ? {} : { dailyAt: partial.dailyAt }),
+    }),
+    dreamRun: () => call('dream-run', {}),
+    modelDefault: () => call('model-default', {}),
+    modelSetDefault: (provider, model) => call('model-default-set', { provider, model }),
+    modelClearDefault: () => call('model-default-clear', {}),
+    modelCatalog: () => call('model-catalog', {}),
   }
 }
