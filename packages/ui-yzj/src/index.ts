@@ -18,7 +18,7 @@ import { join } from 'node:path'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'ui-yzj'
-/** Services required by the board channel. */
+/** Services required by the board channel plus the robot settings face. */
 export const inject = ['connection', 'yzjBridge']
 
 /** Internal failure envelope matching the closed RpcError union. */
@@ -475,6 +475,57 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
         }
         const settled = writeGate.decide(writeId, outcome)
         return { ok: true, value: { settled } }
+      }
+      case 'robot-status': {
+        const robot = ctx.get('yzjRobot')
+        if (robot === undefined) return internalError('robot-status: yzjRobot 服务不可用（robot-yzj 未挂载）')
+        return { ok: true, value: { channels: robot.statuses() } }
+      }
+      case 'robot-overrides': {
+        const robot = ctx.get('yzjRobot')
+        if (robot === undefined) return internalError('robot-overrides: yzjRobot 服务不可用（robot-yzj 未挂载）')
+        return { ok: true, value: { overrides: robot.listOverrides() } }
+      }
+      case 'robot-override-set': {
+        const robot = ctx.get('yzjRobot')
+        if (robot === undefined) return internalError('robot-override-set: yzjRobot 服务不可用（robot-yzj 未挂载）')
+        const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
+        const key = stringField(record, 'key')
+        if (key === undefined) return internalError('robot-override-set endpoint requires a key payload')
+        const provider = stringField(record, 'provider')
+        const model = stringField(record, 'model')
+        if (provider === undefined && model === undefined) {
+          return internalError('robot-override-set endpoint requires provider and/or model payloads')
+        }
+        try {
+          await robot.setOverride(key, {
+            ...(provider === undefined ? {} : { provider }),
+            ...(model === undefined ? {} : { model }),
+          })
+          return { ok: true, value: { saved: true } }
+        } catch (error) {
+          return internalError(`robot-override-set failed: ${String(error)}`)
+        }
+      }
+      case 'robot-override-delete': {
+        const robot = ctx.get('yzjRobot')
+        if (robot === undefined) return internalError('robot-override-delete: yzjRobot 服务不可用（robot-yzj 未挂载）')
+        const key = stringField(payload, 'key')
+        if (key === undefined) return internalError('robot-override-delete endpoint requires a key payload')
+        try {
+          return { ok: true, value: { deleted: await robot.deleteOverride(key) } }
+        } catch (error) {
+          return internalError(`robot-override-delete failed: ${String(error)}`)
+        }
+      }
+      case 'robot-models': {
+        const robot = ctx.get('yzjRobot')
+        if (robot === undefined) return internalError('robot-models: yzjRobot 服务不可用（robot-yzj 未挂载）')
+        try {
+          return { ok: true, value: { catalog: await robot.modelCatalog() } }
+        } catch (error) {
+          return internalError(`robot-models failed: ${String(error)}`)
+        }
       }
       default:
         return internalError(`unknown /yzj endpoint ${endpoint}`)

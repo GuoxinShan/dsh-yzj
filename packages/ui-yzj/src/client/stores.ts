@@ -7,8 +7,9 @@
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
 
 /** Panel tabs (我的 removed — the composer '@' covers directory search;
- * 待办 added for the demo-stage todo library). */
-export type YzjTab = 'docs' | 'calendar' | 'chat' | 'todo'
+ * 待办 added for the demo-stage todo library; 机器人 added for the robot
+ * channel status + per-conversation model overrides). */
+export type YzjTab = 'docs' | 'calendar' | 'chat' | 'todo' | 'robot'
 /** Yunzhijia panel viewing state (raw CLI payloads, rendered by components). */
 export type YzjPanelState = {
   open: boolean
@@ -52,6 +53,12 @@ export type YzjPanelState = {
   todoActiveDocId: string
   /** Active tag filter ('' = all). */
   todoTag: string
+  /** Robot tab: channel statuses + model overrides + provider/model catalog. */
+  robotChannels: unknown[]
+  robotOverrides: unknown[]
+  robotCatalog: unknown[]
+  /** Conversation selected in the override editor ('' = none). */
+  robotSelKey: string
   loading: boolean
   error: string
 }
@@ -86,6 +93,8 @@ export type YzjPanelActions = {
   setTodoLibraries: (draft: YzjPanelState, libraries: unknown[], activeDocId: string) => void
   patchTodo: (draft: YzjPanelState, todo: unknown) => void
   setTodoTag: (draft: YzjPanelState, tag: string) => void
+  setRobotData: (draft: YzjPanelState, channels: unknown[], overrides: unknown[], catalog: unknown[]) => void
+  setRobotSelKey: (draft: YzjPanelState, key: string) => void
   setLoading: (draft: YzjPanelState, loading: boolean) => void
   setError: (draft: YzjPanelState, error: string) => void
 }
@@ -125,6 +134,10 @@ export function createYzjStore(): EngineStoreHandle<YzjPanelState, YzjPanelActio
       todoLibraries: [],
       todoActiveDocId: '',
       todoTag: '',
+      robotChannels: [],
+      robotOverrides: [],
+      robotCatalog: [],
+      robotSelKey: '',
       // Start "loading" so the todo pane never flashes its provisioning hero
       // for the single frame before loadTab kicks in.
       loading: true,
@@ -187,6 +200,12 @@ export function createYzjStore(): EngineStoreHandle<YzjPanelState, YzjPanelActio
         d.todos = d.todos.map(item => String(asRecord(item).todoId) === todoId ? todo : item)
       },
       setTodoTag: (d: YzjPanelState, tag: string) => { d.todoTag = tag },
+      setRobotData: (d: YzjPanelState, channels: unknown[], overrides: unknown[], catalog: unknown[]) => {
+        d.robotChannels = channels
+        d.robotOverrides = overrides
+        d.robotCatalog = catalog
+      },
+      setRobotSelKey: (d: YzjPanelState, key: string) => { d.robotSelKey = key },
       setLoading: (d: YzjPanelState, loading: boolean) => { d.loading = loading },
       setError: (d: YzjPanelState, error: string) => { d.error = error },
     },
@@ -203,7 +222,7 @@ export function createYzjStore(): EngineStoreHandle<YzjPanelState, YzjPanelActio
       // older build (or a poisoned one) crashes array consumers.
       const arrays: (keyof YzjPanelState)[] = [
         'workspaces', 'docs', 'events', 'calEvents', 'groups', 'messages',
-        'todos', 'todoLibraries',
+        'todos', 'todoLibraries', 'robotChannels', 'robotOverrides', 'robotCatalog',
       ]
       const broken = arrays.some(key => !Array.isArray(snap[key]))
         || typeof snap.loading !== 'boolean'

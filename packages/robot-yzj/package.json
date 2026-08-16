@@ -29,6 +29,8 @@
     "@deepseek-ai/dsh-agent": "link:../../../deepseek-harness/packages/core/agent",
     "@deepseek-ai/dsh-llm": "link:../../../deepseek-harness/packages/llm/llm",
     "@deepseek-ai/dsh-session": "link:../../../deepseek-harness/packages/core/session",
-    "@deepseek-ai/schemastery": "link:../../../deepseek-harness/vendor/schemastery"
+    "@deepseek-ai/dsh-storage-domain": "link:../../../deepseek-harness/packages/storage/storage-domain",
+    "@deepseek-ai/schemastery": "link:../../../deepseek-harness/vendor/schemastery",
+    "zod": "^4.4.3"
   }
 }

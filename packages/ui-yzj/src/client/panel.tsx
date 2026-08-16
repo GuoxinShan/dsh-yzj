@@ -24,6 +24,7 @@ import {
 import { emitYzjDropRequest } from './drop-bus.ts'
 import { registerPanelController } from './panel-controller.ts'
 import { TodoPane } from './todo-pane.tsx'
+import { RobotPane } from './robot-pane.tsx'
 import css from './panel.module.css'
 
 /** The props shares the panel reads. */
@@ -484,7 +485,21 @@ const TABS: { key: YzjTab; label: string; icon: () => ReactNode }[] = [
   { key: 'calendar', label: '日程', icon: () => <IconChecklistOutline14 /> },
   { key: 'chat', label: '会话', icon: () => <IconNewChatOutline16 /> },
   { key: 'todo', label: '待办', icon: () => <IconListPenOutline16 /> },
+  { key: 'robot', label: '机器人', icon: () => <IconRobot16 /> },
 ]
+
+/** Robot-channel glyph (local: ui-primitives ships no bot icon). */
+function IconRobot16(): ReactNode {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="4" y="8" width="16" height="12" rx="3" stroke="currentColor" strokeWidth="2" />
+      <path d="M12 8V5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <circle cx="12" cy="4" r="1.5" fill="currentColor" />
+      <circle cx="9" cy="14" r="1.5" fill="currentColor" />
+      <circle cx="15" cy="14" r="1.5" fill="currentColor" />
+    </svg>
+  )
+}
 
 /** The sidebar-foot toggle; label and open state ride the store shares. */
 export interface YzjPanelButtonProps {
@@ -634,6 +649,7 @@ const DOCK_ITEMS: { key: YzjTab; label: string; icon: () => ReactNode }[] = [
   { key: 'todo', label: '待办', icon: () => <IconListPenOutline16 /> },
   { key: 'calendar', label: '日程', icon: () => <IconChecklistOutline14 /> },
   { key: 'docs', label: '知识库', icon: () => <IconFolderOpenOutline16 /> },
+  { key: 'robot', label: '机器人', icon: () => <IconRobot16 /> },
 ]
 
 /** Common emojis for the composer picker (real-IM habit). */
@@ -801,6 +817,31 @@ function loadTab(
         }
       } else fail(result.error.message)
     })
+  } else if (tab === 'robot') {
+    // Channel statuses, persisted overrides, and the provider/model catalog
+    // in parallel; group names for the picker ride the chat-tab cache when
+    // present (fetched fresh otherwise).
+    void Promise.all([
+      props.robotStatus(),
+      props.robotOverrides(),
+      props.robotModels(),
+      getGroupWindow() === undefined ? props.fetchGroups(20, 1) : Promise.resolve({ ok: true as const, value: undefined as unknown }),
+    ]).then(([status, overrides, models, groupsResult]) => {
+      if (getGroupWindow() === undefined && groupsResult.ok) {
+        const groups = asArray(asRecord(groupsResult.value).list)
+        putGroupWindow(groups, asRecord(groupsResult.value).more === true)
+        props.actions.setGroups(groups)
+      }
+      if (!status.ok) { fail(status.error.message); return }
+      if (!overrides.ok) { fail(overrides.error.message); return }
+      props.actions.setRobotData(
+        asArray(asRecord(status.value).channels),
+        asArray(asRecord(overrides.value).overrides),
+        models.ok ? asArray(asRecord(models.value).catalog) : [],
+      )
+      props.actions.setLoading(false)
+      if (!models.ok) props.actions.setError(`模型目录读取失败：${models.error.message}`)
+    })
   }
 }
 
@@ -809,7 +850,7 @@ export function YzjPanel(props: YzjPanelProps) {
   const open = props.useStore(state => state.open)
   const tab = props.useStore(state => state.tab)
   // Persisted tabs may hold the removed 'me'; fall back to the docs tab.
-  const activeTab: YzjTab = tab === 'docs' || tab === 'calendar' || tab === 'chat' || tab === 'todo' ? tab : 'docs'
+  const activeTab: YzjTab = tab === 'docs' || tab === 'calendar' || tab === 'chat' || tab === 'todo' || tab === 'robot' ? tab : 'docs'
   const anchorActive = props.useStore(state => state.anchorMsgId !== '')
   const state = props.useStore(s => s)
   const panelRef = useRef<HTMLDivElement | null>(null)
@@ -2312,6 +2353,27 @@ export function YzjPanel(props: YzjPanelProps) {
           todoLibraries={props.todoLibraries}
           selectTodoLibrary={props.selectTodoLibrary}
           ensureTeamTodo={props.ensureTeamTodo}
+        />
+      )}
+
+      {activeTab === 'robot' && (
+        <RobotPane
+          channels={state.robotChannels}
+          overrides={state.robotOverrides}
+          catalog={state.robotCatalog}
+          selectedKey={state.robotSelKey}
+          groups={state.groups}
+          loading={state.loading}
+          error={state.error}
+          onSelectKey={key => { props.actions.setRobotSelKey(key) }}
+          onOverridesRefreshed={overrides => {
+            props.actions.setRobotData(state.robotChannels, overrides, state.robotCatalog)
+          }}
+          robotStatus={props.robotStatus}
+          robotOverrides={props.robotOverrides}
+          robotModels={props.robotModels}
+          setRobotOverride={props.setRobotOverride}
+          deleteRobotOverride={props.deleteRobotOverride}
         />
       )}
 
