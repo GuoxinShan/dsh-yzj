@@ -391,3 +391,9 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 | 🧹 业务 | routine 内容为 demo 巡检，真实定时任务未定义 | 待用户提供 |
 
 **文档修正（同提交）**：`robot-channel-plan.md` §3.6.4 对齐表 C5 原标 ✅ 与 §20.5「!fork 未做」矛盾——已改标 ⚠️ 观察项并注实现状态。
+
+### 20.11 机器人面板升级：通道 cwd + 群共享工作区（2026-08-16，随 UI 提交）
+
+- 机器人 tab 三个增量：① 通道状态行显示解析后 cwd（`robot_status` 数据本来就有，UI 补投影）；② 新增「群共享工作区」section——群选择（复用会话 tab 群缓存）→ 拉 `robot-share-list` 显示共享区路径 + 文件列表（名/大小/mtime，空态）；③ 面板直写表单（文件名 + 内容 → `robot-share-write`），复用 `writeShareFile` 的自动唯一名语义，**面板直写 = 用户本人意志，不经确认卡**（对齐 im-send 直写语义；agent 会话写仍走确认卡）。
+- RPC 端点 +2（`robot-share-list` / `robot-share-write`），`/yzj` 共 36 端点；注入面 `robotShareList`/`robotShareWrite`。
+- 验收：ui-yzj typecheck/build/bundle 通过、63 单测绿；浏览器走查待 web profile 重启后跑 `verify-robot-pane.mjs` 扩展（面板共享区浏览 + 直写落盘）。

@@ -185,3 +185,68 @@
 .overrideMeta {
   color: var(--dsw-text-secondary);
 }
+
+.channelCwd {
+  margin-left: auto;
+  color: var(--dsw-text-faint, #94a3b8);
+  font-size: 11px;
+  font-family: var(--dsw-font-mono, ui-monospace, monospace);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+}
+
+.shareList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.shareRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: var(--dsw-surface, #fff);
+  font-size: 12px;
+}
+
+.shareName {
+  font-weight: 600;
+  color: var(--dsw-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shareMeta {
+  flex: none;
+  color: var(--dsw-text-secondary);
+  font-size: 11px;
+}
+
+.input,
+.textarea {
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-border, #d4d4d8);
+  background: var(--dsw-surface, #fff);
+  color: var(--dsw-text-primary);
+  font-size: 12px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.input:focus,
+.textarea:focus {
+  outline: none;
+  border-color: var(--dsw-accent, #2563eb);
+}

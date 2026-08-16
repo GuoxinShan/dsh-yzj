@@ -6,6 +6,7 @@
  * after !restart). Data arrives through the /yzj RPC face only.
  */
 import { useMemo, useState } from 'react'
+import { formatSize } from './im-cache.ts'
 import css from './robot-pane.module.css'
 
 type UnknownRecord = Record<string, unknown>
@@ -80,6 +81,10 @@ export interface RobotPaneProps {
   robotModels: () => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   setRobotOverride: (key: string, provider: string | undefined, model: string | undefined) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   deleteRobotOverride: (key: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
+  /** List one group's shared workspace files. */
+  robotShareList: (groupId: string, robotIndex?: number) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
+  /** Panel-direct write into a group's shared workspace (user's own will). */
+  robotShareWrite: (input: { groupId: string; filename: string; content: string; overwrite?: boolean; robotIndex?: number }) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
 }
 
 export function RobotPane(props: RobotPaneProps): React.ReactNode {
@@ -89,6 +94,54 @@ export function RobotPane(props: RobotPaneProps): React.ReactNode {
   const [model, setModel] = useState(selected?.model ?? '')
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState('')
+  // Shared-workspace browse + panel-direct write (user's own will, no card).
+  const [shareGroup, setShareGroup] = useState('')
+  const [shareDir, setShareDir] = useState('')
+  const [shareFiles, setShareFiles] = useState<{ name: string; size: number; mtime: number }[] | null>(null)
+  const [shareLoading, setShareLoading] = useState(false)
+  const [shareFilename, setShareFilename] = useState('')
+  const [shareContent, setShareContent] = useState('')
+  const [shareNote, setShareNote] = useState('')
+
+  const loadShare = (groupId: string): void => {
+    setShareGroup(groupId)
+    setShareFiles(null)
+    setShareDir('')
+    setShareNote('')
+    if (groupId === '') return
+    setShareLoading(true)
+    void props.robotShareList(groupId).then(result => {
+      setShareLoading(false)
+      if (!result.ok) { setShareNote(`读取失败：${result.error.message}`); return }
+      const record = asRecord(result.value)
+      setShareDir(asString(record.dir))
+      setShareFiles(asArray(record.files).map(file => {
+        const entry = asRecord(file)
+        return {
+          name: asString(entry.name),
+          size: typeof entry.size === 'number' ? entry.size : 0,
+          mtime: typeof entry.mtime === 'number' ? entry.mtime : 0,
+        }
+      }))
+    })
+  }
+
+  const writeShare = (): void => {
+    if (shareGroup === '' || shareFilename === '' || shareContent === '') return
+    setShareNote('')
+    void props.robotShareWrite({ groupId: shareGroup, filename: shareFilename, content: shareContent }).then(result => {
+      if (!result.ok) { setShareNote(`写入失败：${result.error.message}`); return }
+      const record = asRecord(result.value)
+      if (record.ok !== true) { setShareNote(`写入失败：${asString(record.error)}`); return }
+      const name = asString(record.name)
+      setShareNote(record.existed === true
+        ? `已写入 ${name}（同名文件已存在，自动唯一化；原文件未动）`
+        : `已写入 ${name}`)
+      setShareFilename('')
+      setShareContent('')
+      loadShare(shareGroup)
+    })
+  }
 
   const catalog = useMemo(() => asArray(props.catalog).map(entry => {
     const record = asRecord(entry)
@@ -157,6 +210,7 @@ export function RobotPane(props: RobotPaneProps): React.ReactNode {
             const lastError = asString(record.lastError)
             const defProvider = asString(record.provider)
             const defModel = asString(record.model)
+            const cwd = asString(record.cwd)
             return (
               <li key={index} className={css.channelRow}>
                 <span className={connected ? css.dotOn : css.dotOff} aria-hidden="true" />
@@ -165,6 +219,7 @@ export function RobotPane(props: RobotPaneProps): React.ReactNode {
                   {connected ? '已连接' : '未连接'}
                   {defProvider !== '' || defModel !== '' ? ` · 默认 ${defProvider}/${defModel}` : ' · 默认 harness 路由'}
                 </span>
+                <span className={css.channelCwd} title={cwd}>cwd: {cwd}</span>
                 {lastError !== '' && <span className={css.channelError} title={lastError}>!</span>}
               </li>
             )
@@ -240,6 +295,75 @@ export function RobotPane(props: RobotPaneProps): React.ReactNode {
             </li>
           ))}
         </ul>
+      </section>
+
+      <section className={css.section}>
+        <h3 className={css.sectionTitle}>群共享工作区</h3>
+        <p className={css.hint}>跨话题显式协作区（`&lt;cwd&gt;/groups/&lt;群&gt;/shared/`）。写共享区自动唯一名防冲突；agent 会话写经确认卡，面板直写为你的本人意志、不经确认卡。</p>
+        <div className={css.editor}>
+          <label className={css.field}>
+            <span className={css.fieldLabel}>群</span>
+            <select className={css.select} value={shareGroup} onChange={(event) => { loadShare(event.target.value) }}>
+              <option value="">— 选择群 —</option>
+              {asArray(props.groups).map(group => {
+                const record = asRecord(group)
+                const groupId = asString(record.groupId)
+                if (groupId === '') return null
+                return <option key={groupId} value={groupId}>群 · {asString(record.name)}</option>
+              })}
+            </select>
+          </label>
+          {shareGroup !== '' && (
+            <>
+              {shareDir !== '' && <p className={css.note}>路径：{shareDir}</p>}
+              {shareLoading && <p className={css.hint}>加载中…</p>}
+              {!shareLoading && shareFiles !== null && (
+                shareFiles.length === 0
+                  ? <p className={css.hint}>共享区暂无文件。</p>
+                  : (
+                    <ul className={css.shareList}>
+                      {shareFiles.map(file => (
+                        <li key={file.name} className={css.shareRow}>
+                          <span className={css.shareName}>{file.name}</span>
+                          <span className={css.shareMeta}>{formatSize(file.size)} · {new Date(file.mtime).toLocaleString()}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )
+              )}
+              <label className={css.field}>
+                <span className={css.fieldLabel}>文件名</span>
+                <input
+                  className={css.input}
+                  value={shareFilename}
+                  onChange={(event) => { setShareFilename(event.target.value) }}
+                  placeholder="report.md（同名自动变 report-2.md）"
+                />
+              </label>
+              <label className={css.field}>
+                <span className={css.fieldLabel}>内容</span>
+                <textarea
+                  className={css.textarea}
+                  value={shareContent}
+                  onChange={(event) => { setShareContent(event.target.value) }}
+                  rows={3}
+                  placeholder="要写入共享区的文本…"
+                />
+              </label>
+              <div className={css.actions}>
+                <button
+                  type="button"
+                  className={css.primary}
+                  disabled={shareFilename === '' || shareContent === ''}
+                  onClick={writeShare}
+                >
+                  写入共享区
+                </button>
+              </div>
+              {shareNote !== '' && <p className={css.note} role="status">{shareNote}</p>}
+            </>
+          )}
+        </div>
       </section>
     </div>
   )
