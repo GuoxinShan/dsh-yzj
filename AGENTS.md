@@ -70,6 +70,7 @@ node .acceptance/verify-real-data.mjs   # 需运行中的 GUI + 已登录 yzj-cl
 
 ## Conventions
 
+- **禁止终止宿主进程（自杀红线）**：承载当前会话的 harness 宿主就是本 agent 的运行环境——web GUI 进程（命令行含 `bin.ts "web"` 或 `--profile web`、监听 3080 的 node 进程）。`Stop-Process` / `taskkill` 它 = 杀掉自己：会话、后台 job、全部状态一起消失，且无法自愈。任何 kill 操作前必须核对命令行：监听 3080 的 web 进程、命令行含 `--profile web`/`"web"` 的进程一律不碰。**GUI 的重启只允许用户手动执行**；测试需要新配置生效时，告知用户并等待，绝不代劳。可以 kill 的只有自己启动的后台 job（如 `--profile ops` 的调度 daemon、探针进程、临时进程）——kill 前同样先核对命令行确认不是宿主。
 - **兄弟 checkout 是唯一事实源**：所有 `@deepseek-ai/*` 依赖以 `link:` 相对路径指向 `../deepseek-harness`；vitest 经 alias 把 client 包解析到 harness 的 TS 源。harness 接口变化在本仓库直接体现为类型/测试失败，就地适配，不复制其代码。
 - **两面包界限**：host 面（bridge、tool-yzj、ui-yzj node half）产出普通 ESM `lib/index.js`；browser half 经 `tsdown.shared.ts` 产出 closure-factory bundle（`window.__ModuleLoader__.load` 注入），其纯度门禁禁止跨插件值导入——协作只走 cordis 服务与 `/yzj` RPC。
 - **注册即效应**：一切贡献经 `ctx.effect()` / `ctx.on()` 或返回 disposer 的官方 API；bundle 卸载 / profile 移除后必须无残留（harness 全局约定，此处同样成立）。
