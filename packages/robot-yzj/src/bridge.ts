@@ -32,6 +32,20 @@ const MAX_BODY_BYTES = 256 * 1024
 /** Client request timeout; a wedged listener must not wedge the scheduler. */
 const CLIENT_TIMEOUT_MS = 15_000
 
+/**
+ * The structural `webServer` service face robot-yzj consumes (the harness's
+ * `@deepseek-ai/dsh-host-webserver`). Declared structurally so the plugin
+ * never depends on that package directly; only the route registration is
+ * needed.
+ */
+export interface WebServerFace {
+  register(route: {
+    kind: 'exact' | 'prefix'
+    path: string
+    handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>
+  }): () => void
+}
+
 /** Options for the listener half. */
 export interface ChatnodeBridgeOptions {
   /** The robot-channel face the bridge pushes through. */

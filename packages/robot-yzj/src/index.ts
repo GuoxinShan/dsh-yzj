@@ -28,7 +28,7 @@ import { ConfirmBroker, type ConfirmApprovalRequest, type ConfirmAskPending } fr
 import { PushHub, type PushSessionEvent } from './push.ts'
 import { MemoryStore } from './memory.ts'
 import { YzjChatnode } from './chatnode.ts'
-import { ChatnodeBridge, ChatnodeBridgeClient } from './bridge.ts'
+import { ChatnodeBridge, ChatnodeBridgeClient, type WebServerFace } from './bridge.ts'
 import { applyRobotControlTools } from './control.ts'
 import { applyRobotShareTools } from './share.ts'
 
@@ -649,31 +649,27 @@ export function apply(ctx: Context, config: Config): void {
   // The chatnode bridge listener: an exact HTTP route on the profile's
   // webServer that pushes bridge calls through this plugin's own channels —
   // the shared delivery path for the ops scheduler daemon (bridge client
-  // mode above). Opt-in via bridgeToken; absent webServer logs and skips.
-  if (config.bridgeToken !== undefined && config.bridgeToken !== '') {
-    const webServer = ctx.get('webServer') as
-      | {
-          register(route: {
-            kind: 'exact' | 'prefix'
-            path: string
-            handler: (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void | Promise<void>
-          }): () => void
-        }
-      | undefined
-    if (webServer === undefined) {
-      ctx.logger.warn('robot-yzj: bridgeToken set but no webServer service present; /yzj/chatnode route not registered')
-    } else {
+  // mode above). Opt-in via bridgeToken; the route registers through
+  // ctx.inject so it lands as soon as webServer activates — a bare
+  // ctx.get at apply time would miss it, because the web server binds
+  // asynchronously and robot-yzj does not declare it as an inject
+  // dependency. Profiles without webServer simply never run the callback.
+  const bridgeToken = config.bridgeToken
+  if (bridgeToken !== undefined && bridgeToken !== '') {
+    ctx.inject(['webServer'], () => {
+      const webServer = ctx.get('webServer') as WebServerFace | undefined
+      if (webServer === undefined) return
       const bridge = new ChatnodeBridge({
         robot,
         defaultRobotIndex: config.chatnodeRobotIndex ?? 0,
-        token: config.bridgeToken,
+        token: bridgeToken,
       })
       ctx.effect(() => webServer.register({
         kind: 'exact',
         path: '/yzj/chatnode',
         handler: (req, res) => bridge.handle(req, res),
       }), 'robot-yzj: chatnode bridge route')
-    }
+    })
   }
   // Event-driven push: robot-session output (any turn source — interactive,
   // scheduled, watcher) reaches its conversation through the shared hub.
