@@ -127,7 +127,7 @@ describe('ConfirmBroker', () => {
     expect(cards.at(-1)).toContain('超时失效')
   })
 
-  it('delegates non-robot sessions to next', async () => {
+  it('delegates sessions that are not inbound-registered to next', async () => {
     const broker = new ConfirmBroker({ timers: fakeTimers() })
     const next = vi.fn(async () => 'unavailable' as const)
     const result = await broker.handleApproval({
@@ -136,5 +136,26 @@ describe('ConfirmBroker', () => {
     }, next)
     expect(next).toHaveBeenCalledOnce()
     expect(result).toBe('unavailable')
+  })
+
+  it('owns a registered yzj-home-* inbound session and skips unregistered homes', async () => {
+    const broker = new ConfirmBroker({ timers: fakeTimers() })
+    const sends: string[] = []
+    broker.registerSession('yzj-home-g-a' as never, makeContext(sends))
+    expect(broker.ownsSession('yzj-home-g-a')).toBe(true)
+    expect(broker.ownsSession('yzj-home-g-b')).toBe(false)
+    const next = vi.fn(async () => 'unavailable' as const)
+    void broker.handleApproval({
+      agent: { session: { id: 'yzj-home-g-a', events: [] } },
+      toolName: 'yzj_im_message_send',
+      callId: 'c-home',
+    }, next)
+    await Promise.resolve()
+    expect(next).not.toHaveBeenCalled()
+    const skipped = await broker.handleApproval({
+      agent: { session: { id: 'yzj-home-g-b', events: [] } },
+      toolName: 'yzj_im_message_send',
+    }, next)
+    expect(skipped).toBe('unavailable')
   })
 })

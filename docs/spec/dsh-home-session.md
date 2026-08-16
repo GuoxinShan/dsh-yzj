@@ -1,6 +1,6 @@
 # DSH 唯一会话家园：会话对象与产品法
 
-> 版本：v1.0（已拍板，**尚未实现**——对照见 [`../status/gap-analysis.md`](../status/gap-analysis.md) §22）
+> 版本：v1.0（已拍板）+ **第一刀已落地**（绑定对象 / 入站落点 / fork 不再开新根，2026-08-16）——对照见 [`../status/gap-analysis.md`](../status/gap-analysis.md) §22。G2（IM 节点进 transcript）、G3（确认卡 pending）、G5（群搜索）、G6（面板 composer 移除）仍开放。
 > 日期：2026-08-17
 > 决策人：Guoxin Shan
 > 定位：产品法 + 会话对象契约。整体方案只加 v1.8 指针（[`integration-master-plan.md`](integration-master-plan.md)）；机器人协议仍见 [`robot-channel-plan.md`](robot-channel-plan.md)，其隐藏平行 session / fork 开新根在本法规下作废。
@@ -15,7 +15,7 @@
 
 云之家仍是投递面与引用源（群里能看见、能 @、能回源），但**对话发生在 DSH 会话里**。不存在第二套聊天窗、第三套机器人会话作为产品家园。
 
-现行实现仍是三面并行（DSH 对话、面板 IM composer、隐藏 `yzj-robot-*` 会话）。那是过渡态，不是本法。
+现行实现：**绑定表已落地**（`ctx.yzjHome`，storage-domain `yzj_home_bindings`）；入站 `followup()` 与面板挑群打同一条 `yzj-home-*` 会话；`!fork` / `robot_fork` 打开或恢复目标绑定会话，不再 `create` `fork-*` / `yzj-robot-*` 平行根。面板 IM composer 与四类节点进 transcript 仍是过渡态（G2/G6），不是本法终局。
 
 ---
 
@@ -206,7 +206,7 @@ DshHomeSession
 7. 「丢进群」默认摘要 + 确认卡；全文迁移需显式；完成后 focus 绑定群会话。
 8. `!fork` / `robot_fork` 不再 `create` 新根（或文档与 UI 标明已废止）。
 
-阻塞缺口清单以 gap-analysis §22 为准，不在本文假装已落地。
+阻塞缺口清单以 gap-analysis §22 为准。**本刀已关闭**验收 1（打开群两次 = 一条绑定会话）、2（@Claude / 入站 followup 打绑定会话，不分配 `yzj-robot-*` 家园）、8（`!fork` / `robot_fork` 不再 `create` 新根）。验收 3–7（四类节点、发群落点、面板 composer 降级、未绑定单一发送、丢进群 UI）仍开放。
 
 ---
 

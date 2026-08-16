@@ -13,7 +13,6 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { SessionId } from '@deepseek-ai/dsh-session'
 import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -23,7 +22,8 @@ import type { SocketStatus } from './socket.ts'
 import { RobotSocket } from './socket.ts'
 import { deriveWebSocketUrl } from './protocol.ts'
 import { RobotSender, type RobotCardOptions, type RobotSendResult } from './outbound.ts'
-import { RobotRouter, completedTurnPrefix, dmSessionId, slugId } from './router.ts'
+import { RobotRouter, dmSessionId, type RouterHomeFace } from './router.ts'
+import { openOrResumeBoundHome } from './home-target.ts'
 import { OverrideStore } from './overrides.ts'
 import { SurfaceStore } from './surface.ts'
 import { ConfirmBroker, type ConfirmApprovalRequest, type ConfirmAskPending } from './confirm.ts'
@@ -437,34 +437,38 @@ export class YzjRobot extends Service {
   }
 
   /**
-   * Fork one live session (typically a robot conversation) into a new
-   * operator-side root session seeded with its completed-turn history. The
-   * fork appears in the DSH web session list and continues with the full
-   * harness toolset; its log keeps `parentSession` pointing at the source.
-   * @param sourceSessionId - any live session id (robot conversations included).
-   * @returns the new fork session id.
+   * Open or resume the bound DSH home for the conversation behind
+   * `sourceSessionId`. Product law: must not `agents.create` a `fork-*` root.
+   * @param sourceSessionId - a bound home id, or a surface lastSessionId.
+   * @returns the bound session id (same id on a second call).
    */
   async forkSession(sourceSessionId: string): Promise<{ ok: boolean; sessionId?: string; error?: string }> {
-    const source = this.ctx.agents.get(sourceSessionId as never)
-    if (source === undefined) return { ok: false, error: `no live agent for session ${sourceSessionId}` }
-    const seed = completedTurnPrefix(source.session.events)
-    if (seed.length === 0) return { ok: false, error: '源会话还没有任何完成的回合，无法 fork' }
-    const forkId = SessionId(`fork-${slugId(sourceSessionId)}-${Date.now().toString(36)}`)
-    try {
-      const handle = await this.ctx.agents.create({
-        sessionId: forkId,
-        seed,
-        meta: {
-          ...(source.session.header.cwd === undefined ? {} : { cwd: source.session.header.cwd }),
-          parentSession: source.session.header.id,
-          seedLength: seed.length,
-        },
-      })
-      this.forked.set(String(forkId), handle)
-      return { ok: true, sessionId: String(forkId) }
-    } catch (error) {
-      return { ok: false, error: `fork failed: ${String(error)}` }
+    const home = this.ctx.get('yzjHome') as RouterHomeFace | undefined
+    if (home === undefined) {
+      return { ok: false, error: 'yzjHome 未挂载：无法打开绑定会话（禁止 fork 新根）' }
     }
+    const surfaces = this.channels.flatMap(channel => channel.router.surfaceSummary())
+    const agents = {
+      get: (id: string) => this.ctx.agents.get(id as never),
+      resume: (options: { resumeSessionId: string }) => this.ctx.agents.resume({ resumeSessionId: options.resumeSessionId as never }),
+      create: (options: { sessionId: string; meta?: { cwd: string } }) =>
+        this.ctx.agents.create({
+          sessionId: options.sessionId as never,
+          ...(options.meta === undefined ? {} : { meta: options.meta }),
+        }),
+    }
+    return openOrResumeBoundHome({
+      sourceSessionId,
+      home,
+      surfaces,
+      agents,
+      cwd: process.cwd(),
+    })
+  }
+
+  /** Whether ConfirmBroker owns this session (inbound-registered). GUI write-gate skips those. */
+  ownsConfirm(sessionId: string): boolean {
+    return this.confirm.ownsSession(sessionId)
   }
 
   /** Fork sessions this service owns (diagnostics). */
@@ -566,6 +570,7 @@ export class YzjRobot extends Service {
       logger: { warn: message => this.ctx.logger.warn(message) },
       resolveGroupName: groupId => this.resolveGroupNameOf(groupId),
       ...(this.guiUrl === '' ? {} : { guiUrl: this.guiUrl }),
+      home: () => this.ctx.get('yzjHome') as RouterHomeFace | undefined,
     })
     const status: SocketStatus = { connected: false, attempts: 0, lastError: null, lastFrameAt: 0 }
     const socket = new RobotSocket({
@@ -947,21 +952,17 @@ export function apply(ctx: Context, config: Config): void {
   }
   // Event-driven push: robot-session output (any turn source — interactive,
   // scheduled, watcher) reaches its conversation through the shared hub.
+  // Hub no-ops unregistered ids, so bound homes that the router registered
+  // get pushed; unbound GUI sessions do not. Do not filter on yzj-robot-*.
   ctx.on('session/event', (session, event) => {
-    const id = String(session.id)
-    if (!id.startsWith('yzj-robot-')) return
-    robot.noteSessionEvent(id, event as PushSessionEvent)
+    robot.noteSessionEvent(String(session.id), event as PushSessionEvent)
   })
   ctx.on('agent/status', payload => {
     if (payload.status !== 'idle') return
-    const id = String(payload.agent.id)
-    if (!id.startsWith('yzj-robot-')) return
-    robot.noteAgentIdle(id)
+    robot.noteAgentIdle(String(payload.agent.id))
   })
   ctx.on('agent/error', payload => {
-    const id = String(payload.agent.id)
-    if (!id.startsWith('yzj-robot-')) return
-    robot.noteAgentError(id, payload.error)
+    robot.noteAgentError(String(payload.agent.id), payload.error)
   })
   ctx.effect(() => {
     return () => robot.stop()

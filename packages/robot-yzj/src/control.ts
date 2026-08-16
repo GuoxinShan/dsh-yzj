@@ -3,8 +3,8 @@
  * operator drive robot channels from any harness session — proactive
  * notifications (`robot_notify`), conversation continuation (`robot_continue`,
  * fabricates an operator turn through the full inbound pipeline), and session
- * fork (`robot_fork`, seeds a new operator session with a robot
- * conversation's completed-turn history). These are operator-trusted channels:
+ * fork (`robot_fork`, opens or resumes the bound DSH home for that
+ * conversation — never a parallel `fork-*` root). These are operator-trusted channels:
  * unlike the yzj write family they are deliberately NOT gated by the
  * confirmation guard — the robot is the operator's own bot, its outbound is
  * already allowFrom-restricted, and the tool bodies refuse to run inside
@@ -156,9 +156,9 @@ export function applyRobotControlTools(ctx: Context, robot: YzjRobot): void {
 
   ctx.tools.register(defineTool({
     name: 'robot_fork',
-    description: 'Fork a robot conversation into a NEW operator-side session seeded with its completed-turn history (balanced prefix through the last turn/end). The fork appears in the DSH session list where it can be opened and continued with the full harness toolset; its cwd and parentSession lineage point at the source. Returns the new session id.',
+    description: 'Open or resume the bound DSH session for the Yunzhijia conversation behind this session id. Does not create a parallel fork-* root. Returns the bound session id (same id when already bound).',
     parameters: {
-      sessionId: { type: 'string', required: true, description: 'Source session id (yzj-robot-… from robot_status).' },
+      sessionId: { type: 'string', required: true, description: 'Source session id (bound yzj-home-… from robot_status, or a surface lastSessionId).' },
     },
     output: controlOutput,
     timeoutMs: 60_000,
@@ -170,7 +170,7 @@ export function applyRobotControlTools(ctx: Context, robot: YzjRobot): void {
         throw new Error(`robot_fork 失败：${result.error ?? 'unknown'}`)
       }
       return {
-        content: `已从 ${args.sessionId} fork 出会话 ${result.sessionId}。可在 DSH 会话列表打开它继续处理（继承源会话的全部已完成回合与工作目录）。`,
+        content: `已打开/恢复绑定会话 ${result.sessionId}（来源 ${args.sessionId}）。可在 DSH 会话列表继续；未创建平行 fork 根。`,
         truncated: false,
         data: { ok: true, forkSessionId: result.sessionId ?? null, sourceSessionId: args.sessionId },
       }

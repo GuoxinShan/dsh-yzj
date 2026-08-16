@@ -52,6 +52,30 @@ function fakeAgents(getStatus: () => 'idle' | 'running') {
   }
 }
 
+function memoryHome() {
+  const byConv = new Map<string, { dshSessionId: string; yzjConversationId: string; yzjKind: 'group' | 'dm' }>()
+  const bySess = new Map<string, string>()
+  const slug = (id: string): string => {
+    const cleaned = id.replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '')
+    return cleaned === '' ? 'x' : cleaned.slice(0, 80)
+  }
+  return {
+    async ensureBound(id: string, kind: 'group' | 'dm') {
+      const existing = byConv.get(id)
+      if (existing !== undefined) return { sessionId: existing.dshSessionId, created: false, yzjKind: existing.yzjKind }
+      const sessionId = `yzj-home-${slug(id)}`
+      byConv.set(id, { dshSessionId: sessionId, yzjConversationId: id, yzjKind: kind })
+      bySess.set(sessionId, id)
+      return { sessionId, created: true, yzjKind: kind }
+    },
+    getByConversation: (id: string) => byConv.get(id),
+    getBySession: (id: string) => {
+      const conv = bySess.get(id)
+      return conv === undefined ? undefined : byConv.get(conv)
+    },
+  }
+}
+
 function makeRouter(
   sends: RobotSendResult[],
   agents = fakeAgents(() => 'idle'),
@@ -62,6 +86,7 @@ function makeRouter(
     guiUrl?: string
     surface?: unknown
     resolveGroupName?: (groupId: string) => Promise<string | undefined>
+    home?: ReturnType<typeof memoryHome>
   } = {},
 ) {
   const sendCalls: { text: string; options?: RobotSendOptions }[] = []
@@ -75,6 +100,7 @@ function makeRouter(
     agents: agents as never,
     sender,
     allowFrom: async () => allowFrom,
+    home: extra.home ?? memoryHome(),
     ...(extra.memory === undefined ? {} : { memory: extra.memory }),
     ...(extra.cwd === undefined ? {} : { cwd: extra.cwd }),
     ...(extra.guiUrl === undefined ? {} : { guiUrl: extra.guiUrl }),
@@ -156,7 +182,7 @@ describe('RobotRouter', () => {
     expect(order).toEqual(['resume', 'create'])
   })
 
-  it('anchors a fresh group session per top-level message and continues it on replies', async () => {
+  it('anchors one bound group session for every top-level message and continues it on replies', async () => {
     const agents = fakeAgents(() => 'idle')
     const memory = fakeMemory()
     const { router, sendCalls } = makeRouter([], agents, ['u-allowed'], { memory, cwd: tmpBase })
@@ -164,6 +190,9 @@ describe('RobotRouter', () => {
     // message runs the intro as its own turn ahead of the user's message (S7).
     await router.handle(inbound('群任务A', { groupId: 'gid-test', msgId: 'root-1' }))
     expect(agents.created).toHaveLength(1)
+    const firstId = String((agents.createdWith[0] as { sessionId: { toString(): string } }).sessionId)
+    expect(firstId.startsWith('yzj-home-')).toBe(true)
+    expect(firstId.startsWith('yzj-robot-')).toBe(false)
     const firstFollowup = (agents.created[0] as { followup: { mock: { calls: unknown[][] } } }).followup.mock.calls
     expect(String(firstFollowup[0]![0]!.content[0]!.text)).toContain('自我介绍')
     expect(String(firstFollowup[1]![0]!.content[0]!.text)).toBe('群任务A')
@@ -178,12 +207,11 @@ describe('RobotRouter', () => {
     }))
     expect(agents.created).toHaveLength(1)
     expect((agents.created[0] as { followup: { mock: { calls: unknown[][] } } }).followup.mock.calls).toHaveLength(3)
-    // A different top-level message anchors its own session (no second intro).
+    // A different top-level message in the SAME group reuses the bound session (no second intro).
     await router.handle(inbound('另一个话题', { groupId: 'gid-test', msgId: 'root-2' }))
-    expect(agents.created).toHaveLength(2)
-    const secondFollowup = (agents.created[1] as { followup: { mock: { calls: unknown[][] } } }).followup.mock.calls
-    expect(secondFollowup).toHaveLength(1)
-    expect(String(secondFollowup[0]![0]!.content[0]!.text)).toBe('另一个话题')
+    expect(agents.created).toHaveLength(1)
+    const followups = (agents.created[0] as { followup: { mock: { calls: unknown[][] } } }).followup.mock.calls
+    expect(String(followups.at(-1)![0]!.content[0]!.text)).toBe('另一个话题')
   })
 
   it('rides the task summary in the ack (C12) for long-enough prompts', async () => {
@@ -230,7 +258,8 @@ describe('RobotRouter', () => {
     expect(agents.created).toHaveLength(1)
     const result = await router.continueFromDsh('再来一条')
     expect(result.ok).toBe(true)
-    expect(result.sessionId).toContain('root-1')
+    expect(result.sessionId).toMatch(/^yzj-home-/)
+    expect(result.sessionId?.startsWith('yzj-robot-')).toBe(false)
     // The synthetic ack carries no reply anchor (the fake msgId never existed
     // on the server) but still notifies the asker on group surfaces.
     const syntheticAck = sendCalls[1]!.options
@@ -275,12 +304,15 @@ describe('RobotRouter', () => {
     expect(summary[0]!.lastSessionId).toBeDefined()
   })
 
-  it('continueFromDsh continues the persisted last session after a restart', async () => {
+  it('continueFromDsh continues the persisted home binding after a restart', async () => {
     const agents = fakeAgents(() => 'idle')
+    const home = memoryHome()
+    await home.ensureBound('g1', 'group')
+    const boundId = home.getByConversation('g1')!.dshSessionId
     const store = new Map<string, unknown>([
       ['surface:0:g1', {
         robotId: 'BOT-r', robotName: '群机器人', groupType: 3, time: 1,
-        lastSessionId: 'yzj-robot-BOT-r-gg1-persisted-root',
+        lastSessionId: boundId,
       }],
     ])
     const surface = {
@@ -296,11 +328,12 @@ describe('RobotRouter', () => {
       allowFrom: async () => ['u-allowed'],
       cwd: tmpBase,
       surface: surface as never,
+      home,
     })
     const result = await router.continueFromDsh('继续之前的对话')
     expect(result.ok).toBe(true)
-    // No fresh thread at the fake msgId: the persisted session id is reused.
-    expect(result.sessionId).toContain('persisted-root')
+    expect(result.sessionId).toBe(boundId)
+    expect(result.sessionId?.startsWith('yzj-robot-')).toBe(false)
     expect(agents.created).toHaveLength(1)
   })
 
@@ -336,16 +369,16 @@ describe('RobotRouter', () => {
     expect(custom.workdir()).toBe('C:\\work')
   })
 
-  it('resolves per-thread private cwds for group threads and the channel root for DMs (§8.4)', async () => {
+  it('resolves one cwd per bound group (not per thread) and the channel root for DMs (§8.4)', async () => {
     const agents = fakeAgents(() => 'idle')
     const { router } = makeRouter([], agents, ['u-allowed'], { cwd: tmpBase })
     await router.handle(inbound('群任务A', { groupId: 'g1', msgId: 'root-1' }))
     await router.handle(inbound('另一个话题', { groupId: 'g1', msgId: 'root-2' }))
     await router.handle(inbound('DM 消息', { groupId: 'BOT-a-BOT-b', msgId: 'dm-1' }))
     const cwds = agents.createdWith.map(options => (options as { meta: { cwd: string } }).meta.cwd)
+    expect(agents.createdWith).toHaveLength(2)
     expect(cwds).toEqual([
-      join(tmpBase, 'groups', 'g1', 'root-1'),
-      join(tmpBase, 'groups', 'g1', 'root-2'),
+      join(tmpBase, 'groups', 'g1'),
       tmpBase,
     ])
   })
@@ -360,7 +393,7 @@ describe('RobotRouter', () => {
       msgParam: JSON.stringify({ replyMsgId: 'out-1', replyRootMsgId: 'root-1', replyPersonName: '测试用户', replySummary: '群任务A' }),
     }))
     expect(agents.createdWith).toHaveLength(1)
-    expect((agents.createdWith[0] as { meta: { cwd: string } }).meta.cwd).toBe(join(tmpBase, 'groups', 'g1', 'root-1'))
+    expect((agents.createdWith[0] as { meta: { cwd: string } }).meta.cwd).toBe(join(tmpBase, 'groups', 'g1'))
   })
 
   it('injects the shared-workspace instruction into group turns only (§8.4)', async () => {
@@ -446,9 +479,12 @@ describe('RobotRouter', () => {
     ] as never as import('@deepseek-ai/dsh-session').SessionEvent[]
     const before = sendCalls.length
     await router.handle(inbound('!fork g-target 继续调研', { groupId: 'gid-test', msgId: 'root-2' }))
-    // The target group got its own anchored session (create #2) and the
-    // source group received a handover receipt.
+    // The target group's bound session is created once; the source group
+    // received a handover receipt. No fork-* root.
     expect(agents.created).toHaveLength(2)
+    const ids = agents.createdWith.map(options => String((options as { sessionId: { toString(): string } }).sessionId))
+    expect(ids.every(id => id.startsWith('yzj-home-'))).toBe(true)
+    expect(ids.some(id => id.startsWith('fork-') || id.startsWith('yzj-robot-'))).toBe(false)
     const targetFollowups = (agents.created[1] as { followup: { mock: { calls: unknown[][] } } }).followup.mock.calls
     const handoverText = String(targetFollowups.at(-1)![0]!.content[0]!.text)
     expect(handoverText).toContain('继续调研')
@@ -458,6 +494,24 @@ describe('RobotRouter', () => {
     expect(receipt.text).toContain('已交接给群 g-target')
     expect(receipt.text).toContain('附 11 字上下文摘要')
     expect(sendCalls.length).toBeGreaterThan(before)
+  })
+
+  it('!fork to the same target a second time does not create a third root', async () => {
+    const surface = {
+      get: (key: string) => key === 'surface:0:g-target'
+        ? { robotId: 'BOT-r', robotName: '群机器人', groupType: 3, time: Date.now() }
+        : undefined,
+      put: async () => {}, getMeta: () => undefined, putMeta: async () => {}, entries: () => [],
+    }
+    const agents = fakeAgents(() => 'idle')
+    const { router } = makeRouter([], agents, ['u-allowed'], { surface, cwd: tmpBase })
+    await router.handle(inbound('给我讲讲项目', { groupId: 'gid-test', msgId: 'root-1' }))
+    await router.handle(inbound('!fork g-target 继续调研', { groupId: 'gid-test', msgId: 'root-2' }))
+    expect(agents.created).toHaveLength(2)
+    await router.handle(inbound('!fork g-target 再交接一次', { groupId: 'gid-test', msgId: 'root-3' }))
+    expect(agents.created).toHaveLength(2)
+    const ids = agents.createdWith.map(options => String((options as { sessionId: { toString(): string } }).sessionId))
+    expect(ids.some(id => id.startsWith('fork-'))).toBe(false)
   })
 
   it('!fork resolves a target by group name (surface groupName and lazy resolver)', async () => {
