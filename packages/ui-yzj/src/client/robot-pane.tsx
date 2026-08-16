@@ -95,6 +95,9 @@ export function RobotPane(props: RobotPaneProps): React.ReactNode {
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState('')
   // Shared-workspace browse + panel-direct write (user's own will, no card).
+  // Scoped per robot CHANNEL (each channel owns its cwd), then per group
+  // surface that channel has actually seen (robot_status surfaces).
+  const [shareRobot, setShareRobot] = useState('')
   const [shareGroup, setShareGroup] = useState('')
   const [shareDir, setShareDir] = useState('')
   const [shareFiles, setShareFiles] = useState<{ name: string; size: number; mtime: number }[] | null>(null)
@@ -103,14 +106,41 @@ export function RobotPane(props: RobotPaneProps): React.ReactNode {
   const [shareContent, setShareContent] = useState('')
   const [shareNote, setShareNote] = useState('')
 
+  /** Group surfaces the selected channel has actually seen (shared dir exists per surface). */
+  const shareGroups = useMemo(() => {
+    if (shareRobot === '') return [] as { groupId: string; robotName: string }[]
+    const channel = asArray(props.channels)[Number(shareRobot)]
+    return asArray(asRecord(channel).surface).map(surface => {
+      const record = asRecord(surface)
+      return { groupId: asString(record.groupId), robotName: asString(record.robotName) }
+    }).filter(entry => entry.groupId !== '' && !entry.groupId.startsWith('BOT-'))
+  }, [shareRobot, props.channels])
+
+  /** Group display name: resolved from the chat-tab group cache, else the raw id. */
+  const groupNameOf = (groupId: string): string => {
+    for (const group of asArray(props.groups)) {
+      const record = asRecord(group)
+      if (asString(record.groupId) === groupId) return asString(record.name)
+    }
+    return groupId
+  }
+
+  const pickShareRobot = (index: string): void => {
+    setShareRobot(index)
+    setShareGroup('')
+    setShareFiles(null)
+    setShareDir('')
+    setShareNote('')
+  }
+
   const loadShare = (groupId: string): void => {
     setShareGroup(groupId)
     setShareFiles(null)
     setShareDir('')
     setShareNote('')
-    if (groupId === '') return
+    if (groupId === '' || shareRobot === '') return
     setShareLoading(true)
-    void props.robotShareList(groupId).then(result => {
+    void props.robotShareList(groupId, Number(shareRobot)).then(result => {
       setShareLoading(false)
       if (!result.ok) { setShareNote(`读取失败：${result.error.message}`); return }
       const record = asRecord(result.value)
@@ -127,9 +157,9 @@ export function RobotPane(props: RobotPaneProps): React.ReactNode {
   }
 
   const writeShare = (): void => {
-    if (shareGroup === '' || shareFilename === '' || shareContent === '') return
+    if (shareRobot === '' || shareGroup === '' || shareFilename === '' || shareContent === '') return
     setShareNote('')
-    void props.robotShareWrite({ groupId: shareGroup, filename: shareFilename, content: shareContent }).then(result => {
+    void props.robotShareWrite({ groupId: shareGroup, filename: shareFilename, content: shareContent, robotIndex: Number(shareRobot) }).then(result => {
       if (!result.ok) { setShareNote(`写入失败：${result.error.message}`); return }
       const record = asRecord(result.value)
       if (record.ok !== true) { setShareNote(`写入失败：${asString(record.error)}`); return }
@@ -299,20 +329,28 @@ export function RobotPane(props: RobotPaneProps): React.ReactNode {
 
       <section className={css.section}>
         <h3 className={css.sectionTitle}>群共享工作区</h3>
-        <p className={css.hint}>跨话题显式协作区（`&lt;cwd&gt;/groups/&lt;群&gt;/shared/`）。写共享区自动唯一名防冲突；agent 会话写经确认卡，面板直写为你的本人意志、不经确认卡。</p>
+        <p className={css.hint}>跨话题显式协作区（`&lt;通道cwd&gt;/groups/&lt;群&gt;/shared/`）。先选已注册的机器人通道，再选该机器人真实见过的群；写共享区自动唯一名防冲突，agent 会话写经确认卡，面板直写为你的本人意志、不经确认卡。</p>
         <div className={css.editor}>
           <label className={css.field}>
-            <span className={css.fieldLabel}>群</span>
-            <select className={css.select} value={shareGroup} onChange={(event) => { loadShare(event.target.value) }}>
-              <option value="">— 选择群 —</option>
-              {asArray(props.groups).map(group => {
-                const record = asRecord(group)
-                const groupId = asString(record.groupId)
-                if (groupId === '') return null
-                return <option key={groupId} value={groupId}>群 · {asString(record.name)}</option>
-              })}
+            <span className={css.fieldLabel}>机器人通道</span>
+            <select className={css.select} value={shareRobot} onChange={(event) => { pickShareRobot(event.target.value) }}>
+              <option value="">— 选择机器人 —</option>
+              {asArray(props.channels).map((channel, index) => (
+                <option key={index} value={String(index)}>{channelLabel(asRecord(channel))}（#{index}）</option>
+              ))}
             </select>
           </label>
+          {shareRobot !== '' && (
+            <label className={css.field}>
+              <span className={css.fieldLabel}>该机器人见过的群</span>
+              <select className={css.select} value={shareGroup} onChange={(event) => { loadShare(event.target.value) }}>
+                <option value="">{shareGroups.length === 0 ? '该机器人尚未收到任何群消息' : '— 选择群 —'}</option>
+                {shareGroups.map(entry => (
+                  <option key={entry.groupId} value={entry.groupId}>群 · {groupNameOf(entry.groupId)}</option>
+                ))}
+              </select>
+            </label>
+          )}
           {shareGroup !== '' && (
             <>
               {shareDir !== '' && <p className={css.note}>路径：{shareDir}</p>}
