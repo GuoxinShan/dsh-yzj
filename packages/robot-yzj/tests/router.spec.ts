@@ -61,6 +61,7 @@ function makeRouter(
     cwd?: string
     guiUrl?: string
     surface?: unknown
+    resolveGroupName?: (groupId: string) => Promise<string | undefined>
   } = {},
 ) {
   const sendCalls: { text: string; options?: RobotSendOptions }[] = []
@@ -78,6 +79,7 @@ function makeRouter(
     ...(extra.cwd === undefined ? {} : { cwd: extra.cwd }),
     ...(extra.guiUrl === undefined ? {} : { guiUrl: extra.guiUrl }),
     ...(extra.surface === undefined ? {} : { surface: extra.surface as never }),
+    ...(extra.resolveGroupName === undefined ? {} : { resolveGroupName: extra.resolveGroupName }),
   })
   return { router, sendCalls, agents }
 }
@@ -422,7 +424,7 @@ describe('RobotRouter', () => {
     expect(sendCalls[0]!.text).toContain('不能交接给当前群')
     await router.handle(inbound('!fork g-unknown 继续调研', { groupId: '6a7f37b4e4b0e6211b1c5b87' }))
     expect(sendCalls[1]!.text).toContain('交接失败')
-    expect(sendCalls[1]!.text).toContain('没有见过群')
+    expect(sendCalls[1]!.text).toContain('没有找到群')
   })
 
   it('!fork hands context over to a target surface through the inbound pipeline', async () => {
@@ -456,6 +458,34 @@ describe('RobotRouter', () => {
     expect(receipt.text).toContain('已交接给群 g-target')
     expect(receipt.text).toContain('附 11 字上下文摘要')
     expect(sendCalls.length).toBeGreaterThan(before)
+  })
+
+  it('!fork resolves a target by group name (surface groupName and lazy resolver)', async () => {
+    const surface = {
+      get: (key: string) => key === 'surface:0:g-target'
+        ? { robotId: 'BOT-r', robotName: '群机器人', groupType: 3, time: Date.now(), groupName: '目标群A' }
+        : key === 'surface:0:g-other'
+          ? { robotId: 'BOT-r', robotName: '群机器人', groupType: 3, time: Date.now() }
+          : undefined,
+      put: async () => {}, getMeta: () => undefined, putMeta: async () => {},
+      entries: () => [
+        ['surface:0:g-target', { robotId: 'BOT-r', robotName: '群机器人', groupType: 3, time: Date.now(), groupName: '目标群A' }],
+        ['surface:0:g-other', { robotId: 'BOT-r', robotName: '群机器人', groupType: 3, time: Date.now() }],
+      ] as [string, { robotId: string; robotName: string; groupType: number; time: number; groupName?: string }][],
+    }
+    const resolveGroupName = vi.fn(async (groupId: string) => groupId === 'g-other' ? '目标群B' : undefined)
+    const agents = fakeAgents(() => 'idle')
+    const { router, sendCalls } = makeRouter([], agents, ['u-allowed'], { surface, cwd: tmpBase, resolveGroupName })
+    // Named target with the name persisted on the surface.
+    await router.handle(inbound('!fork 目标群A 继续调研', { groupId: '6a7f37b4e4b0e6211b1c5b87', msgId: 'root-1' }))
+    expect(sendCalls.at(-1)!.text).toContain('已交接给群 目标群A（g-target）')
+    // Named target resolved lazily through the resolver.
+    await router.handle(inbound('!fork 目标群B 继续调研', { groupId: '6a7f37b4e4b0e6211b1c5b87', msgId: 'root-2' }))
+    expect(sendCalls.at(-1)!.text).toContain('已交接给群 目标群B（g-other）')
+    expect(resolveGroupName).toHaveBeenCalledWith('g-other')
+    // Unknown name reports a clear failure.
+    await router.handle(inbound('!fork 不存在的群 继续调研', { groupId: '6a7f37b4e4b0e6211b1c5b87', msgId: 'root-3' }))
+    expect(sendCalls.at(-1)!.text).toContain('没有找到群「不存在的群」')
   })
 
   it('conversationSummary is bounded and newest-first', () => {

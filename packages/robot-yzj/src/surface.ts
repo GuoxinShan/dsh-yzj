@@ -25,6 +25,8 @@ export interface SurfaceState {
   readonly time: number
   /** The last session id anchored on this surface (continuation target). */
   readonly lastSessionId?: string
+  /** Human group name, when resolved (WS frames carry none; the router's resolveGroupName fills it from the CLI). */
+  readonly groupName?: string
 }
 
 /** A plain string value for the channel-level meta table (recent groupId). */
@@ -38,6 +40,7 @@ const surfaceSchema = z.object({
   groupType: z.number().int(),
   time: z.number().int(),
   lastSessionId: z.string().min(1).optional(),
+  groupName: z.string().min(1).optional(),
 }) as unknown as z.ZodType<SurfaceState>
 
 const metaSchema = z.object({
