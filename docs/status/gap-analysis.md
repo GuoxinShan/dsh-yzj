@@ -370,3 +370,24 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 - **工具面**：`robot_share_write`（默认存在即自动唯一名 `name-2.ext`、`overwrite:true` 才覆盖、临时文件 + rename 原子写、filename 防穿越）+ `robot_share_list`（名/大小/mtime）；进 `WRITE_SPECS`（standard），机器人会话自动走群内建议卡；工具不禁机器人会话（区别于 §8.2 operator-only）。
 - **注入**：每轮对群会话注入共享区指令（绝对路径 + 强制走 `robot_share_write`），DM 不注入。
 - **验收**：单测覆盖群/DM cwd 解析、回复续接复用同目录、共享区指令只注入群会话、唯一名/覆盖/穿越拒绝；**沙箱行为实测（2026-08-16，3081 测试实例 + 假通道 overlay）**：内置 `write` 对 cwd 外非临时区路径被拒（`D:/dsh-share-outside/…`）、cwd 内放行；`robot_share_list` 无表面时正确报错（工具注册/接线/错误语义）；`robot_share_write` 确认卡（「工作区写操作确认」+ 拒绝/允许一次）→ 允许 → 落盘 `<cwd>/groups/probe-g1/shared/hello.md` → `robot_share_list` 回读可见，端到端全通。**边界条件（实测发现）**：workspace-write 豁免平台临时区（`%TEMP%`）——通道 `cwd` 配置在临时区下时共享区可被内置工具写，「唯一写通道」不成立；默认宿主 cwd 不受影响，部署注意（spec §8.4 已记录）。
+
+### 20.10 全量 Gap 盘点（2026-08-16 R2.8 后，设计 vs 实现）
+
+**结论：功能面 ~95%+ 闭环**；剩余真 gap = 4 个命令/链接小项 + 1 个外部依赖（Adaptive 卡片）+ 生产收口三步。
+
+| 类别 | 项 | 状态 |
+|---|---|---|
+| 🔴 生产收口 | 生产 GUI 重启 → 桥路由 + 插件市场 UI + digest 进群（R2.8 验收最后一步） | 待用户重启（红线：agent 不重启宿主） |
+| 🔴 生产收口 | ops daemon 常驻化（当前挂 agent 会话后台 job，宿主重启即失） | 需计划任务/手动常驻 |
+| 🔴 生产收口 | 生产 smoke（`.acceptance/verify-prod-smoke.mjs` 已提交） | 未在生产跑 |
+| 🟡 设计有代码无 | `!fork` 跨群交接（S3/C5；§20.5 标"仅剩"） | 未实现，价值待评估 |
+| 🟡 设计有代码无 | `!configure` / `!feedback`（S3 命令族表） | 未实现 |
+| 🟡 设计有代码无 | 会话 deep link（S2「在 DSH 中打开会话」） | 未实现（现仅文档 deep link） |
+| 🟡 设计有代码无 | 群 watcher 关键词轮询（S6） | 未实现（schedule 已走 dsh-routines） |
+| 🟡 外部依赖 | Adaptive 确认卡 / checklist 原地更新（S2/R3） | 协议依据已锁定，等开放平台协调 |
+| ⚪ 可选 | 标准确认同会话合并 / chip 快照标注 / @同事起草入口 / chip 灰化 / 灰 chip | 设计标注可选，未实现 |
+| 🔒 受限 | yzj.write 持久化事件族 / 通知卡按钮 / 多 chip 批量序列化 / 自定义 session 事件 / 确认卡进程内存态 | harness/协议边界，已备案 |
+| 🧹 发布 | link: → registry 版本 + 验证 `dsh plugin add` + 首个 tag（AGENTS.md Pre-release） | 未做（0.x 阶段） |
+| 🧹 业务 | routine 内容为 demo 巡检，真实定时任务未定义 | 待用户提供 |
+
+**文档修正（同提交）**：`robot-channel-plan.md` §3.6.4 对齐表 C5 原标 ✅ 与 §20.5「!fork 未做」矛盾——已改标 ⚠️ 观察项并注实现状态。
