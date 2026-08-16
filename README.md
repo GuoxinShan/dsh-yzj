@@ -4,16 +4,16 @@
 
 独立仓库的 bundle 包，通过 `dsh plugin --profile <name> add <package>` 安装，不修改 harness 本体。
 
-**产品法（已拍板，尚未实现）**：[DSH 是唯一对话家园](docs/spec/dsh-home-session.md)——云之家消息是这条 DSH transcript 的一等公民，不是侧车 IM。一条云之家会话 ↔ 恰好一条 DSH session。现行实现仍是三面并行（DSH 对话、面板 IM composer、隐藏 `yzj-robot-*` 会话），对照 [gap-analysis §22](docs/status/gap-analysis.md)。机器人通道是入站/投递协议（[robot-channel-plan](docs/spec/robot-channel-plan.md)），不是第三家园。
+**产品法（已拍板；绑定对象第一刀已落地）**：[DSH 是唯一对话家园](docs/spec/dsh-home-session.md)——一条云之家会话 ↔ 恰好一条 DSH session。入站 `@` / 面板挑群打同一条绑定会话（`yzj-home-*`）；`!fork` / `robot_fork` 打开或恢复该会话，不再开平行根。面板 IM composer 与「群消息进 transcript」仍是过渡态，对照 [gap-analysis §22](docs/status/gap-analysis.md)。机器人通道是入站/投递协议（[robot-channel-plan](docs/spec/robot-channel-plan.md)），不是第三家园。
 
 ## 包结构
 
 | 包 | 角色 | 说明 |
 |---|---|---|
 | [`packages/bridge`](packages/bridge/README.md) | `@dsh-yzj/bridge` → `ctx.yzjBridge` | 有界子进程通道：argv 数组直启 `yzj-cli`，无 shell 插值；复用机器上 `yzj-cli auth login` 的登录态与 keychain 凭据，harness 全程不接触 appSecret/accessToken |
-| [`packages/tool-yzj`](packages/tool-yzj/README.md) | `@dsh-yzj/tool-yzj`（注册到 `ctx.tools`） | 45 个模型面工具：doc（16）/ sheet（10）/ calendar（7）/ contact（3）/ im（3）/ file（2）/ **todo（4）**；每个工具输出有界 digest，并把裁剪后的结构化载荷经 `output.presentationMeta` 投影给 UI；todo 核心同时以 `ctx.yzjTodo` 服务暴露给浏览器面 |
-| [`packages/ui-yzj`](packages/ui-yzj/README.md) | `@dsh-yzj/ui-yzj`（`dsh.client` 双面包） | node half：`/yzj` Connection RPC 通道（49 端点，含面板直写 im-send/file-upload/file-data 与 robot-share-write）；browser half：`tool.call.toolview` keyed 富卡片 + 悬浮球入口 + 工作台 overlay 面板（四 tab + 真 IM composer）+ **设置 → 云之家**（机器人通道与记忆库管理，非页签） |
-| [`packages/robot-yzj`](packages/robot-yzj/README.md) | `@dsh-yzj/robot-yzj` → `ctx.yzjRobot` | 机器人双向通道（R2.x host 面，设计见 [docs/spec/robot-channel-plan.md](docs/spec/robot-channel-plan.md)）：实测协议 WS 入站（心跳/退避重连/msgId 去重）+ sendMsgUrl 出站（引用卡/分片/限流）；每 (机器人,用户) DM 一条持久 DSH session，ack-then-push 回推；bang 命令族 `!help/!status/!routines/!memory/!mute/!unmute/!restart/!configure` + `!fork <群名\|群ID> <指令>`（跨群上下文交接）+ `!feedback`；群聊锚定 + 事件驱动推送 + 记忆注入 + intro 轮；allowFrom 默认仅 CLI 登录用户；**DSH→机器人双向控制**：`robot_status`（通道/cwd/会话表面）/`robot_notify`/`robot_continue`/`robot_fork`/`robot_share_write`、`robot_share_list`（群共享工作区；per-thread 私有 cwd + 群共享区三层模型）；**chatnode 桥**（`bridgeToken`/`bridgeTarget`/`guiUrl`）：ops 调度器经 `POST /yzj/chatnode` 复用本通道投递 digest，不持机器人凭据（见 [routines-delivery.md](docs/spec/routines-delivery.md) §3.1） |
+| [`packages/tool-yzj`](packages/tool-yzj/README.md) | `@dsh-yzj/tool-yzj`（注册到 `ctx.tools`） | 45 个模型面工具：doc（16）/ sheet（10）/ calendar（7）/ contact（3）/ im（3）/ file（2）/ **todo（4）**；每个工具输出有界 digest，并把裁剪后的结构化载荷经 `output.presentationMeta` 投影给 UI；todo 核心同时以 `ctx.yzjTodo` 服务暴露给浏览器面；**`ctx.yzjHome`** 绑定表（一条云之家会话 ↔ 一条 DSH session，storage-domain 持久化） |
+| [`packages/ui-yzj`](packages/ui-yzj/README.md) | `@dsh-yzj/ui-yzj`（`dsh.client` 双面包） | node half：`/yzj` Connection RPC 通道（50 端点，含 `home-open` 与面板直写 im-send/file-upload/file-data 与 robot-share-write）；browser half：`tool.call.toolview` keyed 富卡片 + 悬浮球入口 + 工作台 overlay 面板（四 tab + 真 IM composer；**挑群 focus 绑定 DSH 会话**）+ **设置 → 云之家**（机器人通道与记忆库管理，非页签） |
+| [`packages/robot-yzj`](packages/robot-yzj/README.md) | `@dsh-yzj/robot-yzj` → `ctx.yzjRobot` | 机器人双向通道（R2.x host 面，设计见 [docs/spec/robot-channel-plan.md](docs/spec/robot-channel-plan.md)）：实测协议 WS 入站 + sendMsgUrl 出站；入站 `followup()` 打该云之家会话的**绑定 DSH 家园**（`yzj-home-*`，不是隐藏 `yzj-robot-*`）；ack-then-push；bang 命令族含 `!fork`（打开/恢复目标群绑定会话，不开新根）+ `!feedback`；**DSH→机器人双向控制**：`robot_status` / `robot_notify` / `robot_continue` / `robot_fork`（resume 绑定会话）/ `robot_share_*`；**chatnode 桥**见 [routines-delivery.md](docs/spec/routines-delivery.md) §3.1 |
 | [`packages/memory-yzj`](packages/memory-yzj/README.md) | `@dsh-yzj/memory-yzj` → `ctx.yzjMemory` | 记忆库组件（设计见 [docs/spec/memory-vault-design.md](docs/spec/memory-vault-design.md)）：明文 Markdown vault（sections/entities/observations + log/index，默认 `$DSH_HOME/yzj-memory`，按 `user`/`group:<id>` scope 分仓）；5 个 `memory_*` 工具（observe/read/search/dream_load/dream_apply）；`systemPrompt.context` 有界注入（每 scope `inject_char_cap`，默认 6000）；**dream 固化默认关闭**——`dream.json` 运行时开关（面板可翻）+ 每日 `dailyAt` 进程内定时 + 「立即固化」，模型链＝dream 配置 > 插件默认 > harness 默认，rev 乐观锁保护人工编辑；`group:<id>` scope 留缝群组记忆 |
 | [`packages/model-yzj`](packages/model-yzj/README.md) | `@dsh-yzj/model-yzj` → `ctx.yzjModels` | 插件级默认模型（`~/.dsh/yzj-model.json`，明文热生效）：robot 模型解析链尾部（会话覆盖 > 机器人配置 > 通道默认 > **插件默认** > harness 默认）与 dream 执行器共用；`catalog()` 提供活跃路由的 provider/model 目录（面板选择器数据源） |
 | **根 = `@dsh-yzj/bundle`**（monobundle） | 可安装的 profile patch 层（`cordis.patch.yml` 在根，行名 `@dsh-yzj/bundle/<row>`） | tsdown 聚合六包 host half 进 `lib/*.mjs`（互依内嵌、`@deepseek-ai/*` 外部化）+ `scripts/copy-client.mjs` 搬运 ui-yzj closure bundle 为 `lib/client.js`；`dsh.bundle` + `dsh.client` 声明；发布 = 构建 + tag（见 [docs/release.md](docs/release.md)） |
@@ -62,7 +62,7 @@ bundle 交付**改造版 skill**（`packages/bundle/skills/yzj-cli/SKILL.md`）�
 ### UI 设计
 
 - **工具结果富卡片**：`tool.call.toolview` keyed 注册全部 45 个工具名。pending 态从参数渲染标题；settled 态优先渲染结构化 `meta`（文档详情/列表、数据表 schema、记录表、日程时间线、消息气泡、联系人卡片、待办列表/动作摘要），无结构时回退到 digest 文本。失败态显示错误摘要。
-- **云之家工作台**：悬浮球唯一入口（hover 快捷坞、持久化显隐、真实未读角标轮询），四个 tab——知识库（双栏：左侧知识库/文档树**含文件夹下钻（面包屑导航）**，右侧文档内容预览）、日程（**打开即落在今天**、今天快捷跳转、日视图 + 详情）、会话（完整 IM：正序气泡、媒体/文件预览、表情渲染、回复、日期分割线、锚点定位、全部已读、真 composer 直发）、**待办**（逾期/今天/进行中/待办/已完成分桶 + #tag 聚合过滤 + 快捷新建（识别 `#标签` 与日期片段）+ 勾选完成/重开 + 整行拖入对话；未开通时一键开通）。未读数来自 CLI `unreadCount` + 本地已读持久化（刷新不回退 99+）；未读增长触发浏览器系统通知；**Esc 逐层收起**（表情面板→回复条→面板本体）。全条目可拖拽进 composer（全屏 drop overlay）成 chip + 上下文回源。**产品目标**（尚未实现）：面板是挑选器/历史/引用面，「挑群」打开或切换绑定 DSH 会话，无第二套 IM composer（[dsh-home-session.md](docs/spec/dsh-home-session.md) §4）。
+- **云之家工作台**：悬浮球唯一入口（hover 快捷坞、持久化显隐、真实未读角标轮询），四个 tab——知识库、日程、会话（完整 IM + 真 composer 直发；**挑群会打开或切换该群的绑定 DSH 会话**）、**待办**。未读数来自 CLI `unreadCount` + 本地已读持久化。全条目可拖拽进 composer 成 chip + 上下文回源。面板 composer 作为家园仍待移除/降级（[dsh-home-session.md](docs/spec/dsh-home-session.md) §4，gap §22 G6）。
 
 ## 开发
 
@@ -81,7 +81,7 @@ pnpm --filter @dsh-yzj/ui-yzj bundle   # 仅重建客户端 bundle（改 UI 后�
 - **确认卡状态不落会话日志**：harness 对外部插件的自定义 session 事件类型无注册面，确认卡 pending/approved 瞬态由 host 内存表承载（SPA 刷新存活；host 重启降级为普通工具卡），终态由官方工具事件回放。
 - **面板「我的」tab 已移除**（原设计四 tab）：身份经 `yzj_whoami`、找人经 @ 候选；第四 tab 现为**待办**（是否另恢复通讯录浏览待拍板）。
 - **拖入即处理快捷动作已移除**：现为全屏 drop overlay 直接成 chip（v1.6 硬性要求 4 曾实现后删除，终局与否待拍板）。
-- **会话家园未落地（产品法 vs 三面现状）**：目标见 [docs/spec/dsh-home-session.md](docs/spec/dsh-home-session.md)；现行仍是 DSH 对话、面板 IM composer、隐藏 `yzj-robot-*` 三面并行。阻塞项（绑定对象、IM 节点进 transcript、确认卡 pending 不进 session 日志、fork 开新根、无群搜索、面板 composer 待移除/降级）见 [gap-analysis §22](docs/status/gap-analysis.md)。机器人通道已存在，但**不是**「下期才做的第三家园」。
+- **会话家园第一刀已落地、终局未完**：绑定表 + 入站/挑群打 `yzj-home-*` + fork 不再开新根，见 [docs/spec/dsh-home-session.md](docs/spec/dsh-home-session.md)。仍开放：IM 节点进 transcript、确认卡 pending 不进 session 日志、无群搜索、面板 composer 待移除/降级（[gap-analysis §22](docs/status/gap-analysis.md) G2/G3/G5/G6）。机器人通道是投递/入站，**不是**第三家园。
 - **无群搜索/消息搜索**：沿用 CLI 能力面（最近会话翻页定位）。会话家园的「挑群」依赖可找到群（gap §22 G5）。
 - **`file download` 只回传摘要**：CLI 的 `downloaded N bytes to <path>` 文本输出不携带结构化路径，卡片回退文本模式。
 - **待办为 demo 阶段**：数据存于多维表格「待办任务库」（个人知识库，首用自动开通）；负责人/标签因 CLI 字段写入限制降级为文本形态；原生后端迁移方案见 `docs/migration/todo-backend-migration.md`。

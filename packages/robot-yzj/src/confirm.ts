@@ -6,8 +6,9 @@
  * into the conversation ("回复 确认 N / 取消 N") and resolves when an
  * allow-listed reply matches, or after the timeout (cancelled).
  *
- * The GUI write-gate (ui-yzj) skips `yzj-robot-*` sessions so exactly one
- * listener answers each request.
+ * The GUI write-gate (ui-yzj) skips sessions this broker owns (inbound
+ * `registerSession`) so exactly one listener answers each request. Leftover
+ * `yzj-robot-*` ids are also skipped at the write-gate.
  * @module @dsh-yzj/robot-yzj/confirm
  */
 
@@ -88,7 +89,7 @@ interface PendingCard {
 
 /**
  * One broker per host process (all robot channels share it). Routers feed it
- * session contexts; the approval listener answers only `yzj-robot-*`
+ * session contexts; the approval listener answers only registered inbound
  * sessions; inbound replies are matched against open cards.
  */
 export class ConfirmBroker {
@@ -117,6 +118,11 @@ export class ConfirmBroker {
     }
   }
 
+  /** True when inbound has registered this session (group suggestion cards). */
+  ownsSession(sessionId: string): boolean {
+    return this.sessionContext.has(sessionId)
+  }
+
   /** Feed of `yzj/ask-pending` broadcasts (level + args for the digest). */
   noteAsk(pending: ConfirmAskPending): void {
     this.askByCallId.set(pending.callId, pending)
@@ -132,7 +138,6 @@ export class ConfirmBroker {
     next: () => Promise<ConfirmOutcome | 'unavailable'>,
   ): Promise<ConfirmOutcome | 'unavailable'> {
     const sessionId = req.agent.session.id
-    if (!sessionId.startsWith('yzj-robot-')) return next()
     const context = this.sessionContext.get(sessionId)
     if (context === undefined) return next()
     const ask = req.callId === undefined ? undefined : this.askByCallId.get(req.callId)

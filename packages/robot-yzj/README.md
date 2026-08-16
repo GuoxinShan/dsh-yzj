@@ -3,12 +3,13 @@
 Yunzhijia robot channel, host half: the measured two-way bridge between a
 personal (or group) Yunzhijia robot and DSH agent sessions.
 
-**Product law (docs, not yet implemented):** inbound `followup()` must land on
-the **bound DSH session** for that Yunzhijia conversation (`docs/spec/dsh-home-session.md`).
-Hidden `yzj-robot-*` homes and `!fork` / `robot_fork` that `create` a new root
-are wrong under that law — they should open or resume the bound session
-(robot-channel-plan §9, gap-analysis §22 G1/G4). Protocol below is still the
-transport truth.
+**Product law (binding slice landed):** inbound `followup()` lands on the
+**bound DSH session** for that Yunzhijia conversation (`ctx.yzjHome`,
+`docs/spec/dsh-home-session.md`). Session ids are `yzj-home-*`. `!fork` /
+`robot_fork` open or resume that bound session and must not `create` a
+`fork-*` / `yzj-robot-*` parallel root. Protocol below is still the
+transport truth. Remaining gaps (IM nodes in the transcript, panel composer)
+are in gap-analysis §22 G2/G6.
 
 ## What it does
 
@@ -18,14 +19,13 @@ transport truth.
   reconnect), and classifies every frame by the measured protocol
   (`directPush/robotMessage` messages, `msgChg` changes, `auth`/`pong`
   controls). No public callback is needed.
-- **Routing** — one persistent agent session per (robot, user) DM
-  (`yzj-robot-<robotId>-<openId>`), reply-chain continuation anchored on the
-  server-maintained `replyRootMsgId`, msgId dedupe, per-session mute, and the
+- **Routing** — one bound DSH session per Yunzhijia conversation (group or
+  DM) via `ctx.yzjHome` (`yzj-home-<slug>`). Reply-chain ids stay transcript
+  relations, not new roots. MsgId dedupe, per-session mute, and the
   standalone bang commands `!help / !status / !routines / !memory / !mute /
-  !unmute / !restart / !configure` plus the parameterized `!fork <群名|群ID>
-  <指令>` (cross-group handover with a bounded context summary, group names
-  resolved lazily through the CLI) and `!feedback <文本>` (local log +
-  receipt).
+  !unmute / !restart / !configure` plus `!fork <群名|群ID> <指令>` (open or
+  resume the target group's bound session and inject a bounded summary) and
+  `!feedback <文本>` (local log + receipt).
 - **ack-then-push** — the HTTP contract's 3-second budget cannot fit an LLM
   turn, so inbound turns are acked immediately (the ack text is the
   "is thinking…" surface) and the assistant's answer — every
@@ -40,17 +40,13 @@ transport truth.
 - **Bidirectional controls** — the operator can drive robot channels from any
   DSH session: `robot_status` (channels, cwd, surfaces, sessions),
   `robot_notify` (proactive push), `robot_continue` (inject an operator turn
-  through the full inbound pipeline), and `robot_fork` (new operator-side
-  session seeded with a robot conversation's completed-turn history). See
-  `src/control.ts` and docs/spec/robot-channel-plan.md §8.
-- **Group workspaces** — per-thread private working directories
-  (`<cwd>/groups/<groupId>/<rootMsgId>/`, design §8.4) plus one shared
-  directory per group (`<cwd>/groups/<groupId>/shared/`). `robot_share_write`
-  is the ONLY write channel into the shared area (harness write tools are
-  sandboxed inside each session's private workspace), so robot sessions never
-  need elevated sandbox rights; the write tool rides the standard approval
-  guard (GUI card / in-group suggestion card). `robot_share_list` lists the
-  shared files for pre-write collision checks. See `src/share.ts`.
+  through the full inbound pipeline), and `robot_fork` (open or resume the
+  bound home for that conversation — not a new root). See `src/control.ts`
+  and docs/spec/robot-channel-plan.md §8 / §9.
+- **Group workspaces** — one working directory per bound group
+  (`<cwd>/groups/<groupId>/`) plus one shared directory per group
+  (`<cwd>/groups/<groupId>/shared/`). `robot_share_write` is the ONLY write
+  channel into the shared area. See `src/share.ts`.
 - **Chatnode bridge** — the cross-process delivery path for an ops scheduler
   daemon (dsh-routines) that must NOT hold its own robot connection. Two
   halves of the same `ctx.chatnode` contract in `src/bridge.ts`:
@@ -73,7 +69,7 @@ transport truth.
 | `enabled` | boolean | `true` | Bring the channel up when the plugin loads. |
 | `allowFrom` | string[] | `[]` | openIds allowed to drive the robot; empty list = CLI login user only. |
 | `provider` / `model` | string | `''` | Default route for this robot's sessions; empty = harness default. |
-| `cwd` | string | `''` | Channel root for this robot's sessions; empty = host process cwd (`defaultCwd` applies first). DMs work at the root; group threads get `<cwd>/groups/<groupId>/<rootMsgId>/` and the group shared dir sits at `<cwd>/groups/<groupId>/shared/` (§8.4). |
+| `cwd` | string | `''` | Channel root for this robot's sessions; empty = host process cwd (`defaultCwd` applies first). DMs work at the root; bound group homes use `<cwd>/groups/<groupId>/` and the group shared dir sits at `<cwd>/groups/<groupId>/shared/`. |
 | `chatnodeRobotIndex` | number | `0` | Which channel `ctx.chatnode.send` pushes to (dsh-routines digests). |
 | `bridgeToken` | string | `''` | Shared bearer token; when set, registers the `POST /yzj/chatnode` bridge listener on the profile's webServer (loopback-only). |
 | `bridgeTarget` | string | `''` | Bridge client mode: with this set (and no robots), the plugin provides `ctx.chatnode` as an HTTP client to the listener — no WS, no credentials. Requires `bridgeToken`. |
@@ -91,9 +87,8 @@ transport truth.
   provider per profile. See docs/spec/routines-delivery.md.
 - `continueConversation(text, {robotIndex?, groupId?})` — inject an operator
   turn through the full inbound pipeline (ack, memory, agent turn, push back).
-- `forkSession(sessionId)` — fork a robot conversation into a new
-  operator-side root session (completed-turn seed, cwd + parentSession
-  lineage); the fork shows up in the DSH session list.
+- `forkSession(sessionId)` — open or resume the bound DSH home for the
+  conversation behind this session id (never a `fork-*` parallel root).
 - `dmSession(robotId, openId)` — stable DM session id.
 - `shareWrite(robotIndex, groupId?, filename, content, overwrite)` /
   `shareList(robotIndex, groupId?)` — group shared-workspace writes/lists

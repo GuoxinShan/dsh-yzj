@@ -20,6 +20,7 @@ import { applyFileTools } from './file.ts'
 import { applyTodoTools } from './todo.ts'
 import { YzjTodoService } from './todo.ts'
 import type { TodoConfig } from './todo.ts'
+import { YzjHomeService } from './home.ts'
 import { applyApprovalGuard } from './guard.ts'
 import type { YzjToolBudget } from './shared.ts'
 
@@ -73,5 +74,18 @@ export function apply(ctx: Context, config: Config): void {
   // backs the ui-yzj RPC channel. Needs a real Cordis context.
   const todoService = new YzjTodoService(ctx, budget, config.todo ?? {})
   applyTodoTools(ctx, budget, config.todo ?? {}, todoService.holder)
+  // Product-home binding table (dsh-home-session): one Yunzhijia
+  // conversation ↔ one DSH session. Shared by robot inbound and UI pick-group.
+  const home = new YzjHomeService(ctx)
+  ctx.inject(['storageDomain'], () => {
+    void home.openNow()
+  })
   applyApprovalGuard(ctx)
 }
+
+export {
+  HomeBindingStore, conversationKindOf, homeSessionId, yzjHomeDomainSpec,
+} from './home.ts'
+export type {
+  HomeBindingRecord, HomeEnsureResult, YzjConversationKind, YzjHomeFace,
+} from './home.ts'

@@ -180,6 +180,11 @@ export function applyWriteGate(ctx: Context): {
     // protocol (robot-yzj's ConfirmBroker owns those requests) — the GUI card
     // would wait for a click nobody makes on an unattended channel.
     if (req.agent.session.id.startsWith('yzj-robot-')) return next()
+    // Inbound-bound homes (yzj-home-*) register with ConfirmBroker; skip the
+    // GUI card so the group suggestion card answers. Pure pick-group homes
+    // are NOT registered — they keep the GUI card. Do not skip all yzj-home-*.
+    const robot = ctx.get('yzjRobot') as { ownsConfirm?: (sessionId: string) => boolean } | undefined
+    if (robot?.ownsConfirm?.(req.agent.session.id) === true) return next()
     if (req.signal?.aborted === true) return Promise.resolve<YzjApprovalOutcome>('cancelled')
     const claimed = new Set(records.keys())
     const id = findApprovalId(req.agent.session.events, req.callId, claimed)

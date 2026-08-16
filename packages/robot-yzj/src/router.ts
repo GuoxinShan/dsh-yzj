@@ -1,12 +1,11 @@
 /**
  * Inbound router: turns deduped robot messages into agent turns. Session
- * model mirrors Claude Tag on the measured protocol — one persistent session
- * per (robot, user) DM, reply-chain continuation via the server-maintained
- * replyRootMsgId, standalone bang commands, per-session mute, and
- * ack-then-push where the PUSH half lives in the event-driven PushHub (any
- * turn source reaches the conversation). Conversation memory (S4) stores
- * user-declared rules and injects them as instructions context every turn;
- * the first group message triggers a self-introduction turn (S7/C14).
+ * landing follows the DSH-home product law (docs/spec/dsh-home-session.md):
+ * one Yunzhijia conversation (group or DM) ↔ exactly one bound DSH session,
+ * via the shared `home` table — not a hidden `yzj-robot-*` parallel home.
+ * Reply-chain ids stay transcript relations (outbound reply cards), not new
+ * roots. Bang commands, per-session mute, ack-then-push (PushHub), memory
+ * (S4), and the first-group intro (S7/C14) are unchanged protocol.
  * @module @dsh-yzj/robot-yzj/router
  */
 
@@ -54,6 +53,16 @@ export type OverrideResolver = (conversationKey: string) => { provider?: string;
 /** Resolves one group's human name (WS frames carry none); undefined = unknown. */
 export type GroupNameResolver = (groupId: string) => Promise<string | undefined>
 
+/**
+ * Shared DSH-home binding face (ctx.yzjHome). Structural so this package
+ * does not import tool-yzj — the table is the product object, not lastSession.
+ */
+export interface RouterHomeFace {
+  ensureBound(yzjConversationId: string, yzjKind: 'group' | 'dm'): Promise<{ sessionId: string; created: boolean; yzjKind: 'group' | 'dm' }>
+  getByConversation(yzjConversationId: string): { dshSessionId: string; yzjConversationId: string; yzjKind: 'group' | 'dm' } | undefined
+  getBySession(dshSessionId: string): { dshSessionId: string; yzjConversationId: string; yzjKind: 'group' | 'dm' } | undefined
+}
+
 /** Per-conversation memory face (MemoryStore satisfies it). */
 export interface RouterMemoryFace {
   lines(key: string): readonly string[]
@@ -89,6 +98,13 @@ export interface RobotRouterOptions {
   readonly cwd?: string
   /** Durable surface store; absent = surface memory is ephemeral. */
   readonly surface?: SurfaceStoreFace
+  /**
+   * Product-home binding table (ctx.yzjHome). Inbound followup() and !fork
+   * land here. Absent = in-process yzj-home-* ids (still not yzj-robot-*).
+   * A getter is allowed so the plugin can resolve the service after this
+   * router is constructed (tool-yzj may load later).
+   */
+  readonly home?: RouterHomeFace | (() => RouterHomeFace | undefined)
   readonly ackText?: string
   readonly denyText?: string
   readonly logger?: RouterLogger
@@ -103,9 +119,9 @@ const DEFAULT_DENY_TEXT = '抱歉，你不在本机器人的白名单内。'
 const COMMAND_NAMES = ['help', 'status', 'routines', 'mute', 'unmute', 'restart', 'configure'] as const
 type RobotCommand = typeof COMMAND_NAMES[number]
 const STANDALONE_COMMAND = /^!(help|status|routines|mute|unmute|restart|configure)\s*$/
-/** `!fork <groupId|群名> <instruction>` — cross-group handover (S3): the
- * current session's context summary is forwarded to a new/anchored session of
- * the target group through the full inbound pipeline. The target may be a
+/** `!fork <groupId|群名> <instruction>` — cross-group handover: open or
+ * resume the **target group's bound DSH session** and inject a bounded
+ * summary. Must not `agents.create` a parallel root. The target may be a
  * groupId or a human group name (resolved lazily via resolveGroupName). */
 const FORK_COMMAND = /^!fork\s+(\S+)\s+(.+)$/is
 /** `!feedback <text>` — append to the local feedback log and acknowledge. */
@@ -117,14 +133,26 @@ const MEMORY_REMEMBER = /^(?:@[^\s@]+\s*)?(?:记住|remember)\s*[:：]?\s+(.+)$/
 const MEMORY_LIST = /^(?:@[^\s@]+\s*)?(?:!memory|你记住了什么|列出记忆)\s*$/i
 const MEMORY_FORGET = /^(?:@[^\s@]+\s*)?(?:忘掉|忘记|forget)\s+[:：]?\s*(.+)$/is
 
-/** Stable session id for one (robot, user) DM channel. */
+/**
+ * Legacy DM id shape (`yzj-robot-*`). Not the product home — inbound uses
+ * {@link homeSessionIdOf} / ctx.yzjHome. Kept so status helpers and old
+ * disk logs remain addressable.
+ */
 export function dmSessionId(robotId: string, operatorOpenid: string): SessionId {
   return SessionId(`yzj-robot-${slug(robotId)}-${slug(operatorOpenid)}`)
 }
 
-/** Stable session id for one top-level group conversation root (Claude-Tag thread analogue). */
+/**
+ * Legacy per-thread group id (Claude-Tag analogue). Not the product home.
+ * @deprecated dsh-home-session 1:1 binding replaces per-rootMsgId sessions.
+ */
 export function groupSessionId(robotId: string, groupId: string, rootMsgId: string): SessionId {
   return SessionId(`yzj-robot-${slug(robotId)}-g${slug(groupId)}-${slug(rootMsgId)}`)
+}
+
+/** In-process product-home id when ctx.yzjHome is not mounted (tests / ops). */
+export function homeSessionIdOf(yzjConversationId: string): SessionId {
+  return SessionId(`yzj-home-${slug(yzjConversationId)}`)
 }
 
 /**
@@ -234,6 +262,7 @@ export class RobotRouter {
   private readonly push: PushHub | undefined
   private readonly memory: RouterMemoryFace | undefined
   private readonly surface: SurfaceStoreFace | undefined
+  private readonly home: RouterHomeFace | (() => RouterHomeFace | undefined) | undefined
   private readonly channelIndex: number
   private readonly cwd: string
   private readonly ackText: string
@@ -275,6 +304,7 @@ export class RobotRouter {
     this.push = options.push
     this.memory = options.memory
     this.surface = options.surface
+    this.home = options.home
     this.channelIndex = options.channelIndex ?? 0
     this.cwd = options.cwd ?? process.cwd()
     this.ackText = options.ackText ?? DEFAULT_ACK_TEXT
@@ -319,42 +349,33 @@ export class RobotRouter {
     }
   }
 
+  /** Live home table (getter re-resolves after late plugin mount). */
+  private homeFace(): RouterHomeFace | undefined {
+    if (this.home === undefined) return undefined
+    return typeof this.home === 'function' ? this.home() : this.home
+  }
+
   /**
-   * Resolve the owning session for one message. DM surfaces keep one
-   * persistent session per (robot, user). Group surfaces follow the Claude-Tag
-   * thread model on reply chains: a reply whose target/root is an anchored
-   * message continues that session; any other message anchors a fresh session
-   * at its own msgId.
+   * Resolve the owning session for one message. Product law: one Yunzhijia
+   * conversation ↔ one bound DSH session. The shared home table is the
+   * authority; without it this process still mints `yzj-home-*` (never a
+   * `yzj-robot-*` product home). Reply chains do not allocate a new root.
    */
-  private resolveSession(message: RobotInboundMessage): SessionId {
-    if (isDirectSurface(message)) return dmSessionId(message.robotId, message.operatorOpenid)
-    // A synthetic DSH-side turn continues the last conversation anchored on
-    // this surface instead of anchoring a fresh thread at a fake msgId. The
-    // in-memory map is hydrated lazily from the durable surface record, so
-    // continuation survives host restarts.
-    if (message.synthetic === true) {
-      const last = this.lastSession.get(message.groupId)
-        ?? this.surface?.get(surfaceKey(this.channelIndex, message.groupId))?.lastSessionId
-      if (last !== undefined) return SessionId(last)
-    }
-    const reply = parseReplyMeta(message.msgParam).reply
-    if (reply !== undefined) {
-      const anchored = this.outboundAnchor.get(reply.replyMsgId)
-        ?? this.inboundAnchor.get(reply.replyMsgId)
-        ?? this.outboundAnchor.get(reply.replyRootMsgId)
-        ?? this.inboundAnchor.get(reply.replyRootMsgId)
-      if (anchored !== undefined) return anchored
-    }
-    const sessionId = groupSessionId(message.robotId, message.groupId, message.msgId)
+  private async resolveSession(message: RobotInboundMessage): Promise<SessionId> {
+    const kind = isDirectSurface(message) ? 'dm' : 'group'
+    const home = this.homeFace()
+    const sessionId = home === undefined
+      ? homeSessionIdOf(message.groupId)
+      : SessionId((await home.ensureBound(message.groupId, kind)).sessionId)
+    if (kind === 'group') this.sessionCwds.set(sessionId, this.groupHomeCwd(message.groupId))
     this.inboundAnchor.set(message.msgId, sessionId)
     this.trimAnchor(this.inboundAnchor)
-    this.sessionCwds.set(sessionId, this.groupThreadCwd(message.groupId, message.msgId))
     return sessionId
   }
 
-  /** Private working directory of one group thread (slugged, stable across restarts). */
-  private groupThreadCwd(groupId: string, rootMsgId: string): string {
-    return join(this.cwd, 'groups', slug(groupId), slug(rootMsgId))
+  /** Private working directory of one bound group session (one dir per group). */
+  private groupHomeCwd(groupId: string): string {
+    return join(this.cwd, 'groups', slug(groupId))
   }
 
   /**
@@ -419,7 +440,7 @@ export class RobotRouter {
     // Confirmation-card replies (确认 N / 取消 N) consume the message before
     // anything else — no ack, no turn.
     if (this.confirm !== undefined && this.confirm.checkReply(message)) return
-    const sessionId = this.resolveSession(message)
+    const sessionId = await this.resolveSession(message)
     this.noteSession(message, sessionId)
     if (this.muted.has(sessionId)) return
     const conversationKey = group ? groupKey(message.groupId) : dmKeyOf(message)
@@ -764,11 +785,11 @@ export class RobotRouter {
       || merged.model !== undefined && merged.model !== ''
     const agentOptions = hasRoute ? merged : undefined
     // Robot sessions live under an explicit working directory: DMs at the
-    // channel root, group threads in their private workspace
-    // (`<cwd>/groups/<groupId>/<rootMsgId>/`, §8.4). The persona prompt
-    // section requires {{cwd}} to resolve, and a bare `_no-cwd` session would
-    // fail prompt assembly on its first turn — so the directory is created
-    // eagerly (recursive) before the agent comes up.
+    // channel root, bound group homes in `<cwd>/groups/<groupId>/` (one dir
+    // per group, not per thread). The persona prompt section requires
+    // {{cwd}} to resolve, and a bare `_no-cwd` session would fail prompt
+    // assembly on its first turn — so the directory is created eagerly
+    // (recursive) before the agent comes up.
     const cwd = this.sessionCwds.get(sessionId) ?? this.cwd
     if (cwd !== this.cwd) {
       try {
@@ -814,7 +835,7 @@ export class RobotRouter {
     message: RobotInboundMessage,
     anchor: RobotSendOptions,
   ): Promise<void> {
-    const sessionId = this.resolveSession(message)
+    const sessionId = await this.resolveSession(message)
     switch (command) {
       case 'help':
         await this.reply([
@@ -826,7 +847,7 @@ export class RobotRouter {
           '!unmute — 解除静音',
           '!restart — 重启本会话（保留聊天记录，清空额外上下文）',
           '!configure — 机器人设置面板入口',
-          '!fork <群ID> <指令> — 把本会话上下文交接给目标群（群ID 见 !status）',
+          '!fork <群ID> <指令> — 打开/恢复目标群的绑定会话并交接摘要（不开新根；群ID 见 !status）',
           '!feedback <文本> — 反馈给机器人维护者',
           '',
           '写操作会先推送确认卡：回复「确认 N / 取消 N」裁决。',
@@ -910,10 +931,10 @@ export class RobotRouter {
       await this.reply(`交接失败：没有找到群「${rawTarget}」（仅支持机器人已见过的群；群名或 groupId 均可）`, anchor)
       return
     }
-    const sessionId = this.resolveSession(message)
-    // A top-level !fork opens a fresh thread session with no agent yet; the
-    // conversation's context lives in the group's last anchored session, so
-    // fall back to it when the message's own session has nothing.
+    const sessionId = await this.resolveSession(message)
+    // !fork lands on the target group's bound session. The source summary
+    // comes from this conversation's bound agent, falling back to lastSession
+    // when the bang ran before any turn on a brand-new bind.
     const sourceId = this.agents.get(sessionId) !== undefined ? sessionId : this.lastSession.get(message.groupId)
     const agent = sourceId === undefined ? undefined : this.agents.get(sourceId)
     const summary = agent === undefined ? '' : conversationSummary(agent.session.events)

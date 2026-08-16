@@ -476,4 +476,4 @@ robotId 与 CLI groupId 的 ID 空间映射；创建流程的公网测试是否�
 | 入站在 session 里当普通轮次；面板另有 IM composer | 绑定会话 transcript 含四类节点（入站群消息、用户本人发群、对 agent、agent 轮次）。面板降为挑选器，无第二 composer |
 | 机器人帖子像独立说话人 | 机器人帖子 = agent 轮次在云之家的**投递**，不是产品模型第三身份 |
 
-实现仍是三面并行（DSH 对话 / 面板 composer / `yzj-robot-*`）。对照与阻塞项：[`../status/gap-analysis.md`](../status/gap-analysis.md) §22。
+实现：**绑定表已落地**（`ctx.yzjHome`）；入站 `followup()` 打 `yzj-home-*`；`!fork` / `robot_fork` 打开或恢复绑定会话，不再 `create` 平行根。面板 composer 与四类节点 transcript 仍开放。对照与阻塞项：[`../status/gap-analysis.md`](../status/gap-analysis.md) §22。
