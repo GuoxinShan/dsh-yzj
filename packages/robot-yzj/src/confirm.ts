@@ -14,7 +14,6 @@
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { RobotInboundMessage } from './protocol.ts'
 import type { RouterSendFace } from './router.ts'
-
 /** The approval outcome vocabulary this broker resolves with. */
 export type ConfirmOutcome = 'allowed-once' | 'rejected' | 'cancelled'
 
@@ -47,7 +46,10 @@ export interface ConfirmAskPending {
 
 /** Per-session routing context the routers keep fresh on every message. */
 export interface ConfirmContext {
-  readonly sender: RouterSendFace
+  readonly sender: {
+    send: RouterSendFace['send']
+    sendCard: RouterSendFace['sendCard']
+  }
   readonly robotId: string
   /** True for group surfaces; DMs confirm in the DM conversation. */
   readonly group: boolean
@@ -149,13 +151,18 @@ export class ConfirmBroker {
       removeAbort: undefined,
     }
     const timeoutMinutes = Math.max(1, Math.round(this.timeoutMs / 60_000))
-    const suggestion = [
-      card.level === 'strong' ? `🔴 写操作待确认 [${number}]（高风险）` : `🔒 写操作待确认 [${number}]`,
-      `工具 ${req.toolName}`,
-      ...(digest === '' ? [] : [`内容 ${digest}`]),
-      `回复「确认 ${number}」执行，或「取消 ${number}」放弃（${timeoutMinutes} 分钟内有效）`,
-    ].join('\n')
-    void context.sender.send(suggestion, {
+    // Application-style card (measured: renders without any template; cards
+    // cannot carry a reply anchor, so the card title carries the context).
+    void context.sender.sendCard({
+      appName: 'DSH 助手',
+      title: `${card.level === 'strong' ? '🔴 高风险写操作待确认' : '🔒 写操作待确认'} [${number}]`,
+      customStyle: 1,
+      primaryContent: `工具 ${req.toolName}`,
+      body: [
+        ...(digest === '' ? [] : [`内容：${digest}`]),
+        `回复「确认 ${number}」执行，或「取消 ${number}」放弃`,
+        `${timeoutMinutes} 分钟内有效`,
+      ].join('\n'),
       ...(context.group ? { notifyOpenIds: [context.askerOpenId] } : {}),
     })
     return new Promise<ConfirmOutcome>(resolve => {
@@ -165,10 +172,14 @@ export class ConfirmBroker {
         card.removeAbort = undefined
         card.resolve = undefined
         this.cards.delete(number)
-        void context.sender.send(
-          outcome === 'allowed-once' ? `✅ [${number}] 已确认，执行中…` : `🚫 [${number}] 已${outcome === 'rejected' ? '取消' : '超时失效'}。`,
-          ...(context.group ? [{ notifyOpenIds: [context.askerOpenId] }] : []),
-        ).catch(() => undefined)
+        void context.sender.sendCard({
+          appName: 'DSH 助手',
+          title: outcome === 'allowed-once' ? `✅ [${number}] 已确认，执行中…` : `🚫 [${number}] 已${outcome === 'rejected' ? '取消' : '超时失效'}。`,
+          customStyle: 1,
+          primaryContent: `工具 ${card.toolName}`,
+          body: outcome === 'allowed-once' ? '确认已放行，结果稍后回复。' : (outcome === 'rejected' ? '本次操作已放弃。' : '确认超时，操作未执行。'),
+          ...(context.group ? { notifyOpenIds: [context.askerOpenId] } : {}),
+        }).catch(() => undefined)
         resolve(outcome)
       }
       card.resolve = settle

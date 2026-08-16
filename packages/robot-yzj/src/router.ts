@@ -14,7 +14,7 @@ import { foldScheduleEvents } from '@deepseek-ai/dsh-schedule'
 import type { Agent, AgentHandle, CreateAgentOptions, ResumeAgentOptions } from '@deepseek-ai/dsh-agent'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { InboundDedupe, parseReplyMeta, type RobotInboundMessage } from './protocol.ts'
-import type { RobotSendOptions, RobotSendResult } from './outbound.ts'
+import type { RobotCardOptions, RobotSendOptions, RobotSendResult } from './outbound.ts'
 import { dmKey, groupKey } from './overrides.ts'
 import type { ConfirmBroker } from './confirm.ts'
 
@@ -34,6 +34,8 @@ export interface RouterAgentsFace {
 /** Outbound face (RobotSender satisfies it). */
 export interface RouterSendFace {
   send(text: string, options?: RobotSendOptions): Promise<RobotSendResult>
+  /** Application-style card send (msgType:1; no reply anchor — cards and reply links are mutually exclusive, measured). */
+  sendCard(card: RobotCardOptions): Promise<RobotSendResult>
 }
 
 /** Minimal logger face. */

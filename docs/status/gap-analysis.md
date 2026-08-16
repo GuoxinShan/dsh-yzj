@@ -303,3 +303,10 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 - **`!routines`**：fold 会话 `schedule/change` 日志列活跃提醒（dsh-schedule 纯函数 fold，无运行时依赖）；`!help` 同步确认流程说明。
 - 已知边界（留档）：确认卡为进程内存态，host 重启即失效（对齐 GUI 确认卡的降级语义）；R2 设计清单仅剩 `!fork`（跨群交接）未做，价值待群使用密度评估。
 - 43 单测全绿（新增 confirm 6 + msgChg ack 2）。
+
+### 20.6 卡片能力面二轮实测（2026-08-16，修正初判）
+
+- **webhook 通道交互卡片判死**：8 个信封变体（msgtype 2/25/26 × param 三种挂法）全回落 `param:null` 纯文本——服务端白名单只放行 reply/notify 结构。初判"假模板渲染真卡片"系误读（应用类消息的富文本观感）。
+- **应用类（msgType:1）确认为 webhook 唯一视觉卡片**：标题/主次内容/`webpageUrl` 跳转；与引用锚互斥（param 争用，实测 D/E 两变体）。**确认卡已用此形态上线**（`RobotSender.sendCard`，群内实测卡片标题/工具/确认提示三层结构 + ✅ 卡片回执）。
+- **真交互卡片 = Adaptive Cards 1.4，开放平台通道**：重保群（698439d1e4b0d221d736ee42）告警平台卡片只读样本——`param.interactiveCard.cardJson` 内联完整 Adaptive 协议（Action.Submit 按钮/Input.Text/ChoiceSet/`_secondConfirm` 二次确认），回传走卡片平台→模板回调地址。R3 上 Adaptive 确认卡的协议依据已锁定，等 D 层协调。
+- 设计文档 §4.1 spike⑥/§1.7 C 层/§3.5 R3 三处同步修正。

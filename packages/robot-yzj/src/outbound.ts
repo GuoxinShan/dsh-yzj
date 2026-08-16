@@ -33,6 +33,24 @@ export interface RobotSendOptions {
   readonly notifyOpenIds?: readonly string[]
 }
 
+/** One application-style card (msgType:1, customStyle variants; measured: renders as a card with no template and no callback). */
+export interface RobotCardOptions extends RobotSendOptions {
+  /** App-style name shown beside the card (e.g. the robot's label). */
+  readonly appName: string
+  /** Card title. */
+  readonly title: string
+  /** 0 original / 1 primary+secondary / 2 chart (chart needs contentUrl). */
+  readonly customStyle?: 0 | 1 | 2
+  /** Primary line (customStyle 1). */
+  readonly primaryContent?: string
+  /** Card body / secondary content. */
+  readonly body: string
+  /** Tap-through URL (a DSH deep link or a yunzhijia doc link). */
+  readonly webpageUrl?: string
+  /** Chart image URL (customStyle 2). */
+  readonly contentUrl?: string
+}
+
 /** Constructor options. */
 export interface RobotSenderOptions {
   /** The robot's full sendMsgUrl (token included). */
@@ -96,6 +114,50 @@ export class RobotSender {
     return result
   }
 
+  /**
+   * Send one application-style card (msgType:1). Same serialization and
+   * rate limiting as text sends.
+   * @param card - card content and optional reply/notify anchors.
+   * @returns the send result.
+   */
+  async sendCard(card: RobotCardOptions): Promise<RobotSendResult> {
+    const run = async (): Promise<RobotSendResult> => {
+      const style = card.customStyle ?? 1
+      const param: Record<string, unknown> = {
+        appName: card.appName,
+        title: card.title,
+        lightAppId: '0',
+        thumbUrl: '',
+        webpageUrl: card.webpageUrl ?? '',
+        customStyle: style,
+        content: card.body,
+      }
+      if (style === 1 && card.primaryContent !== undefined) param.primaryContent = card.primaryContent
+      if (style === 2 && card.contentUrl !== undefined) param.contentUrl = card.contentUrl
+      const payload: Record<string, unknown> = {
+        content: card.title,
+        msgType: 1,
+        param,
+      }
+      if (card.replyMsgId !== undefined) {
+        payload.param2 = {
+          replyMsgId: card.replyMsgId,
+          replyTitle: '',
+          isReference: true,
+          replySummary: card.replySummary ?? card.title.slice(0, 60),
+          replyPersonName: card.replyPersonName ?? '',
+        }
+      }
+      if (card.notifyOpenIds !== undefined && card.notifyOpenIds.length > 0) {
+        payload.notifyParams = [{ type: 'openIds', values: [...card.notifyOpenIds] }]
+      }
+      return this.postOnce(payload)
+    }
+    const result = this.queueTail.then(run, run)
+    this.queueTail = result.catch(() => undefined)
+    return result
+  }
+
   private async sendOne(content: string, options: RobotSendOptions): Promise<RobotSendResult> {
     const wait = this.lastSendAt + this.minIntervalMs - Date.now()
     if (wait > 0) await this.delay(wait)
@@ -114,6 +176,11 @@ export class RobotSender {
     if (options.notifyOpenIds !== undefined && options.notifyOpenIds.length > 0) {
       payload.notifyParams = [{ type: 'openIds', values: [...options.notifyOpenIds] }]
     }
+    return this.postOnce(payload)
+  }
+
+  /** One serialized POST with response parsing; shared by text and card sends. */
+  private async postOnce(payload: Record<string, unknown>): Promise<RobotSendResult> {
     let response: { status: number; text: string }
     try {
       response = await this.post(this.sendMsgUrl, JSON.stringify(payload))
