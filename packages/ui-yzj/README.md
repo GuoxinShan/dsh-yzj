@@ -2,6 +2,8 @@
 
 Yunzhijia browser surface, dual-face package (`dsh.client`, `platform: web`).
 
+**Product law (docs, not yet implemented):** DSH is the only conversation home — see `docs/spec/dsh-home-session.md`. The panel's job is picker / history / extra-reference; "挑群" opens or switches the bound DSH session. The real IM composer in the 会话 tab is the current three-surface implementation, targeted for removal or demotion (gap-analysis §22 G6).
+
 ## Node half
 
 Registers the `/yzj` Connection RPC channel over `ctx.yzjBridge` (authority `loopback`). Endpoints (49): `workspaces`, `docs`, `events`, `groups`, `messages`, `whoami`, `search`, `doc-get`, `doc-blocks`, `sheet-get`, `workspace-get`, `event-get`, `contact-get`, `write-list`, `write-decide`, the panel write face `im-send` / `file-upload` / `file-data` (user-direct writes), the todo face `todo-state` / `todo-ensure` / `todo-create` / `todo-toggle` / `todo-libraries` / `todo-select` / `todo-ensure-team` over the shared `ctx.yzjTodo` core from `@dsh-yzj/tool-yzj`, the robot face `robot-status` / `robot-overrides` / `robot-override-set` / `robot-override-delete` / `robot-models` / `robot-share-list` / `robot-share-read` / `robot-share-write` (panel-direct, user's own will) / `robot-diagnostics` / `robot-notify` / `robot-continue` / `robot-fork` / `robot-channels-save` over `ctx.yzjRobot` from `@dsh-yzj/robot-yzj`, the memory face `memory-scope` / `memory-log` / `memory-observe` (panel-direct observe = user's own will) / `dream-state` / `dream-set` / `dream-run` (in-process dream executor) over `ctx.yzjMemory` from `@dsh-yzj/memory-yzj`, and the model face `model-default` / `model-default-set` / `model-default-clear` / `model-catalog` over `ctx.yzjModels` from `@dsh-yzj/model-yzj`. Only lossless CLI-parsed JSON crosses the channel.
@@ -23,7 +25,7 @@ No direct effect: the node half contributes no prompt text, and the browser half
 
 ## Known Limitations and Deferred Work
 
-- **User-direct writes are un-gated by design** — panel composer sends and (planned) todo checkboxes act as the user's own hand; only agent-initiated writes pass the confirmation card.
+- **User-direct writes are un-gated by design** — panel composer sends and todo checkboxes act as the user's own hand; only agent-initiated writes pass the confirmation card. Product law (dsh-home-session D9) confirms this split; the *target send surface* is the bound DSH session, not a second panel composer.
 - **`file download` card is text-only** — the CLI returns no structured path metadata for downloads.
 - **Locale namespace not registered** — cards use Chinese literals; a `locale` namespace can be added when i18n is needed.
 - **`panel.tsx` is a 2000-line module** — split before adding the planned 待办 tab.

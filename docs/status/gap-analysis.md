@@ -1,10 +1,13 @@
 # 云之家-dsh 集成：设计方案 × 已有实现 对照与 Gap 分析
 
-> 对齐对象：`../spec/integration-master-plan.md`（v1.7，预研稿，**最终验收基准**；v1.4 基础上补齐工具清单、「一切皆可拖」原则与全量拖拽完整规格）↔ 本仓库现有实现（`packages/bridge`、`packages/tool-yzj`、`packages/ui-yzj`、`packages/bundle`）
+> 对齐对象：`../spec/integration-master-plan.md`（v1.7 人在闭环验收基准；**v1.8 会话家园产品法见 `../spec/dsh-home-session.md`，实现对照 §22**）↔ 本仓库现有实现（`packages/bridge`、`packages/tool-yzj`、`packages/ui-yzj`、`packages/bundle`、`packages/robot-yzj`）
 > 核验日期：2026-08-14 之后（实现开发期）
+> v1.8 增补：**会话家园产品法**（2026-08-17，Guoxin Shan）——目标是 DSH 唯一家园 + 1:1 绑定；**现行实现仍是三面并行**（DSH 对话、面板 IM composer、隐藏 `yzj-robot-*` 会话）。新增 §22。v1.7 完成度口径不因此改写。
 > v1.4 增补：**UI 后续演化对照**（git `08fc7b1` → `af3bf5d`，19 个 ui-yzj commit）——面板四 tab→三 tab、悬浮球唯一入口、面板真 IM composer（用户直写）、拖入快捷动作移除、确认卡去 ID 化、未读持久化；新增 §16。v1.3 增补：**最终验收状态**（git `de3c058`）——全部可开发缺口完成：锚点定位高亮、@ 候选三组、拖入即处理引导均已落地；剩余仅机制受限项（多 chip 合并、通知卡、确认卡事件族，均为 harness 契约边界）与待拍板项（合并确认、快照决策）。全量 build/typecheck/test 通过（58 passed）。v1.2 增补：实现进展状态全量刷新（git 至 `491db61`）——P0 消息回源、P1 门禁分级 + 确认卡、通知层一/三、skill、影子任务库、dbt 预览均已落地；剩余缺口见 §15 更新清单。v1.1 增补：补全实现侧全部工具明细（§2）；新增设计补强「悬浮窗全量拖拽 → composer」（§2A，用户思路）。
 
-**完成度：≈95%（host 侧稳定；UI 侧在验收后继续演化，见 §16——其中「我的」tab 移除与用户直写原则构成对 v1.6 设计的两处偏离，待拍板）**——按设计 v1.7 验收基准。
+**完成度：≈95%（host 侧稳定；UI 侧在验收后继续演化，见 §16——其中「我的」tab 移除仍是对 v1.6 的偏离，终局待拍板；用户直写原则已由 v1.8 D9 拍板）**——按设计 v1.7 验收基准。**v1.8 会话家园不在此百分比内**：那是新目标，现状见 §22（三面并行，尚未开始收敛）。
+
+*本文档为对照记录，不替代 v1.7 设计原文，也不替代 v1.8 [`dsh-home-session.md`](../spec/dsh-home-session.md)；标注「待拍板」的项目维持原设计的决策归属——其中写路径两分已由会话家园 D9 拍板。*
 
 ---
 
@@ -159,7 +162,7 @@ P0 消息回源、P1 门禁分级/确认卡（含真实 E2E）/通知层一三/s
 - **无 CLI 降级验收**（`.acceptance/verify-windows.mjs`）：9/9 PASS——插件挂载、面板四 tab、优雅错误横幅（无 500）、@ 菜单不崩溃。验收中抓到并修复 4 个真实 bug（toolview 同 key 注册冲突、store 跨 scope 冲突、bridge spawn 500、dsh.client.inject 配置）+ Windows npm 启动器解析（bridge 真实 CLI 链路）与 @ 候选 warm 时序问题。
 - 客户端 bundle 重建成功（`lib/client.js`）。
 
-*本文档为对照记录，不替代 v1.7 设计原文；标注「待拍板」的项目维持原设计的决策归属。*
+*本文档为对照记录，不替代 v1.7 设计原文；标注「待拍板」的项目维持原设计的决策归属。**v1.8**：写路径两分已拍板（[`dsh-home-session.md`](../spec/dsh-home-session.md) D9）；会话家园目标 vs 三面现状见 §22。*
 
 ---
 
@@ -221,7 +224,7 @@ v1.6 §11.2 决策 1「双轨库」完整落地：
 |---|---|---|---|
 | 1 | 面板四 tab（知识库/日程/会话/我的） | **三 tab**：「我的」删除（`5112849`）；身份经 `yzj_whoami`，找人经 @ 候选 | ⚪ 偏离设计 §5.2，待拍板（恢复 vs 修订设计） |
 | 2 | 侧边栏底部按钮入口 | **悬浮球唯一入口**：hover 快捷坞、持久化显隐（`9f970b7`→`af3bf5d`） | 🟢 演进，设计 v1.7 已修订 |
-| 3 | 面板只读浏览 | **面板真 IM composer**（文本/图片/文件/回复/表情，`d60ece0`/`3dc66e8`），经 `/yzj im-send` 直发，不经确认卡 | ⚪ 引入「用户直写」路径，原则待拍板成文 |
+| 3 | 面板只读浏览 | **面板真 IM composer**（文本/图片/文件/回复/表情，`d60ece0`/`3dc66e8`），经 `/yzj im-send` 直发，不经确认卡 | ⚪ 当时引入「用户直写」路径（原则待拍板）；**v1.8 D9 已成文**，composer 作为家园则否（§22 G6） |
 | 4 | 拖入即处理快捷动作（§2A 第 4 行 ✅） | **已移除**（`2a3a556`），改为全屏 drop overlay 直接成 chip | ⚪ 设计硬性要求 4（P2 可选）实现后删除，终局与否待拍板 |
 | 5 | 确认卡展示原始 ID | **去 ID 化**：ID 解析为群名/人名，原型风格（`bfb81c0`/`1d6ee38`）；`refs` 关联引用 chips | 🟢 演进（同名目标可辨识性见待拍板 #8） |
 | 6 | lastSeen diff 角标 | CLI `unreadCount` + 本地已读持久化（`0dedff8`/`361788b`），刷新不回退 99+，「全部已读」 | 🟢 演进 |
@@ -233,7 +236,7 @@ v1.6 §11.2 决策 1「双轨库」完整落地：
 ### 16.1 新增待拍板项（并入 §15 清单）
 
 8. **「我的」tab**：恢复（通讯录浏览回归面板）vs 维持删除（@ 候选已覆盖找人）+ 修订设计 §5.2。
-9. **用户直写原则**：确认卡只门控 agent 写；面板直操作（composer 发送，及规划中的待办勾选/新建）即用户意志、不经确认卡——是否成文为正式原则（v1.6 §5.5 原表述「全部写操作收敛到同一道门禁」需相应修订）。
+9. **用户直写原则**：**v1.8 已拍板**（[`dsh-home-session.md`](../spec/dsh-home-session.md) D9/§8）——确认卡只门控 agent 写；用户从 DSH 发出（及现行面板 composer / 待办勾选/新建）即用户意志、不经确认卡。**尚未落地的是家园迁移**：用户发群应发生在绑定 DSH 会话；面板 composer 目标为移除/降级（§22 G6）。
 10. **拖入即处理引导终局**：确认移除（修订 v1.6 硬性要求 4）或恢复。
 11. **确认卡同名目标可辨识性**：去 ID 化后两个同名群/同名人在卡上不可区分；可考虑主显名称 + 可展开 ID 明文（安全审计可回溯）。
 
@@ -460,3 +463,38 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 - **DREAM_PROMPT 规则更新**（与 routine 模板的差异已在 §7.1 说明同步，模板头注明 keep-in-sync）。
 - **面板**：设置 → 云之家 · 记忆库「记一条」加「长期」勾选（勾=durable true；不勾=中性——面板不做便签标记）；观察行 meta 显示标记；RPC `memory-observe` 透传 durable。
 - **验收**：vault +2（durable 持久化/归档保留）、memory-pane +1（勾选提交 true）、rpc 端点 durable 透传断言；全仓 257 绿。
+
+---
+
+## 22. v1.8 增补｜DSH 唯一会话家园（2026-08-17，产品法已拍板、实现未动）
+
+设计基线：[`../spec/dsh-home-session.md`](../spec/dsh-home-session.md)（v1.0）。总方案 v1.8 仅指针；机器人协议 [`../spec/robot-channel-plan.md`](../spec/robot-channel-plan.md) §9 覆盖隐藏平行 session。**本节记录目标 vs 现状，不宣称已实现。**
+
+### 22.1 现状：三面并行（不是产品法）
+
+| 面 | 现行行为 | 产品法 |
+|---|---|---|
+| **DSH 对话** | 经典 user/agent/tool transcript；与云之家群无 1:1 绑定 | 唯一家园；绑定群时 transcript 含四类节点 |
+| **面板 IM composer** | 会话 tab 完整 IM + `/yzj im-send` 直发（用户意志、无确认卡） | 面板 = 挑选器/历史/引用；无第二 composer；「挑群」切换绑定会话 |
+| **机器人 session** | `yzj-robot-*` 隐藏持久 session；入站 `followup()` 进它；`robot_fork` / `!fork` 可 `create` 新根 | 入站进**该云之家会话的绑定 DSH session**；fork 开新根错误 |
+
+机器人在云之家的帖子现行像独立通道说话人；产品法下它是绑定会话 agent 轮次的投递（D4）。
+
+写路径两分（用户发无卡 / agent 发有卡 / 删除强确认）**原则已拍板**（D9）；用户发的落点仍主要在面板 composer，不在绑定 DSH 会话。
+
+### 22.2 阻塞缺口（收敛到家园之前）
+
+| # | 缺口 | 现状 | 目标 |
+|---|---|---|---|
+| G1 | **会话绑定对象** | 无 `yzjConversationId ↔ dshSessionId` 1:1 表。机器人用 `yzj-robot-<robot>-<user>` 与 `robot_yzj_surface.lastSessionId`；DSH 会话默认 unbound | 一条云之家会话（群或 DM）恰好一条 DSH session；打开群 = 切换，不 `create` 第二聊天；入站 `followup()` 打绑定对象 |
+| G2 | **IM 节点进 transcript** | 云之家消息只在面板消息流；DSH 流只有 user/agent/tool（外加工具卡） | 绑定会话四类节点共一条流：①入站群消息 ②用户本人发群 ③对 agent ④ agent 轮次 |
+| G3 | **确认卡 pending 不进 session 日志** | harness `KNOWN_SESSION_EVENT_TYPES` 白名单；pending 在 host 内存（§4 / §15 🔒） | 家园即这条 transcript，挂起的「agent 要发群」必须能在该会话流回放。仍受 harness 契约限制，是阻塞项而非可忽略降级 |
+| G4 | **fork 开新根** | `!fork` 交到目标群新 session；`robot_fork` → `fork-yzj-robot-…` 新根（§8.2 / §20.8） | 打开或恢复绑定会话；跨群/私聊进群走「丢进群」（默认摘要 + 确认卡）。禁止平行根作家园 |
+| G5 | **无群搜索** | 沿用 CLI 最近会话翻页（根 README 已知限制） | 「挑群」要找得到群才能切换绑定会话；仅最近列表不够 |
+| G6 | **面板 composer 移除/降级** | 会话 tab 真 IM composer 是用户发群的主入口 | 发送发生在绑定 DSH 会话（② 无确认卡）。面板 composer 删除，或降级为必须写入绑定 transcript 的快捷入口，不得只写面板缓存 |
+
+非阻塞但相关：免 @ / ambient（D11，本版明确不做）；解绑 UI；确认卡同会话合并（仍可选）。
+
+### 22.3 验收指针
+
+实现开始后按 [`dsh-home-session.md`](../spec/dsh-home-session.md) §10 八条验收；未实现前本表全部 ⚪。**禁止**把 §20 机器人通道「已闭环」读成会话家园已达成——那是协议面，家园对象尚未存在。

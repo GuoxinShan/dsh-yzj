@@ -1,8 +1,9 @@
 # 云之家机器人通道调研与双向打通方案（对接 ui-yzj）
 
-> 版本：v0.1（调研稿）｜ 日期：2026-08-16
+> 版本：v0.2（调研稿 + 会话落点覆盖）｜ 日期：2026-08-17
+> v0.2 变更：**产品法覆盖会话落点**（Guoxin Shan，[`dsh-home-session.md`](dsh-home-session.md)）——DSH 是唯一家园；一条云之家会话 ↔ 恰好一条 DSH session；隐藏 `yzj-robot-*` 平行 session、以及 `!fork` / `robot_fork` 开新根，在该法下错误，应打开/恢复绑定会话。本文 §1–§8 **不改写**：协议、spike、S1/S3/§8 工具面仍是当时设计与实现快照。覆盖条款见 **§9**。
 > 调研来源：云之家开放平台官方文档（opendocs，2026-08-16 抓取）、openclaw-yzj v2026.4.9 源码（本地参考 `.openclaw-yzj/`，不入 workspace）、yzj-cli 实测。
-> 定位：整体方案 §8「无人值守衔接点」的落地前调研 + ui-yzj 集成设计。回答两个问题：**机器人体系到底长什么样**、**双向打通怎么接进我们已经做好的东西**。
+> 定位：整体方案 §8「无人值守衔接点」的落地前调研 + ui-yzj 集成设计。回答两个问题：**机器人体系到底长什么样**、**双向打通怎么接进我们已经做好的东西**。v0.2 起第三个问题由会话家园回答：**打进哪一条 DSH session**。
 
 ---
 
@@ -125,6 +126,8 @@ robotId 与 CLI groupId 的 ID 空间映射；创建流程的公网测试是否�
 - 但**推送只覆盖机器人所在群**：用户其余群/私聊的未读仍走现有 CLI `unreadCount` 轮询。§5.3 第一层「整体替换为真推送」修正为**混合模式**：机器人群推送、其余照旧轮询。
 - 写路径从两分变三分：用户直写（面板，不经确认卡）/ agent 写（工具 + 确认卡）/ **机器人无人值守写**（新路径，门控语义见 3.4）——§5.5「待拍板成文」的原则要扩写。
 
+> **v0.2**：产品模型里机器人出站不是第三说话人，而是绑定会话 agent 轮次的投递（[`dsh-home-session.md`](dsh-home-session.md) D4/§8）。上句「三分」保留为**通道/凭据**分层（CLI 用户身份 vs 机器人 token），不是家园里的第三张嘴。写路径两分已拍板。
+
 ### 3.2 新增包 `packages/robot-yzj`（host 面为主）
 
 ```
@@ -216,6 +219,8 @@ robotId 与 CLI groupId 的 ID 空间映射；创建流程的公网测试是否�
   - 链内任何成员可 steer（C3「属于所有人」）；带 @ 保证送达（C6 语义）；
   - **每群另设一个 ambient session**：承载 routines 播报、待办催办等主动投递（C1 频道 session 对应物）；顶层无 @ 消息协议收不到，C6 的「按判断响应」档标记 **N/A-v1**，其价值由 ambient session 的 routines 覆盖。
 - session 实体 = **DSH live session**（followup 进同一 session；Trajectory 即全记录）——C13「闲置即弃」弱化为 DSH session 常驻（更强，无对齐缺口）。
+
+> **v0.2**：上列 S1「顶层 @ → 开新 session / 每群 ambient session / 每用户×机器人一个 `yzj-robot-*`」是当时对齐 Claude Tag thread 模型的设计。产品法（[`dsh-home-session.md`](dsh-home-session.md)）改为 **一条云之家会话 ↔ 恰好一条 DSH 绑定会话**；平行根与 fork 开新根作废，见 §9。
 
 **S2 进度面（C4/C12）**
 - ack 即时回「收到，处理中…」+ 引用用户消息（replyMsgId 引用卡片）= is thinking + 上下文锚定；
@@ -316,6 +321,8 @@ robotId 与 CLI groupId 的 ID 空间映射；创建流程的公网测试是否�
 - `integration-master-plan.md` §5.3「下期替换：第一层轮询替换为真推送」→ 修正为混合模式（§3.1）；§8 补本文链接与建议卡协议。
 - `../migration/todo-backend-migration.md` §4 迁移步骤 → 增加原生待办 API 后端选项及企业门槛/不可逆状态机注意事项（§1.6）；§5「变更 webhook」标注官方 API 亦无。
 - `../status/gap-analysis.md` → 机器人通道立项后补对照节。
+
+> **v0.2**：总方案 v1.8 与 gap §22 已按会话家园产品法修订指针；本文会话落点覆盖见 §9。
 
 ## 6. 参考来源
 
@@ -452,3 +459,21 @@ robotId 与 CLI groupId 的 ID 空间映射；创建流程的公网测试是否�
 
 **与「按会话指定模型」的关系**：通道管理设置默认路由（作用于该通道全部会话）；按会话覆盖仍是更细粒度（同通道不同群不同模型），保留——两档配置语义：通道默认 > 会话覆盖 > harness 默认。
 
+---
+
+## 9. v0.2 会话落点覆盖（2026-08-17，产品法）
+
+> 事实源：[`dsh-home-session.md`](dsh-home-session.md)。本节**不改** §3.6 / §7 / §8 的历史设计与实现快照，只宣布哪些会话语义被覆盖。协议（WS、ack-then-push、sendMsgUrl、allowFrom、工作区三层）仍有效。
+
+北极星：DSH 是唯一对话家园。机器人通道是入站触发 + 出站投递，**不是第三套聊天**。
+
+| 当时设计 / 现行实现 | 产品法 |
+|---|---|
+| 每 (robot, user) DM 持久 session，id `yzj-robot-<robot>-<user>` | ❌ 隐藏平行家园。应绑定该云之家 DM 的 **一条** DSH session，`followup()` 进它 |
+| 群：顶层 @ → **开新** session；引用回复续链；另加 ambient session | ❌ 一条群 ↔ 一条绑定 DSH session。回复链是节点引用，不是新根。ambient / 免 @ 非本版 MVP；routines 投递进**同一条**绑定会话 |
+| `!fork` 把上下文交到目标群**新 session** | ❌ 打开或恢复目标群绑定会话；摘要交接 + 确认卡（「丢进群」跨群形态），禁止新根 |
+| `robot_fork` → `agents.create` 操作者侧新根（`fork-yzj-robot-…`） | ❌ 应 `focus`/resume 绑定会话。工具若保留，语义改为打开绑定对象，不 `create` 新根 |
+| 入站在 session 里当普通轮次；面板另有 IM composer | 绑定会话 transcript 含四类节点（入站群消息、用户本人发群、对 agent、agent 轮次）。面板降为挑选器，无第二 composer |
+| 机器人帖子像独立说话人 | 机器人帖子 = agent 轮次在云之家的**投递**，不是产品模型第三身份 |
+
+实现仍是三面并行（DSH 对话 / 面板 composer / `yzj-robot-*`）。对照与阻塞项：[`../status/gap-analysis.md`](../status/gap-analysis.md) §22。
