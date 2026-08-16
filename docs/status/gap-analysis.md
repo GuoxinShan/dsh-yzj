@@ -345,3 +345,18 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
   flush 屏障监听；`!routines` 空态文案指向 `dsh routines list`。
 - 实测坑（web profile 缺 jobs 控制器会崩调度器 tick、routines-cli 抢命令行、
   Windows 子进程 dshBin/runModule、patch insert 格式等）见 `routines-delivery.md` §5.1。
+
+**生产形态定稿（2026-08-16 R2.8，`ops 不直连机器人`）——通信桥落地**：
+
+- 用户要求 ops 调度器不直连云之家、一切机器人通信走我们的插件；最终为
+  **HTTP 桥，两端都是 robot-yzj**（`robot-yzj/src/bridge.ts`，提交随本行）：
+  web profile 在 webServer 注册 exact 路由 `POST /yzj/chatnode`
+  （`bridgeToken` opt-in，loopback-only + Bearer 口令），ops profile 以
+  `bridgeTarget` 进入 client 模式（无 WS/无凭据/只提供 `ctx.chatnode`）。
+- 被否决备选：文件监听 runs 目录（用户判定太 low）、ops 侧 webhook 直连
+  机器人 API（违反不直连）。
+- `inject` 从 `['yzjBridge','agents','tools']` 改为 `['agents','tools']`
+  （bridge 可选化，client 模式无需 yzj-cli 桥）；单测
+  `tests/bridge.spec.ts` 全路径覆盖（真实 loopback HTTP，181 绿）。
+- 生产布局与验收口径见 `routines-delivery.md` §6；端到端验证在 web profile
+  重启（web patch 生效）后进行。

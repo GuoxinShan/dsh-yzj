@@ -69,14 +69,45 @@ interface ChatnodeService {
 
 ## 3. 选定方案：dsh-routines + yzj chatnode（本仓库实现）
 
-- 定时引擎：安装 dsh-routines（独立 bundle，进 `ops` profile 或 web profile 均可）；
+- 定时引擎：安装 dsh-routines（独立 bundle，进 `ops` profile）；
 - 投递：`robot-yzj` 提供 `ctx.chatnode` 服务——`send({text, title})` →
   `yzjRobot.notify(text, chatnodeRobotIndex)`（群机器人推群、个人机器人推 DM），
   `title` 作为首行前缀；实现见 `packages/robot-yzj/src/chatnode.ts`；
 - 验收口径：routine 到点 → run 完成 → digest 经 chatnode 出现在群里
   （`[status] routine\n\ndigest` 形态），调度器 `deliveries` 记录 ok；
-- 端到端已验证（§5 实测记录，隔离 DSH_HOME 全链路；验收脚本待生产落地时按
-  §5.1 环境要求补充）。
+- 端到端已验证（§5 实测记录，隔离 DSH_HOME 全链路，in-process chatnode 形态）。
+
+### 3.1 生产形态（决策 2026-08-16 后定稿）：跨进程通信桥，ops 不直连机器人
+
+用户要求：ops 调度器**不直连**云之家（不开第二条 WS、不持任何机器人凭据），
+一切机器人通信走我们的插件。最终架构是 **HTTP 桥，两端都是 robot-yzj 这一个插件**：
+
+```
+ops daemon (base + dsh-routines + robot-yzj client 模式)
+   │  ctx.chatnode.send({text, title})          ← dsh-routines 调度器投递
+   ▼
+ChatnodeBridgeClient  POST http://127.0.0.1:3080/yzj/chatnode   (Bearer <bridgeToken>)
+   ▼
+web profile (web-app + robot-yzj 机器人模式)
+   ChatnodeBridge 注册在 webServer 上的 exact 路由 /yzj/chatnode
+   → 校验 token → 走自己的通道 notify(text, chatnodeRobotIndex)
+   → 群机器人推送
+```
+
+- **web 侧**：config 加 `bridgeToken`（可选，缺省不注册路由）→ 在 webServer
+  （`@deepseek-ai/dsh-host-webserver`，loopback-only 绑定）注册 exact 路由
+  `POST /yzj/chatnode`；body `{text, title?, robotIndex?}`，缺省通道
+  `chatnodeRobotIndex`；错误一律 JSON 响应（400/401/405/502），绝不炸进程。
+- **ops 侧**：config 加 `bridgeTarget` → 插件进入 **bridge client 模式**：不开
+  WS、不建会话、不注册机器人工具，只提供 `ctx.chatnode`（HTTP 客户端，15s
+  超时）。`bridgeTarget` 必配 `bridgeToken`（共享口令）。
+- 桥两侧同属 `packages/robot-yzj/src/bridge.ts`；listener 半
+  `ChatnodeBridge`、client 半 `ChatnodeBridgeClient`，单测见
+  `tests/bridge.spec.ts`（真实 loopback HTTP 全路径）。
+- 生产通道选择：web patch 里 `chatnodeRobotIndex: 1`（第二个 robot = 群机器人）。
+- 客户端半不再需要 `yzjBridge` 硬注入——`inject` 从 `['yzjBridge','agents','tools']`
+  改为 `['agents','tools']`，allowFrom 解析保持 `ctx.get('yzjBridge')` 可选（只有
+  机器人模式会调用）。
 
 ## 4. 决策表
 
@@ -87,6 +118,35 @@ interface ChatnodeService {
 | chatnode 归属 | robot-yzj 包内（同一插件行提供） | 通道自包含；无需新增 bundle 行；与机器人生命周期一致 |
 | 目标通道 | Config `chatnodeRobotIndex`（默认 0） | 群/个人机器人可配；与 notify 的 robotIndex 语义一致 |
 | 与未来微信节点共存 | 文档禁止同 profile 双 chatnode | Cordis 同名服务冲突；与 wechat 单 poller 同理 |
+| ops→机器人通信（生产） | **HTTP 桥，两端都是 robot-yzj**（web 侧 webServer 路由 `/yzj/chatnode`，ops 侧 client 模式） | 用户要求 ops 不直连机器人、一切走我们的插件；复用 GUI 已有 3080 端口与 loopback-only 绑定，零新增端口；单插件双模式，无第二 bundle 行 |
+| 桥鉴权 | `bridgeToken` 共享口令（Bearer），路由注册 opt-in | loopback 表面 + 口令纵深防御；无 token 即无路由 |
+| 桥失败语义 | client 侧 throw（调度器记入 `deliveries` 不 crash）；listener 侧 JSON 错误响应 | 与 chatnode 契约失败语义一致；异常请求不能击穿 web 进程 |
+| 被否决的备选 | 文件监听投递（watch runs 目录） | 用户判定太 low；HTTP RPC 是标准控制面形态 |
+| 被否决的备选 | ops 侧 webhook chatnode 直连机器人 API | 用户要求不直连；改为打我们自己的桥端点 |
+
+## 6. 生产布局（`~/.dsh`，2026-08-16 落地）
+
+- **web profile**（`profiles/web/cordis.patch.yml`）：robot-yzj 行加
+  `bridgeToken: <共享口令>` + `chatnodeRobotIndex: 1`（群机器人）；
+  机器人行保持现状（两条 sendMsgUrl）。
+- **ops profile**（`profiles/ops/`，专用 base-only daemon）：bundles =
+  `@deepseek-ai/dsh-base` + `@dsh-routines/bundle`；patch 行：
+  - `routines-store`：`projectDir: C:/Users/rocks`（state 与 project 目录固定，
+    不随启动 cwd 漂移）；
+  - `routines-scheduler`：`dshBin: C:/Users/rocks/.dsh/dsh-run.mjs`（re-spawn
+    包装）、`runModule: file:///C:/Users/rocks/.dsh/profiles/ops/node_modules/@dsh-routines/bundle/lib/run.js`、
+    `tickIntervalMs: 15000`；
+  - `robot-yzj`：`bridgeTarget: http://127.0.0.1:3080/yzj/chatnode` +
+    `bridgeToken: <同一口令>`（client 模式，无 robots）；
+  - `routines-cli` 保留（`dsh --profile ops routines list/run/…` 从这里跑）。
+- **routine 文件**：`C:/Users/rocks/.dsh/routines/*.yaml`（global 目录，store
+  默认扫描）；run 记录落在 `<routine.cwd>/.dsh/routines/runs/`。
+- **dsh-run.mjs**（`C:/Users/rocks/.dsh/`）：`realSpawn` 对 `.mjs` 用 node 直启，
+  包装内再 `node --import tsx/esm apps/cli/src/bin.ts <args>`，cwd 固定 harness。
+- 启动：`node --import tsx/esm apps/cli/src/bin.ts ops`（cwd=harness）；
+  调度器 tick 每 15s；run 子进程用 routine 的 `profile:`（默认 headless）。
+- 端到端验证依赖 web profile 重启（web patch 生效才有桥路由）；重启后
+  ops 下一次 tick 即完成 ops→桥→群全链路。
 
 ## 5. 实测记录（2026-08-16，隔离 DSH_HOME `~/.dsh-test` 全链路）
 
