@@ -86,6 +86,12 @@ export interface YzjPanelInject {
   robotShareWrite: (input: { groupId: string; filename: string; content: string; overwrite?: boolean; robotIndex?: number }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Persist the FULL channel configuration to the channels file (§8.5); takes effect after a GUI restart. */
   robotChannelsSave: (input: { defaultProvider?: string; defaultModel?: string; robots: { sendMsgUrl: string; provider?: string; model?: string; cwd?: string; enabled?: boolean; allowFrom?: string[] }[] }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Memory vault: one scope's read view (sections/entities/observations). */
+  memoryScope: (scope?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Memory vault: tail of the dream log (audit transparency). */
+  memoryLog: (scope?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Memory vault: panel-direct observation write (user's own will; no confirm card). */
+  memoryObserve: (content: string, tags?: string[], scope?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
 }
 
 /** Build the inject face from a connection handle; unavailable → failed calls. */
@@ -184,6 +190,13 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
       ...(input.defaultProvider === undefined ? {} : { defaultProvider: input.defaultProvider }),
       ...(input.defaultModel === undefined ? {} : { defaultModel: input.defaultModel }),
       robots: input.robots,
+    }),
+    memoryScope: (scope?: string) => call('memory-scope', scope === undefined ? {} : { scope }),
+    memoryLog: (scope?: string) => call('memory-log', scope === undefined ? {} : { scope }),
+    memoryObserve: (content: string, tags?: string[], scope?: string) => call('memory-observe', {
+      content,
+      ...(tags === undefined || tags.length === 0 ? {} : { tags }),
+      ...(scope === undefined ? {} : { scope }),
     }),
   }
 }

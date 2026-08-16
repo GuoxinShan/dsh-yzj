@@ -99,6 +99,9 @@ export class YzjMemoryService extends Service {
   /** Dream state with revisions; see {@link MemoryCore.dreamLoad}. */
   dreamLoad(scope: string): DreamState { return this.core.dreamLoad(scope) }
 
+  /** Tail of the scope's dream log; see {@link MemoryCore.dreamLogTail}. */
+  dreamLogTail(scope: string, maxChars?: number): string { return this.core.dreamLogTail(scope, maxChars) }
+
   /** Apply typed decisions; see {@link MemoryCore.dreamApply}. */
   dreamApply(scope: string, decisions: readonly DreamDecision[], summary: string): DreamReport {
     return this.core.dreamApply(scope, decisions, summary)

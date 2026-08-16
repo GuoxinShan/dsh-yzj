@@ -318,6 +318,16 @@ export class MemoryVault {
     atomicWrite(this.logPath(), `${previous.trimEnd()}\n\n${text.trimEnd()}\n`)
   }
 
+  /** Tail of the dream log (last `maxChars`, cut at a line boundary). */
+  logTail(maxChars: number): string {
+    const raw = readText(this.logPath())
+    if (raw === undefined) return ''
+    if (raw.length <= maxChars) return raw.trimEnd()
+    const cut = raw.slice(-maxChars)
+    const firstNewline = cut.indexOf('\n')
+    return (firstNewline >= 0 ? cut.slice(firstNewline + 1) : cut).trimEnd()
+  }
+
   /** Rebuild the generated index from current vault contents. */
   rebuildIndex(): void {
     const sections = this.listSections()

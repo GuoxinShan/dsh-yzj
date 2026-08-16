@@ -8,8 +8,9 @@ import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-run
 
 /** Panel tabs (我的 removed — the composer '@' covers directory search;
  * 待办 added for the demo-stage todo library; 机器人 added for the robot
- * channel status + per-conversation model overrides). */
-export type YzjTab = 'docs' | 'calendar' | 'chat' | 'todo' | 'robot'
+ * channel status + per-conversation model overrides; 记忆 added for the
+ * memory vault browser). */
+export type YzjTab = 'docs' | 'calendar' | 'chat' | 'todo' | 'robot' | 'memory'
 /** Yunzhijia panel viewing state (raw CLI payloads, rendered by components). */
 export type YzjPanelState = {
   open: boolean
@@ -59,6 +60,9 @@ export type YzjPanelState = {
   robotCatalog: unknown[]
   /** Conversation selected in the override editor ('' = none). */
   robotSelKey: string
+  /** Memory tab: scope read view (raw memory-yzj payload) + dream log tail. */
+  memoryView: unknown
+  memoryLog: string
   loading: boolean
   error: string
 }
@@ -95,6 +99,7 @@ export type YzjPanelActions = {
   setTodoTag: (draft: YzjPanelState, tag: string) => void
   setRobotData: (draft: YzjPanelState, channels: unknown[], overrides: unknown[], catalog: unknown[]) => void
   setRobotSelKey: (draft: YzjPanelState, key: string) => void
+  setMemory: (draft: YzjPanelState, view: unknown, log: string) => void
   setLoading: (draft: YzjPanelState, loading: boolean) => void
   setError: (draft: YzjPanelState, error: string) => void
 }
@@ -138,6 +143,8 @@ export function createYzjStore(): EngineStoreHandle<YzjPanelState, YzjPanelActio
       robotOverrides: [],
       robotCatalog: [],
       robotSelKey: '',
+      memoryView: {},
+      memoryLog: '',
       // Start "loading" so the todo pane never flashes its provisioning hero
       // for the single frame before loadTab kicks in.
       loading: true,
@@ -206,6 +213,10 @@ export function createYzjStore(): EngineStoreHandle<YzjPanelState, YzjPanelActio
         d.robotCatalog = catalog
       },
       setRobotSelKey: (d: YzjPanelState, key: string) => { d.robotSelKey = key },
+      setMemory: (d: YzjPanelState, view: unknown, log: string) => {
+        d.memoryView = view
+        d.memoryLog = log
+      },
       setLoading: (d: YzjPanelState, loading: boolean) => { d.loading = loading },
       setError: (d: YzjPanelState, error: string) => { d.error = error },
     },
@@ -226,6 +237,8 @@ export function createYzjStore(): EngineStoreHandle<YzjPanelState, YzjPanelActio
       ]
       const broken = arrays.some(key => !Array.isArray(snap[key]))
         || typeof snap.loading !== 'boolean'
+        || typeof snap.memoryLog !== 'string'
+        || typeof snap.memoryView !== 'object' || snap.memoryView === null
       if (broken) {
         instance.store.set({ ...handle.spec.init(), open: false, tab: 'docs' })
         instance.clearPersisted()

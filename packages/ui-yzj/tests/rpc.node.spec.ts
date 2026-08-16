@@ -92,6 +92,37 @@ describe('createRpcHandler', () => {
     expect(result).toEqual({ ok: false, error: { code: 'internal', message: 'write-decide endpoint rejects outcome "maybe"', details: {} } })
   })
 
+  it('memory endpoints project the vault service and stay unavailable without it', async () => {
+    const gate: YzjWriteGateFace = { list: () => [], decide: () => false }
+    // Without the service: every memory endpoint fails closed with guidance.
+    const bare = createRpcHandler(mountBridge({}), gate)
+    expect(await bare('memory-scope', {}, undefined as never)).toEqual({
+      ok: false,
+      error: { code: 'internal', message: 'memory-scope: yzjMemory 服务不可用（memory-yzj 未挂载）', details: {} },
+    })
+    // With a scripted service: scope view, log tail, and the panel-direct
+    // observe write (user's own will — no gate involvement).
+    const ctx = new Context()
+    const observed: { scope: string; content: string; source: string }[] = []
+    ctx.provide('yzjMemory', {
+      readScope: (scope: string) => ({ scope, cap: 6000, sections: [], entities: [], observations: [], archivedCount: 0 }),
+      dreamLogTail: (scope: string, max: number) => `log ${scope} ${max}`,
+      observe: (scope: string, content: string, opts: { source: string }) => {
+        observed.push({ scope, content, source: opts.source })
+        return { id: 'obs-1', duplicate: false, openCount: 1, capacity: 200 }
+      },
+    })
+    const handler = createRpcHandler(ctx, gate)
+    const scope = await handler('memory-scope', {}, undefined as never)
+    expect(scope.ok && (scope.value as { view: { scope: string } }).view.scope).toBe('user')
+    const log = await handler('memory-log', {}, undefined as never)
+    expect(log.ok && (log.value as { log: string }).log).toBe('log user 4000')
+    expect((await handler('memory-observe', {}, undefined as never)).ok).toBe(false)
+    const write = await handler('memory-observe', { content: '偏好表格周报', tags: ['work', 7] }, undefined as never)
+    expect(write.ok).toBe(true)
+    expect(observed).toEqual([{ scope: 'user', content: '偏好表格周报', source: 'panel' }])
+  })
+
   it('unknown endpoints fail closed', async () => {
     const ctx = mountBridge({})
     const gate: YzjWriteGateFace = { list: () => [], decide: () => false }
