@@ -433,3 +433,12 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 - **新包 `@dsh-yzj/model-yzj`**（`ctx.yzjModels`，`~/.dsh/yzj-model.json`，get/setDefault/clear/catalog）；robot-yzj 解析链尾部接 `fallbackRoute`（会话覆盖 > 机器人配置 > 通道默认 > 插件默认 > harness 默认，建会话现查热生效）；dream 模型链 = dream.json > 插件默认 > harness 默认。
 - **RPC +7**：`dream-state/dream-set/dream-run` + `model-default(-set/-clear)/model-catalog`；`/yzj` 共 49 端点。记忆 tab dream 区：开关、每日时间、dream 模型选择器、插件默认模型选择器（清空=跟随 harness 默认）、立即固化、上次结果。
 - **验收**：model-yzj 4 测试（round-trip/畸形容错/半空拒绝/catalog 透传）；dream 5 测试（默认关/局部更新归一化/每日触发边界）；memory-pane +4（开关默认关+run 禁用、开关提交、run-now 报告、picker 提交/清除）；rpc dream/model 端点契约；全仓 `pnpm test` 251 绿。真实环境验收（开关热生效、dreamRun 全链路、robot 兜底路由）待 web profile 重启后进行。
+
+### 21.3 记忆组件真机验收（2026-08-16，web profile 重启后实测）
+
+- **挂载**：web patch 展开确认（profile node_modules 含 memory-yzj/model-yzj 七包）；GUI 3080 在跑。
+- **默认关**：`yzj-memory\dream.json` 验收前不存在（= enabled:false 的安全缺省）；手写 `{"enabled":true}` 开闸（等价面板开关）。
+- **被动注入**：vault 骨架由注入 provider 的首次组装自动创建（无人显式初始化）。
+- **全链路（子代理在 GUI 进程内经工具执行）**：observe（obs-20260816211751-c465，open 1/200）→ read → search「周报」命中 → dream_load → dream_apply（提升 1 · 段写 2 · 拒绝 0，无 rev 冲突）→ read 复核（work_context 段建立，观察转 archived）。观察无 rev 属设计（rev 只护 sections/entities 的读改写；观察按 id 一次性处置）。
+- **闭环**：固化后的 `work_context` 段在下一轮提示组装中作为 `yzj-memory` runtime-context 出现（验收会话自身可见）——注入现算、无陈旧镜像实证。
+- **待用户点验（面板交互，无自动化覆盖）**：记忆 tab「立即固化」（dreamRun 进程内执行器，one-shot dream 会话 + lastNote 回写）与「插件默认模型」选择器（robot 兜底路由热生效）。dream.json 当前 enabled=true 且未设 dailyAt（不自动跑）；用户可在面板设每日时间或关闸。
