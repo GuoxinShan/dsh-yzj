@@ -23,13 +23,18 @@ dsh-yzj 是 DeepSeek Harness 的独立插件 bundle 仓库：`yzj-cli` 桥接、
 ## Repository layout
 
 ```
-packages/       @dsh-yzj/* workspace 包（均 private、ESM）
+packages/       @dsh-yzj/* workspace 包（均 private、ESM；开发态，发布经根聚合）
   bridge/         ctx.yzjBridge —— 有界子进程通道：argv 数组直启 yzj-cli
   tool-yzj/       模型面工具族 + 写操作确认 guard（风险表）+ ctx.yzjTodo 服务
   ui-yzj/         dsh.client 双面包：node half 为 /yzj RPC 通道 + write-gate，
                   browser half 为 toolview 富卡片 + 悬浮球工作台面板
   robot-yzj/      机器人通道（入站 WS + 出站 webhook，见 docs/spec/robot-channel-plan.md）
-  bundle/         可安装 profile patch 层（cordis.patch.yml）+ 改造版 yzj-cli skill
+  memory-yzj/     记忆库（vault + dream 固化 + memory_* 工具）
+  model-yzj/      插件级默认模型路由
+根 = @dsh-yzj/bundle（monobundle）：tsdown 聚合六包 host half 进 lib/*.mjs +
+  scripts/copy-client.mjs 搬运 ui-yzj closure bundle 为 lib/client.js；
+  cordis.patch.yml 行名用子路径（@dsh-yzj/bundle/<row>）；发布 = 构建 + tag
+  （见 docs/release.md）
 docs/           设计文档，本仓库的主体（见「Spec-driven」；索引与阅读顺序：docs/README.md）
   spec/           设计基线：integration-master-plan / todo-design / robot-channel-plan
   migration/       架构演进：todo-backend-migration（demo→原生后端分层 + 实测格式事实）
@@ -51,7 +56,7 @@ pnpm test       # vitest：bridge 单测（fake CLI）+ 真实 CLI 冒烟（未�
 pnpm run bundle # 仅重建 ui-yzj 客户端 bundle（改 browser half 后必跑）
 pnpm run clean
 # 安装进 harness（在 harness checkout 下执行）：
-pnpm dsh plugin --profile web add -w link:<本仓库路径>/packages/bundle
+pnpm dsh plugin --profile web add -w link:<本仓库路径>
 node .acceptance/verify-real-data.mjs   # 需运行中的 GUI + 已登录 yzj-cli
 ```
 

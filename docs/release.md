@@ -1,87 +1,68 @@
 # 发布流程（Release）
 
-> 本仓库 0.x 阶段为 pre-release：无外部消费者，优先做对的地基而非兼容垫片
-> （AGENTS.md「Pre-release stance」）。发布 = 两个层次：**路线 A** 代码/文档
-> 上 GitHub + tag（内部分享）；**路线 B** 全量发布 npm（对外可
-> `dsh plugin add` 安装）。发布前必须完成本文档的前置检查。
+> 本仓库 0.x 阶段为 pre-release。**发布形态 = monobundle + git**：仓库根即
+> 可安装的 `@dsh-yzj/bundle` 包（六包源码聚合进根 `lib/`，互依内嵌，
+> `@deepseek-ai/*` 走 registry），发布动作 = 构建 + 打 tag + push，
+> 别人 `dsh plugin add github:GuoxinShan/dsh-yzj#v0.1.0` 一行可装，
+> **零 npm 账号、零 registry 服务**。
 
-## 0. 前置事实（2026-08-16 现状）
+## 0. 形态事实（2026-08-16 定稿）
 
-- 所有包 `private: true` → **npm registry 发不了**（路线 B 第一步要改）；
-- 依赖为 `link:`（指向 `../deepseek-harness`）/ `workspace:^`（包间互依）→
-  别人从 GitHub/npm 装 bundle 时这些依赖解析不了；
-- git remote 已配 `origin → https://github.com/GuoxinShan/dsh-yzj.git`，
-  从未 push、无 tag；
-- 六个包：`bridge` / `tool-yzj` / `ui-yzj` / `robot-yzj` / `memory-yzj` /
-  `model-yzj` + `bundle`（挂载层，依赖上面六包）。
+- **monobundle**：根 `package.json` = `@dsh-yzj/bundle`（`exports` 子路径
+  `./bridge`…`./model-yzj` + `./client`；`dsh.bundle` patch + `dsh.client`
+  声明；`dependencies` 仅 `@deepseek-ai/*`（registry rc.6 系列）+ react/zod）；
+- 构建：根 `tsdown.config.ts` 把六包 `lib/index.js` 聚合成 `lib/*.mjs`
+  （`noExternal /@dsh-yzj\//` 内嵌互依，`@deepseek-ai/*` 外部化）；
+  `scripts/copy-client.mjs` 原样搬运 ui-yzj closure bundle 为 `lib/client.js`；
+- patch 行名用子路径（`@dsh-yzj/bundle/robot-yzj` 等）；
+  `./ui-yzj/package.json` 导出满足 client-modules 的 `resolvePkgJson`；
+- 本地开发不变：workspace 六包 + `link:` 照旧；测试直跑源码。
 
-## 1. 发布前置检查（AGENTS.md Pre-release stance 的执行面）
-
-- [ ] 各包 `@deepseek-ai/*` 依赖从 `link:` 换成已发布版本范围
-  （npm registry 上 rc.6 系列：`@deepseek-ai/cordis@^4.0.1`、
-  `@deepseek-ai/dsh-agent@^0.1.0-rc.6` 等——以 `npm view` 核实）；
-- [ ] 包间互依（`@dsh-yzj/*`）从 `workspace:^` 换成 `^0.1.0`；
-- [ ] 所有包 `private: false`；
-- [ ] 验证：`dsh plugin --profile <临时 profile> add <发布源>` 能装上并挂载
-  （GitHub：`github:GuoxinShan/dsh-yzj#<tag>`；registry：`@dsh-yzj/bundle`）；
-- [ ] 首个 tag 发布后删除 AGENTS.md「Pre-release stance」一节。
-
-## 2. 路线 A：GitHub 分享（内部用，最快）
+## 1. 发布步骤（全部本地可完成，无需账号）
 
 ```sh
+pnpm run build                        # 六包 + 聚合 lib
+pnpm test                             # 255 绿（质量门）
+git add -A && git commit -m "release(v0.1.0): …"
 git push origin main
-git tag v0.1.0
-git push origin --tags
+git tag -f v0.1.0 && git push origin v0.1.0 --force
+# 验收（真实验证 git 安装路径）：
+dsh plugin --profile release-check add github:GuoxinShan/dsh-yzj#v0.1.0
 ```
 
-- 效果：仓库可克隆/浏览、tag 可追溯；本机继续 `link:` 安装不变；
-- 局限：他人 `dsh plugin add github:GuoxinShan/dsh-yzj#v0.1.0` 会因
-  `workspace:`/`link:` 依赖解析失败——仅供代码分享，不可安装。
+- tag 打在新 main 上（monobundle 后不再有独立 release 分支）；
+- `--force` 重打 tag 仅当上一版 tag 指向旧结构时。
 
-## 3. 路线 B：正式发布（对外可装）
-
-**状态（2026-08-16）：依赖替换已完成并验证**——`release/v0.1.0` 分支存在：
-- `scripts/rewrite-deps.mjs` 把 `link:` 换成 registry 范围（`@deepseek-ai/*` →
-  `^0.1.0-rc.6`；`cordis` → `^4.0.1`；`schemastery` → `^3.18.1`），
-  `@dsh-yzj/*` 互依保持 `workspace:^`（pnpm publish 自动重写为 `^0.1.0`）；
-- **registry 依赖下构建 + 255 测试全绿**（rc.6 = 本地 harness 同源码，
-  rc.5 只是未发布的内部号——兼容性由构造保证，实测确认）；
-- vitest 需 inline `dsh-client-ui-primitives`（rc.6 引入 katex css import，
-  externalized 依赖拒 .css）——已进 main（`a800a4f`）。
-
-剩余步骤（**需要用户 `npm login`**）：
+## 2. 安装形态（使用者）
 
 ```sh
-git checkout release/v0.1.0
-# 1) 按依赖序发布（bridge → tool-yzj/ui-yzj/robot-yzj/memory-yzj/model-yzj → bundle）：
-npm publish --workspaces --dry-run   # 先看包内容
-npm publish -w packages/bridge
-# …依次…
-npm publish -w packages/bundle
-# 2) 验证：
-dsh plugin --profile release-test add @dsh-yzj/bundle
-dsh --profile release-test --dump-config | Select-String yzj
-# 3) 打 tag + push（v0.1.0 已有 tag 指向路线 A 的 main——发布后重打指向 release 分支）：
-git tag -f v0.1.0 && git push origin v0.1.0 --force
-# 4) 删除 AGENTS.md「Pre-release stance」节，合并 vitest/脚本改动回 main
+dsh plugin --profile web add github:GuoxinShan/dsh-yzj#v0.1.0
 ```
 
-- npm 发布需要 `npm login`（用户凭据，agent 不代办）；
-- 发布后 main 的 `link:` 依赖与 registry 版本可能漂移（本地 harness checkout
-  与 rc.6 的差异）——发布分支隔离此风险。
+pnpm 从 GitHub 拉仓库根包（`@dsh-yzj/bundle`，`dsh.bundle` 声明被 reconcile
+识别）→ 装 `@deepseek-ai/*` registry 依赖 → 重启生效。
+
+## 3. 已放弃的路线（记录原因）
+
+- **npm 全量发布**：需要 npm 账号；且 `@deepseek-ai/*` 的 rc.5 从未发布
+  （registry 0.1.0 系列只有 rc.2/rc.3/rc.6，本地 rc.5 是内部号）——registry
+  版本不可用是当初的卡点；monobundle 后不再需要。
+- **多包 GitHub 安装**：bundle 依赖六个未发布包 + `workspace:^` 在 git 安装
+  时不重写——解析必然失败；monobundle 内嵌互依彻底绕开。
 
 ## 4. 已知坑
 
-- `workspace:^` 在非 workspace 环境（GitHub/pnpm add 目标）解析失败——
-  bundle 的互依必须发布为版本范围；
-- `private: true` 包 `npm publish` 直接报错（`ERR_PNPM`/npm 拒绝）；
-- bundle 层依赖六包：`dsh plugin add @dsh-yzj/bundle` 会从 registry 拉全部
-  互依——发布序错误（bundle 先发）会导致安装时拉不到；
-- 验证安装用**独立临时 profile**（`dsh plugin --profile release-test add …`），
-  别污染生产 profile。
+- client-modules 按**行名** `require.resolve('<row>/package.json')` 找
+  `dsh.client`——子路径行必须配 `./ui-yzj/package.json` 导出，否则 client
+  bundle 404；
+- tsdown 多 entry 输出 `.mjs`（ESM）——exports 用 `.mjs`，不是 `.js`；
+- closure-factory client bundle 绝不能重打包——复制搬运；
+- 安装验证用独立临时 profile（`dsh plugin --profile release-check add …`），
+  别污染生产 profile；无 web-app 的 base-only profile 装 bundle 会因
+  ui-yzj 等 connection 服务 pending（web 形态才完整）。
 
 ## 5. 发布历史
 
 | 版本 | 日期 | 形态 | 内容 |
 |---|---|---|---|
-| v0.1.0 | 2026-08-16 | 路线 A（GitHub + tag） | 全量功能快照（六包 + bundle；桥/命令族/定时/记忆/模型默认链），255 测试绿；**不可对外安装**（link:/workspace: 依赖未替换） |
+| v0.1.0 | 2026-08-16 | monobundle + git | 全量功能（桥/命令族/定时/记忆/模型默认链），六行聚合 + client bundle，git 可装 |

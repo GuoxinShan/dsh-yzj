@@ -14,21 +14,22 @@
 | [`packages/robot-yzj`](packages/robot-yzj/README.md) | `@dsh-yzj/robot-yzj` → `ctx.yzjRobot` | 机器人双向通道（R2.x host 面，设计见 [docs/spec/robot-channel-plan.md](docs/spec/robot-channel-plan.md)）：实测协议 WS 入站（心跳/退避重连/msgId 去重）+ sendMsgUrl 出站（引用卡/分片/限流）；每 (机器人,用户) DM 一条持久 DSH session，ack-then-push 回推；bang 命令族 `!help/!status/!routines/!memory/!mute/!unmute/!restart/!configure` + `!fork <群名\|群ID> <指令>`（跨群上下文交接）+ `!feedback`；群聊锚定 + 事件驱动推送 + 记忆注入 + intro 轮；allowFrom 默认仅 CLI 登录用户；**DSH→机器人双向控制**：`robot_status`（通道/cwd/会话表面）/`robot_notify`/`robot_continue`/`robot_fork`/`robot_share_write`、`robot_share_list`（群共享工作区；per-thread 私有 cwd + 群共享区三层模型）；**chatnode 桥**（`bridgeToken`/`bridgeTarget`/`guiUrl`）：ops 调度器经 `POST /yzj/chatnode` 复用本通道投递 digest，不持机器人凭据（见 [routines-delivery.md](docs/spec/routines-delivery.md) §3.1） |
 | [`packages/memory-yzj`](packages/memory-yzj/README.md) | `@dsh-yzj/memory-yzj` → `ctx.yzjMemory` | 记忆库组件（设计见 [docs/spec/memory-vault-design.md](docs/spec/memory-vault-design.md)）：明文 Markdown vault（sections/entities/observations + log/index，默认 `$DSH_HOME/yzj-memory`，按 `user`/`group:<id>` scope 分仓）；5 个 `memory_*` 工具（observe/read/search/dream_load/dream_apply）；`systemPrompt.context` 有界注入（每 scope `inject_char_cap`，默认 6000）；**dream 固化默认关闭**——`dream.json` 运行时开关（面板可翻）+ 每日 `dailyAt` 进程内定时 + 「立即固化」，模型链＝dream 配置 > 插件默认 > harness 默认，rev 乐观锁保护人工编辑；`group:<id>` scope 留缝群组记忆 |
 | [`packages/model-yzj`](packages/model-yzj/README.md) | `@dsh-yzj/model-yzj` → `ctx.yzjModels` | 插件级默认模型（`~/.dsh/yzj-model.json`，明文热生效）：robot 模型解析链尾部（会话覆盖 > 机器人配置 > 通道默认 > **插件默认** > harness 默认）与 dream 执行器共用；`catalog()` 提供活跃路由的 provider/model 目录（面板选择器数据源） |
-| [`packages/bundle`](packages/bundle/README.md) | `@dsh-yzj/bundle` | 可安装的 profile patch 层（`cordis.patch.yml`），挂载上面六行 |
+| **根 = `@dsh-yzj/bundle`**（monobundle） | 可安装的 profile patch 层（`cordis.patch.yml` 在根，行名 `@dsh-yzj/bundle/<row>`） | tsdown 聚合六包 host half 进 `lib/*.mjs`（互依内嵌、`@deepseek-ai/*` 外部化）+ `scripts/copy-client.mjs` 搬运 ui-yzj closure bundle 为 `lib/client.js`；`dsh.bundle` + `dsh.client` 声明；发布 = 构建 + tag（见 [docs/release.md](docs/release.md)） |
 
 ## 安装
 
 ```sh
-# 在 harness checkout 下（本机 GUI 为源码启动）：
-pnpm dsh plugin --profile web add -w link:/Users/guoxinshan/dev/dsh-yzj/packages/bundle
+# 本机开发（harness checkout 下）：
+pnpm dsh plugin --profile web add -w link:<本仓库路径>
 
-# 或从仓库内（有 dsh 可执行文件时）：
-dsh plugin --profile web add <npm 包名或路径>
+# 对外安装（GitHub，monobundle 后一行可装）：
+dsh plugin --profile web add github:GuoxinShan/dsh-yzj#v0.1.0
 ```
 
 安装后重启 GUI（源码启动时重启 `node --import tsx/esm apps/cli/src/bin.ts web`），右下角出现「云之家」悬浮球（hover 展开快捷坞）。
 
-> 本地开发用 `link:` 依赖指向 harness checkout；对外发布时把各包的 `link:` 依赖换成已发布的 `@deepseek-ai/dsh-*` 版本范围。
+> 本地开发用 `link:` 依赖指向 harness checkout；对外安装走 monobundle + git tag
+> （根包依赖已全部指向 registry 的 `@deepseek-ai` rc.6 系列，见 docs/release.md）。
 
 ## 功能面
 
