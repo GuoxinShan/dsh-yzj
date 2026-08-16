@@ -39,7 +39,7 @@ function mountPane(over: Partial<MemoryPaneProps> = {}): Face {
   const container = document.createElement('div')
   document.body.appendChild(container)
   const root = createRoot(container)
-  const calls = { observe: [] as string[], scope: 0 }
+  const calls = { observe: [] as string[], scope: 0, dreamSet: [] as Record<string, unknown>[], dreamRun: 0, modelSet: [] as { provider: string; model: string }[], modelClear: 0 }
   const base: MemoryPaneProps = {
     view: viewFixture(),
     log: '## [2026-08-16 ab12] dream\n\n提升 1 · 丢弃 0',
@@ -48,6 +48,13 @@ function mountPane(over: Partial<MemoryPaneProps> = {}): Face {
     memoryScope: async () => { calls.scope += 1; return { ok: true, value: { view: viewFixture() } } as Rpc },
     memoryLog: async () => ({ ok: true, value: { log: '' } }) as Rpc,
     memoryObserve: async (content: string) => { calls.observe.push(content); return { ok: true, value: { id: 'obs-9', duplicate: false } } as Rpc },
+    dreamState: async () => ({ ok: true, value: { state: { enabled: false } } }) as Rpc,
+    dreamSet: async (partial: Record<string, unknown>) => { calls.dreamSet.push(partial); return { ok: true, value: { state: { enabled: partial.enabled === true, ...(partial.dailyAt === undefined ? {} : { dailyAt: partial.dailyAt }) } } } as Rpc },
+    dreamRun: async () => { calls.dreamRun += 1; return { ok: true, value: { ok: true, sessionId: 'dream-1', note: '固化完成：提升 1' } } as Rpc },
+    modelDefault: async () => ({ ok: true, value: { route: { provider: 'deepseek', model: 'glm-4.7' }, path: 'x' } }) as Rpc,
+    modelSetDefault: async (provider: string, model: string) => { calls.modelSet.push({ provider, model }); return { ok: true, value: { route: { provider, model } } } as Rpc },
+    modelClearDefault: async () => { calls.modelClear += 1; return { ok: true, value: { route: undefined } } as Rpc },
+    modelCatalog: async () => ({ ok: true, value: { catalog: [{ provider: 'deepseek', models: ['glm-4.7', 'glm-4.6'] }, { provider: 'pi', models: ['p1'] }] } }) as Rpc,
     ...over,
   }
   act(() => {
@@ -66,6 +73,11 @@ function clickButton(container: HTMLElement, label: string): void {
   const button = Array.from(container.querySelectorAll('button'))
     .find(node => (node.textContent ?? '').includes(label))
   act(() => { button?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+}
+
+/** Flush mount-time async loads (dream state / catalog) to completion. */
+async function flushLoads(): Promise<void> {
+  await act(async () => { await new Promise(resolve => { setTimeout(resolve, 0) }) })
 }
 
 describe('MemoryPane', () => {
@@ -144,5 +156,53 @@ describe('MemoryPane', () => {
       .find(node => (node.textContent ?? '').includes('展开日志'))
     act(() => { toggle?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     expect(face.container.textContent).toContain('还没有 dream 运行记录')
+  })
+
+  it('renders the dream section with the switch OFF and run disabled by default', () => {
+    const face = mountPane()
+    const text = face.container.textContent ?? ''
+    expect(text).toContain('dream 固化')
+    expect(text).toContain('已关闭')
+    expect(text).toContain('插件默认模型')
+    const run = Array.from(face.container.querySelectorAll('button')).find(node => (node.textContent ?? '').includes('立即固化'))
+    expect((run as HTMLButtonElement | undefined)?.disabled).toBe(true)
+  })
+
+  it('toggling the switch commits dreamSet({enabled:true})', async () => {
+    const face = mountPane()
+    await act(async () => { clickButton(face.container, '已关闭') })
+    expect(face.calls.dreamSet).toEqual([{ enabled: true }])
+    expect(face.container.textContent).toContain('已开启')
+  })
+
+  it('run-now calls dreamRun and surfaces the report note', async () => {
+    const face = mountPane({
+      dreamState: async () => ({ ok: true, value: { state: { enabled: true } } }) as Rpc,
+    })
+    await flushLoads()
+    await act(async () => { clickButton(face.container, '立即固化') })
+    expect(face.calls.dreamRun).toBe(1)
+    expect(face.container.textContent).toContain('固化完成：提升 1')
+  })
+
+  it('picking a plugin default commits modelSetDefault; clearing placeholder commits clear', async () => {
+    const face = mountPane()
+    await flushLoads()
+    // Rendered selects: [0] dream provider, [1] plugin-default provider, [2] its model.
+    const selects = face.container.querySelectorAll('select')
+    const pluginProvider = selects[1] as HTMLSelectElement
+    expect(pluginProvider).toBeDefined()
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')?.set
+    await act(async () => {
+      setter?.call(pluginProvider, 'pi')
+      pluginProvider.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(face.calls.modelSet).toEqual([{ provider: 'pi', model: 'p1' }])
+    await act(async () => {
+      const refreshed = face.container.querySelectorAll('select')[1] as HTMLSelectElement
+      setter?.call(refreshed, '')
+      refreshed.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(face.calls.modelClear).toBe(1)
   })
 })

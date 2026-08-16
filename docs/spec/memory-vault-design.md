@@ -1,6 +1,10 @@
 # 记忆库组件设计：memory-yzj（vault 模型 + dream 固化 + 定时任务对接）
 
-> v0.1 · 2026-08-16 · 状态：设计定稿，首版实现中
+> v0.2 · 2026-08-16 · 状态：v0.1 已实现；v0.2 增补（dream 开关/进程内执行器/插件默认模型）已实现
+>
+> v0.2 变更（2026-08-16）：dream 增加**运行时开关（默认关闭）**与**可设置模型**，固化主路径从
+> dsh-routines routine 改为**进程内执行器**（`ctx.agents` one-shot 会话），新增插件级默认模型
+> 包 `@dsh-yzj/model-yzj`（`ctx.yzjModels`）并接入 robot-yzj 模型解析链。见 §7.1 与决策表 D12-D15。
 >
 > 参考输入：
 > - **dream-vault 导出包**（用户提供，`dream-vault-<uuid>.zip`）：sections / entities /
@@ -178,19 +182,41 @@ interface YzjMemoryService {
 - **vault 根不存在**：首次调用自动初始化（建目录 + 空 sections.yaml + 空
   log.md）；只读方法在缺目录时返回空视图而非抛错。
 
-## 7. 定时任务对接（本期交付物之一）
+## 7. 定时任务对接（v0.2 起：主路径为进程内 dream，routine 为备选）
 
-dream 是 dsh-routines 的一个 routine（固化判断需要 LLM，正合「每次到点起独立
-one-shot 会话、完整会话日志=审计」的 routines 哲学）：
+### 7.1 dream 开关、模型与调度（v0.2）
 
-- 交付 `docs/spec/memory-dream-routine.yaml` 模板 + prompt 模板（固化规则 §3 写进
-  prompt，工具只做机械应用）；
-- routine 以 `profile: headless` 运行 → **headless profile 必须挂 memory-yzj 行**
-  （与 ops/web 分开，见 §9 部署）；
-- digest（固化摘要）经既有 chatnode 链路推群（routines-delivery.md §3.1），例：
-  `[dream] user 记忆固化：提升 2 · 丢弃 1 · 更新 1 段`；
-- 观察写入源标注 `source: routine:<routineId>`，dream 可按源配权（例行产出的
-  信号默认不直接提升）。
+- **开关默认关闭**：`<vaultRoot>/dream.json`（运行时状态文件，面板可翻，热生效）：
+  `{ enabled: false, provider?, model?, dailyAt?, lastRunDay?, lastNote? }`。
+  - `enabled=false` 时：`memory_dream_apply` 工具与执行器一律拒绝（**跨进程共享同一文件**，
+    headless routine 路径同样被拦）；`memory_observe/read/search/dream_load` 不受影响
+    （观察与读取是组件的本体，固化才是被开关的对象）。
+  - 路由成对约束：provider/model 同设同清；`dailyAt` 严格 `HH:mm` 校验，非法值静默丢弃。
+- **进程内执行器**（主路径）：`dreamRun(trigger)` 经 `ctx.get('agents')` 创建 one-shot
+  会话（`dream-<ts>-<rand>`，cwd=vaultRoot，完整会话日志=审计不变），推入 canonical
+  dream prompt（`src/dream.ts` 的 `DREAM_PROMPT`），`whenIdle()` 收敛（10 分钟预算），
+  从 `core.lastDreamReport('user')` 取固化报告写回 `lastNote`。in-flight 互斥。
+- **模型链**：dream.json 显式路由 > `ctx.yzjModels`（插件默认）> harness 默认（省略
+  agentOptions，agent-loop 路由生效）。dsh-routines 的 routine **没有 per-routine 模型
+  字段**（实读确认），这是主路径切换的动因。
+- **每日定时**：`enabled + dailyAt` 时进程内每分钟 tick，`shouldFireDaily`（纯函数：
+  过点 + 当日未跑）为真即先盖 `lastRunDay` 戳再跑（重启安全，不双发）。web profile
+  常驻即调度存在；不依赖 ops daemon（对比：dsh-routines 调度器进 web profile 会因
+  jobs 控制器缺失崩进程，见 routines-delivery §5.1）。
+- **触发面**：面板「立即固化」（RPC `dream-run`，trigger=panel）；每日 tick
+  （trigger=schedule）；后续可加 robot 命令（如群内 `!dream`）。
+- **备选路径**：`memory-dream-routine.yaml`（dsh-routines）仍可用——固化判断在独立
+  headless 会话、digest 可经 chatnode 推群；其模型 = 该 profile 的默认路由（不可按
+  dream 配置），且需 headless profile 挂 memory-yzj 行。
+
+### 7.2 插件级默认模型：`@dsh-yzj/model-yzj`（v0.2）
+
+- `ctx.yzjModels`：`get() / setDefault(provider, model) / clear() / catalog()`（catalog
+  经可选 `llm` 服务，活跃路由优先，与 robot 设置选择器同策略）；存
+  `$DSH_HOME/yzj-model.json`（明文，手改热生效）。
+- **消费方**：robot-yzj 模型解析链尾部（会话覆盖 > 机器人配置 > 通道 default >
+  **插件默认** > harness 默认——router `fallbackRoute` 每次建会话现查）；memory dream
+  执行器的兜底。后续新组件（如群组例行任务）一律接此默认。
 
 ## 8. 群组记忆扩展缝（后续，本期不实现）
 
@@ -228,6 +254,10 @@ one-shot 会话、完整会话日志=审计」的 routines 哲学）：
 | D9 | scope 校验 | Config `allowScopes` 白名单（默认 `['user']`） | 防 agent 串写群组仓；群组能力解锁=扩白名单 + robot wiring，不改代码 |
 | D10 | 被否决：README.md 生成式合成注入 | 改为注入时现算 | 生成物会陈旧；sections 是唯一事实源 |
 | D11 | 被否决：storage-domain 承载 | 文件目录承载 | 跨进程（web/ops/headless）共享最简；storage-domain 单位与 profile 进程生命周期耦合更深，且失去「人类直接编辑目录」的便 利 |
+| D12 | dream 开关 | `<vaultRoot>/dream.json` 运行时文件，**默认 enabled=false**，面板可翻热生效 | 用户要求不默认开启；cordis config 是静态的（改需重启），开关属运行时状态；跨进程共享同一文件 = headless routine 路径同样被拦 |
+| D13 | dream 执行 | 进程内执行器（ctx.agents one-shot 会话）为主，dsh-routines routine 降为备选 | 实读确认 dsh-routines 无 per-routine 模型字段——routine 路径模型不可控；进程内会话同样有完整会话日志（审计不降级），且模型链/开关/每日定时全部可配 |
+| D14 | dream/robot 模型链 | dream.json 显式路由 > 插件默认（ctx.yzjModels）> harness 默认；robot 链尾部同接插件默认 | 用户拍板「插件范围内的默认模型把已有地方搞过来」；一次设置全插件生效，局部显式配置仍可覆盖 |
+| D15 | 插件默认模型归属 | 新包 `@dsh-yzj/model-yzj`（`~/.dsh/yzj-model.json`） | memory 与 robot 互不依赖，共享默认必须有独立底层包；明文 JSON 手改热生效，与 vault 同哲学 |
 
 ## 11. 验收口径
 

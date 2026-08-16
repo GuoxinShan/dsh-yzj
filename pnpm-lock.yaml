@@ -50,6 +50,9 @@ importers:
       '@dsh-yzj/memory-yzj':
         specifier: link:../memory-yzj
         version: link:../memory-yzj
+      '@dsh-yzj/model-yzj':
+        specifier: link:../model-yzj
+        version: link:../model-yzj
       '@dsh-yzj/robot-yzj':
         specifier: link:../robot-yzj
         version: link:../robot-yzj
@@ -65,12 +68,36 @@ importers:
       '@deepseek-ai/cordis':
         specifier: link:../../../deepseek-harness/vendor/cordis
         version: link:../../../deepseek-harness/vendor/cordis
+      '@deepseek-ai/dsh-agent':
+        specifier: link:../../../deepseek-harness/packages/core/agent
+        version: link:../../../deepseek-harness/packages/core/agent
       '@deepseek-ai/dsh-home-paths':
         specifier: link:../../../deepseek-harness/packages/util/home-paths
         version: link:../../../deepseek-harness/packages/util/home-paths
+      '@deepseek-ai/dsh-llm':
+        specifier: link:../../../deepseek-harness/packages/llm/llm
+        version: link:../../../deepseek-harness/packages/llm/llm
+      '@deepseek-ai/dsh-session':
+        specifier: link:../../../deepseek-harness/packages/core/session
+        version: link:../../../deepseek-harness/packages/core/session
       '@deepseek-ai/dsh-tools':
         specifier: link:../../../deepseek-harness/packages/core/tools
         version: link:../../../deepseek-harness/packages/core/tools
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../deepseek-harness/vendor/schemastery
+        version: link:../../../deepseek-harness/vendor/schemastery
+
+  packages/model-yzj:
+    dependencies:
+      '@deepseek-ai/cordis':
+        specifier: link:../../../deepseek-harness/vendor/cordis
+        version: link:../../../deepseek-harness/vendor/cordis
+      '@deepseek-ai/dsh-home-paths':
+        specifier: link:../../../deepseek-harness/packages/util/home-paths
+        version: link:../../../deepseek-harness/packages/util/home-paths
+      '@deepseek-ai/dsh-llm':
+        specifier: link:../../../deepseek-harness/packages/llm/llm
+        version: link:../../../deepseek-harness/packages/llm/llm
       '@deepseek-ai/schemastery':
         specifier: link:../../../deepseek-harness/vendor/schemastery
         version: link:../../../deepseek-harness/vendor/schemastery

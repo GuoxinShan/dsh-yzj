@@ -696,7 +696,7 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
       case 'dream-state': {
         const memory = ctx.get('yzjMemory')
         if (memory === undefined) return internalError('dream-state: yzjMemory 服务不可用（memory-yzj 未挂载）')
-        return { ok: true, value: { state: memory.dreamState() } }
+        return { ok: true, value: { state: memory.dreamSettings() } }
       }
       case 'dream-set': {
         const memory = ctx.get('yzjMemory')
@@ -708,7 +708,7 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
           return typeof value === 'string' ? value : undefined
         }
         try {
-          const state = memory.setDreamState({
+          const state = memory.setDreamSettings({
             ...(record.enabled === undefined ? {} : { enabled: record.enabled === true }),
             ...(str('provider') === undefined ? {} : { provider: str('provider') }),
             ...(str('model') === undefined ? {} : { model: str('model') }),

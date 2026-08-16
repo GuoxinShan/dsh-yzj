@@ -12,8 +12,8 @@ docs/
     todo-design.md                     待办功能设计（v1.2，tag 理念 + §11.2 决策表）
     robot-channel-plan.md              机器人通道调研与双向打通方案（v0.1 调研稿）
     routines-delivery.md               定时任务引擎选型（dsh-routines 参考调研）+ yzj chatnode 投递契约
-    memory-vault-design.md             记忆库组件设计（v0.1：vault 模型 + dream 固化 + 定时对接 + 群组留缝）
-    memory-dream-routine.yaml          可部署的 dream 固化 routine 模板（dsh-routines schema）
+    memory-vault-design.md             记忆库组件设计（v0.2：vault 模型 + dream 开关/进程内固化/模型链 + 插件默认模型 + 群组留缝）
+    memory-dream-routine.yaml          dream 固化 routine 模板（dsh-routines，备选路径）
   migration/                          ← 架构演进方案
     todo-backend-migration.md          待办 demo 后端 → 原生后端（四层架构 + §3 实测格式事实）
   status/                             ← 实现与设计的对照与验收证据

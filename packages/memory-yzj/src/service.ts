@@ -134,7 +134,13 @@ const TRUNCATION_NOTE = '（已达注入上限，完整内容用 memory_read 查
  * (small bounded files; sync access is atomic within one process).
  */
 export class MemoryCore {
+  /** Last dream report per scope (executor result surface). */
+  private readonly lastReports = new Map<string, DreamReport>()
+
   constructor(private readonly config: MemoryCoreConfig) {}
+
+  /** Absolute vault root (dream state file + executor session cwd). */
+  get root(): string { return this.config.vaultRoot }
 
   /** Validate and resolve one scope to its vault; ensures the skeleton. */
   vault(scope: string): MemoryVault {
@@ -242,6 +248,11 @@ export class MemoryCore {
     return this.vault(scope).logTail(maxChars)
   }
 
+  /** The most recent dream report of one scope, when any apply happened. */
+  lastDreamReport(scope: string): DreamReport | undefined {
+    return this.lastReports.get(scope)
+  }
+
   /**
    * Apply one dream's decision list item by item. Every item is validated
    * against the current files; a stale rev (file changed since load) or a
@@ -268,7 +279,9 @@ export class MemoryCore {
     }
     vault.appendLog(lines.join('\n'))
     vault.rebuildIndex()
-    return { scope, logId, results, counts }
+    const report: DreamReport = { scope, logId, results, counts }
+    this.lastReports.set(scope, report)
+    return report
   }
 
   /**

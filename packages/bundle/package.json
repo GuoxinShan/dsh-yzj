@@ -30,6 +30,7 @@
   "dependencies": {
     "@dsh-yzj/bridge": "link:../bridge",
     "@dsh-yzj/memory-yzj": "link:../memory-yzj",
+    "@dsh-yzj/model-yzj": "link:../model-yzj",
     "@dsh-yzj/robot-yzj": "link:../robot-yzj",
     "@dsh-yzj/tool-yzj": "link:../tool-yzj",
     "@dsh-yzj/ui-yzj": "link:../ui-yzj"

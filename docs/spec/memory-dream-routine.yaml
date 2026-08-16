@@ -1,11 +1,17 @@
-# dsh-routines routine 模板：记忆固化（dream）
+# dsh-routines routine 模板：记忆固化（dream）——【备选路径】
+#
+# v0.2 起主路径是进程内 dream（面板开关 + 每日定时 + 可配模型，见
+# docs/spec/memory-vault-design.md §7.1）：web profile 挂 memory-yzj 后在
+# 「记忆」tab 开启 dream 即可，无需本文件。
+#
+# 本模板适用于想要「固化跑在独立 headless 会话 + digest 经 chatnode 推群」的场合。
+# 注意：本路径的模型 = headless profile 的默认路由（dsh-routines 无 per-routine
+# 模型字段，实读确认），不跟随 dream.json 的模型设置；dream.json 的 enabled=false
+# 开关对本路径同样生效（跨进程共享同一文件）。
 #
 # 用法：复制到 $DSH_HOME/routines/（或 routine 全局目录），按需改 name/schedule。
-# 前置条件（见 docs/spec/memory-vault-design.md §7/§9）：
-#   1. headless profile 的 cordis.patch.yml 挂了 memory-yzj 行（routine 子进程
-#      里才有 memory_* 工具）；
-#   2. 想让固化摘要推群：deliver 保留 chatnode（ops daemon + 桥链路，
-#      routines-delivery.md §3.1/§6）。
+# 前置条件：headless profile 的 cordis.patch.yml 挂了 memory-yzj 行（routine 子进程
+# 里才有 memory_* 工具）；固化摘要推群需 ops daemon + 桥链路（routines-delivery.md）。
 name: memory-dream
 schedule: "@daily"
 timezone: Asia/Shanghai

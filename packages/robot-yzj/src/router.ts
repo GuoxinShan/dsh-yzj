@@ -66,6 +66,12 @@ export interface RobotRouterOptions {
   readonly allowFrom: AllowFromResolver
   /** Provider/model override for created agent sessions; absent = harness default. */
   readonly agentOptions?: { provider?: string; model?: string }
+  /**
+   * Lowest-priority route lookup consulted only when neither the
+   * per-conversation override nor {@link agentOptions} carries a route —
+   * the plugin-wide default model (`ctx.yzjModels`); absent = harness default.
+   */
+  readonly fallbackRoute?: () => { provider?: string; model?: string } | undefined
   /** Per-conversation override lookup (wins over agentOptions); absent = none. */
   readonly resolveOverride?: OverrideResolver
   /** Shared confirmation broker for gated writes (suggestion cards). */
@@ -214,6 +220,7 @@ export class RobotRouter {
   private readonly sender: RouterSendFace
   private readonly allowFrom: AllowFromResolver
   private readonly agentOptions: { provider?: string; model?: string } | undefined
+  private readonly fallbackRoute: (() => { provider?: string; model?: string } | undefined) | undefined
   private readonly resolveOverride: OverrideResolver | undefined
   private readonly confirm: ConfirmBroker | undefined
   private readonly push: PushHub | undefined
@@ -251,6 +258,7 @@ export class RobotRouter {
     this.sender = options.sender
     this.allowFrom = options.allowFrom
     this.agentOptions = options.agentOptions
+    this.fallbackRoute = options.fallbackRoute
     this.resolveOverride = options.resolveOverride
     this.confirm = options.confirm
     this.push = options.push
@@ -729,10 +737,15 @@ export class RobotRouter {
   private async ensureAgent(sessionId: SessionId, conversationKey: string): Promise<Agent | undefined> {
     const existing = this.agents.get(sessionId)
     if (existing !== undefined) return existing
-    // Resolution order: per-conversation override > channel defaults > harness
-    // default (omit the fields entirely so the agent-loop route applies).
+    // Resolution order: per-conversation override > channel defaults >
+    // plugin-wide default (fallbackRoute) > harness default (omit the
+    // fields entirely so the agent-loop route applies).
     const override = this.resolveOverride?.(conversationKey)
-    const merged = { ...(this.agentOptions ?? {}), ...(override ?? {}) }
+    const merged = {
+      ...(this.fallbackRoute?.() ?? {}),
+      ...(this.agentOptions ?? {}),
+      ...(override ?? {}),
+    }
     const hasRoute = merged.provider !== undefined && merged.provider !== ''
       || merged.model !== undefined && merged.model !== ''
     const agentOptions = hasRoute ? merged : undefined

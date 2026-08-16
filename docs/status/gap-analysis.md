@@ -423,3 +423,13 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 - **RPC +3**：`memory-scope`（readScope）、`memory-log`（服务新增 `dreamLogTail`，4000 字符行边界截断）、`memory-observe`；`/yzj` 共 41 端点。
 - **工具卡**：`memory_*` 五工具进 cards.tsx（observe 确认/scope 计数/search 命中/dream 报告四种形态）。
 - **验收**：memory-pane 8 客户端测试（含不可用态、重复 note、失败 note、空日志提示）+ rpc 端点契约测试（`ctx.provide` 挂 fake 服务：scope 投影/log 截断/observe 直写参数、未挂载 fail-closed）+ memory-yzj logTail 行边界测试；`pnpm test` 全仓 237 绿。浏览器走查（六 tab 布局、展开交互、composer）待 web profile 重启后进行。
+
+### 21.2 dream 开关 + 进程内执行器 + 插件默认模型（2026-08-16 v0.2，设计 §7.1/§7.2 随提交）
+
+用户要求：dream 不应默认开启 + 模型可设置，并建议插件级默认模型统一机器人/dream 等处的模型配置。
+
+- **开关默认关**：`<vaultRoot>/dream.json`（enabled/provider/model/dailyAt/lastRunDay/lastNote），面板热生效；`enabled=false` 拦 `memory_dream_apply` 工具与执行器（跨进程共享文件，routine 备选路径同拦）；observe/read/search/dream_load 不受影响。命名 `DreamSettings`（避免与 service.ts 的 dream 快照 `DreamState` 撞名）。
+- **主路径改为进程内执行器**：`dreamRun` 经 `ctx.get('agents')` 创建 one-shot 会话（cwd=vaultRoot、canonical `DREAM_PROMPT`、`whenIdle()` 10 分钟预算、`core.lastDreamReport` 回收报告、in-flight 互斥）；每日 `dailyAt` tick（`shouldFireDaily` 纯函数 + `lastRunDay` 戳防重启双发）。动因：实读 dsh-routines 源码确认 routine **无 per-routine 模型字段**——旧路径模型不可控；`memory-dream-routine.yaml` 降为备选（模板头注明差异）。
+- **新包 `@dsh-yzj/model-yzj`**（`ctx.yzjModels`，`~/.dsh/yzj-model.json`，get/setDefault/clear/catalog）；robot-yzj 解析链尾部接 `fallbackRoute`（会话覆盖 > 机器人配置 > 通道默认 > 插件默认 > harness 默认，建会话现查热生效）；dream 模型链 = dream.json > 插件默认 > harness 默认。
+- **RPC +7**：`dream-state/dream-set/dream-run` + `model-default(-set/-clear)/model-catalog`；`/yzj` 共 49 端点。记忆 tab dream 区：开关、每日时间、dream 模型选择器、插件默认模型选择器（清空=跟随 harness 默认）、立即固化、上次结果。
+- **验收**：model-yzj 4 测试（round-trip/畸形容错/半空拒绝/catalog 透传）；dream 5 测试（默认关/局部更新归一化/每日触发边界）；memory-pane +4（开关默认关+run 禁用、开关提交、run-now 报告、picker 提交/清除）；rpc dream/model 端点契约；全仓 `pnpm test` 251 绿。真实环境验收（开关热生效、dreamRun 全链路、robot 兜底路由）待 web profile 重启后进行。

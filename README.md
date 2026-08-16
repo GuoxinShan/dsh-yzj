@@ -12,8 +12,9 @@
 | [`packages/tool-yzj`](packages/tool-yzj/README.md) | `@dsh-yzj/tool-yzj`（注册到 `ctx.tools`） | 45 个模型面工具：doc（16）/ sheet（10）/ calendar（7）/ contact（3）/ im（3）/ file（2）/ **todo（4）**；每个工具输出有界 digest，并把裁剪后的结构化载荷经 `output.presentationMeta` 投影给 UI；todo 核心同时以 `ctx.yzjTodo` 服务暴露给浏览器面 |
 | [`packages/ui-yzj`](packages/ui-yzj/README.md) | `@dsh-yzj/ui-yzj`（`dsh.client` 双面包） | node half：`/yzj` Connection RPC 通道（36 端点，含面板直写 im-send/file-upload/file-data 与 robot-share-write）；browser half：`tool.call.toolview` keyed 富卡片 + 悬浮球入口 + 工作台 overlay 面板（五 tab + 真 IM composer） |
 | [`packages/robot-yzj`](packages/robot-yzj/README.md) | `@dsh-yzj/robot-yzj` → `ctx.yzjRobot` | 机器人双向通道（R2.6 host 面，设计见 [docs/spec/robot-channel-plan.md](docs/spec/robot-channel-plan.md)）：实测协议 WS 入站（心跳/退避重连/msgId 去重）+ sendMsgUrl 出站（引用卡/分片/限流）；每 (机器人,用户) DM 一条持久 DSH session，ack-then-push 回推；bang 命令 `!help/!status/!mute/!unmute/!restart`；群聊锚定 + 事件驱动推送 + 记忆注入 + intro 轮；allowFrom 默认仅 CLI 登录用户；**DSH→机器人双向控制**：`robot_status`（通道/cwd/会话表面）/`robot_notify`（主动通知）/`robot_continue`（续接机器人会话）/`robot_fork`（把机器人会话 fork 成操作者侧会话）/`robot_share_write`、`robot_share_list`（群共享工作区；per-thread 私有 cwd + 群共享区三层模型，见 [spec §8.4](docs/spec/robot-channel-plan.md)） |
-| [`packages/memory-yzj`](packages/memory-yzj/README.md) | `@dsh-yzj/memory-yzj` → `ctx.yzjMemory` | 记忆库组件（设计见 [docs/spec/memory-vault-design.md](docs/spec/memory-vault-design.md)）：明文 Markdown vault（sections/entities/observations + log/index，默认 `$DSH_HOME/yzj-memory`，按 `user`/`group:<id>` scope 分仓）；5 个 `memory_*` 工具（observe/read/search/dream_load/dream_apply）；`systemPrompt.context` 有界注入（每 scope `inject_char_cap`，默认 6000）；dream 固化以 dsh-routines routine 运行（模板 [docs/spec/memory-dream-routine.yaml](docs/spec/memory-dream-routine.yaml)），rev 乐观锁保护人工编辑；群组记忆零迁移留缝 |
-| [`packages/bundle`](packages/bundle/README.md) | `@dsh-yzj/bundle` | 可安装的 profile patch 层（`cordis.patch.yml`），挂载上面五行 |
+| [`packages/memory-yzj`](packages/memory-yzj/README.md) | `@dsh-yzj/memory-yzj` → `ctx.yzjMemory` | 记忆库组件（设计见 [docs/spec/memory-vault-design.md](docs/spec/memory-vault-design.md)）：明文 Markdown vault（sections/entities/observations + log/index，默认 `$DSH_HOME/yzj-memory`，按 `user`/`group:<id>` scope 分仓）；5 个 `memory_*` 工具（observe/read/search/dream_load/dream_apply）；`systemPrompt.context` 有界注入（每 scope `inject_char_cap`，默认 6000）；**dream 固化默认关闭**——`dream.json` 运行时开关（面板可翻）+ 每日 `dailyAt` 进程内定时 + 「立即固化」，模型链＝dream 配置 > 插件默认 > harness 默认，rev 乐观锁保护人工编辑；`group:<id>` scope 留缝群组记忆 |
+| [`packages/model-yzj`](packages/model-yzj/README.md) | `@dsh-yzj/model-yzj` → `ctx.yzjModels` | 插件级默认模型（`~/.dsh/yzj-model.json`，明文热生效）：robot 模型解析链尾部（会话覆盖 > 机器人配置 > 通道默认 > **插件默认** > harness 默认）与 dream 执行器共用；`catalog()` 提供活跃路由的 provider/model 目录（面板选择器数据源） |
+| [`packages/bundle`](packages/bundle/README.md) | `@dsh-yzj/bundle` | 可安装的 profile patch 层（`cordis.patch.yml`），挂载上面六行 |
 
 ## 安装
 
@@ -38,7 +39,7 @@ dsh plugin --profile web add <npm 包名或路径>
 - **im**：发消息（text/file/richText、@、回复、多图）、聊天记录、最近会话
 - **file**：上传（≤30MB、最多 5 并发）、下载（自动重命名 / 覆盖）
 - **todo**：语义化待办工具族（demo 阶段以多维表格「待办任务库」承载，首用自动开通）——`yzj_todo_list/create/update/complete`；稳定 ID 幂等、host 强制状态机、追加式推进日志；**核心理念 tag 自由聚合**（tag 可以是项目/群组/主题）；**团队协作**：面板任务库切换器一键切换个人/团队库或按需在企业知识库开通（权限标注），agent 写入跟随当前激活库，浏览器持久化选择；后端迁移架构见 `docs/migration/todo-backend-migration.md`
-- **memory**：明文 Markdown 记忆库（`@dsh-yzj/memory-yzj`，设计见 `docs/spec/memory-vault-design.md`）——`memory_observe/read/search/dream_load/dream_apply` 五工具 + `systemPrompt.context` 有界注入；面板**记忆 tab**（sections/entities 展开、观察草稿区、注入统计、dream 固化日志、面板直写「记一条」）；固化走 dsh-routines routine（模板 `docs/spec/memory-dream-routine.yaml`），rev 乐观锁保护人工编辑；`group:<id>` scope 留缝群组记忆
+- **memory**：明文 Markdown 记忆库（`@dsh-yzj/memory-yzj`，设计见 `docs/spec/memory-vault-design.md`）——`memory_observe/read/search/dream_load/dream_apply` 五工具 + `systemPrompt.context` 有界注入；面板**记忆 tab**（sections/entities 展开、观察草稿区、注入统计、dream 固化日志、面板直写「记一条」、**dream 开关/每日时间/模型选择/立即固化、插件默认模型设置**）；dream 固化**默认关闭**（`dream.json` 运行时开关），开启后每日定时或手动触发，模型链＝dream 配置 > 插件默认（`@dsh-yzj/model-yzj`，robot 通道同用）> harness 默认；rev 乐观锁保护人工编辑；`group:<id>` scope 留缝群组记忆；dsh-routines routine 为备选路径（模板 `docs/spec/memory-dream-routine.yaml`）
 
 ### 确认流（确认卡）
 
