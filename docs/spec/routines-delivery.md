@@ -154,7 +154,14 @@ web profile (web-app + robot-yzj 机器人模式)
   默认扫描）；run 记录落在 `<routine.cwd>/.dsh/routines/runs/`。
 - **dsh-run.mjs**（`C:/Users/rocks/.dsh/`）：`realSpawn` 对 `.mjs` 用 node 直启，
   包装内再 `node --import tsx/esm apps/cli/src/bin.ts <args>`，cwd 固定 harness。
-- 启动：`node --import tsx/esm apps/cli/src/bin.ts ops`（cwd=harness）；
+- 启动：**统一入口 `C:/Users/rocks/.dsh/start-prod.cmd`**（先幂等拉起 ops daemon，
+  再前台起 web GUI）——两个进程一个入口。ops 单独保活：登录自启
+  `%APPDATA%\...\Startup\dsh-ops-daemon.cmd`（幂等：命令行含 `--profile ops`
+  的 node 进程已存在则跳过）；宿主重启后未重新登录时跑一次
+  `start-prod.cmd` 或 `ops-daemon.cmd` 即恢复。**为什么 ops 不能和 GUI 同进程**：
+  web profile 禁用 jobs 控制器（`tool-jobs` 随模型面控件移除），调度器 tick 的
+  `ctx.jobs.start` 抛 "background jobs unavailable" 且未捕获 → 整个 web 进程
+  退出（§5.1 第 1 条实测），故调度器必须 base-only 独立进程。
   调度器 tick 每 15s；run 子进程用 routine 的 `profile:`（默认 headless）。
 - 端到端验证依赖 web profile 重启（web patch 生效才有桥路由）；重启后
   ops 下一次 tick 即完成 ops→桥→群全链路。
