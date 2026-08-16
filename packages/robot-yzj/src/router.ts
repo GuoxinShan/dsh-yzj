@@ -12,12 +12,15 @@
 
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import { foldScheduleEvents } from '@deepseek-ai/dsh-schedule'
-import type { Agent, AgentHandle, CreateAgentOptions, ResumeAgentOptions } from '@deepseek-ai/dsh-agent'
+import { foldScheduleEvents, registerScheduleTools } from '@deepseek-ai/dsh-schedule'
+import { ScheduleRuntime } from '@deepseek-ai/dsh-schedule/src/runtime.ts'
+import type { Context } from '@deepseek-ai/cordis'
+import type { Agent, AgentHandle, AgentSetup, CreateAgentOptions, ResumeAgentOptions } from '@deepseek-ai/dsh-agent'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { InboundDedupe, parseReplyMeta, type RobotInboundMessage } from './protocol.ts'
 import type { RobotCardOptions, RobotSendOptions, RobotSendResult } from './outbound.ts'
 import { dmKey, groupKey } from './overrides.ts'
+import { recentKey, surfaceKey, type SurfaceState, type SurfaceStoreFace } from './surface.ts'
 import type { ConfirmBroker } from './confirm.ts'
 import type { PushHub } from './push.ts'
 
@@ -70,6 +73,14 @@ export interface RobotRouterOptions {
   readonly push?: PushHub
   /** Per-conversation memory; absent = memory verbs are inert. */
   readonly memory?: RouterMemoryFace
+  /** Host root context owning schedule tool registration (rootCtx param). */
+  readonly rootCtx?: Context
+  /** Zero-based channel index; scopes persisted surface keys. */
+  readonly channelIndex?: number
+  /** Working directory for created sessions; defaults to the host process cwd. */
+  readonly cwd?: string
+  /** Durable surface store; absent = surface memory is ephemeral. */
+  readonly surface?: SurfaceStoreFace
   readonly ackText?: string
   readonly denyText?: string
   readonly logger?: RouterLogger
@@ -123,9 +134,9 @@ export function parseMemoryCommand(content: string): MemoryCommand | undefined {
 /** The intro prompt for a group's first conversation (S7/C14). */
 function introPrompt(): string {
   return [
-    '（系统引导：请按以下步骤回复群友，中文、简洁）',
+    '（系统引导：请按以下步骤回复群友，中文、简洁。除第一步读取群消息外，禁止调用任何工具——自我介绍直接以文本输出，不要用 yzj_im_message_send 发消息）',
     '1. 先用 yzj_im_message_list 读取本群最近的聊天记录（groupId 用当前群的）；',
-    '2. 用两三句话自我介绍：你是接入 DeepSeek Harness 的机器人助手，可以操作云之家（文档/日程/待办/消息/多维表格）并调度 DSH 的全部能力；',
+    '2. 直接输出一段两三句话的自我介绍：你是接入 DeepSeek Harness 的机器人助手，可以操作云之家（文档/日程/待办/消息/多维表格）并调度 DSH 的全部能力；',
     '3. 根据群内近况提出 2~3 个你现在就能帮忙的具体任务；',
     '4. 最后提醒：发 !help 可看命令列表。',
   ].join('\n')
@@ -134,6 +145,26 @@ function introPrompt(): string {
 function slug(value: string): string {
   const cleaned = value.replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '')
   return cleaned === '' ? 'x' : cleaned.slice(0, 40)
+}
+
+/** @see slug — public so the service can derive fork session ids. */
+export function slugId(value: string): string {
+  return slug(value)
+}
+
+/**
+ * The balanced completed-turn prefix of a session log: every event up to and
+ * including the last `turn/end`. The in-flight turn is excluded; before any
+ * completed turn the result is empty. Because live sequence numbers equal
+ * array indexes, the result is a valid fork `seed` beginning at sequence zero
+ * (same boundary the harness fork subagent uses).
+ * @param events - the source session's full event log.
+ * @returns the seed events, contiguous from seq 0; empty when no turn has completed.
+ */
+export function completedTurnPrefix(events: readonly SessionEvent[]): SessionEvent[] {
+  const lastEnd = events.findLast(event => event.type === 'turn/end')
+  if (lastEnd === undefined) return []
+  return events.slice(0, lastEnd.seq + 1)
 }
 
 /** DM conversation key of one message (override/memory-table form). */
@@ -155,6 +186,10 @@ export class RobotRouter {
   private readonly confirm: ConfirmBroker | undefined
   private readonly push: PushHub | undefined
   private readonly memory: RouterMemoryFace | undefined
+  private readonly rootCtx: Context | undefined
+  private readonly surface: SurfaceStoreFace | undefined
+  private readonly channelIndex: number
+  private readonly cwd: string
   private readonly ackText: string
   private readonly denyText: string
   private readonly logger: RouterLogger | undefined
@@ -168,10 +203,16 @@ export class RobotRouter {
   private readonly inboundAnchor = new Map<string, SessionId>()
   /** Session id → muted flag. */
   private readonly muted = new Set<string>()
-  /** (robotId, groupId) pairs that already had their intro turn (S7). */
-  private readonly introduced = new Set<string>()
+  /** Agent ids that already carry the schedule-tool registration. */
+  private readonly scheduledAgents = new Set<string>()
   /** AllowFrom cache once resolved. */
   private allowFromCache: readonly string[] | undefined
+  /** groupId → last seen surface identity (in-memory mirror of the store). */
+  private readonly surfaces = new Map<string, SurfaceState>()
+  /** Recency order of seen groupIds (most recent last). */
+  private readonly recentGroups: string[] = []
+  /** groupId → last anchored session id (synthetic continuation target). */
+  private readonly lastSession = new Map<string, SessionId>()
 
   constructor(options: RobotRouterOptions) {
     this.agents = options.agents
@@ -182,6 +223,10 @@ export class RobotRouter {
     this.confirm = options.confirm
     this.push = options.push
     this.memory = options.memory
+    this.rootCtx = options.rootCtx
+    this.surface = options.surface
+    this.channelIndex = options.channelIndex ?? 0
+    this.cwd = options.cwd ?? process.cwd()
     this.ackText = options.ackText ?? DEFAULT_ACK_TEXT
     this.denyText = options.denyText ?? DEFAULT_DENY_TEXT
     this.logger = options.logger
@@ -200,7 +245,6 @@ export class RobotRouter {
     this.outboundAnchor.clear()
     this.inboundAnchor.clear()
     this.muted.clear()
-    this.introduced.clear()
   }
 
   /** Forget one session's live state (mute, anchors, push registration). */
@@ -232,6 +276,15 @@ export class RobotRouter {
    */
   private resolveSession(message: RobotInboundMessage): SessionId {
     if (isDirectSurface(message)) return dmSessionId(message.robotId, message.operatorOpenid)
+    // A synthetic DSH-side turn continues the last conversation anchored on
+    // this surface instead of anchoring a fresh thread at a fake msgId. The
+    // in-memory map is hydrated lazily from the durable surface record, so
+    // continuation survives host restarts.
+    if (message.synthetic === true) {
+      const last = this.lastSession.get(message.groupId)
+        ?? this.surface?.get(surfaceKey(this.channelIndex, message.groupId))?.lastSessionId
+      if (last !== undefined) return SessionId(last)
+    }
     const reply = parseReplyMeta(message.msgParam).reply
     if (reply !== undefined) {
       const anchored = this.outboundAnchor.get(reply.replyMsgId)
@@ -249,15 +302,24 @@ export class RobotRouter {
   /** Entry point for one classified inbound message. */
   async handle(message: RobotInboundMessage): Promise<void> {
     if (!this.dedupe.markSeen(message.msgId)) return
+    this.noteSurface(message)
     const group = !isDirectSurface(message)
-    const replyAnchor: RobotSendOptions = {
-      replyMsgId: message.msgId,
-      replySummary: message.content.slice(0, 60),
-      replyPersonName: message.operatorName,
-      // Group surfaces highlight only the asker; DMs need no targeting.
-      ...(group ? { notifyOpenIds: [message.operatorOpenid] } : {}),
-    }
-    const command = STANDALONE_COMMAND.exec(message.content.trim())
+    // A synthetic DSH-side turn references a msgId the server never saw, so
+    // outbound messages must not carry a reply anchor (the server could not
+    // resolve it); the asker notification still applies on group surfaces.
+    const replyAnchor: RobotSendOptions = message.synthetic === true
+      ? { ...(group ? { notifyOpenIds: [message.operatorOpenid] } : {}) }
+      : {
+          replyMsgId: message.msgId,
+          replySummary: message.content.slice(0, 60),
+          replyPersonName: message.operatorName,
+          // Group surfaces highlight only the asker; DMs need no targeting.
+          ...(group ? { notifyOpenIds: [message.operatorOpenid] } : {}),
+        }
+    // Group surfaces deliver only @-addressed messages; strip the mention
+    // prefix before matching bang commands (确认 N handles its own prefix).
+    const stripped = message.content.replace(/^\s*@[^\s@]+\s*/, '')
+    const command = STANDALONE_COMMAND.exec(stripped)
     const commandName = command?.[1] as RobotCommand | undefined
     if (commandName !== undefined && COMMAND_NAMES.includes(commandName)) {
       await this.runCommand(commandName, message, replyAnchor)
@@ -271,6 +333,7 @@ export class RobotRouter {
     // anything else — no ack, no turn.
     if (this.confirm !== undefined && this.confirm.checkReply(message)) return
     const sessionId = this.resolveSession(message)
+    this.noteSession(message, sessionId)
     if (this.muted.has(sessionId)) return
     const conversationKey = group ? groupKey(message.groupId) : dmKeyOf(message)
     // Memory verbs (S4) manage the conversation's long-lived instructions
@@ -298,6 +361,9 @@ export class RobotRouter {
         summary: message.content.slice(0, 60),
         personName: message.operatorName,
       },
+      // Synthetic turns reference a msgId the server never saw: pushes must
+      // not anchor replies to it.
+      ...(message.synthetic === true ? { noReplyAnchor: true } : {}),
     })
     // The ack is a robot message in the chain — anchor it so replies to the
     // ack (not just to the final answer) continue this session. The task
@@ -311,14 +377,206 @@ export class RobotRouter {
       this.outboundAnchor.set(ackResult.msgId, sessionId)
       this.trimAnchor(this.outboundAnchor)
     }
-    // The first conversation in a group starts with a self-introduction turn
-    // (S7/C14) instead of the raw message; the PushHub delivers its answer.
+    // The first conversation in a group prepends a self-introduction turn
+    // (S7/C14) ahead of the user's message — the intro runs as its own turn,
+    // never replacing the user's request. The introduced flag persists in
+    // the memory domain under a side key (never injected: only the
+    // conversation key's lines reach the model), so restarts do not re-run.
     let turnText = message.content
-    if (group && !this.introduced.has(`${message.robotId}:${message.groupId}`)) {
-      this.introduced.add(`${message.robotId}:${message.groupId}`)
-      turnText = introPrompt()
+    const introKey = `intro:${message.robotId}:${message.groupId}`
+    if (group && this.memory !== undefined && this.memory.lines(introKey).length === 0) {
+      void this.memory.remember(introKey, 'done').catch(() => undefined)
+      const introAgent = await this.ensureAgent(sessionId, conversationKey)
+      if (introAgent !== undefined) {
+        try {
+          introAgent.followup(createUserMessage({
+            content: [{ type: 'text', text: introPrompt() }],
+            source: { kind: 'plugin', plugin: 'robot-yzj' },
+          }))
+        } catch (error) {
+          this.logger?.warn(`robot: intro followup failed: ${String(error)}`)
+        }
+      }
     }
     await this.dispatchTurn(sessionId, conversationKey, message, turnText)
+  }
+
+  /**
+   * Record one inbound message's conversation surface (in memory and, when a
+   * store is present, durably) so DSH-side continuation and fork can resolve
+   * the real robot/group identity and the last anchored session. A persisted
+   * lastSessionId survives a restart and is preserved across rewrites.
+   */
+  private noteSurface(message: RobotInboundMessage): void {
+    const previous = this.surfaces.get(message.groupId)
+      ?? this.surface?.get(surfaceKey(this.channelIndex, message.groupId))
+    const state: SurfaceState = {
+      robotId: message.robotId,
+      robotName: message.robotName,
+      groupType: message.groupType,
+      time: message.time,
+      ...(previous?.lastSessionId === undefined ? {} : { lastSessionId: previous.lastSessionId }),
+    }
+    this.surfaces.set(message.groupId, state)
+    if (this.recentGroups[this.recentGroups.length - 1] !== message.groupId) {
+      const index = this.recentGroups.indexOf(message.groupId)
+      if (index >= 0) this.recentGroups.splice(index, 1)
+      this.recentGroups.push(message.groupId)
+      if (this.recentGroups.length > 100) this.recentGroups.shift()
+      void this.surface?.putMeta(recentKey(this.channelIndex), { value: message.groupId }).catch(() => undefined)
+    }
+    const changed = previous === undefined
+      || previous.robotId !== message.robotId
+      || previous.robotName !== message.robotName
+      || previous.groupType !== message.groupType
+    if (changed) {
+      void this.surface?.put(surfaceKey(this.channelIndex, message.groupId), state).catch(() => undefined)
+    }
+  }
+
+  /** Track the session a message anchored on its surface (continuation target). */
+  private noteSession(message: RobotInboundMessage, sessionId: SessionId): void {
+    this.lastSession.set(message.groupId, sessionId)
+    if (this.lastSession.size > 300) {
+      const oldest = this.lastSession.keys().next().value
+      if (oldest !== undefined) this.lastSession.delete(oldest)
+    }
+    const state = this.surfaces.get(message.groupId)
+    if (state !== undefined && state.lastSessionId !== String(sessionId)) {
+      const updated: SurfaceState = { ...state, lastSessionId: String(sessionId) }
+      this.surfaces.set(message.groupId, updated)
+      void this.surface?.put(surfaceKey(this.channelIndex, message.groupId), updated).catch(() => undefined)
+    }
+  }
+
+  /**
+   * DSH-side conversation continuation: fabricate a user turn as the
+   * operator and run it through the full inbound pipeline (ack, memory,
+   * confirmation replies, agent turn, event-driven push). The operator openId
+   * resolves through the allowFrom policy, so only the whitelisted owner can
+   * drive the robot this way.
+   * @param text - the operator's message text.
+   * @param options - explicit groupId; defaults to the most recent surface.
+   * @returns the anchored session id when a turn was queued.
+   */
+  async continueFromDsh(text: string, options: { groupId?: string } = {}): Promise<{ ok: boolean; sessionId?: string; error?: string }> {
+    const allowed = await this.allowFrom()
+    const operator = allowed?.[0]
+    if (operator === undefined || operator === '') {
+      return { ok: false, error: '机器人白名单为空：无法以操作者身份续接会话' }
+    }
+    const surface = await this.resolveSurface(options.groupId)
+    if (surface === undefined) {
+      return { ok: false, error: options.groupId === undefined
+        ? '该机器人尚未收到任何入站消息，没有可续接的会话表面'
+        : `该机器人没有见过群 ${options.groupId} 的消息` }
+    }
+    const message: RobotInboundMessage = {
+      type: 2,
+      robotId: surface.robotId,
+      robotName: surface.robotName,
+      operatorOpenid: operator,
+      operatorName: 'DSH 控制台',
+      time: Date.now(),
+      msgId: `dsh-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
+      content: text,
+      groupType: surface.groupType,
+      groupId: surface.groupId,
+      synthetic: true,
+    }
+    await this.handle(message)
+    const sessionId = this.lastSession.get(surface.groupId)
+    return sessionId === undefined
+      ? { ok: true, error: 'handle 返回但未锚定会话' }
+      : { ok: true, sessionId: String(sessionId) }
+  }
+
+  /** Resolve one surface: explicit groupId, else the most recent one. */
+  private async resolveSurface(groupId: string | undefined): Promise<(SurfaceState & { groupId: string }) | undefined> {
+    const known = (key: string): (SurfaceState & { groupId: string }) | undefined => {
+      const state = this.surfaces.get(key)
+      return state === undefined ? undefined : { ...state, groupId: key }
+    }
+    if (groupId !== undefined) {
+      const found = known(groupId)
+      if (found !== undefined) return found
+      const persisted = this.surface?.get(surfaceKey(this.channelIndex, groupId))
+      return persisted === undefined ? undefined : { ...persisted, groupId }
+    }
+    const recent = this.recentGroups[this.recentGroups.length - 1]
+    if (recent !== undefined) {
+      const found = known(recent)
+      if (found !== undefined) return found
+      const persisted = this.surface?.get(surfaceKey(this.channelIndex, recent))
+      return persisted === undefined ? undefined : { ...persisted, groupId: recent }
+    }
+    const persistedRecent = this.surface?.getMeta(recentKey(this.channelIndex))
+    if (persistedRecent !== undefined && persistedRecent.value !== '') {
+      const persisted = this.surface?.get(surfaceKey(this.channelIndex, persistedRecent.value))
+      if (persisted !== undefined) return { ...persisted, groupId: persistedRecent.value }
+    }
+    // No recent marker (fresh store / legacy data): fall back to the most
+    // recently seen persisted surface of this channel.
+    const prefix = `surface:${this.channelIndex}:`
+    let best: { state: SurfaceState; groupId: string } | undefined
+    for (const [key, state] of this.surface?.entries() ?? []) {
+      if (!key.startsWith(prefix)) continue
+      if (best === undefined || state.time > best.state.time) best = { state, groupId: key.slice(prefix.length) }
+    }
+    return best === undefined ? undefined : { ...best.state, groupId: best.groupId }
+  }
+
+  /** Every surface this channel has seen, most recent first (lossless JSON). */
+  surfaceSummary(): { groupId: string; robotId: string; robotName: string; groupType: number; time: number; lastSessionId?: string }[] {
+    const ordered = [...this.recentGroups].reverse()
+    const seen = new Set<string>(ordered)
+    const out: { groupId: string; robotId: string; robotName: string; groupType: number; time: number; lastSessionId?: string }[] = []
+    for (const groupId of ordered) {
+      const state = this.surfaces.get(groupId)
+      if (state !== undefined) {
+        out.push({
+          groupId,
+          robotId: state.robotId,
+          robotName: state.robotName,
+          groupType: state.groupType,
+          time: state.time,
+          ...(state.lastSessionId === undefined ? {} : { lastSessionId: state.lastSessionId }),
+        })
+      }
+    }
+    // Persisted surfaces the process has not seen live yet (restart) still
+    // surface in status so robot_continue/fork targets are discoverable.
+    const prefix = `surface:${this.channelIndex}:`
+    for (const [key, state] of this.surface?.entries() ?? []) {
+      if (!key.startsWith(prefix)) continue
+      const groupId = key.slice(prefix.length)
+      if (seen.has(groupId)) continue
+      seen.add(groupId)
+      out.push({
+        groupId,
+        robotId: state.robotId,
+        robotName: state.robotName,
+        groupType: state.groupType,
+        time: state.time,
+        ...(state.lastSessionId === undefined ? {} : { lastSessionId: state.lastSessionId }),
+      })
+    }
+    return out
+  }
+
+  /** The session a conversation last anchored on, when still live. */
+  conversationSession(groupId: string): SessionId | undefined {
+    return this.lastSession.get(groupId)
+  }
+
+  /** The working directory robot sessions on this channel are created with. */
+  workdir(): string {
+    return this.cwd
+  }
+
+  /** Every live session id this router created (lossless JSON for status). */
+  liveSessionIds(): string[] {
+    return [...this.handles.keys()].map(String)
   }
 
   private async authorized(operatorOpenid: string): Promise<boolean> {
@@ -391,23 +649,72 @@ export class RobotRouter {
     const hasRoute = merged.provider !== undefined && merged.provider !== ''
       || merged.model !== undefined && merged.model !== ''
     const agentOptions = hasRoute ? merged : undefined
-    // Robot sessions live under the dsh-yzj checkout: the persona prompt
-    // section requires {{cwd}} to resolve, and a bare `_no-cwd` session would
-    // fail prompt assembly on its first turn.
-    const meta = { cwd: process.cwd() }
+    // Robot sessions live under an explicit working directory (channel `cwd`
+    // option, defaulting to the host process cwd): the persona prompt section
+    // requires {{cwd}} to resolve, and a bare `_no-cwd` session would fail
+    // prompt assembly on its first turn.
+    const meta = { cwd: this.cwd }
+    // The bare programmatic scope has no tools service in its graph, so the
+    // schedule tools (registered into agent.ctx later) would never surface
+    // (pitfall-007). The publication setup injects `tools` into the scope so
+    // the assembly consults the registry the attach writes into.
+    const setup: AgentSetup = agentCtx => {
+      agentCtx.inject(['tools'], () => undefined)
+    }
     // A robot session is durable across host restarts: prefer resuming the
     // persisted log, fall back to a fresh create when none exists. Creating
     // over an existing log is a hard id-collision error in the session store.
+    // Every live agent (created or resumed) gets the harness schedule tools
+    // registered into its scoped world — routines live in the session log.
     const handle = await this.agents
-      .resume({ resumeSessionId: sessionId, ...(agentOptions === undefined ? {} : { agentOptions }) })
-      .catch(() => this.agents.create({ sessionId, meta, ...(agentOptions === undefined ? {} : { agentOptions }) }))
+      .resume({ resumeSessionId: sessionId, setup, ...(agentOptions === undefined ? {} : { agentOptions }) })
+      .catch(() => this.agents.create({ sessionId, meta, setup, ...(agentOptions === undefined ? {} : { agentOptions }) }))
       .catch(error => {
         this.logger?.warn(`robot: create/resume agent failed for ${sessionId}: ${String(error)}`)
         return undefined
       })
     if (handle === undefined) return undefined
     this.handles.set(sessionId, handle)
+    this.attachScheduleTools(handle.agent)
     return handle.agent
+  }
+
+  /**
+   * Install the harness Schedule subsystem onto one live robot agent —
+   * mirroring the schedule plugin's own root-agent mount: tools + runtime +
+   * idle-drive listener, all riding the agent scope (unwind with it). The
+   * schedule plugin skips non-root agents (roots().includes check), so
+   * externally created robot agents must attach here.
+   */
+  private attachScheduleTools(agent: Agent): void {
+    const rootCtx = this.rootCtx
+    if (rootCtx === undefined) return
+    if (this.scheduledAgents.has(agent.id)) return
+    this.scheduledAgents.add(agent.id)
+    try {
+      const runtime = new ScheduleRuntime(rootCtx, agent)
+      agent.ctx.effect(() => {
+        const disposeTools = registerScheduleTools(rootCtx, agent.ctx, agent, () => { runtime.requestDrive() })
+        const stopStatus = agent.ctx.on('agent/status', ({ status }: { status: string }) => {
+          if (status === 'idle' && agent.session.events.some(event => event.type === 'schedule/change')) {
+            runtime.requestDrive()
+          }
+        })
+        runtime.start()
+        return async () => {
+          stopStatus()
+          disposeTools()
+          try {
+            await runtime.dispose()
+          } finally {
+            this.scheduledAgents.delete(agent.id)
+          }
+        }
+      }, 'robot-yzj: schedule runtime')
+    } catch (error) {
+      this.scheduledAgents.delete(agent.id)
+      this.logger?.warn(`robot: schedule attach failed for ${agent.id}: ${String(error)}`)
+    }
   }
 
   /** Execute one parsed memory verb and reply with the outcome. */

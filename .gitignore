@@ -14,3 +14,5 @@ dist/
 spike/robot/secret.local.json
 spike/robot/bin/
 spike/robot/logs/
+spike/robot/test-model.patch.yml
+

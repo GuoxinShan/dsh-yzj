@@ -36,6 +36,8 @@ export interface PushConversation {
   readonly askerName: string
   /** The last inbound message, used as the reply anchor for pushes. */
   readonly lastInbound: { msgId: string; summary: string; personName: string }
+  /** True for DSH-side synthetic turns: pushes must not anchor replies (the msgId never existed on the server). */
+  readonly noReplyAnchor?: boolean
 }
 
 /** Structural session-event face (firehose payloads we consume). */
@@ -132,15 +134,28 @@ export class PushHub {
   private async sendSafely(conversation: PushConversation, text: string, notify = false): Promise<void> {
     try {
       await conversation.sender.send(text, {
-        replyMsgId: conversation.lastInbound.msgId,
-        replySummary: conversation.lastInbound.summary,
-        replyPersonName: conversation.lastInbound.personName,
+        ...(conversation.noReplyAnchor === true
+          ? {}
+          : {
+              replyMsgId: conversation.lastInbound.msgId,
+              replySummary: conversation.lastInbound.summary,
+              replyPersonName: conversation.lastInbound.personName,
+            }),
         ...(notify && conversation.group ? { notifyOpenIds: [conversation.askerOpenId] } : {}),
       })
     } catch {
       // Outbound failures are logged by the sender's channel; never throw
       // from a firehose listener.
     }
+  }
+
+  /** Diagnostic snapshot: open conversations, active stashes, watermarks. */
+  diagnostics(): { conversations: number; activeTurns: { sessionId: string; parts: number; toolCalls: number }[]; watermarks: number } {
+    const activeTurns: { sessionId: string; parts: number; toolCalls: number }[] = []
+    for (const [sessionId, stash] of this.stashes) {
+      activeTurns.push({ sessionId, parts: stash.parts.length, toolCalls: stash.toolCalls })
+    }
+    return { conversations: this.conversations.size, activeTurns, watermarks: this.watermarks.size }
   }
 
   /** Lazy stash allocation for one session's active turn. */

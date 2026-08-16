@@ -350,3 +350,37 @@ robotId 与 CLI groupId 的 ID 空间映射；创建流程的公网测试是否�
 - 面板机器人设置卡 + `/yzj` RPC 端点（`robot-status`/`robot-send`/`robot-config`）→ R1 UI 半（下一步）；
 - 群场景（群聊锚定、`!fork`/`!routines`、ambient session、群内建议卡）→ R2；
 - 卡片消息（type 25）、watcher 混合角标 → R2/R3。
+
+---
+
+## 8. DSH→机器人 双向控制（R2.6，2026-08-16）
+
+> 代码：`packages/robot-yzj/src/control.ts`（工具）+ `src/surface.ts`（持久表面）+ router/service 扩展；验收证据见 `../status/gap-analysis.md` §20.8。
+
+### 8.1 能力面（操作者在任意 DSH 会话可用）
+
+| 工具 | 用途 | 走通路径 |
+|---|---|---|
+| `robot_status` | 通道状态：连接、**cwd**、provider/model、allowFrom、已见会话表面（groupId/robotId/最后锚定 session）、live session id | 直读服务 |
+| `robot_notify` | 主动通知：文本推送到通道会话（群机器人推群、个人机器人推 DM），无 agent 轮次 | 服务 `notify()` → `RobotSender.send` |
+| `robot_continue` | 双向续接：以操作者身份向会话注入一条消息，走**完整入站管线**（ack、鉴权、确认卡裁决、记忆动词、intro 判定、agent 轮次、PushHub 推回） | 构造 `synthetic` 入站消息 → `router.handle()` |
+| `robot_fork` | 把机器人会话 fork 成**操作者侧新根会话**（继承已完成回合 + cwd + parentSession），出现在 DSH 会话列表可继续处理 | `agents.create({seed, meta})` |
+
+### 8.2 关键决策
+
+| 决策 | 选择 | 理由 |
+|---|---|---|
+| 工具是否过确认门控 | **不过**（区别于 `yzj_im_message_send`） | 机器人是操作者自有通道：出站已受 allowFrom 白名单约束、入站身份由白名单首人承担；工具体拒绝 `yzj-robot-*` 会话调用（禁止机器人自驱） |
+| 续接的身份 | allowFrom 解析出的首个 openId（默认 CLI 登录用户），`operatorName` 标记 `DSH 控制台` | 与入站鉴权同一策略，操作者即白名单首人 |
+| synthetic 消息的出站锚点 | **不带** replyMsgId（真实入站才带） | synthetic msgId 服务端不存在，引用卡无法解析；群面仍带 `notifyOpenIds` 定向提醒 |
+| synthetic 会话续接 | 复用该群面最后锚定的 session（`lastSession` 表）；重启后从持久 `robot_yzj_surface` 域恢复 | 避免 fake msgId 锚出新线程；跨重启续接真实会话 |
+| 工作目录 | 新配置键 `cwd`（逐机器人 / `defaultCwd` 全局默认），缺省 = DSH 宿主进程 cwd；`robot_status` 可见 | 机器人会话的 `{{cwd}}` 与文件工具落点显式化、可配置 |
+| fork 的 seed | 最后一个 `turn/end` 之前的完整前缀（与 harness fork 子代理同一边界） | 平衡完成回合前缀才能被会话边界校验接受 |
+| fork 生命周期 | 服务持有 handle，插件卸载时一并 dispose | 根会话随通道插件生命周期，不泄漏 |
+
+### 8.3 持久表面域 `robot_yzj_surface`
+
+- 表 `surfaces`：键 `surface:<channelIndex>:<groupId>` → `{robotId, robotName, groupType, time, lastSessionId?}`；
+- 表 `meta`：键 `recent:<channelIndex>` → 最近群面 groupId；
+- 作用：重启后 `robot_continue`/`robot_fork` 无需等待新入站即可解析真实 robotId/groupId 与最后会话（续接真实会话的前提）。
+

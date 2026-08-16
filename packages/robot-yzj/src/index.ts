@@ -13,20 +13,24 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import { SessionId } from '@deepseek-ai/dsh-session'
+import type { AgentHandle } from '@deepseek-ai/dsh-agent'
 import type { SocketStatus } from './socket.ts'
 import { RobotSocket } from './socket.ts'
 import { deriveWebSocketUrl } from './protocol.ts'
-import { RobotSender } from './outbound.ts'
-import { RobotRouter, dmSessionId } from './router.ts'
+import { RobotSender, type RobotCardOptions, type RobotSendResult } from './outbound.ts'
+import { RobotRouter, completedTurnPrefix, dmSessionId, slugId } from './router.ts'
 import { OverrideStore } from './overrides.ts'
+import { SurfaceStore } from './surface.ts'
 import { ConfirmBroker, type ConfirmApprovalRequest, type ConfirmAskPending } from './confirm.ts'
 import { PushHub, type PushSessionEvent } from './push.ts'
 import { MemoryStore } from './memory.ts'
+import { applyRobotControlTools } from './control.ts'
 
 /** Plugin name used by loader diagnostics. */
 export const name = 'robot-yzj'
-/** Required services: the CLI bridge (allowFrom resolution) and the agent registry (robot sessions). */
-export const inject = ['yzjBridge', 'agents']
+/** Required services: the CLI bridge (allowFrom resolution), the agent registry (robot sessions), and the tools registry (robot_* controls). */
+export const inject = ['yzjBridge', 'agents', 'tools']
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -54,6 +58,8 @@ export interface RobotChannelConfig {
   provider?: string
   /** Default model id for this robot's sessions; empty = the harness default. */
   model?: string
+  /** Working directory for this robot's sessions; empty = the host process cwd. */
+  cwd?: string
 }
 
 /** Plugin configuration: a robot list plus legacy single-robot fields. */
@@ -62,6 +68,8 @@ export interface Config {
   defaultProvider?: string
   /** Default model for every robot without its own; empty = harness default. */
   defaultModel?: string
+  /** Default working directory for every robot without its own; empty = host process cwd. */
+  defaultCwd?: string
   /** Robot channels; each gets its own WS connection, sender, and router. */
   robots?: RobotChannelConfig[]
   /** Legacy single-robot sendMsgUrl — used as robot #0 when `robots` is empty. */
@@ -74,6 +82,8 @@ export interface Config {
   provider?: string
   /** Legacy single-robot model (applies to the synthesized robot #0). */
   model?: string
+  /** Legacy single-robot cwd (applies to the synthesized robot #0). */
+  cwd?: string
 }
 
 const RobotChannelSchema: z<RobotChannelConfig> = z.object({
@@ -82,17 +92,20 @@ const RobotChannelSchema: z<RobotChannelConfig> = z.object({
   allowFrom: z.array(z.string()).default([]),
   provider: z.string().default(''),
   model: z.string().default(''),
+  cwd: z.string().default(''),
 })
 
 const ConfigSchema: z<Config> = z.object({
   defaultProvider: z.string().default(''),
   defaultModel: z.string().default(''),
+  defaultCwd: z.string().default(''),
   robots: z.array(RobotChannelSchema).default([]),
   sendMsgUrl: z.string().default(''),
   enabled: z.boolean().default(true),
   allowFrom: z.array(z.string()).default([]),
   provider: z.string().default(''),
   model: z.string().default(''),
+  cwd: z.string().default(''),
 })
 
 const DEFAULT_ACK_TEXT = '收到，处理中…'
@@ -105,6 +118,12 @@ export interface RobotChannelStatus extends RobotChannelConfig {
   connected: boolean
   lastError: string | null
   lastFrameAt: number
+  /** Resolved working directory for this channel's sessions. */
+  cwd: string
+  /** Every conversation surface this channel has seen, most recent first. */
+  surface: { groupId: string; robotId: string; robotName: string; groupType: number; time: number; lastSessionId?: string }[]
+  /** Live sessions this channel's router created. */
+  sessions: string[]
 }
 
 /** One running robot channel: socket + sender + router + status mirror. */
@@ -123,13 +142,16 @@ interface RunningChannel {
  */
 export class YzjRobot extends Service {
   static Config: z<Config> = ConfigSchema
-  static inject = ['yzjBridge', 'agents']
+  static inject = ['yzjBridge', 'agents', 'tools']
 
   private readonly channels: RunningChannel[] = []
   private readonly overrides = new OverrideStore()
+  private readonly surfaces = new SurfaceStore()
   private readonly confirm = new ConfirmBroker()
   private readonly hub = new PushHub()
   private readonly memory = new MemoryStore()
+  /** Operator-side fork sessions created from robot conversations (owned here). */
+  private readonly forked = new Map<string, AgentHandle>()
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'yzjRobot')
@@ -137,6 +159,7 @@ export class YzjRobot extends Service {
       ...robot,
       ...(robot.provider === undefined || robot.provider === '' ? (config.defaultProvider === undefined || config.defaultProvider === '' ? {} : { provider: config.defaultProvider }) : {}),
       ...(robot.model === undefined || robot.model === '' ? (config.defaultModel === undefined || config.defaultModel === '' ? {} : { model: config.defaultModel }) : {}),
+      ...(robot.cwd === undefined || robot.cwd === '' ? (config.defaultCwd === undefined || config.defaultCwd === '' ? {} : { cwd: config.defaultCwd }) : {}),
     })
     const robots = config.robots !== undefined && config.robots.length > 0
       ? config.robots.map(fillDefaults)
@@ -148,6 +171,7 @@ export class YzjRobot extends Service {
             allowFrom: config.allowFrom ?? [],
             provider: config.provider ?? '',
             model: config.model ?? '',
+            cwd: config.cwd ?? '',
           })]
     this.startAll(robots)
   }
@@ -161,9 +185,12 @@ export class YzjRobot extends Service {
       allowFrom: channel.config.allowFrom ?? [],
       provider: channel.config.provider ?? '',
       model: channel.config.model ?? '',
+      cwd: channel.router.workdir(),
       connected: channel.status.connected,
       lastError: channel.status.lastError,
       lastFrameAt: channel.status.lastFrameAt,
+      surface: channel.router.surfaceSummary(),
+      sessions: channel.router.liveSessionIds(),
     }))
   }
 
@@ -172,6 +199,77 @@ export class YzjRobot extends Service {
     const channel = this.channels.find(item => (item.config.enabled ?? true) && item.status.connected)
     if (channel === undefined) return { ok: false, error: 'no connected robot channel' }
     return channel.sender.send(text)
+  }
+
+  /**
+   * DSH-side proactive notification: push text to one robot channel's
+   * conversation (the channel's own surface — the group for a group robot,
+   * the DM for a personal robot).
+   * @param text - message body.
+   * @param robotIndex - channel index; defaults to 0.
+   */
+  async notify(text: string, robotIndex = 0): Promise<{ ok: boolean; msgId?: string; error?: string }> {
+    const channel = this.channels[robotIndex]
+    if (channel === undefined) return { ok: false, error: `no robot channel at index ${robotIndex}` }
+    if (!(channel.config.enabled ?? true)) return { ok: false, error: `robot channel ${robotIndex} is disabled` }
+    return channel.sender.send(text)
+  }
+
+  /** DSH-side proactive card notification (application-style card). */
+  async notifyCard(card: RobotCardOptions, robotIndex = 0): Promise<RobotSendResult> {
+    const channel = this.channels[robotIndex]
+    if (channel === undefined) return { ok: false, error: `no robot channel at index ${robotIndex}` }
+    if (!(channel.config.enabled ?? true)) return { ok: false, error: `robot channel ${robotIndex} is disabled` }
+    return channel.sender.sendCard(card)
+  }
+
+  /**
+   * DSH-side conversation continuation: fabricate an operator turn on one
+   * channel and run it through the full inbound pipeline (ack + agent turn +
+   * push to the conversation).
+   * @param text - the operator's message text.
+   * @param options - channel index (default 0) and optional explicit groupId.
+   */
+  async continueConversation(text: string, options: { robotIndex?: number; groupId?: string } = {}): Promise<{ ok: boolean; sessionId?: string; error?: string }> {
+    const channel = this.channels[options.robotIndex ?? 0]
+    if (channel === undefined) return { ok: false, error: `no robot channel at index ${options.robotIndex ?? 0}` }
+    return channel.router.continueFromDsh(text, options.groupId === undefined ? {} : { groupId: options.groupId })
+  }
+
+  /**
+   * Fork one live session (typically a robot conversation) into a new
+   * operator-side root session seeded with its completed-turn history. The
+   * fork appears in the DSH web session list and continues with the full
+   * harness toolset; its log keeps `parentSession` pointing at the source.
+   * @param sourceSessionId - any live session id (robot conversations included).
+   * @returns the new fork session id.
+   */
+  async forkSession(sourceSessionId: string): Promise<{ ok: boolean; sessionId?: string; error?: string }> {
+    const source = this.ctx.agents.get(sourceSessionId as never)
+    if (source === undefined) return { ok: false, error: `no live agent for session ${sourceSessionId}` }
+    const seed = completedTurnPrefix(source.session.events)
+    if (seed.length === 0) return { ok: false, error: '源会话还没有任何完成的回合，无法 fork' }
+    const forkId = SessionId(`fork-${slugId(sourceSessionId)}-${Date.now().toString(36)}`)
+    try {
+      const handle = await this.ctx.agents.create({
+        sessionId: forkId,
+        seed,
+        meta: {
+          ...(source.session.header.cwd === undefined ? {} : { cwd: source.session.header.cwd }),
+          parentSession: source.session.header.id,
+          seedLength: seed.length,
+        },
+      })
+      this.forked.set(String(forkId), handle)
+      return { ok: true, sessionId: String(forkId) }
+    } catch (error) {
+      return { ok: false, error: `fork failed: ${String(error)}` }
+    }
+  }
+
+  /** Fork sessions this service owns (diagnostics). */
+  forkedSessions(): string[] {
+    return [...this.forked.keys()]
   }
 
   /** Stable DM session id for one robot and one user openId. */
@@ -230,17 +328,19 @@ export class YzjRobot extends Service {
 
   /** Build and start every channel (idempotent per constructor call). */
   private startAll(robots: readonly RobotChannelConfig[]): void {
+    let index = 0
     for (const robotConfig of robots) {
-      if (!(robotConfig.enabled ?? true)) continue
-      if (robotConfig.sendMsgUrl === '') continue
-      const channel = this.makeChannel(robotConfig)
+      if (!(robotConfig.enabled ?? true)) { index += 1; continue }
+      if (robotConfig.sendMsgUrl === '') { index += 1; continue }
+      const channel = this.makeChannel(robotConfig, index)
       this.channels.push(channel)
       channel.socket.start()
+      index += 1
     }
   }
 
   /** Assemble one channel's runtime pieces. */
-  private makeChannel(robotConfig: RobotChannelConfig): RunningChannel {
+  private makeChannel(robotConfig: RobotChannelConfig, channelIndex: number): RunningChannel {
     const sender = new RobotSender({ sendMsgUrl: robotConfig.sendMsgUrl })
     const agentOptions = {
       ...(robotConfig.provider === undefined || robotConfig.provider === '' ? {} : { provider: robotConfig.provider }),
@@ -254,6 +354,10 @@ export class YzjRobot extends Service {
       resolveOverride: key => this.overrides.get(key),
       confirm: this.confirm,
       push: this.hub,
+      rootCtx: this.ctx,
+      channelIndex,
+      cwd: robotConfig.cwd ?? process.cwd(),
+      surface: this.surfaces,
       memory: {
         lines: key => this.memory.lines(key),
         remember: (key, line) => this.memory.remember(key, line),
@@ -276,15 +380,20 @@ export class YzjRobot extends Service {
     return { config: robotConfig, sender, router, socket, status }
   }
 
-  /** Stop every channel (idempotent). Disposes router-owned agents. */
+  /** Stop every channel (idempotent). Disposes router-owned and fork agents. */
   stop(): void {
     for (const channel of this.channels) {
       channel.socket.stop()
       void channel.router.dispose()
     }
     this.channels.length = 0
+    for (const handle of this.forked.values()) {
+      void handle.dispose()
+    }
+    this.forked.clear()
     this.confirm.dispose()
     void this.overrides.close()
+    void this.surfaces.close()
     void this.memory.close()
   }
 
@@ -303,13 +412,24 @@ export class YzjRobot extends Service {
     this.hub.noteError(sessionId, error)
   }
 
-  /** Open the override store once the storage hub has the domain form. */
+  /** Push-hub diagnostic snapshot (statuses()-adjacent debugging face). */
+  pushDiagnostics(): { conversations: number; activeTurns: { sessionId: string; parts: number; toolCalls: number }[]; watermarks: number } {
+    return this.hub.diagnostics()
+  }
+
+  /** Confirm-broker diagnostic snapshot. */
+  confirmDiagnostics(): { openCards: number } {
+    return { openCards: this.confirm.openCards }
+  }
+
+  /** Open the override + surface stores once the storage hub has the domain form. */
   private async ensureOverrides(): Promise<void> {
     const facility = this.ctx.get('storageDomain')
     if (facility === undefined) return
     try {
       await this.overrides.open(facility as never)
       await this.memory.open(facility as never)
+      await this.surfaces.open(facility as never)
     } catch (error) {
       this.ctx.logger.warn(`robot: override store failed to open: ${String(error)}`)
     }
@@ -373,12 +493,23 @@ export function apply(ctx: Context, config: Config): void {
   ctx.on('approval/request', (req, next) => {
     return robot.handleApproval(req, next)
   })
+  // DSH-side bidirectional controls: proactive notify, conversation
+  // continuation, and session fork, exposed as model tools on every session
+  // (guarded inside so robot sessions cannot drive themselves).
+  applyRobotControlTools(ctx, robot)
   // Event-driven push: robot-session output (any turn source — interactive,
   // scheduled, watcher) reaches its conversation through the shared hub.
   ctx.on('session/event', (session, event) => {
     const id = String(session.id)
     if (!id.startsWith('yzj-robot-')) return
     robot.noteSessionEvent(id, event as PushSessionEvent)
+  })
+  // The session/flush barrier: the jsonl coordinator's own listener already
+  // persists robot sessions (measured), and this listener guarantees the
+  // barrier reports a participating listener so schedule_* never degrades to
+  // persistence_uncertain on listener-count semantics.
+  ctx.on('session/flush', session => {
+    if (!String(session.id).startsWith('yzj-robot-')) return
   })
   ctx.on('agent/status', payload => {
     if (payload.status !== 'idle') return
