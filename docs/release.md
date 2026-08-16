@@ -40,22 +40,30 @@ git push origin --tags
 
 ## 3. 路线 B：正式发布（对外可装）
 
-在**发布分支**上做（main 保持 `link:` 开发态，发完不破坏本地环境）：
+**状态（2026-08-16）：依赖替换已完成并验证**——`release/v0.1.0` 分支存在：
+- `scripts/rewrite-deps.mjs` 把 `link:` 换成 registry 范围（`@deepseek-ai/*` →
+  `^0.1.0-rc.6`；`cordis` → `^4.0.1`；`schemastery` → `^3.18.1`），
+  `@dsh-yzj/*` 互依保持 `workspace:^`（pnpm publish 自动重写为 `^0.1.0`）；
+- **registry 依赖下构建 + 255 测试全绿**（rc.6 = 本地 harness 同源码，
+  rc.5 只是未发布的内部号——兼容性由构造保证，实测确认）；
+- vitest 需 inline `dsh-client-ui-primitives`（rc.6 引入 katex css import，
+  externalized 依赖拒 .css）——已进 main（`a800a4f`）。
+
+剩余步骤（**需要用户 `npm login`**）：
 
 ```sh
-git checkout -b release/v0.1.0
-# 1) 改六个包 package.json：private:false + link:/workspace: → 版本范围
-# 2) 按依赖序发布（bridge → tool-yzj/ui-yzj/robot-yzj/memory-yzj/model-yzj → bundle）：
+git checkout release/v0.1.0
+# 1) 按依赖序发布（bridge → tool-yzj/ui-yzj/robot-yzj/memory-yzj/model-yzj → bundle）：
 npm publish --workspaces --dry-run   # 先看包内容
 npm publish -w packages/bridge
 # …依次…
 npm publish -w packages/bundle
-# 3) 验证：
+# 2) 验证：
 dsh plugin --profile release-test add @dsh-yzj/bundle
 dsh --profile release-test --dump-config | Select-String yzj
-# 4) 打 tag + GitHub Release（changelog 从 git log 提炼）：
-git tag v0.1.0 && git push origin release/v0.1.0 --tags
-# 5) 合并回 main（仅 package.json 回滚到 link: 态）或保留 release 分支
+# 3) 打 tag + push（v0.1.0 已有 tag 指向路线 A 的 main——发布后重打指向 release 分支）：
+git tag -f v0.1.0 && git push origin v0.1.0 --force
+# 4) 删除 AGENTS.md「Pre-release stance」节，合并 vitest/脚本改动回 main
 ```
 
 - npm 发布需要 `npm login`（用户凭据，agent 不代办）；
