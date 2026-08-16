@@ -38,6 +38,7 @@ dsh plugin --profile web add <npm 包名或路径>
 - **im**：发消息（text/file/richText、@、回复、多图）、聊天记录、最近会话
 - **file**：上传（≤30MB、最多 5 并发）、下载（自动重命名 / 覆盖）
 - **todo**：语义化待办工具族（demo 阶段以多维表格「待办任务库」承载，首用自动开通）——`yzj_todo_list/create/update/complete`；稳定 ID 幂等、host 强制状态机、追加式推进日志；**核心理念 tag 自由聚合**（tag 可以是项目/群组/主题）；**团队协作**：面板任务库切换器一键切换个人/团队库或按需在企业知识库开通（权限标注），agent 写入跟随当前激活库，浏览器持久化选择；后端迁移架构见 `docs/migration/todo-backend-migration.md`
+- **memory**：明文 Markdown 记忆库（`@dsh-yzj/memory-yzj`，设计见 `docs/spec/memory-vault-design.md`）——`memory_observe/read/search/dream_load/dream_apply` 五工具 + `systemPrompt.context` 有界注入；面板**记忆 tab**（sections/entities 展开、观察草稿区、注入统计、dream 固化日志、面板直写「记一条」）；固化走 dsh-routines routine（模板 `docs/spec/memory-dream-routine.yaml`），rev 乐观锁保护人工编辑；`group:<id>` scope 留缝群组记忆
 
 ### 确认流（确认卡）
 

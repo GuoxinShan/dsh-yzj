@@ -648,6 +648,44 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
           return internalError(`robot-fork failed: ${String(error)}`)
         }
       }
+      case 'memory-scope': {
+        const memory = ctx.get('yzjMemory')
+        if (memory === undefined) return internalError('memory-scope: yzjMemory 服务不可用（memory-yzj 未挂载）')
+        const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
+        const scope = stringField(record, 'scope') ?? 'user'
+        try {
+          return { ok: true, value: { view: memory.readScope(scope) } }
+        } catch (error) {
+          return internalError(`memory-scope failed: ${String(error)}`)
+        }
+      }
+      case 'memory-log': {
+        const memory = ctx.get('yzjMemory')
+        if (memory === undefined) return internalError('memory-log: yzjMemory 服务不可用（memory-yzj 未挂载）')
+        const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
+        const scope = stringField(record, 'scope') ?? 'user'
+        try {
+          return { ok: true, value: { log: memory.dreamLogTail(scope, 4000) } }
+        } catch (error) {
+          return internalError(`memory-log failed: ${String(error)}`)
+        }
+      }
+      case 'memory-observe': {
+        // Panel-direct write = the user's own will (im-send/todo-create
+        // semantics): no confirmation card; source marks the provenance.
+        const memory = ctx.get('yzjMemory')
+        if (memory === undefined) return internalError('memory-observe: yzjMemory 服务不可用（memory-yzj 未挂载）')
+        const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
+        const content = stringField(record, 'content')
+        if (content === undefined || content.trim() === '') return internalError('memory-observe endpoint requires a non-empty content payload')
+        const scope = stringField(record, 'scope') ?? 'user'
+        const tags = Array.isArray(record.tags) ? record.tags.filter((value): value is string => typeof value === 'string') : []
+        try {
+          return { ok: true, value: memory.observe(scope, content, { tags, source: 'panel' }) }
+        } catch (error) {
+          return internalError(`memory-observe failed: ${String(error)}`)
+        }
+      }
       default:
         return internalError(`unknown /yzj endpoint ${endpoint}`)
     }

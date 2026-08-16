@@ -414,3 +414,12 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 **与设计的实现级偏差（设计已同步）**：① sections.yaml 从「段顺序+cap 双职责」简化为仅 cap（段的 order/title 移入各段 frontmatter——一处事实一处存放）；② 服务方法同步实现（注入 provider 契约是同步字符串；单进程串行，跨进程靠纯创建+原子 rename+rev 锁）；③ dream_apply 的 decisions 为 JSON 字符串参数（工具框架的数组 of object 参数不支持，todo records 同款）。
 
 **验收证据**：`pnpm vitest run packages/memory-yzj` 21 测试全绿（frontmatter 参考格式往返、observe 去重/容量/scope 隔离、投影排序与截断、检索命中行、五类决策 + rev 冲突保护人工编辑 + 畸形决策进报告、临时文件卫生）；`pnpm run build`/`typecheck` 全仓通过。**待真实环境验收**（web profile 重启后）：提示组装含 `yzj-memory` 上下文、会话内 observe → 手动 dream → 注入更新；headless routine 端到端（ops→桥→群摘要）复用 routines-delivery §5 链路。
+
+### 21.1 记忆面板（2026-08-16 v0.1 增补，设计 §「v0.1 增补」随提交）
+
+用户要求 UI 可看记忆。原「浏览器管理面板」非目标提前转正：
+
+- **ui-yzj**：工作台第六 tab「记忆」——sections/entities 逐条展开、观察草稿区全文、注入上限与 open/archived 统计、dream 固化日志尾部展开（「记录何时被分析过」透明化）、面板直写「记一条」（`memory-observe` 端点，source=`panel`，**用户本人意志不经确认卡**，与 im-send/todo-create 同语义）；memory-yzj 未挂载时 tab 显示安装提示。store 加 `memoryView/memoryLog`（repair 检查同步扩展，旧 blob 自愈）。
+- **RPC +3**：`memory-scope`（readScope）、`memory-log`（服务新增 `dreamLogTail`，4000 字符行边界截断）、`memory-observe`；`/yzj` 共 41 端点。
+- **工具卡**：`memory_*` 五工具进 cards.tsx（observe 确认/scope 计数/search 命中/dream 报告四种形态）。
+- **验收**：memory-pane 8 客户端测试（含不可用态、重复 note、失败 note、空日志提示）+ rpc 端点契约测试（`ctx.provide` 挂 fake 服务：scope 投影/log 截断/observe 直写参数、未挂载 fail-closed）+ memory-yzj logTail 行边界测试；`pnpm test` 全仓 237 绿。浏览器走查（六 tab 布局、展开交互、composer）待 web profile 重启后进行。

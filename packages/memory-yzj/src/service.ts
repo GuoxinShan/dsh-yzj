@@ -237,6 +237,11 @@ export class MemoryCore {
     }
   }
 
+  /** Tail of the scope's dream log (UI transparency surface). */
+  dreamLogTail(scope: string, maxChars = 4000): string {
+    return this.vault(scope).logTail(maxChars)
+  }
+
   /**
    * Apply one dream's decision list item by item. Every item is validated
    * against the current files; a stale rev (file changed since load) or a

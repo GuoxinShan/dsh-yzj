@@ -37,8 +37,21 @@
 
 - 群组 scope 的注入 wiring（robot-yzj 消费 `ctx.yzjMemory`，见 §8）；
 - 向量/语义检索（先用确定性关键词检索；向量化留 v2 可选项）；
-- 浏览器管理面板（后续可加 ui tab；本期纯 host 面）；
+- 面板的 dream 手动触发（固化仍只由 routine 发起；面板只读 + 手动记观察）；
 - 与生态记忆插件互操作或迁移。
+
+### v0.1 增补（2026-08-16）：浏览器记忆面板（随用户要求提前）
+
+原「浏览器管理面板」非目标提前转正为 ui-yzj 工作台第六 tab「记忆」（只读浏览 +
+用户直写），交付面：
+
+- `/yzj` RPC +3：`memory-scope`（readScope 视图）、`memory-log`（log.md 尾部，
+  服务新增 `dreamLogTail`）、`memory-observe`（**面板直写 = 用户本人意志**，与
+  im-send/todo-create 直写同语义，不经确认卡；source 标 `panel`）；
+- 记忆 tab：sections/entities 展开浏览、open observations 全文、注入上限与
+  open/archived 计数、dream 日志尾部（「记录何时被分析过」对用户透明）、
+  「记一条」快捷新增（写观察草稿区）；
+- 工具卡：`memory_*` 五工具进 cards.tsx keyed 视图（简单摘要形态）。
 
 ## 2. Vault 模型（存储契约）
 

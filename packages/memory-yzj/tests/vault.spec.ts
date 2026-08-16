@@ -265,6 +265,15 @@ describe('dream apply', () => {
 })
 
 describe('vault durability details', () => {
+  it('tails the dream log at a line boundary', () => {
+    const log = core.dreamLogTail('user', 4000)
+    expect(log).toContain('# Dream Log')
+    const clipped = core.dreamLogTail('user', 60)
+    // The tail cuts at a line boundary and keeps the newest entries.
+    expect(clipped.length).toBeLessThanOrEqual(60 + 1)
+    expect(clipped.startsWith('#')).toBe(false)
+  })
+
   it('leaves no temp files behind', () => {
     const files = readdirSync(join(root, 'user', 'sections'))
     expect(files.every(name => !name.includes('.tmp-'))).toBe(true)

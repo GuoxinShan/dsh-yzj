@@ -25,6 +25,7 @@ import { emitYzjDropRequest } from './drop-bus.ts'
 import { registerPanelController } from './panel-controller.ts'
 import { TodoPane } from './todo-pane.tsx'
 import { RobotPane } from './robot-pane.tsx'
+import { MemoryPane } from './memory-pane.tsx'
 import css from './panel.module.css'
 
 /** The props shares the panel reads. */
@@ -486,7 +487,19 @@ const TABS: { key: YzjTab; label: string; icon: () => ReactNode }[] = [
   { key: 'chat', label: '会话', icon: () => <IconNewChatOutline16 /> },
   { key: 'todo', label: '待办', icon: () => <IconListPenOutline16 /> },
   { key: 'robot', label: '机器人', icon: () => <IconRobot16 /> },
+  { key: 'memory', label: '记忆', icon: () => <IconMemory16 /> },
 ]
+
+/** Memory-vault glyph (local: layered note stack mark). */
+function IconMemory16(): ReactNode {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="4" y="5" width="12" height="9" rx="2" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M8 18h9a3 3 0 0 0 3-3v-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M7.5 9.5h5M7.5 12h3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  )
+}
 
 /** Robot-channel glyph (local: ui-primitives ships no bot icon). */
 function IconRobot16(): ReactNode {
@@ -650,6 +663,7 @@ const DOCK_ITEMS: { key: YzjTab; label: string; icon: () => ReactNode }[] = [
   { key: 'calendar', label: '日程', icon: () => <IconChecklistOutline14 /> },
   { key: 'docs', label: '知识库', icon: () => <IconFolderOpenOutline16 /> },
   { key: 'robot', label: '机器人', icon: () => <IconRobot16 /> },
+  { key: 'memory', label: '记忆', icon: () => <IconMemory16 /> },
 ]
 
 /** Common emojis for the composer picker (real-IM habit). */
@@ -857,6 +871,15 @@ function loadTab(
       props.actions.setLoading(false)
       if (!models.ok) props.actions.setError(`模型目录读取失败：${models.error.message}`)
     })
+  } else if (tab === 'memory') {
+    // Read view + dream log tail in parallel; an unavailable memory-yzj
+    // service surfaces as the pane's error hint (install guidance).
+    void Promise.all([props.memoryScope(), props.memoryLog()]).then(([scope, log]) => {
+      if (!scope.ok) { fail(scope.error.message); return }
+      props.actions.setMemory(asRecord(scope.value).view, log.ok ? asString(asRecord(log.value).log) : '')
+      props.actions.setLoading(false)
+      if (!log.ok) props.actions.setError(`固化日志读取失败：${log.error.message}`)
+    })
   }
 }
 
@@ -865,7 +888,7 @@ export function YzjPanel(props: YzjPanelProps) {
   const open = props.useStore(state => state.open)
   const tab = props.useStore(state => state.tab)
   // Persisted tabs may hold the removed 'me'; fall back to the docs tab.
-  const activeTab: YzjTab = tab === 'docs' || tab === 'calendar' || tab === 'chat' || tab === 'todo' || tab === 'robot' ? tab : 'docs'
+  const activeTab: YzjTab = tab === 'docs' || tab === 'calendar' || tab === 'chat' || tab === 'todo' || tab === 'robot' || tab === 'memory' ? tab : 'docs'
   const anchorActive = props.useStore(state => state.anchorMsgId !== '')
   const state = props.useStore(s => s)
   const panelRef = useRef<HTMLDivElement | null>(null)
@@ -2393,6 +2416,18 @@ export function YzjPanel(props: YzjPanelProps) {
           robotShareRead={props.robotShareRead}
           robotShareWrite={props.robotShareWrite}
           robotChannelsSave={props.robotChannelsSave}
+        />
+      )}
+
+      {activeTab === 'memory' && (
+        <MemoryPane
+          view={state.memoryView}
+          log={state.memoryLog}
+          loading={state.loading}
+          error={state.error}
+          memoryScope={() => props.memoryScope()}
+          memoryLog={() => props.memoryLog()}
+          memoryObserve={(content, tags) => props.memoryObserve(content, tags)}
         />
       )}
 
