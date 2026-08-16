@@ -18,6 +18,7 @@
 | 8 | packed zstd 会话日志骗过一次性解压：只解出首帧 → "只有 header" → 误判持久化失效 | 任何直接读 `session.jsonl.zstd` 的脚本 / 诊断 | [pitfall-008-packed-zstd-session-logs.md](pitfall-008-packed-zstd-session-logs.md) |
 | 9 | defineTool 的 output.schema 宽化成 `object` 报误导性执行体类型错；数组 of object 参数不存在——走 JSON 字符串（todo `records` 先例） | 任何新增 dsh-tools 工具包 | [pitfall-009-definetool-schema-literals-and-json-array-params.md](pitfall-009-definetool-schema-literals-and-json-array-params.md) |
 | 9 | profile 装 bundle 三连坑：autoInstallPeers=false 致 peers 不解析；link 包传递依赖 EPERM；`every Nm` 首次触发依赖 lastRunAt 播种；SPA fallback 2xx 假阳性 | ops daemon / dsh-routines / chatnode 桥 | [pitfall-009-profile-peers-and-routines-seeding.md](pitfall-009-profile-peers-and-routines-seeding.md) |
+| 10 | 客户端 bundle 注册 id 必须等于 loader 条目（profile 行名），不是包名；单测/构建全绿但 web 壳启动报 loaded without registering | ui-yzj browser half / 任何经 monobundle 子路径行名加载的 client bundle | [pitfall-010-loader-entry-id.md](pitfall-010-loader-entry-id.md) |
 
 ## 维护规则
 
