@@ -137,6 +137,13 @@ web profile (web-app + robot-yzj 机器人模式)
 
 ## 6. 生产布局（`~/.dsh`，2026-08-16 落地）
 
+> **一键部署**：`node scripts/setup-ops.mjs`（仓库根）自动完成本节的 ops
+> profile 创建（`dsh plugin add` dsh-routines、patch 生成、peers link、
+> dsh-run.mjs wrapper、routine 模板、桥 token 生成）——路径经参数化
+> （`--home`/`--harness`/`--bridge-target`/`--cwd`），可在任意机器跑；
+> 唯一的手动步骤是给 web profile 的 robot-yzj 行加
+> `bridgeToken`（同一口令）+ `chatnodeRobotIndex`。以下为落地细节。
+
 - **web profile**（`profiles/web/cordis.patch.yml`）：robot-yzj 行加
   `bridgeToken: <共享口令>` + `chatnodeRobotIndex: 1`（群机器人）；
   机器人行保持现状（两条 sendMsgUrl）。
