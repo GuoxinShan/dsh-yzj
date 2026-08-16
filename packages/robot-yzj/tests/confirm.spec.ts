@@ -158,4 +158,22 @@ describe('ConfirmBroker', () => {
     }, next)
     expect(skipped).toBe('unavailable')
   })
+
+  it('defers a GUI user-turn on a bound home to the next answerer (GUI card)', async () => {
+    const broker = new ConfirmBroker({ timers: fakeTimers() })
+    const next = vi.fn(async () => 'unavailable' as const)
+    broker.registerSession('yzj-home-g-a' as never, makeContext([]))
+    const outcome = await broker.handleApproval({
+      agent: {
+        session: {
+          id: 'yzj-home-g-a',
+          events: [{ type: 'user/message', data: { source: { kind: 'user' } } }],
+        },
+      },
+      toolName: 'yzj_im_message_send',
+      callId: 'c-gui',
+    }, next)
+    expect(next).toHaveBeenCalledOnce()
+    expect(outcome).toBe('unavailable')
+  })
 })

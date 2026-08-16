@@ -3,13 +3,15 @@
 Yunzhijia robot channel, host half: the measured two-way bridge between a
 personal (or group) Yunzhijia robot and DSH agent sessions.
 
-**Product law (binding slice landed):** inbound `followup()` lands on the
+**Product law (binding + fused timeline landed):** inbound `followup()` lands on the
 **bound DSH session** for that Yunzhijia conversation (`ctx.yzjHome`,
-`docs/spec/dsh-home-session.md`). Session ids are `yzj-home-*`. `!fork` /
+`docs/spec/dsh-home-session.md`). Session ids are `yzj-home-*`. Inbound also
+appends ① to the shared bound log; @Claude injects `formatSummonWindow` then
+followup. GUI-focused bound sessions keep the GUI confirm card; inbound
+plugin turns stay on the group suggestion-card path. `!fork` /
 `robot_fork` open or resume that bound session and must not `create` a
-`fork-*` / `yzj-robot-*` parallel root. Protocol below is still the
-transport truth. Remaining gaps (IM nodes in the transcript, panel composer)
-are in gap-analysis §22 G2/G6.
+`fork-*` / `yzj-robot-*` parallel root. Remaining gaps (confirm-card pending
+as a session event, group search) are in gap-analysis §22 G3/G5.
 
 ## What it does
 

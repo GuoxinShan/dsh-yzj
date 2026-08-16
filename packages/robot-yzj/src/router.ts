@@ -61,6 +61,21 @@ export interface RouterHomeFace {
   ensureBound(yzjConversationId: string, yzjKind: 'group' | 'dm'): Promise<{ sessionId: string; created: boolean; yzjKind: 'group' | 'dm' }>
   getByConversation(yzjConversationId: string): { dshSessionId: string; yzjConversationId: string; yzjKind: 'group' | 'dm' } | undefined
   getBySession(dshSessionId: string): { dshSessionId: string; yzjConversationId: string; yzjKind: 'group' | 'dm' } | undefined
+  /** Append one inbound ① row into the bound log (optional on binding-only fakes). */
+  appendLog?(yzjConversationId: string, incoming: {
+    readonly msgId: string
+    readonly sentAt: number
+    readonly fromOpenId: string
+    readonly fromName: string
+    readonly content: string
+    readonly msgType: 'text' | 'richText' | 'file' | 'other'
+    readonly origin: 'inbound' | 'dsh-send' | 'backfill'
+    readonly isSelf: boolean
+    readonly replyMsgId?: string
+    readonly status: 'pending' | 'acked' | 'failed'
+  }, options?: { readonly skipOpenIds?: readonly string[] }): Promise<unknown>
+  /** Shared summon-window digest (T5); empty → do not inject. */
+  formatSummonWindow?(yzjConversationId: string, excludeMsgId?: string): string
 }
 
 /** Per-conversation memory face (MemoryStore satisfies it). */
@@ -398,6 +413,9 @@ export class RobotRouter {
   async handle(message: RobotInboundMessage): Promise<void> {
     if (!this.dedupe.markSeen(message.msgId)) return
     this.noteSurface(message)
+    if (message.synthetic !== true) {
+      await this.noteInboundLog(message)
+    }
     const group = !isDirectSurface(message)
     // A synthetic DSH-side turn references a msgId the server never saw, so
     // outbound messages must not carry a reply anchor (the server could not
@@ -539,6 +557,47 @@ export class RobotRouter {
       || previous.groupType !== message.groupType
     if (changed) {
       void this.surface?.put(surfaceKey(this.channelIndex, message.groupId), state).catch(() => undefined)
+    }
+  }
+
+  /**
+   * Write inbound ① into the bound log (T1/T7). Cloud-home client posts by
+   * the login user are ① + isSelf, never ②. Synthetic DSH continues skip this.
+   */
+  private async noteInboundLog(message: RobotInboundMessage): Promise<void> {
+    const home = this.homeFace()
+    if (home?.appendLog === undefined) return
+    if (this.allowFromCache === undefined) {
+      try {
+        this.allowFromCache = await this.allowFrom() ?? []
+      } catch {
+        this.allowFromCache = []
+      }
+    }
+    const kind = isDirectSurface(message) ? 'dm' : 'group'
+    try {
+      await home.ensureBound(message.groupId, kind)
+    } catch (error) {
+      this.logger?.warn(`robot: inbound log ensureBound failed: ${String(error)}`)
+      return
+    }
+    const reply = parseReplyMeta(message.msgParam).reply
+    const selfOpenId = this.allowFromCache?.[0] ?? ''
+    try {
+      await home.appendLog(message.groupId, {
+        msgId: message.msgId,
+        sentAt: message.time > 0 ? message.time : Date.now(),
+        fromOpenId: message.operatorOpenid,
+        fromName: message.operatorName,
+        content: message.content,
+        msgType: 'text',
+        origin: 'inbound',
+        isSelf: selfOpenId !== '' && message.operatorOpenid === selfOpenId,
+        status: 'acked',
+        ...(reply?.replyMsgId === undefined || reply.replyMsgId === '' ? {} : { replyMsgId: reply.replyMsgId }),
+      }, { skipOpenIds: [message.robotId] })
+    } catch (error) {
+      this.logger?.warn(`robot: inbound log append failed: ${String(error)}`)
     }
   }
 
@@ -757,6 +816,17 @@ export class RobotRouter {
         }))
       } catch (error) {
         this.logger?.warn(`robot: share-dir inject failed: ${String(error)}`)
+      }
+    }
+    const window = this.homeFace()?.formatSummonWindow?.(message.groupId, message.msgId) ?? ''
+    if (window !== '') {
+      try {
+        agent.inject(createUserMessage({
+          content: [{ type: 'text', text: window }],
+          source: { kind: 'plugin', plugin: 'robot-yzj' },
+        }))
+      } catch (error) {
+        this.logger?.warn(`robot: summon-window inject failed: ${String(error)}`)
       }
     }
     try {

@@ -713,6 +713,16 @@
   background: var(--dsw-alias-bg-base);
 }
 
+.panelBanner {
+  margin: 6px 8px 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--dsw-static-deepseek-100);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
 .chatHeader .groupHead {
   padding: 2px 6px 6px;
 }

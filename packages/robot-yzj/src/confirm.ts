@@ -140,6 +140,10 @@ export class ConfirmBroker {
     const sessionId = req.agent.session.id
     const context = this.sessionContext.get(sessionId)
     if (context === undefined) return next()
+    // GUI-focused bound sessions (latest user/message is a real user turn)
+    // keep the GUI confirmation card. Inbound @Claude turns stay on the
+    // group suggestion-card path.
+    if (latestUserIsGui(req.agent.session.events)) return next()
     const ask = req.callId === undefined ? undefined : this.askByCallId.get(req.callId)
     const number = this.nextNumber
     this.nextNumber += 1
@@ -236,6 +240,18 @@ export class ConfirmBroker {
     this.sessionContext.clear()
     this.askByCallId.clear()
   }
+}
+
+/** True when the latest user/message is a GUI turn (not a plugin followup). */
+function latestUserIsGui(events: readonly { type: string; data: unknown }[]): boolean {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event === undefined || event.type !== 'user/message') continue
+    const data = typeof event.data === 'object' && event.data !== null ? event.data as Record<string, unknown> : {}
+    const source = typeof data.source === 'object' && data.source !== null ? data.source as Record<string, unknown> : {}
+    return source.kind !== 'plugin'
+  }
+  return false
 }
 
 /** Whether one card belongs to the conversation the reply arrived in. */

@@ -116,6 +116,18 @@ export interface YzjPanelInject {
   homeOpen?: (groupId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Client-side focus of a bound session (sessions.open after list ready). */
   focusBoundSession?: (sessionId: string) => void
+  /** Binding row for one DSH session (or unbound). */
+  homeBinding?: (sessionId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Fused VIEW snapshot (log ①② + session ③④ + pending overlay). */
+  homeFused?: (sessionId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Backfill recent Yunzhijia messages into the bound log. */
+  homeBackfill?: (sessionId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** DSH「发进群」: optimistic ② + CLI send, no user-turn. */
+  homeSend?: (sessionId: string, content: string, opts?: YzjPanelInject['sendMessageOpts']) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Private-transcript digest candidates for 丢进群. */
+  homeDigest?: (sessionId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Confirmed D8 handoff into a bound group session. */
+  homeHandoff?: (groupId: string, digest: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
 }
 
 /** Build the inject face from a connection handle; unavailable → failed calls. */
@@ -240,5 +252,20 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
     modelClearDefault: () => call('model-default-clear', {}),
     modelCatalog: () => call('model-catalog', {}),
     homeOpen: (groupId) => call('home-open', { groupId }),
+    homeBinding: (sessionId) => call('home-binding', { sessionId }),
+    homeFused: (sessionId) => call('home-fused', { sessionId }),
+    homeBackfill: (sessionId) => call('home-backfill', { sessionId }),
+    homeSend: (sessionId, content, opts) => call('home-send', {
+      sessionId,
+      ...(content === undefined ? {} : { content }),
+      ...(opts?.msgType === undefined ? {} : { msgType: opts.msgType }),
+      ...(opts?.fileId === undefined ? {} : { fileId: opts.fileId }),
+      ...(opts?.images === undefined ? {} : { images: opts.images }),
+      ...(opts?.replyMsgId === undefined ? {} : { replyMsgId: opts.replyMsgId }),
+      ...(opts?.atOpenIds === undefined ? {} : { atOpenIds: opts.atOpenIds }),
+      ...(opts?.atAll !== true ? {} : { atAll: true }),
+    }),
+    homeDigest: (sessionId) => call('home-digest', { sessionId }),
+    homeHandoff: (groupId, digest) => call('home-handoff', { groupId, digest }),
   }
 }

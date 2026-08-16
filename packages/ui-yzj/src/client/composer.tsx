@@ -11,6 +11,7 @@ import { useEffect } from 'react'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { InsertReferenceRequest } from '@deepseek-ai/dsh-client-ui-input-trigger/src/types.ts'
 import type { YzjDragRef } from './panel.tsx'
+import { YzjHomeChrome, type YzjHomeChromeInjected } from './home-chrome.tsx'
 import { SOURCE_NAME, encodeRef } from './input-source.ts'
 import { onYzjDropRequest } from './drop-bus.ts'
 
@@ -24,16 +25,18 @@ export interface YzjDropInjected {
   insertReference: (ref: YzjDragRef) => void
 }
 
+export type { YzjHomeChromeInjected }
+
 /**
- * The composer dock: subscribes to the drop bus (the panel emits on any
- * yzj drop anywhere on screen) and mints the ☁ reference chip.
+ * The composer dock: drop-bus chip insert plus bound/unbound home chrome
+ * (发进群 / 丢进群). Native send stays 「发给 agent」.
  */
-export function YzjComposerDock(props: PropsRuntime<'conversation.input.dock'> & YzjDropInjected) {
+export function YzjComposerDock(props: PropsRuntime<'conversation.input.dock'> & YzjDropInjected & YzjHomeChromeInjected) {
   useEffect(() => {
     return onYzjDropRequest((ref) => props.insertReference(ref))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-  return null
+  return <YzjHomeChrome {...props} />
 }
 
 /** Build the scoped insert-reference payload for a drag ref. */
