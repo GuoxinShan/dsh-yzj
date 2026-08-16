@@ -18,7 +18,7 @@ export interface MemoryPaneProps {
   error: string
   memoryScope: () => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   memoryLog: () => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
-  memoryObserve: (content: string, tags?: string[]) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
+  memoryObserve: (content: string, tags?: string[], durable?: boolean) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   dreamState: () => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   dreamSet: (partial: { enabled?: boolean; provider?: string; model?: string; dailyAt?: string }) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   dreamRun: () => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
@@ -119,6 +119,7 @@ export function MemoryPane(props: MemoryPaneProps): React.ReactNode {
   const observations = asArray(view.observations)
   const archivedCount = typeof view.archivedCount === 'number' ? view.archivedCount : 0
   const [draft, setDraft] = useState('')
+  const [durable, setDurable] = useState(false)
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [logOpen, setLogOpen] = useState(false)
@@ -163,15 +164,19 @@ export function MemoryPane(props: MemoryPaneProps): React.ReactNode {
     if (content === '' || busy) return
     setBusy(true)
     setNote('')
-    void props.memoryObserve(content).then(result => {
+    // 未勾选「长期」= 中性（省略 durable），勾选 = 长期候选；面板不做「便签」标记。
+    void props.memoryObserve(content, undefined, durable === true ? true : undefined).then(result => {
       setBusy(false)
       if (!result.ok) {
         setNote(`记录失败：${result.error.message}`)
         return
       }
       const record = asRecord(result.value)
-      setNote(record.duplicate === true ? '这条已经在记忆里了' : `已记录 ${asString(record.id)}（等待 dream 固化）`)
-      if (record.duplicate !== true) setDraft('')
+      setNote(record.duplicate === true ? '这条已经在记忆里了' : `已记录 ${asString(record.id)}${durable ? '（长期）' : ''}，等待 dream 固化`)
+      if (record.duplicate !== true) {
+        setDraft('')
+        setDurable(false)
+      }
       void props.memoryScope()
     })
   }
@@ -311,6 +316,10 @@ export function MemoryPane(props: MemoryPaneProps): React.ReactNode {
           }}
         />
         <button type="button" className={busy || draft.trim() === '' ? css.quickAddOff : css.quickAdd} disabled={busy || draft.trim() === ''} onClick={submit}>记下</button>
+        <label className={css.durableWrap}>
+          <input type="checkbox" className={css.durableCheck} checked={durable} onChange={event => { setDurable(event.target.checked) }} />
+          长期
+        </label>
         {note !== '' && <span className={css.quickNote}>{note}</span>}
       </section>
 
@@ -355,6 +364,8 @@ export function MemoryPane(props: MemoryPaneProps): React.ReactNode {
             const tags = asArray(record.tags).filter(tag => typeof tag === 'string')
             const meta = [
               asString(record.created),
+              ...(record.durable === true ? ['长期'] : []),
+              ...(record.durable === false ? ['便签'] : []),
               ...(tags.length > 0 ? [`#${tags.join(' #')}`] : []),
               ...(asString(record.source) !== '' ? [asString(record.source)] : []),
             ].join(' · ')

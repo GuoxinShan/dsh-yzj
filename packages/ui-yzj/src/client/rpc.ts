@@ -93,7 +93,7 @@ export interface YzjPanelInject {
   /** Memory vault: tail of the dream log (audit transparency). */
   memoryLog: (scope?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Memory vault: panel-direct observation write (user's own will; no confirm card). */
-  memoryObserve: (content: string, tags?: string[], scope?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  memoryObserve: (content: string, tags?: string[], scope?: string, durable?: boolean) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Memory vault: dream runtime state (switch / model / schedule). */
   dreamState: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Memory vault: merge a partial dream-state update (empty strings clear). */
@@ -213,10 +213,11 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
     }),
     memoryScope: (scope?: string) => call('memory-scope', scope === undefined ? {} : { scope }),
     memoryLog: (scope?: string) => call('memory-log', scope === undefined ? {} : { scope }),
-    memoryObserve: (content: string, tags?: string[], scope?: string) => call('memory-observe', {
+    memoryObserve: (content: string, tags?: string[], scope?: string, durable?: boolean) => call('memory-observe', {
       content,
       ...(tags === undefined || tags.length === 0 ? {} : { tags }),
       ...(scope === undefined ? {} : { scope }),
+      ...(durable === undefined ? {} : { durable }),
     }),
     dreamState: () => call('dream-state', {}),
     dreamSet: (partial) => call('dream-set', {

@@ -89,8 +89,13 @@ export class YzjMemoryService extends Service {
   }
 
   /** Record one observation (deduped); see {@link MemoryCore.observe}. */
-  observe(scope: string, content: string, options: { tags?: string[]; source?: string } = {}): ObserveResult {
-    return this.core.observe(scope, { content, tags: options.tags ?? [], source: options.source ?? 'agent' })
+  observe(scope: string, content: string, options: { tags?: string[]; source?: string; durable?: boolean } = {}): ObserveResult {
+    return this.core.observe(scope, {
+      content,
+      tags: options.tags ?? [],
+      source: options.source ?? 'agent',
+      ...(options.durable === undefined ? {} : { durable: options.durable }),
+    })
   }
 
   /** Bounded read view; see {@link MemoryCore.readScope}. */

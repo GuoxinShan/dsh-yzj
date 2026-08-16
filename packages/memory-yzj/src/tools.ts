@@ -65,6 +65,13 @@ function clipMeta(value: unknown, max: number): JsonValue {
 }
 
 /** Format the read view as a bounded digest. */
+function durableLabel(observation: { durable?: boolean }): string {
+  if (observation.durable === true) return '（长期）'
+  if (observation.durable === false) return '（便签）'
+  return ''
+}
+
+/** Format the read view as a bounded digest. */
 function readDigest(view: ScopeView): string {
   const lines: string[] = [`scope ${view.scope} · 注入上限 ${view.cap} 字符`]
   lines.push('', `## sections (${view.sections.length})`)
@@ -76,7 +83,7 @@ function readDigest(view: ScopeView): string {
   lines.push('', `## observations (${view.observations.length} open / ${view.archivedCount} archived)`)
   for (const observation of view.observations) {
     const tags = observation.tags.length === 0 ? '' : ` [${observation.tags.join(',')}]`
-    lines.push(`- ${observation.id} ${observation.created}${tags} (${observation.source})`)
+    lines.push(`- ${observation.id} ${observation.created}${tags}${durableLabel(observation)} (${observation.source})`)
     lines.push(`  ${observation.content.split('\n')[0] ?? ''}`)
   }
   return lines.join('\n')
@@ -120,6 +127,7 @@ export function applyMemoryTools(ctx: Context, core: MemoryCore, budget: MemoryT
       tags: { type: 'array', items: { type: 'string' }, description: 'Optional free-form tags for later filtering.' },
       scope: { type: 'string', description: 'Memory scope; defaults to "user".' },
       source: { type: 'string', description: 'Provenance label, e.g. "routine:<id>"; defaults to "agent".' },
+      durable: { type: 'boolean', description: 'Intent mark: true = 长期候选（明确的稳定事实/偏好，dream 单源也可提升）；false = 便签（临时事务，dream 默认丢弃除非被佐证）；省略 = 中性（dream 按佐证规则判定）。' },
     },
     output: memoryToolOutput,
     isConcurrencySafe: () => true,
@@ -128,9 +136,11 @@ export function applyMemoryTools(ctx: Context, core: MemoryCore, budget: MemoryT
         content: args.content,
         tags: args.tags ?? [],
         source: args.source === undefined || args.source === '' ? 'agent' : args.source,
+        ...(args.durable === undefined ? {} : { durable: args.durable }),
       })
+      const mark = args.durable === true ? '（长期）' : args.durable === false ? '（便签）' : ''
       const { content, truncated } = clip(
-        `${result.duplicate ? '已有相同观察' : '已记录观察'} ${result.id}（scope ${args.scope ?? 'user'}，open ${result.openCount}/${result.capacity}）`,
+        `${result.duplicate ? '已有相同观察' : '已记录观察'} ${result.id}${mark}（scope ${args.scope ?? 'user'}，open ${result.openCount}/${result.capacity}）`,
         budget.maxRenderChars,
       )
       return { content, truncated, data: clipMeta(result, budget.maxMetaChars) }
@@ -180,7 +190,7 @@ export function applyMemoryTools(ctx: Context, core: MemoryCore, budget: MemoryT
     async execute(args) {
       const state: DreamState = core.dreamLoad(args.scope)
       const head = `scope ${state.scope} · ${state.sections.length} sections / ${state.entities.length} entities / ${state.observations.length} open observations`
-      const hint = '对每条 open observation 判定：promote（多源佐证或明确稳定）/ drop（已被 sections/entities 覆盖）/ 留观（单源信号）；过时段落用 update_section 重写。decisions 必须引用本 load 返回的 rev。'
+      const hint = '对每条 open observation 判定（先看 durable 标记）：durable=true（长期）单源也可 promote；durable=false（便签）默认 drop；未标记按佐证规则（多源 promote / 已覆盖 drop / 单源留观）。过时段落用 update_section 重写。decisions 必须引用本 load 返回的 rev。'
       const { content, truncated } = clip(`${head}\n\n${hint}`, budget.maxRenderChars)
       return { content, truncated, data: clipMeta(state, budget.maxMetaChars) }
     },

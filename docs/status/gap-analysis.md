@@ -451,3 +451,12 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 - **工作台面板回到四页签**（知识库/日程/会话/待办）：`TABS`/`DOCK_ITEMS` 删机器人/记忆，`YzjTab` 收窄，store 删 robot/memory 字段与动作（自愈清单同步收窄，旧 blob 判坏重置）；浮动球快捷坞同步。
 - **依赖**：ui-yzj 新增 link 依赖 `@deepseek-ai/dsh-client-ui-settings`（仅类型，slot 契约经 `ctx.slots.inject` 延迟注册，无该壳的组合理应静默跳过）。
 - **验收**：settings-section 3 组件测试（分段渲染 + 双 pane 挂载自取数 + verb 包装刷新路径）；全仓 255 绿；typecheck/build/bundle 通过。真实走查（设置导航出现「云之家」、四页签面板、球坞）待 web profile 重启后进行。
+
+### 21.5 观察意图标记 durable（2026-08-16 v0.4，设计 §3/D17 随提交）
+
+用户问「agent 怎么标记哪些需要 dream」——此前无 per-observation 意图标记，一切 open 观察都是 dream 候选，由佐证规则判定（agent 写时的判断被丢弃）。
+
+- **`memory_observe` 新增 `durable` 布尔**（frontmatter `durable: true|false`，省略=中性）：true=长期候选（dream 单源也可 promote）；false=便签（默认 drop，除非新稳定事实被佐证）；中性维持原佐证规则。`memory_read`/dream_load digest 显示（长期）/（便签）；归档副本保留标记。
+- **DREAM_PROMPT 规则更新**（与 routine 模板的差异已在 §7.1 说明同步，模板头注明 keep-in-sync）。
+- **面板**：设置 → 云之家 · 记忆库「记一条」加「长期」勾选（勾=durable true；不勾=中性——面板不做便签标记）；观察行 meta 显示标记；RPC `memory-observe` 透传 durable。
+- **验收**：vault +2（durable 持久化/归档保留）、memory-pane +1（勾选提交 true）、rpc 端点 durable 透传断言；全仓 257 绿。
