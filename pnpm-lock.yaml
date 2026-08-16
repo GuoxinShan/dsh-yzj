@@ -47,6 +47,9 @@ importers:
       '@dsh-yzj/bridge':
         specifier: link:../bridge
         version: link:../bridge
+      '@dsh-yzj/memory-yzj':
+        specifier: link:../memory-yzj
+        version: link:../memory-yzj
       '@dsh-yzj/robot-yzj':
         specifier: link:../robot-yzj
         version: link:../robot-yzj
@@ -56,6 +59,21 @@ importers:
       '@dsh-yzj/ui-yzj':
         specifier: link:../ui-yzj
         version: link:../ui-yzj
+
+  packages/memory-yzj:
+    dependencies:
+      '@deepseek-ai/cordis':
+        specifier: link:../../../deepseek-harness/vendor/cordis
+        version: link:../../../deepseek-harness/vendor/cordis
+      '@deepseek-ai/dsh-home-paths':
+        specifier: link:../../../deepseek-harness/packages/util/home-paths
+        version: link:../../../deepseek-harness/packages/util/home-paths
+      '@deepseek-ai/dsh-tools':
+        specifier: link:../../../deepseek-harness/packages/core/tools
+        version: link:../../../deepseek-harness/packages/core/tools
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../deepseek-harness/vendor/schemastery
+        version: link:../../../deepseek-harness/vendor/schemastery
 
   packages/robot-yzj:
     dependencies:

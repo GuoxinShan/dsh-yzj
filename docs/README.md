@@ -12,6 +12,8 @@ docs/
     todo-design.md                     待办功能设计（v1.2，tag 理念 + §11.2 决策表）
     robot-channel-plan.md              机器人通道调研与双向打通方案（v0.1 调研稿）
     routines-delivery.md               定时任务引擎选型（dsh-routines 参考调研）+ yzj chatnode 投递契约
+    memory-vault-design.md             记忆库组件设计（v0.1：vault 模型 + dream 固化 + 定时对接 + 群组留缝）
+    memory-dream-routine.yaml          可部署的 dream 固化 routine 模板（dsh-routines schema）
   migration/                          ← 架构演进方案
     todo-backend-migration.md          待办 demo 后端 → 原生后端（四层架构 + §3 实测格式事实）
   status/                             ← 实现与设计的对照与验收证据
@@ -25,7 +27,7 @@ docs/
 2. **`spec/integration-master-plan.md`**——系统全貌：目标、用户旅程、验收基准。
 3. **`status/gap-analysis.md` §15-§19**——当前实现状态与已验收证据（比设计文档更接近现实）。
 4. **`pitfalls/README.md` 索引**——动手前必查；命中相关条目先读再写代码。
-5. 任务相关的设计文档（todo 域 → `spec/todo-design.md`；机器人 → `spec/robot-channel-plan.md`）。
+5. 任务相关的设计文档（todo 域 → `spec/todo-design.md`；机器人 → `spec/robot-channel-plan.md`；定时任务 → `spec/routines-delivery.md`；记忆库 → `spec/memory-vault-design.md`）。
 
 ## 命名规则
 
