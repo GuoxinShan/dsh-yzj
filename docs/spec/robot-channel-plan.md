@@ -419,5 +419,6 @@ robotId 与 CLI groupId 的 ID 空间映射；创建流程的公网测试是否�
 
 - `groupId` 缺省 = 该通道最近见过的群表面；`robotIndex` 缺省 0；
 - 每轮对**群会话**注入共享区指令（绝对路径 + 「写共享区必须用 `robot_share_write`，禁止裸文件工具写绝对路径」），DM 不注入；
-- 验证点（落地实测后回写此处）：内置 `read`/`glob` 对 workspace 外绝对路径放行、内置 `write` 对共享区路径被沙箱拒——两条共同决定「内置只读可读共享区」成立。
+- **实测结论（2026-08-16，3081 测试实例 + 假通道）**：内置 `write` 在 workspace-write 下对 cwd 外路径被沙箱拒（`D:/dsh-share-outside/…` 实测拒绝）、cwd 内放行——「读用内置、写走工具」成立；内置 `read`/`glob` 只读不受沙箱约束（工具面无 `sandbox_permissions`，fs-sandbox 只拦 write/edit）。
+- **边界条件（实测发现）**：workspace-write 豁免**平台临时区**（`%TEMP%` 等，fs-sandbox 既有语义）——通道 `cwd` 若配置在临时区下，共享区落入豁免区、内置 `write` 可写，「唯一写通道」不成立。**部署注意：通道 `cwd` 不要配置在平台临时区**（默认宿主 cwd 不受影响）。
 
