@@ -65,4 +65,10 @@ pnpm 从 GitHub 拉仓库根包（`@dsh-yzj/bundle`，`dsh.bundle` 声明被 rec
 
 | 版本 | 日期 | 形态 | 内容 |
 |---|---|---|---|
-| v0.1.0 | 2026-08-16 | monobundle + git | 全量功能（桥/命令族/定时/记忆/模型默认链），六行聚合 + client bundle，git 可装 |
+| v0.1.0 | 2026-08-16 | monobundle + git | 全量功能（桥/命令族/定时/记忆/模型默认链），六行聚合 + client bundle，git 可装；**GitHub 安装全链路验收通过**（六行挂载 + client bundle 200）；Release 说明见 https://github.com/GuoxinShan/dsh-yzj/releases/tag/v0.1.0 |
+
+## 6. 发布 note 维护
+
+每次发布在 GitHub Release 页写 note（`gh release create <tag> --notes-file <file>`），
+内容组织：安装命令 → 能力面（按域）→ 发布形态 → 验证。note 模板见本文件 §2 的
+验收步骤 + 上一条 Release 正文。发布后同步更新 §5 表格。
