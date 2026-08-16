@@ -10,8 +10,8 @@ docs/
   release.md                           发布流程（GitHub 分享 / npm 全量发布 + 前置检查清单）
   spec/                              ← 设计基线（要做什么、为什么、验收口径）
     integration-master-plan.md         云之家×dsh 集成整体方案（v1.8 指针 → 会话家园；正文仍为 v1.7 人在闭环）
-    dsh-home-session.md                DSH 唯一会话家园：会话对象与产品法（v1.0 已拍板；第一刀绑定对象已落地，G2/G3/G5/G6 仍开放）
-    dsh-home-transcript.md             绑定会话可见时间线：插件消息日志 × 官方事件融合（v1.0 已拍板，绑定之后下一片，尚未实现）
+    dsh-home-session.md                DSH 唯一会话家园：会话对象与产品法（v1.0 已拍板；绑定 + 融合时间线已落地，G3/G5 仍开放）
+    dsh-home-transcript.md             绑定会话可见时间线：插件消息日志 × 官方事件融合（v1.1 已落地）
     todo-design.md                     待办功能设计（v1.3，tag 理念 + §11.2 决策表；直写原则交叉引用会话家园）
     robot-channel-plan.md              机器人通道调研与双向打通方案（v0.2：会话落点改打绑定对象）
     routines-delivery.md               定时任务引擎选型（dsh-routines 参考调研）+ yzj chatnode 投递契约
@@ -29,8 +29,8 @@ docs/
 1. **`README.md`（仓库根）**——三分钟了解包结构与能力面。
 2. **`spec/integration-master-plan.md`**——系统全貌：目标、用户旅程、人在闭环验收基准（v1.8 起会话家园见下一份）。
 3. **`spec/dsh-home-session.md`**——**产品法**：DSH 是唯一对话家园；会话对象、四类节点、面板角色、@Claude、丢进群、写路径。第一刀绑定对象已落地；其余对照 `status/gap-analysis.md` §22。
-4. **`spec/dsh-home-transcript.md`**——绑定会话的**可见时间线**（会话绑定之后的下一片）：①② 插件消息日志、与 ③④ 的融合视图、召唤窗口注入、发进群路径、去重/回填、composer 双意图；尚未实现。
-5. **`status/gap-analysis.md`**——当前实现状态与已验收证据（§15–§21 为既有面；**§22 为会话家园**：G1/G4 本刀关闭，G2/G3/G5/G6 仍阻塞）。
+4. **`spec/dsh-home-transcript.md`**——绑定会话的**可见时间线**：①② 插件消息日志、与 ③④ 的融合视图、召唤窗口注入、发进群路径、去重/回填、composer 双意图；已落地，对照 gap §22。
+5. **`status/gap-analysis.md`**——当前实现状态与已验收证据（§15–§21 为既有面；**§22 为会话家园**：G1/G2/G4/G6 关闭，G3/G5 仍开放）。
 6. **`pitfalls/README.md` 索引**——动手前必查；命中相关条目先读再写代码。
 7. 任务相关的设计文档（todo 域 → `spec/todo-design.md`；机器人协议 → `spec/robot-channel-plan.md`（会话落点已被 dsh-home-session 覆盖）；定时任务 → `spec/routines-delivery.md`；记忆库 → `spec/memory-vault-design.md`）。
 

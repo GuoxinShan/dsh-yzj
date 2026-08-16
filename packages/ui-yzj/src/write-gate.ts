@@ -120,6 +120,30 @@ export function domainOf(toolName: string): string {
   return 'other'
 }
 
+/** True when the latest user/message is a plugin followup (inbound @Claude). */
+export function latestUserIsPlugin(events: readonly { type: string; data: unknown }[]): boolean {
+  return latestUserSource(events) === 'plugin'
+}
+
+/**
+ * True when the latest user/message is a real GUI turn. Empty logs and
+ * plugin followups are not GUI-focused — inbound ConfirmBroker keeps those.
+ */
+export function latestUserIsGui(events: readonly { type: string; data: unknown }[]): boolean {
+  return latestUserSource(events) === 'user'
+}
+
+function latestUserSource(events: readonly { type: string; data: unknown }[]): 'user' | 'plugin' | 'none' {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event === undefined || event.type !== 'user/message') continue
+    const data = typeof event.data === 'object' && event.data !== null ? event.data as Record<string, unknown> : {}
+    const source = typeof data.source === 'object' && data.source !== null ? data.source as Record<string, unknown> : {}
+    return source.kind === 'plugin' ? 'plugin' : 'user'
+  }
+  return 'none'
+}
+
 /**
  * Find the audit id pairing one approval request: the newest `approval/asked`
  * event with the same callId that is neither decided nor claimed by another
@@ -180,11 +204,14 @@ export function applyWriteGate(ctx: Context): {
     // protocol (robot-yzj's ConfirmBroker owns those requests) — the GUI card
     // would wait for a click nobody makes on an unattended channel.
     if (req.agent.session.id.startsWith('yzj-robot-')) return next()
-    // Inbound-bound homes (yzj-home-*) register with ConfirmBroker; skip the
-    // GUI card so the group suggestion card answers. Pure pick-group homes
-    // are NOT registered — they keep the GUI card. Do not skip all yzj-home-*.
+    // Inbound-bound homes (yzj-home-*) register with ConfirmBroker. Keep the
+    // group suggestion card for plugin followups and for turns that have not
+    // yet grown a user/message (inbound path). A later GUI「发给 agent」turn
+    // on the same bound session must keep the GUI card.
     const robot = ctx.get('yzjRobot') as { ownsConfirm?: (sessionId: string) => boolean } | undefined
-    if (robot?.ownsConfirm?.(req.agent.session.id) === true) return next()
+    if (robot?.ownsConfirm?.(req.agent.session.id) === true && !latestUserIsGui(req.agent.session.events)) {
+      return next()
+    }
     if (req.signal?.aborted === true) return Promise.resolve<YzjApprovalOutcome>('cancelled')
     const claimed = new Set(records.keys())
     const id = findApprovalId(req.agent.session.events, req.callId, claimed)

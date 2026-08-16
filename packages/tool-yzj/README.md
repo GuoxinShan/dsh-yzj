@@ -20,7 +20,9 @@ Every tool returns `{ content, truncated, data }`:
 
 ## Home binding (`ctx.yzjHome`)
 
-Durable 1:1 table: one Yunzhijia conversation (group or DM) ↔ one DSH session (`yzj-home-*`). Shared by robot inbound `followup()` and the panel pick-group path (`/yzj home-open`). Domain `yzj_home_bindings` (storage-domain); a second open is focus (`created: false`), never a parallel row. See `docs/spec/dsh-home-session.md`.
+Durable 1:1 table: one Yunzhijia conversation (group or DM) ↔ one DSH session (`yzj-home-*`). Shared by robot inbound `followup()` and the panel pick-group path (`/yzj home-open`). Domain `yzj_home_bindings` (storage-domain); a second open is focus (`created: false`), never a parallel row.
+
+**Bound message log** (domain `yzj_home_logs`, keyed by `yzjConversationId`): inbound ① and DSH「发进群」② live here — never as harness `Session.append` events. `formatSummonWindow` is the shared digest both summon paths call (`agent.inject` on 云之家 @Claude, `systemPrompt.context` `yzj-bound-window` on DSH「发给 agent」). See `docs/spec/dsh-home-transcript.md`.
 
 ## Approval guard
 
@@ -33,6 +35,10 @@ Durable 1:1 table: one Yunzhijia conversation (group or DM) ↔ one DSH session 
 | `timeoutMs` | `60000` | Cooperative timeout per tool call. |
 | `maxRenderChars` | `30000` | Cap on model-facing digest characters. |
 | `maxMetaChars` | `50000` | Cap on the UI presentation payload characters (after clipping). |
+| `backfillLimit` | `50` | Recent Yunzhijia messages pulled when opening a bound session. |
+| `summonWindowMessages` | `20` | Max log rows in one summon window. |
+| `summonWindowChars` | `4000` | Summon-window character cap. |
+| `logRetention` | `500` | Per-conversation log retention (oldest dropped). |
 
 ## Model Experience
 

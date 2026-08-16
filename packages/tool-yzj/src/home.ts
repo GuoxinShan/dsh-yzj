@@ -11,6 +11,10 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import { z } from 'zod'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
+import {
+  BoundLogStore, formatSummonWindow, type BoundLogAppendResult, type BoundLogLimits,
+  type YzjBoundMessageLog, type YzjLogEntry,
+} from './bound-log.ts'
 
 /** Yunzhijia conversation kind (CLI groupId space; BOT- prefix = DM). */
 export type YzjConversationKind = 'group' | 'dm'
@@ -31,12 +35,23 @@ export interface HomeEnsureResult {
 
 /**
  * Shared face robot inbound and UI pick-group both call. Structural — robot-yzj
- * must not import this package just to name the type.
+ * must not import this package just to name the type. Log methods are optional
+ * on fakes that only exercise binding.
  */
 export interface YzjHomeFace {
   ensureBound(yzjConversationId: string, yzjKind: YzjConversationKind): Promise<HomeEnsureResult>
   getByConversation(yzjConversationId: string): HomeBindingRecord | undefined
   getBySession(dshSessionId: string): HomeBindingRecord | undefined
+  appendLog?(
+    yzjConversationId: string,
+    incoming: YzjLogEntry,
+    options?: { readonly skipOpenIds?: readonly string[] },
+  ): Promise<BoundLogAppendResult>
+  getLog?(yzjConversationId: string): YzjBoundMessageLog | undefined
+  getLogBySession?(dshSessionId: string): YzjBoundMessageLog | undefined
+  ackLocal?(yzjConversationId: string, localId: string, realMsgId: string): Promise<YzjBoundMessageLog | undefined>
+  failLocal?(yzjConversationId: string, localId: string): Promise<YzjBoundMessageLog | undefined>
+  formatSummonWindow?(yzjConversationId: string, excludeMsgId?: string): string
 }
 
 const bindingSchema = z.object({
@@ -157,9 +172,11 @@ export class HomeBindingStore implements YzjHomeFace {
 /** Cordis service wrapping {@link HomeBindingStore} as `ctx.yzjHome`. */
 export class YzjHomeService extends Service implements YzjHomeFace {
   readonly store = new HomeBindingStore()
+  readonly logs = new BoundLogStore()
 
-  constructor(ctx: Context) {
+  constructor(ctx: Context, limits?: Partial<BoundLogLimits>) {
     super(ctx, 'yzjHome')
+    if (limits !== undefined) this.logs.setLimits(limits)
   }
 
   /** Open the durable table once the storage hub has the domain form. */
@@ -171,11 +188,18 @@ export class YzjHomeService extends Service implements YzjHomeFace {
     } catch (error) {
       this.ctx.logger.warn(`yzjHome: binding store failed to open: ${String(error)}`)
     }
+    try {
+      await this.logs.open(facility as never)
+    } catch (error) {
+      this.ctx.logger.warn(`yzjHome: bound-log store failed to open: ${String(error)}`)
+    }
   }
 
   /** @see HomeBindingStore.ensureBound */
-  ensureBound(yzjConversationId: string, yzjKind: YzjConversationKind): Promise<HomeEnsureResult> {
-    return this.store.ensureBound(yzjConversationId, yzjKind)
+  async ensureBound(yzjConversationId: string, yzjKind: YzjConversationKind): Promise<HomeEnsureResult> {
+    const result = await this.store.ensureBound(yzjConversationId, yzjKind)
+    await this.logs.ensureHeader(yzjConversationId, result.sessionId, result.yzjKind)
+    return result
   }
 
   /** @see HomeBindingStore.getByConversation */
@@ -186,6 +210,49 @@ export class YzjHomeService extends Service implements YzjHomeFace {
   /** @see HomeBindingStore.getBySession */
   getBySession(dshSessionId: string): HomeBindingRecord | undefined {
     return this.store.getBySession(dshSessionId)
+  }
+
+  /** Append one ①/②/backfill row; no-ops without a binding. */
+  async appendLog(
+    yzjConversationId: string,
+    incoming: YzjLogEntry,
+    options: { readonly skipOpenIds?: readonly string[] } = {},
+  ): Promise<BoundLogAppendResult> {
+    const binding = this.getByConversation(yzjConversationId)
+    if (binding === undefined) return { accepted: false, reason: 'unbound' }
+    return this.logs.append(yzjConversationId, binding.dshSessionId, binding.yzjKind, incoming, options)
+  }
+
+  /** Log for one conversation. */
+  getLog(yzjConversationId: string): YzjBoundMessageLog | undefined {
+    return this.logs.get(yzjConversationId)
+  }
+
+  /** Log for the conversation bound to this DSH session. */
+  getLogBySession(dshSessionId: string): YzjBoundMessageLog | undefined {
+    const binding = this.getBySession(dshSessionId)
+    if (binding === undefined) return undefined
+    return this.logs.get(binding.yzjConversationId)
+  }
+
+  /** @see BoundLogStore.ackLocal */
+  ackLocal(yzjConversationId: string, localId: string, realMsgId: string): Promise<YzjBoundMessageLog | undefined> {
+    return this.logs.ackLocal(yzjConversationId, localId, realMsgId)
+  }
+
+  /** @see BoundLogStore.failLocal */
+  failLocal(yzjConversationId: string, localId: string): Promise<YzjBoundMessageLog | undefined> {
+    return this.logs.failLocal(yzjConversationId, localId)
+  }
+
+  /** Shared summon-window digest (robot inject + DSH systemPrompt). */
+  formatSummonWindow(yzjConversationId: string, excludeMsgId?: string): string {
+    const limits = this.logs.getLimits()
+    return formatSummonWindow(this.logs.get(yzjConversationId), {
+      maxMessages: limits.summonWindowMessages,
+      maxChars: limits.summonWindowChars,
+      ...(excludeMsgId === undefined ? {} : { excludeMsgId }),
+    })
   }
 }
 

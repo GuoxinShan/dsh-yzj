@@ -412,6 +412,35 @@ describe('RobotRouter', () => {
     expect(dmAgent.inject.mock.calls).toHaveLength(0)
   })
 
+  it('writes inbound ① into the bound log (self in Yunzhijia client is isSelf, not ②)', async () => {
+    const appended: { origin: string; isSelf: boolean; content: string; msgId: string }[] = []
+    const home = {
+      ...memoryHome(),
+      appendLog: async (_id: string, incoming: { origin: string; isSelf: boolean; content: string; msgId: string }) => {
+        appended.push(incoming)
+        return { accepted: true, reason: 'appended' }
+      },
+    }
+    const { router } = makeRouter([], fakeAgents(() => 'idle'), ['u-allowed'], { home: home as never, cwd: tmpBase })
+    await router.handle(inbound('我在客户端发的', { groupId: 'g1', msgId: 'm-self', operatorOpenid: 'u-allowed' }))
+    expect(appended).toHaveLength(1)
+    expect(appended[0]).toMatchObject({ origin: 'inbound', isSelf: true, content: '我在客户端发的', msgId: 'm-self' })
+  })
+
+  it('injects the shared summon window on @Claude turns (T5)', async () => {
+    const home = {
+      ...memoryHome(),
+      formatSummonWindow: () => '［本群最近消息（仅本轮上下文，非完整群档）］\n[20:00] 同事: 上下文',
+    }
+    const agents = fakeAgents(() => 'idle')
+    const { router } = makeRouter([], agents, ['u-allowed'], { home: home as never, cwd: tmpBase })
+    await router.handle(inbound('帮我总结', { groupId: 'g1', msgId: 'm-ask' }))
+    const agent = agents.created[0] as { inject: { mock: { calls: unknown[][] } } }
+    const injected = agent.inject.mock.calls.map(call => String(call[0]!.content[0]!.text)).join('\n')
+    expect(injected).toContain('本群最近消息')
+    expect(injected).toContain('本群共享工作区')
+  })
+
   it('completedTurnPrefix slices through the last turn/end only', () => {
     const events = [
       { type: 'user/message', seq: 0, time: 0, data: {} },

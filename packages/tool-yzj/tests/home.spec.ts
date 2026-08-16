@@ -7,6 +7,8 @@ import {
   HomeBindingStore, conversationKindOf, homeSessionId,
   type HomeBindingRecord,
 } from '../src/home.ts'
+import { sessionIdFromAssemble } from '../src/index.ts'
+import { latestUserSourceKind } from '../src/bound-log.ts'
 
 function memoryFacility(): {
   facility: { open: (spec: unknown) => Promise<{ table: (name: string) => FakeTable }> }
@@ -97,5 +99,23 @@ describe('HomeBindingStore', () => {
     expect(second.created).toBe(false)
     expect(second.sessionId).toBe(first.sessionId)
     expect(second.sessionId.startsWith('yzj-robot-')).toBe(false)
+  })
+})
+
+describe('sessionIdFromAssemble (T5 systemPrompt.context)', () => {
+  it('reads harness AssembleContext.agent.session.id (scope is the Agent object)', () => {
+    const agent = { session: { id: 'yzj-home-g-a', events: [] as { type: string; data: unknown }[] } }
+    expect(sessionIdFromAssemble({ agent, scope: agent })).toBe('yzj-home-g-a')
+    expect(sessionIdFromAssemble({ scope: agent })).toBe('yzj-home-g-a')
+    expect(sessionIdFromAssemble({ scope: '[object Object]' })).toBeUndefined()
+    expect(sessionIdFromAssemble(undefined)).toBeUndefined()
+  })
+
+  it('injects the window only for GUI user turns, not plugin followups', () => {
+    const gui = [{ type: 'user/message', data: { source: { kind: 'user' } } }]
+    const plugin = [{ type: 'user/message', data: { source: { kind: 'plugin', plugin: 'robot-yzj' } } }]
+    expect(latestUserSourceKind(gui)).toBe('user')
+    expect(latestUserSourceKind(plugin)).toBe('plugin')
+    expect(latestUserSourceKind([])).toBe('none')
   })
 })
