@@ -31,6 +31,7 @@ import { PushHub, type PushSessionEvent } from './push.ts'
 import { MemoryStore } from './memory.ts'
 import { YzjChatnode } from './chatnode.ts'
 import { ChatnodeBridge, ChatnodeBridgeClient, type WebServerFace } from './bridge.ts'
+import { dshHomeOf, maybeAutoStartOps } from './ops-autostart.ts'
 import { applyRobotControlTools } from './control.ts'
 import { applyRobotShareTools } from './share.ts'
 
@@ -111,6 +112,15 @@ export interface Config {
   /** DSH GUI base URL; `!configure` and final-answer session records use it. */
   guiUrl?: string
   /**
+   * Bring the dsh-routines ops daemon up when this profile boots (web
+   * profile). The web profile cannot host the scheduler itself, so the
+   * plugin spawns the base-only daemon through `<home>/ops-wrapper.mjs`
+   * (detached; pid-file idempotent — never double-starts).
+   */
+  autoStartOps?: boolean
+  /** Working directory for the autostarted ops daemon; empty = the host process cwd (the harness checkout). */
+  opsCwd?: string
+  /**
    * Optional JSON file holding the FULL channel configuration
    * (`{defaultProvider?, defaultModel?, robots: [...]}`). When the file
    * exists and is readable it is the sole source of truth — `config.robots`
@@ -145,6 +155,8 @@ const ConfigSchema: z<Config> = z.object({
   bridgeToken: z.string().default(''),
   bridgeTarget: z.string().default(''),
   guiUrl: z.string().default(''),
+  autoStartOps: z.boolean().default(false),
+  opsCwd: z.string().default(''),
   channelsFile: z.string().default(''),
 })
 
@@ -872,6 +884,15 @@ export function apply(ctx: Context, config: Config): void {
     return
   }
   const robot = new YzjRobot(ctx, config)
+  // `dsh web` brings the ops scheduler daemon up with it (base-only profile;
+  // pid-file idempotent — see ops-autostart.ts). Fire-and-forget on boot.
+  if (config.autoStartOps === true) {
+    maybeAutoStartOps({
+      home: dshHomeOf(),
+      opsCwd: config.opsCwd !== undefined && config.opsCwd !== '' ? config.opsCwd : process.cwd(),
+      logger: { info: message => ctx.logger.info(message), warn: message => ctx.logger.warn(message) },
+    })
+  }
   // The override store opens as soon as the storage hub mounts the domain
   // form (web profile: json backend under the harness home). Routers read it
   // lazily per agent creation, so late opening is fine.
