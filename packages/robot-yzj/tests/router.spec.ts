@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { RobotRouter, collectAssistantText, completedTurnPrefix, highestAssistantSeq } from '../src/router.ts'
+import { RobotRouter, collectAssistantText, completedTurnPrefix, conversationSummary, highestAssistantSeq } from '../src/router.ts'
 import type { RobotInboundMessage } from '../src/protocol.ts'
 import type { RobotSendOptions, RobotSendResult } from '../src/outbound.ts'
 
@@ -56,7 +56,12 @@ function makeRouter(
   sends: RobotSendResult[],
   agents = fakeAgents(() => 'idle'),
   allowFrom = ['u-allowed'],
-  extra: { memory?: { lines: (key: string) => readonly string[]; remember: (key: string, line: string) => Promise<{ lines: readonly string[]; note: string }>; forget: (key: string, substring: string) => Promise<{ lines: readonly string[]; note: string }> }; cwd?: string } = {},
+  extra: {
+    memory?: { lines: (key: string) => readonly string[]; remember: (key: string, line: string) => Promise<{ lines: readonly string[]; note: string }>; forget: (key: string, substring: string) => Promise<{ lines: readonly string[]; note: string }> }
+    cwd?: string
+    guiUrl?: string
+    surface?: unknown
+  } = {},
 ) {
   const sendCalls: { text: string; options?: RobotSendOptions }[] = []
   const sender = {
@@ -71,6 +76,8 @@ function makeRouter(
     allowFrom: async () => allowFrom,
     ...(extra.memory === undefined ? {} : { memory: extra.memory }),
     ...(extra.cwd === undefined ? {} : { cwd: extra.cwd }),
+    ...(extra.guiUrl === undefined ? {} : { guiUrl: extra.guiUrl }),
+    ...(extra.surface === undefined ? {} : { surface: extra.surface as never }),
   })
   return { router, sendCalls, agents }
 }
@@ -383,6 +390,82 @@ describe('RobotRouter', () => {
     expect(seed).toHaveLength(4)
     expect(seed.at(-1)!.type).toBe('turn/end')
     expect(completedTurnPrefix(events.slice(0, 3))).toEqual([])
+  })
+
+  it('!configure without guiUrl gives panel guidance; with guiUrl gives the link', async () => {
+    const { router: plain, sendCalls: plainCalls } = makeRouter([])
+    await plain.handle(inbound('!configure'))
+    expect(plainCalls[0]!.text).toContain('机器人设置')
+    expect(plainCalls[0]!.text).not.toContain('http')
+    const { router: linked, sendCalls: linkedCalls } = makeRouter([], fakeAgents(() => 'idle'), ['u-allowed'], { guiUrl: 'http://127.0.0.1:3080' })
+    await linked.handle(inbound('!configure'))
+    expect(linkedCalls[0]!.text).toContain('http://127.0.0.1:3080')
+  })
+
+  it('!feedback appends to the local log under DSH_HOME and acknowledges', async () => {
+    vi.stubEnv('DSH_HOME', tmpBase)
+    try {
+      const { router, sendCalls } = makeRouter([])
+      await router.handle(inbound('!feedback 机器人回复有点慢，建议提速。'))
+      expect(sendCalls[0]!.text).toContain('已记录反馈（14 字）')
+      const log = readFileSync(join(tmpBase, 'robot-feedback.log'), 'utf8')
+      expect(log).toContain('机器人回复有点慢')
+      expect(log).toContain('group=')
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('!fork refuses the current group and reports an unknown target', async () => {
+    const { router, sendCalls } = makeRouter([])
+    await router.handle(inbound('!fork 6a7f37b4e4b0e6211b1c5b87 继续调研', { groupId: '6a7f37b4e4b0e6211b1c5b87' }))
+    expect(sendCalls[0]!.text).toContain('不能交接给当前群')
+    await router.handle(inbound('!fork g-unknown 继续调研', { groupId: '6a7f37b4e4b0e6211b1c5b87' }))
+    expect(sendCalls[1]!.text).toContain('交接失败')
+    expect(sendCalls[1]!.text).toContain('没有见过群')
+  })
+
+  it('!fork hands context over to a target surface through the inbound pipeline', async () => {
+    const surface = {
+      get: (key: string) => key === 'surface:0:g-target'
+        ? { robotId: 'BOT-r', robotName: '群机器人', groupType: 3, time: Date.now() }
+        : undefined,
+      put: async () => {}, getMeta: () => undefined, putMeta: async () => {}, entries: () => [],
+    }
+    const agents = fakeAgents(() => 'idle')
+    const { router, sendCalls } = makeRouter([], agents, ['u-allowed'], { surface, cwd: tmpBase })
+    // Seed the source session with completed assistant output.
+    await router.handle(inbound('给我讲讲项目', { groupId: '6a7f37b4e4b0e6211b1c5b87', msgId: 'root-1' }))
+    const source = agents.created[0] as { session: { events: unknown[] } }
+    source.session.events = [
+      { type: 'user/message', seq: 0, time: 0, data: {} },
+      { type: 'assistant/message', seq: 1, time: 0, data: { message: { content: [{ type: 'text', text: '项目要点：A、B、C。' }] } } },
+      { type: 'turn/end', seq: 2, time: 0, data: { reason: { kind: 'completed' } } },
+    ] as never as import('@deepseek-ai/dsh-session').SessionEvent[]
+    const before = sendCalls.length
+    await router.handle(inbound('!fork g-target 继续调研', { groupId: '6a7f37b4e4b0e6211b1c5b87', msgId: 'root-2' }))
+    // The target group got its own anchored session (create #2) and the
+    // source group received a handover receipt.
+    expect(agents.created).toHaveLength(2)
+    const targetFollowups = (agents.created[1] as { followup: { mock: { calls: unknown[][] } } }).followup.mock.calls
+    const handoverText = String(targetFollowups.at(-1)![0]!.content[0]!.text)
+    expect(handoverText).toContain('继续调研')
+    expect(handoverText).toContain('项目要点：A、B、C')
+    expect(handoverText).toContain('来自群 6a7f37b4e4b0e6211b1c5b87')
+    const receipt = sendCalls.at(-1)!
+    expect(receipt.text).toContain('已交接给群 g-target')
+    expect(receipt.text).toContain('附 11 字上下文摘要')
+    expect(sendCalls.length).toBeGreaterThan(before)
+  })
+
+  it('conversationSummary is bounded and newest-first', () => {
+    const events = [
+      { type: 'assistant/message', seq: 0, time: 0, data: { message: { content: [{ type: 'text', text: '旧内容' }] } } },
+      { type: 'assistant/message', seq: 1, time: 0, data: { message: { content: [{ type: 'text', text: '新内容' }] } } },
+    ] as never as import('@deepseek-ai/dsh-session').SessionEvent[]
+    expect(conversationSummary(events)).toBe('旧内容\n新内容')
+    expect(conversationSummary(events, 3)).toBe('新内容')
+    expect(conversationSummary([])).toBe('')
   })
 })
 

@@ -39,6 +39,28 @@ describe('PushHub', () => {
     expect(sends[0]!.options).toMatchObject({ replyMsgId: 'in-1', notifyOpenIds: ['u1'] })
   })
 
+  it('appends the GUI session-record line to final answers when guiUrl is set', async () => {
+    const { sends } = makeHub()
+    const hub = new PushHub('http://127.0.0.1:3080')
+    hub.register('yzj-robot-s1' as never, {
+      sender: {
+        send: async (text, options) => {
+          sends.push({ text, ...(options === undefined ? {} : { options }) })
+          return { ok: true, msgId: 'p-1' }
+        },
+      },
+      group: true,
+      askerOpenId: 'u1',
+      askerName: '张三',
+      lastInbound: { msgId: 'in-1', summary: '原消息', personName: '张三' },
+    })
+    hub.noteEvent('yzj-robot-s1', assistant(2, '回答'))
+    hub.noteIdle('yzj-robot-s1')
+    await Promise.resolve()
+    expect(sends).toHaveLength(1)
+    expect(sends[0]!.text).toBe('回答\n\n📎 本任务完整记录：http://127.0.0.1:3080（DSH 会话 yzj-robot-s1）')
+  })
+
   it('never re-pushes below the watermark', async () => {
     const { hub, sends } = makeHub()
     hub.noteEvent('yzj-robot-s1', assistant(2, '一次'))

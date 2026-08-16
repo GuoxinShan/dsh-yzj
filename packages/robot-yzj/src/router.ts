@@ -13,7 +13,8 @@
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { foldScheduleEvents } from '@deepseek-ai/dsh-schedule'
-import { mkdirSync } from 'node:fs'
+import { appendFileSync, mkdirSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Agent, AgentHandle, CreateAgentOptions, ResumeAgentOptions } from '@deepseek-ai/dsh-agent'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
@@ -82,13 +83,21 @@ export interface RobotRouterOptions {
   readonly ackText?: string
   readonly denyText?: string
   readonly logger?: RouterLogger
+  /** GUI base URL for `!configure` and S2 session deep links; absent = text guidance only. */
+  readonly guiUrl?: string
 }
 
 const DEFAULT_ACK_TEXT = '收到，处理中…'
 const DEFAULT_DENY_TEXT = '抱歉，你不在本机器人的白名单内。'
-const COMMAND_NAMES = ['help', 'status', 'routines', 'mute', 'unmute', 'restart'] as const
+const COMMAND_NAMES = ['help', 'status', 'routines', 'mute', 'unmute', 'restart', 'configure'] as const
 type RobotCommand = typeof COMMAND_NAMES[number]
-const STANDALONE_COMMAND = /^!(help|status|routines|mute|unmute|restart)\s*$/
+const STANDALONE_COMMAND = /^!(help|status|routines|mute|unmute|restart|configure)\s*$/
+/** `!fork <groupId> <instruction>` — cross-group handover (S3): the current
+ * session's context summary is forwarded to a new/anchored session of the
+ * target group through the full inbound pipeline. */
+const FORK_COMMAND = /^!fork\s+(\S+)\s+(.+)$/is
+/** `!feedback <text>` — append to the local feedback log and acknowledge. */
+const FEEDBACK_COMMAND = /^!feedback\s+(.+)$/is
 /** Memory verbs (S4): a leading @-mention is tolerated on group surfaces. */
 const MEMORY_REMEMBER = /^(?:@[^\s@]+\s*)?(?:记住|remember)\s*[:：]?\s+(.+)$/is
 const MEMORY_LIST = /^(?:@[^\s@]+\s*)?(?:!memory|你记住了什么|列出记忆)\s*$/i
@@ -165,6 +174,31 @@ export function completedTurnPrefix(events: readonly SessionEvent[]): SessionEve
   return events.slice(0, lastEnd.seq + 1)
 }
 
+/**
+ * A bounded, newest-first plain-text summary of a session's assistant
+ * output, for cross-group handover (`!fork`). Traverses the log backwards,
+ * collecting assistant text blocks up to `maxChars` (older content is
+ * dropped; order within the window is preserved).
+ * @param events - the source session's full event log.
+ * @param maxChars - hard cap on the returned text length.
+ * @returns the bounded summary ('' when the session has no assistant output).
+ */
+export function conversationSummary(events: readonly SessionEvent[], maxChars = 1200): string {
+  const parts: string[] = []
+  let size = 0
+  for (let index = events.length - 1; index >= 0 && size < maxChars; index -= 1) {
+    const event = events[index]
+    if (event === undefined || event.type !== 'assistant/message') continue
+    for (const block of event.data.message?.content ?? []) {
+      if (block.type === 'text' && block.text !== undefined && block.text !== '') {
+        parts.unshift(block.text)
+        size += block.text.length
+      }
+    }
+  }
+  return parts.join('\n').slice(-maxChars)
+}
+
 /** DM conversation key of one message (override/memory-table form). */
 function dmKeyOf(message: RobotInboundMessage): string {
   return dmKey(message.robotId, message.operatorOpenid)
@@ -190,6 +224,7 @@ export class RobotRouter {
   private readonly ackText: string
   private readonly denyText: string
   private readonly logger: RouterLogger | undefined
+  private readonly guiUrl: string
 
   private readonly dedupe = new InboundDedupe()
   /** Handles for sessions this router created (dispose/restart need them). */
@@ -226,6 +261,7 @@ export class RobotRouter {
     this.ackText = options.ackText ?? DEFAULT_ACK_TEXT
     this.denyText = options.denyText ?? DEFAULT_DENY_TEXT
     this.logger = options.logger
+    this.guiUrl = options.guiUrl ?? ''
   }
 
   /** Dispose every agent session this router created; clears all state. */
@@ -341,6 +377,19 @@ export class RobotRouter {
     const commandName = command?.[1] as RobotCommand | undefined
     if (commandName !== undefined && COMMAND_NAMES.includes(commandName)) {
       await this.runCommand(commandName, message, replyAnchor)
+      return
+    }
+    // Parameterized commands (S3): !fork carries a target groupId + instruction,
+    // !feedback carries the feedback text. Both run before authorization, like
+    // the standalone bang family, and consume the message (no ack, no turn).
+    const fork = FORK_COMMAND.exec(stripped)
+    if (fork !== null && fork[1] !== undefined && fork[2] !== undefined) {
+      await this.runFork(fork[1], fork[2], message, replyAnchor)
+      return
+    }
+    const feedback = FEEDBACK_COMMAND.exec(stripped)
+    if (feedback !== null && feedback[1] !== undefined) {
+      await this.runFeedback(feedback[1], message, replyAnchor)
       return
     }
     if (!(await this.authorized(message.operatorOpenid))) {
@@ -742,16 +791,24 @@ export class RobotRouter {
     switch (command) {
       case 'help':
         await this.reply([
-          '可用命令（独立成句才生效）：',
+          '可用命令（独立成句才生效；!fork / !feedback 带参数）：',
           '!status — 查看机器人连接与会话状态',
           '!routines — 列出本会话的定时提醒',
           '!memory — 查看本会话的记忆（说「记住 …」添加、「忘掉 …」删除）',
           '!mute — 静音本会话（不再回复，!unmute 解除）',
           '!unmute — 解除静音',
           '!restart — 重启本会话（保留聊天记录，清空额外上下文）',
+          '!configure — 机器人设置面板入口',
+          '!fork <群ID> <指令> — 把本会话上下文交接给目标群（群ID 见 !status）',
+          '!feedback <文本> — 反馈给机器人维护者',
           '',
           '写操作会先推送确认卡：回复「确认 N / 取消 N」裁决。',
         ].join('\n'), anchor)
+        return
+      case 'configure':
+        await this.reply(this.guiUrl === ''
+          ? '机器人设置：在 DSH 面板（悬浮球）的「机器人」tab 调整模型覆盖与通道状态。'
+          : `机器人设置面板：${this.guiUrl}（「机器人」tab：模型覆盖、通道状态、会话列表）`, anchor)
         return
       case 'routines': {
         const agent = this.agents.get(sessionId)
@@ -800,6 +857,69 @@ export class RobotRouter {
         await this.reply('会话已重启（历史保留在 DSH 中）。', anchor)
         return
       }
+    }
+  }
+
+  /**
+   * `!fork <groupId> <instruction>` (S3): hand the current session's context
+   * summary over to the target group's session through the full inbound
+   * pipeline (ack + agent turn in the target group). The target must be a
+   * surface this robot has seen; the group's own session anchors there and
+   * the instruction runs as the operator.
+   */
+  private async runFork(
+    targetGroupId: string,
+    instruction: string,
+    message: RobotInboundMessage,
+    anchor: RobotSendOptions,
+  ): Promise<void> {
+    const trimmed = instruction.trim()
+    if (targetGroupId === message.groupId) {
+      await this.reply('不能交接给当前群。请指定其他群的 groupId（!status 可查本会话；DSH 侧 robot_status 可查全部表面）。', anchor)
+      return
+    }
+    const sessionId = this.resolveSession(message)
+    // A top-level !fork opens a fresh thread session with no agent yet; the
+    // conversation's context lives in the group's last anchored session, so
+    // fall back to it when the message's own session has nothing.
+    const sourceId = this.agents.get(sessionId) !== undefined ? sessionId : this.lastSession.get(message.groupId)
+    const agent = sourceId === undefined ? undefined : this.agents.get(sourceId)
+    const summary = agent === undefined ? '' : conversationSummary(agent.session.events)
+    const handover = summary === ''
+      ? `${trimmed}\n\n（DSH 跨群交接：来自群 ${message.groupId} 的会话，暂无已完成轮次上下文）`
+      : `${trimmed}\n\n（DSH 跨群交接：来自群 ${message.groupId} 的会话上下文摘要，见下）\n\n${summary}`
+    const result = await this.continueFromDsh(handover, { groupId: targetGroupId })
+    if (!result.ok) {
+      await this.reply(`交接失败：${result.error ?? '未知错误'}`, anchor)
+      return
+    }
+    const preview = trimmed.length > 40 ? `${trimmed.slice(0, 40)}…` : trimmed
+    await this.reply(
+      `已交接给群 ${targetGroupId}：${preview}${summary === '' ? '' : `（附 ${summary.length} 字上下文摘要）`}`,
+      anchor,
+    )
+  }
+
+  /**
+   * `!feedback <text>` (S3): append to the local feedback log under the
+   * harness home (`~/.dsh/robot-feedback.log`) and acknowledge. Delivery to a
+   * maintenance group stays an explicit future option.
+   */
+  private async runFeedback(text: string, message: RobotInboundMessage, anchor: RobotSendOptions): Promise<void> {
+    const home = process.env.DSH_HOME ?? join(homedir(), '.dsh')
+    const line = [
+      `[${new Date().toISOString()}] group=${message.groupId} robot=${message.robotId}`,
+      `user=${message.operatorName}(${message.operatorOpenid})`,
+      text.trim(),
+      '---',
+    ].join('\n') + '\n'
+    try {
+      mkdirSync(home, { recursive: true })
+      appendFileSync(join(home, 'robot-feedback.log'), line, 'utf8')
+      await this.reply(`已记录反馈（${text.trim().length} 字）。谢谢！`, anchor)
+    } catch (error) {
+      this.logger?.warn(`robot: feedback log failed: ${String(error)}`)
+      await this.reply('反馈记录失败（本地日志写入异常），请稍后再试。', anchor)
     }
   }
 }
