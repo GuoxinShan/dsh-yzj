@@ -76,14 +76,14 @@ export function YzjHomeChrome(props: YzjHomeChromeInjected) {
     <div className={css.chrome} data-testid="yzj-home-chrome">
       {bound ? (
         <>
-          <span>下方发送 = 发给 Claude（带本群近窗，不进群）</span>
+          <span>下方发送 = 发给助手（带本群近窗，不进群）</span>
           <button type="button" className={`${css.chromeBtn} ${css.chromePrimary}`} disabled={busy} onClick={() => { void sendToGroup() }}>
             {busy ? '发进群…' : '发进群'}
           </button>
         </>
       ) : (
         <>
-          <span>私密会话 · 下方发送只给 Claude</span>
+          <span>私密会话 · 下方发送只给助手</span>
           <button type="button" className={css.chromeBtn} onClick={() => setHandoffOpen(true)}>丢进群</button>
         </>
       )}
@@ -192,7 +192,7 @@ function HandoffModal(props: {
                     : current.filter(id => id !== row.id))
                 }}
               />
-              <span><strong>{row.role === 'assistant' ? 'Claude' : '用户'}</strong> {row.text.slice(0, 180)}</span>
+              <span><strong>{row.role === 'assistant' ? '助手' : '用户'}</strong> {row.text.slice(0, 180)}</span>
             </label>
           ))}
         </div>

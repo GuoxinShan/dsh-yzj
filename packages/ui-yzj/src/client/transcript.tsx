@@ -105,7 +105,7 @@ export function YzjFusedView(props: YzjFusedInjected) {
   if (!value.bound) {
     return (
       <div className={css.unbound}>
-        这是私密会话：没有群消息流。下方发送只给 Claude。
+        这是私密会话：没有群消息流。下方发送只给助手。
         要用「丢进群」把可见摘要交到绑定群会话。
       </div>
     )
@@ -114,8 +114,8 @@ export function YzjFusedView(props: YzjFusedInjected) {
   return (
     <div className={css.stream} data-testid="yzj-fused-stream">
       <div className={css.hint}>
-        群工作时间线：云之家消息与发给 Claude / Claude 回复在同一条流。
-        下方发送 = 发给 Claude；「发进群」才进群、不叫模型。
+        群工作时间线：云之家消息与发给助手 / 助手回复在同一条流。
+        下方发送 = 发给助手；「发进群」才进群、不叫模型。
       </div>
       {error !== '' && <div className={css.hint} role="alert">{error}</div>}
       {value.items.map((item, index) => {
@@ -169,7 +169,7 @@ export function YzjFusedView(props: YzjFusedInjected) {
         return (
           <div key={`s-${index}`} className={`${css.row} ${fromAgent ? css.rowOther : css.rowSelf}`}>
             <div className={css.meta}>
-              <span className={css.tag}>{fromAgent ? 'Claude' : '发给 Claude'}</span>
+              <span className={css.tag}>{fromAgent ? '助手' : '发给助手'}</span>
               <span>{clock(item.time)}</span>
             </div>
             <div className={`${css.bubble} ${css.agent}`}>{text}</div>

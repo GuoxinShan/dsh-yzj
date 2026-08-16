@@ -1,6 +1,6 @@
 # DSH 绑定会话的可见时间线：插件消息日志
 
-> 版本：v1.1（已拍板；**实现已落地**——插件消息日志 + 融合视图 + composer 双意图 + 召唤窗口注入）
+> 版本：v1.1（已拍板；**实现已落地**——插件消息日志 + 融合视图 + composer 双意图 + 召唤窗口注入）+ **v1.2 文案**（2026-08-16）：产品手势是云之家 @机器人、DSH「发给助手」；「产品文案 @Claude」作废。Claude Tag 仅对照。
 > 日期：2026-08-16
 > 决策人：Guoxin Shan
 > 定位：会话家园产品法（[`dsh-home-session.md`](dsh-home-session.md)）落地后的**下一片**：绑定 DSH 会话里人看见的那条融合时间线。本文规定存储对象、合并规则、模型上下文、发送路径、去重、回填、composer chrome，以及**为什么 ①② 不是 `Session.append`**。
@@ -26,16 +26,16 @@
 | T1 | ①② 的存储位置 | **不是** harness session 事件。写入**插件自有耐久消息日志**，按绑定键（`yzjConversationId` ↔ `dshSessionId`）索引 | 仓外插件无法注册自定义事件类型：`KNOWN_SESSION_EVENT_TYPES` 拒绝未知 type，`Session.append` 无 `ignorable` 入口。硬塞 ①② 会丢事件或污染官方日志。确认卡 pending 已因同一约束改走 host 内存，①② 不得假装例外 |
 | T2 | 人看见什么 | **一条融合时间线**：消息日志（①②）与官方 session 事件（③④，含确认卡挂起态）按时间戳交错 | 产品法 D3：群工作发生在 DSH 里。两份存储、一个视图；禁止再在面板另开一套 IM transcript 作家园 |
 | T3 | 模型默认看见什么 | **默认不把每一条 ① 喂给模型**。未召唤的群流水只给人看 | 群聊噪音大、token 贵；D11 已否 ambient。人要完整群脸，模型只要被叫到时的近期窗口 |
-| T4 | 何时把日志交给模型 | **召唤才注入**：云之家侧 `@机器人`（产品文案 @Claude），或 DSH 绑定 composer「发给 agent」。注入物 = 本条绑定日志的**有界近期窗口**，且**只服务这一轮**（同轮工具续写仍可见；下一轮未召唤则不再注入） | 对齐 D6 召唤手势。窗口有界（条数 + 字符，Config，不是常量）。禁止把全量日志当系统提示常驻 |
-| T5 | 窗口注入机制 | **显式 per-turn 注入**，两条召唤入口共用同一 digest 契约（§5.2），走**已有** host 缝，不新开 harness 钩子：① 云之家 @Claude → `agent.inject(窗口)` 再 `followup(问句)`（对齐 robot-yzj `dispatchTurn`）；② DSH「发给 agent」→ `ctx.systemPrompt.context`（对齐 memory-yzj 有界注入缝），仅在「本轮由召唤发起」时返回窗口文本 | `agent/request` 只能改 `LlmCallConfig`，不能改消息正文（总方案 §2.2）。**不用 codec 承载窗口**：`ReferenceCodec.serialize` 的输出会固化进 ③，后续轮次重复付费且窗口变脏快照，违反「只服务这一轮」。codec 仍只服务用户主动 @/拖 chip（既有 mention 管线）。禁止为窗口发明自定义 session 事件或新的 harness fork |
+| T4 | 何时把日志交给模型 | **召唤才注入**：云之家侧 `@机器人`，或 DSH 绑定 composer「发给助手」。注入物 = 本条绑定日志的**有界近期窗口**，且**只服务这一轮**（同轮工具续写仍可见；下一轮未召唤则不再注入） | 对齐 D6 召唤手势。对照/类比：对齐 Claude Tag（仅对照）。窗口有界（条数 + 字符，Config，不是常量）。禁止把全量日志当系统提示常驻 |
+| T5 | 窗口注入机制 | **显式 per-turn 注入**，两条召唤入口共用同一 digest 契约（§5.2），走**已有** host 缝，不新开 harness 钩子：① 云之家 @机器人 → `agent.inject(窗口)` 再 `followup(问句)`（对齐 robot-yzj `dispatchTurn`）；② DSH「发给助手」→ `ctx.systemPrompt.context`（对齐 memory-yzj 有界注入缝），仅在「本轮由召唤发起」时返回窗口文本 | `agent/request` 只能改 `LlmCallConfig`，不能改消息正文（总方案 §2.2）。**不用 codec 承载窗口**：`ReferenceCodec.serialize` 的输出会固化进 ③，后续轮次重复付费且窗口变脏快照，违反「只服务这一轮」。codec 仍只服务用户主动 @/拖 chip（既有 mention 管线）。禁止为窗口发明自定义 session 事件或新的 harness fork |
 | T6 | DSH「发进群」 | 写日志（乐观 ②）+ CLI `im message send`（经 `/yzj` 直写，用户意志）。**不**开 DSH user-turn。**不**弹确认卡 | 开 ③ 会打到模型（用户只是发群，不是叫 agent）。确认卡只门控 agent 写（D9）。乐观气泡避免等 CLI 往返；回声按 `(groupId, msgId)` 去重（T8） |
 | T7 | 云之家客户端发出的「我发的」 | **① + `isSelf: true`**，不是 ② | ② 的定义是「用户在 DSH 点了发进群」。同一人在云之家客户端打的字，来源是入站/回填，不是 DSH 直写路径 |
 | T8 | 去重键 | 主键 **`(yzjConversationId, msgId)`**。乐观 ② 先占 `local-*`，CLI 返回真实 `msgId` 后改写；之后同一键的入站/回填回声丢弃，保留 ② 行 | 面板消息流已按 `msgId` 去重。无第二套模糊主键做默认；仅当 CLI 未返回 `msgId` 时才允许 `(fromOpenId, content, sentAt±窗口)` 作临时贴合，贴上即升格为主键 |
 | T9 | 打开绑定会话 | **必须回填**最近 N 条进日志/视图。只靠 live inbound **不够** | 对话机器人 WS 默认只投递 `@机器人`，不是全量群流水。绑定前的历史、DSH 关掉时的非 @ 消息、漏帧，都只有 `im message list` 能补。N 为 Config（默认 50） |
 | T10 | 未绑定 composer | **无 ①② 流**；**单一发送按钮**（只对 agent） | D7。私聊不是群；引用 chip ≠ 绑定 |
-| T11 | 绑定 composer | **两种意图**：发给 agent / 发进群。chrome 可以是双按钮或模式切换，必须在 **DSH composer**，不得放回面板第二 IM | D3/D5/§2.1 不变量 5。面板 composer 目标仍是移除/降级 |
+| T11 | 绑定 composer | **两种意图**：发给助手 / 发进群。chrome 可以是双按钮或模式切换，必须在 **DSH composer**，不得放回面板第二 IM | D3/D5/§2.1 不变量 5。面板 composer 目标仍是移除/降级 |
 | T12 | 机器人出站帖子 | **不进 ①② 日志**（回填/入站遇到本通道机器人发送者则跳过）。群里那条帖子是 ④ 的投递，视图用「已投递到群」标记，不另开说话人 | D4。否则融合流会出现 agent 正文 + 一条「机器人 ①」双影 |
-| T13 | write-gate 的 `yzj-robot-*` skip | **已重划**（家园 UX PR）：残留 `yzj-robot-*` 仍 skip GUI。`ownsConfirm` 的 `yzj-home-*`：最新 user/message 是 GUI 用户轮 → GUI 卡；plugin followup 或尚无 user/message → 群建议卡 | 绑定后 skip 前缀失效；操作者对着绑定会话「发给 agent」必须能在 GUI 确认 |
+| T13 | write-gate 的 `yzj-robot-*` skip | **已重划**（家园 UX PR）：残留 `yzj-robot-*` 仍 skip GUI。`ownsConfirm` 的 `yzj-home-*`：最新 user/message 是 GUI 用户轮 → GUI 卡；plugin followup 或尚无 user/message → 群建议卡 | 绑定后 skip 前缀失效；操作者对着绑定会话「发给助手」必须能在 GUI 确认 |
 
 ---
 
@@ -147,13 +147,13 @@ MVP 日志存 **digest**：图片/文件记 `msgType` + 文件名/短描述，�
 
 ### 4.4 召唤 followup 不是第二句人话
 
-云之家 @Claude 要启动 ④，harness 仍需要一次 user-turn（`followup()`）。该 ③ 是**轮次扳机**，不是产品上的第二句发言：
+云之家 @机器人 要启动 ④，harness 仍需要一次 user-turn（`followup()`）。该 ③ 是**轮次扳机**，不是产品上的第二句发言：
 
 - 人只看见对应 ①（IM 气泡）；
 - 识别：`source.kind === 'plugin'`（现行 robot followup 已带），或 followup 元数据带同一 `msgId`；
 - 融合视图**不渲染**这条扳机 ③。
 
-DSH「发给 agent」的 ③ 是用户真的对 Claude 说的话，**要渲染**。
+DSH「发给助手」的 ③ 是用户真的对助手说的话，**要渲染**。
 
 ### 4.5 视图落点（不 fork harness）
 
@@ -170,8 +170,8 @@ DSH「发给 agent」的 ③ 是用户真的对 Claude 说的话，**要渲染**
 | 手势 | 是否召唤 | 模型看见 |
 |---|---|---|
 | 群内普通消息（无 @ 机器人） | 否（D11） | 无窗口；只写 ①（live 或下次打开回填） |
-| 云之家 `@机器人` / @Claude | 是 | 窗口 + 本条问句（followup）→ ④ |
-| DSH「发给 agent」 | 是 | 窗口 + ③ 正文 → ④ |
+| 云之家 `@机器人` | 是 | 窗口 + 本条问句（followup）→ ④ |
+| DSH「发给助手」 | 是 | 窗口 + ③ 正文 → ④ |
 | DSH「发进群」 | 否 | 无窗口、无 ③、无 ④ |
 | 同轮工具续写 | 跟随本轮召唤 | 窗口仍在（T4） |
 | 下一轮未再召唤（含 routines 投递进绑定会话的 ④） | 否 | 不注入窗口 |
@@ -184,7 +184,7 @@ DSH「发给 agent」的 ③ 是用户真的对 Claude 说的话，**要渲染**
 
 - 输入：该绑定 log 的 `acked` 行（`pending`/`failed` ② 不进模型），按 `sentAt` 升序。
 - 切窗口：从末尾取至多 `summonWindowMessages` 条，再从最旧向前截到 `summonWindowChars`（超限丢更旧，保留较新）。
-- **不含本轮问句对应的那条 ①**：@Claude 时去掉与 inbound `msgId` 相同的行（问句走 followup 正文）；DSH「发给 agent」时日志里本无这条 ③，窗口即当前 ①② 近窗。
+- **不含本轮问句对应的那条 ①**：@机器人 时去掉与 inbound `msgId` 相同的行（问句走 followup 正文）；DSH「发给助手」时日志里本无这条 ③，窗口即当前 ①② 近窗。
 - 行格式（模型可见，中文标签）：`[时间] 显示名: digest`；`isSelf` 标「我」；有 `replyMsgId` 则附「回复 <短摘要或 id>」。
 - 头一行固定：`［本群最近消息（仅本轮上下文，非完整群档）］`。空窗口 → 不注入（不要送空块）。
 
@@ -193,13 +193,13 @@ DSH「发给 agent」的 ③ 是用户真的对 Claude 说的话，**要渲染**
 ### 5.3 注入缝（与既有机制对齐）
 
 ```
-云之家 @Claude
+云之家 @机器人
   写 ①（inbound）
   → agent.inject(createUserMessage({ content: 窗口, source: plugin }))   // 若窗口非空
   → agent.followup(createUserMessage({ content: 入站正文, source: plugin }))
   既有 memory / 群共享工作区 inject 仍按 robot-yzj 原顺序，窗口块另加，不替换它们
 
-DSH「发给 agent」
+DSH「发给助手」
   官方 ③ = composer 正文（可含用户 chip；chip 仍 codec.serialize）
   → systemPrompt.context({ name: 'yzj-bound-window', text: (assemble) => 本轮是 GUI 召唤则窗口否则 '' })
   读 `assemble.agent.session.id`（harness `assembleContextFor`：`scope` 是 Agent 对象，不是 session id 字符串——pitfall-011）
@@ -217,7 +217,7 @@ DSH「发给 agent」
 
 | 发起者 | 意图 | 写日志 | harness 轮次 | 确认卡 | 云之家 |
 |---|---|---|---|---|---|
-| 用户 | DSH **发给 agent** | 否 | **③** 官方 user-turn | 无 | 否 |
+| 用户 | DSH **发给助手** | 否 | **③** 官方 user-turn | 无 | 否 |
 | 用户 | DSH **发进群** | 乐观 ② | **无** | **无** | CLI `im message send`（`/yzj im-send`，用户本人身份） |
 | 用户 | 云之家客户端发消息 | ① `isSelf`（inbound 或回填） | 无（除非同时 @ 机器人 → 另走召唤） | 无 | 已在云之家 |
 | 用户 | 过渡期面板 composer 发群 | 必须写入绑定 log 为 ②，不得只写面板缓存 | 无 | 无 | 同 `im-send` |
@@ -233,7 +233,7 @@ DSH「发给 agent」
 4. 成功：用返回 `msgId` 改写主键；`status: 'acked'`。失败：`status: 'failed'`，气泡可重试；**不**回滚成 ③。
 5. 之后任何入站/回填带同一 `(yzjConversationId, msgId)`：丢弃回声（T8）。
 
-### 6.2 「发给 agent」时序
+### 6.2 「发给助手」时序
 
 1. 提交官方 ③（DSH 默认发送路径）。
 2. 按 §5 注入窗口（本轮）。
@@ -259,7 +259,7 @@ DSH「发给 agent」
 
 ### 8.1 回填（正确性底线）
 
-**触发**：focus / 打开一条 `bound` DSH session（含挑群切换、@Claude 打开家园、丢进群着陆）。
+**触发**：focus / 打开一条 `bound` DSH session（含挑群切换、@机器人 打开家园、丢进群着陆）。
 
 **动作**：`im message list --group-id <yzjConversationId>`，最近 `backfillLimit` 条，按 §3.2 / §7 写入。过滤 T12。补 `fromName`（whoami / 通讯录，失败则空）。
 
@@ -269,7 +269,7 @@ DSH「发给 agent」
 
 | 来源 | 写入 |
 |---|---|
-| 机器人 inbound | ①，然后若是 @Claude 再召唤 |
+| 机器人 inbound | ①，然后若是 @机器人 再召唤 |
 | DSH 发进群 | 乐观 ② |
 | 绑定会话处于 focus 时 CLI 增量（复用面板 `type=new` 分页） | ① 或与 ② 去重 |
 
@@ -281,13 +281,13 @@ DSH「发给 agent」
 
 | 会话 | Chrome | 默认意图 |
 |---|---|---|
-| `unbound` | **一个**发送按钮 | 发给 agent（③） |
-| `bound` | **两种意图**同时可及：发给 agent / 发进群 | 不规定默认选哪一个；必须让用户一眼能分清「这句话会不会进群、会不会叫模型」 |
+| `unbound` | **一个**发送按钮 | 发给助手（③） |
+| `bound` | **两种意图**同时可及：发给助手 / 发进群 | 不规定默认选哪一个；必须让用户一眼能分清「这句话会不会进群、会不会叫模型」 |
 
 约束：
 
 - 发进群不得放在面板第二 composer 作为家园入口（过渡期面板若仍能发，必须写入本 log ②，见 §6 表）。
-- 既有 `conversation.input.dock`（chip 插入）保留；两种意图共享同一草稿与 @/拖拽管线。「发进群」把草稿当 IM 正文，**不**跑 codec 注入模型；「发给 agent」跑官方提交 + §5。
+- 既有 `conversation.input.dock`（chip 插入）保留；两种意图共享同一草稿与 @/拖拽管线。「发进群」把草稿当 IM 正文，**不**跑 codec 注入模型；「发给助手」跑官方提交 + §5。
 - 未绑定不得出现「发进群」。
 
 ---
@@ -296,7 +296,7 @@ DSH「发给 agent」
 
 绑定对象与入站改打家园已落地。本片实现接缝：
 
-1. **入站顺序**：先保证绑定 / 打开家园 → 写 ① → （若 @Claude）`formatSummonWindow` + `agent.inject` → `followup` 进**该** `dshSessionId`。禁止再 `create` `yzj-robot-*` 家园。
+1. **入站顺序**：先保证绑定 / 打开家园 → 写 ① → （若 @机器人）`formatSummonWindow` + `agent.inject` → `followup` 进**该** `dshSessionId`。禁止再 `create` `yzj-robot-*` 家园。
 2. **write-gate**（T13）：见决策表。GUI 聚焦的绑定会话走 GUI 卡；入站 plugin 轮次走群建议卡。
 
 存储：`yzj_home_logs`（与 `yzj_home_bindings` 分 domain，不 bump 绑定表版本）。融合视图落在 `conversation.view`「群工作」（order 负，不能替换官方 Chat tab——那是 harness tab ring）。官方 Chat 仍渲染 ③④；群工作 tab 是产品验收的一条流。
@@ -307,11 +307,11 @@ DSH「发给 agent」
 
 只读本文的评审应能回答：①② 存在哪、如何与 ③④ 合成一条流、模型何时看到群消息、发进群为何不是 user-turn、回声如何去重、打开会话为何要回填、未绑定为何只有一个按钮、为何不能 `Session.append`。实现完成时至少：
 
-1. 绑定会话打开后，融合流能同时看到回填来的近期群消息、DSH 发进群的 ②、对 Claude 的 ③、Claude 的 ④；未绑定会话没有 ①②，只有一个发送按钮。
+1. 绑定会话打开后，融合流能同时看到回填来的近期群消息、DSH 发进群的 ②、发给助手的 ③、助手的 ④；未绑定会话没有 ①②，只有一个发送按钮。
 2. 用户从 DSH 发进群：立刻有 ② 气泡、无确认卡、模型不被这句触发；CLI 回声不出现第二条气泡。
 3. 用户在云之家客户端发的消息进融合流为 ①（`isSelf`），不是 ②。
-4. 群内普通消息不触发 ④；@Claude 触发 ④，人只看见一条 ①，不看见重复的插件 followup 气泡；该轮模型能读到有界窗口，下一轮未 @ 则不再带窗口。
-5. DSH「发给 agent」触发 ④ 且带窗口；窗口文本不作为一条永久 ③ 气泡出现在后续历史里（不经 codec 固化）。
+4. 群内普通消息不触发 ④；@机器人 触发 ④，人只看见一条 ①，不看见重复的插件 followup 气泡；该轮模型能读到有界窗口，下一轮未 @ 则不再带窗口。
+5. DSH「发给助手」触发 ④ 且带窗口；窗口文本不作为一条永久 ③ 气泡出现在后续历史里（不经 codec 固化）。
 6. 机器人自己的群帖子不作为 ① 气泡双影；④ 用「已投递」标记。
 7. 重启 host 后，绑定仍在则 log 仍在；确认卡 pending 仍按既有内存语义（不假装已进 session 日志）。
 
@@ -339,4 +339,4 @@ DSH「发给 agent」
 | [`integration-master-plan.md`](integration-master-plan.md) v1.8 | 总方案只加指针。mention/codec、确认卡、`agent/request` 限制仍以总方案 §2.2 / §5.4 为准；窗口注入不走 codec |
 | [`robot-channel-plan.md`](robot-channel-plan.md) | 协议（WS、ack-then-push、sendMsgUrl）不变。入站落点是绑定 session；inbound 正文先落本 log 再按 T4 决定是否 `followup` |
 | [`todo-design.md`](todo-design.md) / 记忆库 | 用户直写、`systemPrompt.context` 有界注入可对照；不把待办/记忆行写进本 log |
-| 根 README / AGENTS.md | 写路径两分仍以家园 D9 为准；发进群 = 用户直写，发给 agent = 官方轮次 |
+| 根 README / AGENTS.md | 写路径两分仍以家园 D9 为准；发进群 = 用户直写，发给助手 = 官方轮次 |
