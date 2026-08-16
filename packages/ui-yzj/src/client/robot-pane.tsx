@@ -58,6 +58,20 @@ function groupNameOf(groups: unknown[], groupId: string): string {
   return groupId
 }
 
+/** Human-relative timestamp: 今天/昨天 HH:mm, else M月d日 HH:mm. */
+function formatRelativeTime(time: number): string {
+  if (time <= 0) return ''
+  const then = new Date(time)
+  const now = new Date()
+  const sameDay = then.getFullYear() === now.getFullYear() && then.getMonth() === now.getMonth() && then.getDate() === now.getDate()
+  const yesterday = new Date(now.getTime() - 86_400_000)
+  const isYesterday = then.getFullYear() === yesterday.getFullYear() && then.getMonth() === yesterday.getMonth() && then.getDate() === yesterday.getDate()
+  const clock = `${String(then.getHours()).padStart(2, '0')}:${String(then.getMinutes()).padStart(2, '0')}`
+  if (sameDay) return `今天 ${clock}`
+  if (isYesterday) return `昨天 ${clock}`
+  return `${then.getMonth() + 1}月${then.getDate()}日 ${clock}`
+}
+
 /** The model override for one group, when present (key `g:<groupId>`). */
 function overrideOf(overrides: unknown[], groupId: string): { provider: string; model: string } | undefined {
   const key = `g:${groupId}`
@@ -162,7 +176,7 @@ function RobotList(outer: { props: RobotPaneProps; onOpen: (index: number) => vo
     <div className={css.pane}>
       <section className={css.section}>
         <h3 className={css.sectionTitle}>机器人（{channels.length}）</h3>
-        <p className={css.hint}>点开一个机器人配置它的模型、群与共享工作区；工作目录自动分配（`~/.dsh/robot-workspaces/`），无需填写。</p>
+        <p className={css.hint}>点开一个机器人，管理它的模型、服务的群和公共文件区。工作目录自动分配，无需填写。</p>
         {channels.length === 0 && props.loading && <p className={css.hint}>加载中…</p>}
         {channels.length === 0 && !props.loading && (
           <p className={css.hint}>{props.error === '' ? '没有已配置的机器人通道。' : `通道读取失败：${props.error}`}</p>
@@ -388,12 +402,12 @@ function RobotDetail(outer: { props: RobotPaneProps; index: number; onBack: () =
           <span className={css.channelMeta}>{connected ? '已连接' : '未连接'}</span>
         </div>
         <p className={css.hint} title={sendMsgUrl}>sendMsgUrl：{sendMsgUrl}</p>
-        <p className={css.hint} title={cwd}>工作目录（自动分配）：{cwd}</p>
+        <p className={css.hint} title={cwd}>工作目录（自动分配，一般不用管）：{cwd}</p>
       </section>
 
       <section className={css.section}>
         <h3 className={css.sectionTitle}>模型配置</h3>
-        <p className={css.hint}>默认路由作用于该机器人全部会话；下方可为单个群指定不同模型。</p>
+        <p className={css.hint}>这个机器人默认使用哪个模型；下面还可以给某个群单独指定模型（比如重要群用强模型）。</p>
         <div className={css.editor}>
           <div className={css.addRow}>
             <label className={css.field}>
@@ -418,8 +432,9 @@ function RobotDetail(outer: { props: RobotPaneProps; index: number; onBack: () =
       </section>
 
       <section className={css.section}>
-        <h3 className={css.sectionTitle}>已配置的群（{groups.length}）</h3>
-        {groups.length === 0 && <p className={css.hint}>该机器人尚未收到任何群消息。</p>}
+        <h3 className={css.sectionTitle}>机器人服务的群（{groups.length}）</h3>
+        <p className={css.hint}>在群里 @机器人 发过消息的群会出现在这里（机器人只收 @ 它的消息）。每个群可以单独指定使用的模型。</p>
+        {groups.length === 0 && <p className={css.hint}>该机器人还没有收到过任何群消息。</p>}
         <ul className={css.overrideList}>
           {groups.map(group => {
             const draft = overrideDrafts[group.groupId] ?? overrideOf(props.overrides, group.groupId) ?? { provider: '', model: '' }
@@ -428,8 +443,8 @@ function RobotDetail(outer: { props: RobotPaneProps; index: number; onBack: () =
                 <div className={css.groupCardHead}>
                   <span className={css.overrideName}>{groupNameOf(props.groups, group.groupId)}</span>
                   <span className={css.overrideMeta}>
-                    {group.lastSessionId === undefined ? '' : `最后会话 ${new Date(group.time).toLocaleString()}`}
-                    {(draft.provider !== '' || draft.model !== '') && ` · 覆盖 ${[draft.provider, draft.model].filter(v => v !== '').join('/')}`}
+                    {group.time > 0 && `最近互动 ${formatRelativeTime(group.time)}`}
+                    {(draft.provider !== '' || draft.model !== '') && ` · 单独用 ${[draft.provider, draft.model].filter(v => v !== '').join('/')}`}
                   </span>
                 </div>
                 <div className={css.addRow}>
@@ -459,8 +474,11 @@ function RobotDetail(outer: { props: RobotPaneProps; index: number; onBack: () =
       </section>
 
       <section className={css.section}>
-        <h3 className={css.sectionTitle}>群共享工作区</h3>
-        <p className={css.hint}>跨话题显式协作区（`&lt;cwd&gt;/groups/&lt;群&gt;/shared/`）。写共享区自动唯一名防冲突；面板直写为你的本人意志、不经确认卡。</p>
+        <h3 className={css.sectionTitle}>群的公共文件区</h3>
+        <p className={css.hint}>
+          机器人在群里干活时产生的文件（草稿、报告等）会存放在每个群自己的公共目录里：同一个群的任何对话都能读取、继续处理；
+          同名文件自动加序号（report.md → report-2.md），不会互相覆盖。面板里直接放文件是你的本人操作，不需要确认。
+        </p>
         <div className={css.editor}>
           <label className={css.field}>
             <span className={css.fieldLabel}>群</span>
@@ -473,7 +491,7 @@ function RobotDetail(outer: { props: RobotPaneProps; index: number; onBack: () =
           </label>
           {shareGroup !== '' && (
             <>
-              {shareDir !== '' && <p className={css.note}>路径：{shareDir}</p>}
+              {shareDir !== '' && <p className={css.hint} title={shareDir}>公共文件目录（一般不用管）：{shareDir}</p>}
               {shareLoading && <p className={css.hint}>加载中…</p>}
               {!shareLoading && shareFiles !== null && (
                 shareFiles.length === 0
@@ -505,7 +523,7 @@ function RobotDetail(outer: { props: RobotPaneProps; index: number; onBack: () =
                   value={shareContent}
                   onChange={(event) => { setShareContent(event.target.value) }}
                   rows={3}
-                  placeholder="要写入共享区的文本…"
+                  placeholder="要放进公共文件区的文本…"
                 />
               </label>
               <div className={css.actions}>
@@ -515,7 +533,7 @@ function RobotDetail(outer: { props: RobotPaneProps; index: number; onBack: () =
                   disabled={shareFilename === '' || shareContent === ''}
                   onClick={writeShare}
                 >
-                  写入共享区
+                  存入公共文件区
                 </button>
               </div>
               {shareNote !== '' && <p className={css.note} role="status">{shareNote}</p>}
