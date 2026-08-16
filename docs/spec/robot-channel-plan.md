@@ -75,7 +75,7 @@
 | | 对话机器人**WS 双向**（入站触发 agent + 出站回推/引用回复） | 群设置→创建对话型机器人：一次性公网测试（临时隧道可过）→ 得 appSecret + sendMsgUrl → 此后 WS 出站长连接免公网 | **群管理员**，无需任何注册 | 协议已验证，待 spike ①②③ |
 | | 个人机器人（免群管理员入口，协议同上 + DM 形态） | `yunzhijia.com/im/personalRobotCreate` | 每个用户自己 | ✅ **已实测（§4.1）：创建零门槛、WS 双向、全协议通过** |
 | | HmacSHA1 验签 / msgId 去重 / WS 重连 | 随机器人创建附带（appSecret + sendMsgUrl） | — | openclaw 四模块直接移植 |
-| **C. 灰色待验证**（可能无需企业应用，但需某种账号/字段） | type:25 卡片**一次性发送**（模板来自卡片搭建工具 `yunzhijia.com/developers/`） | 搭建工具账号性质未知 | 待验证 | spike ⑥ |
+| **C. 灰色待验证**（可能无需企业应用，但需某种账号/字段） | ~~type:25 卡片一次性发送~~ **已判死（2026-08-16）**：webhook 通道 param 白名单剥离，交互卡片不可达；应用类视觉卡片（msgType:1）归入 B 层可用形态 | — | ❌ 二轮实测 | |
 | | msgType:1 应用类消息（文档标注 `lightAppId` 必填——是否接受非注册值未知） | 待验证 | 待验证 | spike ⑥ |
 | | 卡片**回传交互**（回调地址配在模板上） | 需公网 HTTPS 回调 | — | 本机场景不用；公网部署时评估 |
 | **D. 必须开放平台/跨部门协调** | **原生待办 API**（generatetodo/action/checkcreatetodo） | accessToken（oauth）+ 轻应用 secret（**管理中心-应用管理，管理员**）；app 级授权 | ❌ 需协调 | todo 原生后端选项，不阻塞 demo |
@@ -167,7 +167,7 @@ robotId 与 CLI groupId 的 ID 空间映射；创建流程的公网测试是否�
 - **R0 spike（半天~1 天，先决；依赖 A+B，零注册）**：§4 清单 ①–⑤ 逐项实测，任何一项不过都要回头改设计。⑥（卡片实发）顺带做，结果只影响 R3。
 - **R1 MVP（依赖 B）**：robot-yzj 包协议层 + WS 入站 → session → agent → 回群（ack-then-push）；面板机器人设置卡 + 状态灯；allowFrom 本人限定。
 - **R2 协作（依赖 B）**：建议卡协议（群内文本确认 + GUI 确认卡双通道）；schedule 播报与待办催办接入 `ctx.yzjRobot`；角标混合聚合。
-- **R3 增强（可选；部分依赖 D——开放平台协调项）**：卡片消息（type 25）一次性发送若 spike ⑥ 通过则 C 层可用；卡片**更新**与独享状态、原生待办后端 = D 层，等协调到位；公网部署形态（Webhook 双入口 + 卡片按钮确认）。
+- **R3 增强（依赖 D——开放平台协调项）**：**真交互确认卡（Adaptive Cards）**——协议已在重保群样本中确证（inline cardJson + Action.Submit + _secondConfirm + 模板回调），等轻应用/回调地址协调到位即可实现，`RobotSender.sendCard` 已留扩展点；此前 webhook 通道的应用类视觉卡片（msgType:1）已在线（确认卡/回执形态）。原生待办后端 = D 层；公网部署形态（Webhook 双入口）。
 
 > 协调申请（D 层：轻应用注册 + secret、原生待办 API 授权；订阅号视需要）在 R0 启动时并行发起，目标只覆盖 R3 与 todo 迁移，不进 R1/R2 关键路径。
 
@@ -297,7 +297,7 @@ robotId 与 CLI groupId 的 ID 空间映射；创建流程的公网测试是否�
 | ③ | ✅ **WS 帧协议实测**（比 openclaw 逆向更完整）：`directPush/robotMessage`（完整入站消息）；`directPush/msgChg`（消息变更，**带 needAck+seq**，如 replyCount 变更）；`message/lastUpdateTime`（同步信号）；30s pong 心跳；**机器人自身出站不回环**（无 echo 风险） | 帧日志 `spike/robot/logs/ws-*.ndjson` |
 | ④ | ✅ **个人机器人形态**：DM 场景（groupType=3 的 BOT-BOT 通道）、创建零门槛、**自带 nomi 云 AI 应答**（历史可见）；网页版 DM 无用户侧引用 UI（但引用元数据通道存在，见⑦） | 创建流程 + 历史消息实录 |
 | ⑤ | ✅ **频控远宽于文档**：35 条 @800ms（≈75 条/分）全部成功（「30 条/分」为群机器人限制）；**长度上限 5000–6000 字之间**（5000 OK / 6000 FAIL，超限返回 HTTP 200 + `errorCode 1401002 "消息内容太长"`，可检测、可分片） | 压测记录 |
-| ⑥ | ✅ **应用类消息 API 接受**（lightAppId=0 不报错）；**卡片消息超预期：假 templateId（全零）也渲染出真卡片**——R3 卡片增强不依赖卡片搭建工具/D 层 | 用户客户端实看确认 |
+| ⑥ | ⚠️ **修正（2026-08-16 二轮实测推翻初判）**：webhook 通道的交互卡片**不可用**——8 个信封变体（msgtype 2/25/26 × param.baseInfo/param.interactiveCard/msg.msg）全部回落 `param:null` 纯文本；初判"假模板渲染真卡片"系客户端把长应用类消息误读为卡片。**应用类消息（msgType:1）是 webhook 通道唯一的视觉卡片形态**（标题/主次内容/webpageUrl 跳转，无按钮）。真交互卡片（Adaptive Cards 1.4：Action.Submit/Input/_secondConfirm，inline cardJson 发送）属**开放平台应用通道**（D 层）——证据：重保群告警平台卡片的原始消息样本（param.interactiveCard.cardJson，回调走卡片平台→模板回调地址）。R3 卡片增强改判为 D 层依赖 | 两轮探针 + 重保群只读样本 |
 | ⑦ | ✅ **a）入站推送带全套回复链元数据**：`msgParam:{replyMsgId, replyPersonId, replyPersonName, replySummary, replyRootMsgId}`——**服务端自带链根 replyRootMsgId**，session 锚定无需自行回溯；**b）出站响应直接返回 msgId**（与消息历史一致），映射登记零回捞 | 帧日志 + CLI 对照 |
 
 **对设计的三点修正（并入 §3）**：
