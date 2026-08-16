@@ -289,3 +289,9 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 - **面**：`/yzj` RPC 5 个 robot 端点（status/overrides/set/delete/models）；面板第五个「机器人」tab（dock+TABS）——通道状态灯、覆盖编辑器（群选择器显示群名、provider/model 下拉来自 live 目录）、覆盖列表（变更后主动重拉）。
 - **验收**：`verify-robot-pane.mjs` **10/10 PASS**（含 保存→切 tab 重载→持久化→删除 全环）；截图 `.acceptance/shots-robot/`（gitignored）。
 - **决策留档**：provider 目录合并 `listProviders()`（已激活路由）与 `listConfigurableProviders()`（休眠可选）——UI 可选全部 harness provider；未激活 provider 的模型列表可能为空（选择后由 agent 轮次按需暴露错误）。
+
+### 20.4 通道默认模型可配置（2026-08-16，`50bc120`）
+
+- **Config 新增 `defaultProvider` / `defaultModel`**：填进所有未自带 provider/model 的机器人——一行 profile 路由整个机群。**解析序定为四级**：会话覆盖（UI）> 机器人自带 > 插件默认 > harness 默认。
+- **本机落位**：`opencode-go / deepseek-v4-flash` 为通道默认（用户拍板：默认便宜模型，强模型按群在面板覆盖）；之前手配的逐群 flash 覆盖已删（冗余）。
+- **验证**：`verify-flash-default.mjs` PASS（双通道行显示 flash 默认）；真实 @ 往返（11:04，ack→flash 轮次→引用回推）确认默认路由驱动 agent。
