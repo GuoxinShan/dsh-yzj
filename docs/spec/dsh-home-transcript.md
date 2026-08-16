@@ -1,11 +1,11 @@
 # DSH 绑定会话的可见时间线：插件消息日志
 
-> 版本：v1.0（已拍板，**尚未实现**——本片排在会话绑定之后）
-> 日期：2026-08-17
+> 版本：v1.1（已拍板；**实现已落地**——插件消息日志 + 融合视图 + composer 双意图 + 召唤窗口注入）
+> 日期：2026-08-16
 > 决策人：Guoxin Shan
 > 定位：会话家园产品法（[`dsh-home-session.md`](dsh-home-session.md)）落地后的**下一片**：绑定 DSH 会话里人看见的那条融合时间线。本文规定存储对象、合并规则、模型上下文、发送路径、去重、回填、composer chrome，以及**为什么 ①② 不是 `Session.append`**。
-> 前置：绑定对象 `yzjConversationId ↔ dshSessionId` 由并行的绑定 PR 落地；本文不改绑定基数、不重写 D1–D11。
-> 对照：实现缺口仍记在 `../status/gap-analysis.md` §22（尤其 G2）；**本文不改 gap 正文**（绑定 PR 会动 §22）。
+> 前置：绑定对象 `yzjConversationId ↔ dshSessionId` 已在 `ctx.yzjHome` 落地；本文不改绑定基数、不重写 D1–D11。
+> 对照：实现缺口记在 `../status/gap-analysis.md` §22。v1.1 关闭 G2/G6 与丢进群 UI；G3 仍开放（pending overlay 融合视图，但不是 session 事件）。
 
 ---
 
@@ -35,7 +35,7 @@
 | T10 | 未绑定 composer | **无 ①② 流**；**单一发送按钮**（只对 agent） | D7。私聊不是群；引用 chip ≠ 绑定 |
 | T11 | 绑定 composer | **两种意图**：发给 agent / 发进群。chrome 可以是双按钮或模式切换，必须在 **DSH composer**，不得放回面板第二 IM | D3/D5/§2.1 不变量 5。面板 composer 目标仍是移除/降级 |
 | T12 | 机器人出站帖子 | **不进 ①② 日志**（回填/入站遇到本通道机器人发送者则跳过）。群里那条帖子是 ④ 的投递，视图用「已投递到群」标记，不另开说话人 | D4。否则融合流会出现 agent 正文 + 一条「机器人 ①」双影 |
-| T13 | write-gate 的 `yzj-robot-*` skip | **本文不改代码**。绑定落地后若家园 id 不再是 `yzj-robot-*`，该 skip 会失效（GUI write-gate 会接到原先由 ConfirmBroker 独占的请求）。列为**绑定 PR 的 follow-up** | skip 的前提是「隐藏机器人 session 无人点 GUI 卡」。家园改打可见绑定 session 后，agent 写应走 GUI 确认卡（D9）；谁应答 `approval/request` 必须随绑定一起重划，不能只删 id 前缀 |
+| T13 | write-gate 的 `yzj-robot-*` skip | **已重划**（家园 UX PR）：残留 `yzj-robot-*` 仍 skip GUI。`ownsConfirm` 的 `yzj-home-*`：最新 user/message 是 GUI 用户轮 → GUI 卡；plugin followup 或尚无 user/message → 群建议卡 | 绑定后 skip 前缀失效；操作者对着绑定会话「发给 agent」必须能在 GUI 确认 |
 
 ---
 
@@ -201,8 +201,10 @@ DSH「发给 agent」的 ③ 是用户真的对 Claude 说的话，**要渲染**
 
 DSH「发给 agent」
   官方 ③ = composer 正文（可含用户 chip；chip 仍 codec.serialize）
-  → systemPrompt.context({ name: 'yzj-bound-window', text: () => 本轮是召唤则窗口否则 '' })
-  无 systemPrompt 的 profile（ops daemon）不注入，与 memory-yzj 相同 opportunistic
+  → systemPrompt.context({ name: 'yzj-bound-window', text: (assemble) => 本轮是 GUI 召唤则窗口否则 '' })
+  读 `assemble.agent.session.id`（harness `assembleContextFor`：`scope` 是 Agent 对象，不是 session id 字符串——pitfall-011）
+  仅 `latestUserSourceKind === 'user'` 时返回窗口；plugin followup 已走 `agent.inject`
+  无 systemPrompt 的 profile（ops daemon）不注入；`ctx.inject(['systemPrompt'])` 等待该服务
 ```
 
 `agent/request` **不**用来塞窗口（改不了正文）。**不**把窗口写成用户气泡里的隐藏 chip。
@@ -290,14 +292,14 @@ DSH「发给 agent」
 
 ---
 
-## 10. 与绑定 PR 的接缝（本文不改代码）
+## 10. 与绑定 PR 的接缝
 
-绑定对象与入站改打家园由并行 agent 实现。本片假设绑定表已存在，并预先钉死两处接缝：
+绑定对象与入站改打家园已落地。本片实现接缝：
 
-1. **入站顺序**：先保证绑定 / 打开家园 → 写 ① → （若 @Claude）inject 窗口 → `followup` 进**该** `dshSessionId`。禁止再 `create` `yzj-robot-*` 家园。
-2. **write-gate skip**（`req.agent.session.id.startsWith('yzj-robot-')`）+ robot `ConfirmBroker`（只应答 `yzj-robot-*`）：家园 id 换成普通 DSH id 后，skip 不再命中，GUI 卡与建议卡可能抢同一个 `approval/request`，或谁都不接。**绑定 PR 必须重划应答权**（可见绑定会话 → GUI 确认卡符合 D9；群内建议卡是否仍作无人值守备份另开决策）。本仓库本 PR **不改** `write-gate.ts` / `confirm.ts`。
+1. **入站顺序**：先保证绑定 / 打开家园 → 写 ① → （若 @Claude）`formatSummonWindow` + `agent.inject` → `followup` 进**该** `dshSessionId`。禁止再 `create` `yzj-robot-*` 家园。
+2. **write-gate**（T13）：见决策表。GUI 聚焦的绑定会话走 GUI 卡；入站 plugin 轮次走群建议卡。
 
-实现缺口对照仍以 gap-analysis §22 为准；G2（IM 节点进 transcript）的设计基线即本文。
+存储：`yzj_home_logs`（与 `yzj_home_bindings` 分 domain，不 bump 绑定表版本）。融合视图落在 `conversation.view`「群工作」（order 负，不能替换官方 Chat tab——那是 harness tab ring）。官方 Chat 仍渲染 ③④；群工作 tab 是产品验收的一条流。
 
 ---
 
@@ -323,8 +325,9 @@ DSH「发给 agent」
 - 改 harness：自定义 session 事件、`Session.append` ignorable、让 `agent/request` 改消息正文。
 - 解绑 UI、一条 session 绑多群、无限本地群档。
 - 把云之家客户端做成 DSH 皮肤。
-- 修复 write-gate `yzj-robot-*` skip（T13，绑定 PR follow-up）。
-- 重写 D1–D11 或 gap-analysis §22（并行绑定工作区）。
+- 改 harness：自定义 session 事件、`Session.append` ignorable、让 `agent/request` 改消息正文、把 `conversation.view` 做成唯一 Chat。
+- 解绑 UI、一条 session 绑多群、无限本地群档。
+- 确认卡 pending 写成官方 session 事件（G3；融合视图 overlay `write-list`，SPA 刷新仍在，host 重启仍降级）。
 
 ---
 

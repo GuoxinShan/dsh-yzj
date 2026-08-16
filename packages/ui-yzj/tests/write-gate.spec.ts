@@ -199,4 +199,50 @@ describe('applyWriteGate', () => {
     gate.decide('w1', 'allowed-once')
     await expect(pending).resolves.toBe('allowed-once')
   })
+
+  it('claims a GUI turn on an inbound-registered bound home (operator can confirm in DSH)', async () => {
+    const ctx = new Context()
+    ctx.provide('yzjRobot', { ownsConfirm: () => true })
+    const gate = applyWriteGate(ctx)
+    ctx.emit('yzj/ask-pending', {
+      callId: 'c1', toolName: 'yzj_im_message_send', level: 'standard',
+      reason: 'r', args: { groupId: 'g1' },
+    })
+    const pending = ctx.waterfall('approval/request', {
+      agent: {
+        session: {
+          id: 'yzj-home-inbound',
+          events: [
+            { type: 'user/message', data: { source: { kind: 'user' } } },
+            { type: 'approval/asked', data: { id: 'w1', callId: 'c1' } },
+          ],
+        },
+      },
+      toolName: 'yzj_im_message_send',
+      callId: 'c1',
+    }, () => Promise.resolve<YzjApprovalOutcome>('unavailable'))
+    expect(gate.list('yzj-home-inbound').map(r => r.writeId)).toEqual(['w1'])
+    gate.decide('w1', 'allowed-once')
+    await expect(pending).resolves.toBe('allowed-once')
+  })
+
+  it('skips an inbound plugin turn even on a yzj-home-* session', async () => {
+    const ctx = new Context()
+    ctx.provide('yzjRobot', { ownsConfirm: () => true })
+    applyWriteGate(ctx)
+    const outcome = await ctx.waterfall('approval/request', {
+      agent: {
+        session: {
+          id: 'yzj-home-inbound',
+          events: [
+            { type: 'user/message', data: { source: { kind: 'plugin', plugin: 'robot-yzj' } } },
+            { type: 'approval/asked', data: { id: 'w1', callId: 'c1' } },
+          ],
+        },
+      },
+      toolName: 'yzj_im_message_send',
+      callId: 'c1',
+    }, () => Promise.resolve<YzjApprovalOutcome>('unavailable'))
+    expect(outcome).toBe('unavailable')
+  })
 })
