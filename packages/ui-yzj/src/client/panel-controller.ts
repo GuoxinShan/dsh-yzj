@@ -10,6 +10,7 @@ import type { BakedActions } from '@deepseek-ai/dsh-client-ui-slots'
 import type { YzjPanelActions, YzjPanelState } from './stores.ts'
 import type { YzjPanelInject } from './rpc.ts'
 import type { YzjJumpTarget } from './cards.tsx'
+import { bindAndFocusGroup } from './home-focus.ts'
 
 type PanelActions = BakedActions<YzjPanelState, YzjPanelActions>
 
@@ -56,6 +57,7 @@ export function openPanelTarget(target: YzjJumpTarget, anchorMsgId?: string): vo
   if (target.kind === 'group') {
     actions.setTab('chat')
     actions.setGroupId(target.groupId)
+    void bindAndFocusGroup(c.inject.homeOpen, c.inject.focusBoundSession, target.groupId)
     void c.inject.fetchMessages(target.groupId, 20).then((result) => {
       if (!result.ok) return
       const list = asArray(asRecord(result.value).list)

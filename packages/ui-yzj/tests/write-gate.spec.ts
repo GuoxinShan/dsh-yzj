@@ -164,4 +164,39 @@ describe('applyWriteGate', () => {
     expect(outcome).toBe('unavailable')
     expect(h.gate.list('s1')).toEqual([])
   })
+
+  it('skips inbound-owned bound homes so the group suggestion card answers', async () => {
+    const ctx = new Context()
+    ctx.provide('yzjRobot', { ownsConfirm: (id: string) => id === 'yzj-home-inbound' })
+    applyWriteGate(ctx)
+    const outcome = await ctx.waterfall('approval/request', {
+      agent: { session: { id: 'yzj-home-inbound', events: [{ type: 'approval/asked', data: { id: 'w1', callId: 'c1' } }] } },
+      toolName: 'yzj_im_message_send',
+      callId: 'c1',
+    }, () => Promise.resolve<YzjApprovalOutcome>('unavailable'))
+    expect(outcome).toBe('unavailable')
+  })
+
+  it('still claims a pick-group yzj-home-* that ConfirmBroker does not own', async () => {
+    const ctx = new Context()
+    ctx.provide('yzjRobot', { ownsConfirm: () => false })
+    const gate = applyWriteGate(ctx)
+    ctx.emit('yzj/ask-pending', {
+      callId: 'c1', toolName: 'yzj_im_message_send', level: 'standard',
+      reason: 'r', args: { groupId: 'g1' },
+    })
+    const pending = ctx.waterfall('approval/request', {
+      agent: {
+        session: {
+          id: 'yzj-home-picked',
+          events: [{ type: 'turn/start', data: { turn: 1 } }, { type: 'approval/asked', data: { id: 'w1', callId: 'c1' } }],
+        },
+      },
+      toolName: 'yzj_im_message_send',
+      callId: 'c1',
+    }, () => Promise.resolve<YzjApprovalOutcome>('unavailable'))
+    expect(gate.list('yzj-home-picked').map(r => r.writeId)).toEqual(['w1'])
+    gate.decide('w1', 'allowed-once')
+    await expect(pending).resolves.toBe('allowed-once')
+  })
 })

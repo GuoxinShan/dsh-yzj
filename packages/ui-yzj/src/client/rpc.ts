@@ -108,6 +108,14 @@ export interface YzjPanelInject {
   modelClearDefault: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Provider/model catalog for the pickers (active adapter routes). */
   modelCatalog: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /**
+   * Bind one Yunzhijia conversation to its DSH home and resume-or-create
+   * that session. Second open is focus (`created: false`). Optional so test
+   * fakes need not stub it — pick-group still loads panel IM without it.
+   */
+  homeOpen?: (groupId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Client-side focus of a bound session (sessions.open after list ready). */
+  focusBoundSession?: (sessionId: string) => void
 }
 
 /** Build the inject face from a connection handle; unavailable → failed calls. */
@@ -231,5 +239,6 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
     modelSetDefault: (provider, model) => call('model-default-set', { provider, model }),
     modelClearDefault: () => call('model-default-clear', {}),
     modelCatalog: () => call('model-catalog', {}),
+    homeOpen: (groupId) => call('home-open', { groupId }),
   }
 }

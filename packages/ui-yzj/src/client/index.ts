@@ -20,6 +20,7 @@ import { YzjSettingsSection } from './settings-section.tsx'
 import { createYzjStore } from './stores.ts'
 import { createYzjPanelInject } from './rpc.ts'
 import { openPanelTarget } from './panel-controller.ts'
+import { focusBoundSession } from './home-focus.ts'
 import {
   YZJ_WRITE_TOOL_NAMES, YzjWriteToolCard,
   type WriteCardInjected,
@@ -29,6 +30,7 @@ import type { YzjWriteRecord } from '../write-gate.ts'
 export { createYzjStore } from './stores.ts'
 export { createYzjPanelInject } from './rpc.ts'
 export type { YzjPanelInject, YzjRpcError } from './rpc.ts'
+export { focusBoundSession, bindAndFocusGroup } from './home-focus.ts'
 export type { YzjPanelState, YzjPanelActions, YzjTab } from './stores.ts'
 export type { YzjPanelProps } from './panel.tsx'
 export type { WriteCardInjected } from './write-card.tsx'
@@ -81,7 +83,15 @@ function insertDraftText(actx: import('@deepseek-ai/dsh-client-runtime/client').
 export function apply(ctx: ClientContext): void {
   const connection = ctx.get('connection') as ConnectionHandle | undefined
   const store = createYzjStore()
-  const panelInject = createYzjPanelInject(connection)
+  const rpcInject = createYzjPanelInject(connection)
+  const panelInject = {
+    ...rpcInject,
+    focusBoundSession: (sessionId: string): void => {
+      const sessions = ctx.sessions as unknown as Parameters<typeof focusBoundSession>[0] | undefined
+      if (sessions === undefined || typeof sessions.open !== 'function') return
+      focusBoundSession(sessions, sessionId)
+    },
+  }
   const openWriteContextFor = (record: YzjWriteRecord): void => openWriteContext(record)
 
   ctx.slots.inject('shell.overlay', () => ctx.slots.register(

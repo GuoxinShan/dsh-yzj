@@ -24,6 +24,7 @@ import {
 import { emitYzjDropRequest } from './drop-bus.ts'
 import { registerPanelController } from './panel-controller.ts'
 import { TodoPane } from './todo-pane.tsx'
+import { bindAndFocusGroup } from './home-focus.ts'
 import css from './panel.module.css'
 
 /** The props shares the panel reads. */
@@ -1413,6 +1414,7 @@ export function YzjPanel(props: YzjPanelProps) {
     props.actions.setGroupId(id)
     props.actions.setAnchorMsgId('')
     setDraft('')
+    void bindAndFocusGroup(props.homeOpen, props.focusBoundSession, id)
     // Rendered window is cached ~60s: revisiting a group is instant.
     const cached = getMessageWindow(id)
     if (cached !== undefined) {
