@@ -75,7 +75,8 @@ interface ChatnodeService {
   `title` 作为首行前缀；实现见 `packages/robot-yzj/src/chatnode.ts`；
 - 验收口径：routine 到点 → run 完成 → digest 经 chatnode 出现在群里
   （`[status] routine\n\ndigest` 形态），调度器 `deliveries` 记录 ok；
-- 端到端验证脚本：`.acceptance/verify-routines-yzj.mjs`（待建）。
+- 端到端已验证（§5 实测记录，隔离 DSH_HOME 全链路；验收脚本待生产落地时按
+  §5.1 环境要求补充）。
 
 ## 4. 决策表
 

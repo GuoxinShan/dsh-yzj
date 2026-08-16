@@ -320,7 +320,7 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 - **对齐终局**：14 项中 12 项 ✅ 等价或更强、1 项 ⚠️（C3 群内须带 @，协议限制已文档化）、1 项 ➖（C7 自静音显式放弃）；`!fork` 仍留观察。51 单测绿。
 - 遗留观察：取消确认卡后部分轮次无收尾推送（agent 收尾产出为空的情形），非阻塞，下轮观察。
 
-### 20.8 R2.6：DSH→机器人 双向控制 + 工作目录（2026-08-16，`待提交`）
+### 20.8 R2.6：DSH→机器人 双向控制 + 工作目录（2026-08-16，`df3ac60`）
 
 **双向打通（操作者从 DSH 内部驱动机器人通道）——🟢 已落地并经真实通道验证**（设计见 `docs/spec/robot-channel-plan.md` §8）：
 
@@ -331,8 +331,17 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 - 服务面 + `/yzj` RPC（`robot-notify`/`robot-continue`/`robot-fork`）+ client 注入面同步补齐；工具体拒绝 `yzj-robot-*` 会话调用（防机器人自驱）。
 - 决策记录：工具不过确认门控（机器人是操作者自有通道，allowFrom 已限定），见 spec §8.2。
 
-**定时任务主动通知（C11 定时推送）——🟡 机制就位，端到端触发未闭环**：
+**定时任务主动通知（C11 定时推送）——🟢 已闭环（2026-08-16 R2.7，外部引擎 + 自研投递）**：
 
-- 已证实：jsonl 协调器**实时持久化**机器人会话（cursor 实时前进、日志文件增长）；flush 屏障在工具调用时刻 `ok=true`（tools/execute 探针）；`attachScheduleTools`（ScheduleRuntime + registerScheduleTools + idle 驱动）已复刻 schedule 插件挂载。
-- 未闭环：程序化创建（非 root）的机器人 agent 的工具组装里 **`schedule_create` 仍报 `unknown tool`**（fresh create 路径实测多次；`setup` 注入 `tools` 服务未改善）——见 `docs/pitfalls/pitfall-007`（R2.6 更新：scoped 注册对程序化 agent 不可见，剩余方向=host 注册+agent-id 守卫）。resume 路径曾出现工具（13:09-14:34 轮次 agent 实际调用并返回 `persistence_uncertain`——该返回值源于当时会话日志被多实例交叉写入导致的 cursor 错位，隔离 DSH_HOME 后该现象消失）。
-- 附注：多 DSH 实例（3080 生产 GUI 与 3093 测试实例）共享 `~/.dsh` 时会交叉写入同一批机器人会话日志（cursor 冲突），测试必须用隔离 DSH_HOME；spike 侧一次性解压只出首帧（packed zstd）误判"只有 header"，见 `docs/pitfalls/pitfall-008`。
+- 结论：**单独插件路线**（`docs/spec/routines-delivery.md`）——定时引擎采用社区
+  **dsh-routines**（专用 `ops` daemon profile），云之家投递自研 `ctx.chatnode`
+  （`robot-yzj/src/chatnode.ts`，提交 `640f205`）。
+- 端到端实测通过（隔离 DSH_HOME）：routine `every 1m` → 调度器 tick → headless
+  子进程独立会话 → digest → `ctx.chatnode.send` → 机器人推送到「金蝶最小DSH交流群」，
+  群里收到 `[completed] c11-yzj / 定时任务 chatnode 投递测试通过。`；
+  run 记录 `deliveries: [{file, ok}, {chatnode, ok: true}]`。
+- 旧方案（在机器人会话里挂 harness schedule 工具，pitfall-007 的 `unknown tool`）
+  已随 `df3ac60` 后的清理提交退役：移除 `attachScheduleTools`/schedule 运行时/
+  flush 屏障监听；`!routines` 空态文案指向 `dsh routines list`。
+- 实测坑（web profile 缺 jobs 控制器会崩调度器 tick、routines-cli 抢命令行、
+  Windows 子进程 dshBin/runModule、patch insert 格式等）见 `routines-delivery.md` §5.1。
