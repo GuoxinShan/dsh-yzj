@@ -14,11 +14,12 @@ function inbound(content: string, overrides: Partial<RobotInboundMessage> = {}):
 
 function fakeAgents(getStatus: () => 'idle' | 'running') {
   const created: unknown[] = []
+  const byId = new Map<string, unknown>()
   return {
     created,
-    get: () => undefined,
+    get: (id: { toString(): string }) => byId.get(String(id)),
     resume: async () => Promise.reject(new Error('no persisted log')),
-    create: async () => {
+    create: async (options: { sessionId: { toString(): string } }) => {
       const listeners: ((payload: unknown) => void)[] = []
       const agent = {
         id: `agent-${created.length}`,
@@ -34,7 +35,8 @@ function fakeAgents(getStatus: () => 'idle' | 'running') {
         },
       }
       created.push(agent)
-      return { agent, dispose: async () => {} }
+      byId.set(String(options.sessionId), agent)
+      return { agent, dispose: async () => { byId.delete(String(options.sessionId)) } }
     },
   }
 }
@@ -105,6 +107,28 @@ describe('RobotRouter', () => {
     // resume is attempted first; its failure falls back to create (which we
     // let fail here so the deny-path message goes out without an agent).
     expect(order).toEqual(['resume', 'create'])
+  })
+
+  it('anchors a fresh group session per top-level message and continues it on replies', async () => {
+    const agents = fakeAgents(() => 'idle')
+    const { router, sendCalls } = makeRouter([], agents)
+    // Top-level group @: groupId without the BOT- prefix.
+    await router.handle(inbound('群任务A', { groupId: '6a7f37b4e4b0e6211b1c5b87', msgId: 'root-1' }))
+    expect(agents.created).toHaveLength(1)
+    // Ack carried notifyParams targeting the asker (group surface).
+    const ack = sendCalls[0]!.options
+    expect(ack?.notifyOpenIds).toEqual(['u-allowed'])
+    // A reply to the robot's ack (msgId 'out-1' from the fake sender) continues the same session.
+    await router.handle(inbound('继续刚才的', {
+      groupId: '6a7f37b4e4b0e6211b1c5b87',
+      msgId: 'reply-1',
+      msgParam: JSON.stringify({ replyMsgId: 'out-1', replyRootMsgId: 'root-1', replyPersonName: '单国鑫', replySummary: '群任务A' }),
+    }))
+    expect(agents.created).toHaveLength(1)
+    expect((agents.created[0] as { followup: { mock: { calls: unknown[][] } } }).followup.mock.calls).toHaveLength(2)
+    // A different top-level message anchors its own session.
+    await router.handle(inbound('另一个话题', { groupId: '6a7f37b4e4b0e6211b1c5b87', msgId: 'root-2' }))
+    expect(agents.created).toHaveLength(2)
   })
 
   it('acks with a reply anchor to the inbound msgId', async () => {

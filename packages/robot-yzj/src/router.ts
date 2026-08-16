@@ -12,7 +12,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Agent, AgentHandle, CreateAgentOptions, ResumeAgentOptions } from '@deepseek-ai/dsh-agent'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { InboundDedupe, type RobotInboundMessage } from './protocol.ts'
+import { InboundDedupe, parseReplyMeta, type RobotInboundMessage } from './protocol.ts'
 import type { RobotSendOptions, RobotSendResult } from './outbound.ts'
 
 /** The tiny agents-registry face the router needs (fake-able in tests). */
@@ -60,6 +60,19 @@ export function dmSessionId(robotId: string, operatorOpenid: string): SessionId 
   return SessionId(`yzj-robot-${slug(robotId)}-${slug(operatorOpenid)}`)
 }
 
+/** Stable session id for one top-level group conversation root (Claude-Tag thread analogue). */
+export function groupSessionId(robotId: string, groupId: string, rootMsgId: string): SessionId {
+  return SessionId(`yzj-robot-${slug(robotId)}-g${slug(groupId)}-${slug(rootMsgId)}`)
+}
+
+/**
+ * A BOT-prefixed groupId marks a robot-DM conversation surface (measured:
+ * `BOT-<userVariant>-BOT-<robotId>`); anything else is a group conversation.
+ */
+export function isDirectSurface(message: RobotInboundMessage): boolean {
+  return message.groupId.startsWith('BOT-')
+}
+
 function slug(value: string): string {
   const cleaned = value.replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '')
   return cleaned === '' ? 'x' : cleaned.slice(0, 40)
@@ -84,6 +97,8 @@ export class RobotRouter {
   private readonly handles = new Map<SessionId, AgentHandle>()
   /** Outbound msgId → owning session id (reply continuation). */
   private readonly outboundAnchor = new Map<string, SessionId>()
+  /** Inbound root msgId → anchored group session id (reply continuation). */
+  private readonly inboundAnchor = new Map<string, SessionId>()
   /** Session id → muted flag. */
   private readonly muted = new Set<string>()
   /** Session id → highest assistant-event seq already pushed (no double sends). */
@@ -112,25 +127,64 @@ export class RobotRouter {
     }
     this.handles.clear()
     this.outboundAnchor.clear()
+    this.inboundAnchor.clear()
     this.muted.clear()
     this.pushedSeq.clear()
   }
 
-  /** Forget one session's live state (mute, watermark) — used on restart. */
+  /** Forget one session's live state (mute, watermark, anchors) — used on restart. */
   forgetSession(sessionId: SessionId): void {
     this.pushedSeq.delete(sessionId)
+    this.muted.delete(sessionId)
     for (const [msgId, owner] of this.outboundAnchor) {
       if (owner === sessionId) this.outboundAnchor.delete(msgId)
     }
+    for (const [msgId, owner] of this.inboundAnchor) {
+      if (owner === sessionId) this.inboundAnchor.delete(msgId)
+    }
+  }
+
+  /** Cap an anchor map, evicting oldest entries (insertion order). */
+  private trimAnchor(map: Map<string, SessionId>, cap = 500): void {
+    for (const key of map.keys()) {
+      if (map.size <= cap) break
+      map.delete(key)
+    }
+  }
+
+  /**
+   * Resolve the owning session for one message. DM surfaces keep one
+   * persistent session per (robot, user). Group surfaces follow the Claude-Tag
+   * thread model on reply chains: a reply whose target/root is an anchored
+   * message continues that session; any other message anchors a fresh session
+   * at its own msgId.
+   */
+  private resolveSession(message: RobotInboundMessage): SessionId {
+    if (isDirectSurface(message)) return dmSessionId(message.robotId, message.operatorOpenid)
+    const reply = parseReplyMeta(message.msgParam).reply
+    if (reply !== undefined) {
+      const anchored = this.outboundAnchor.get(reply.replyMsgId)
+        ?? this.inboundAnchor.get(reply.replyMsgId)
+        ?? this.outboundAnchor.get(reply.replyRootMsgId)
+        ?? this.inboundAnchor.get(reply.replyRootMsgId)
+      if (anchored !== undefined) return anchored
+    }
+    const sessionId = groupSessionId(message.robotId, message.groupId, message.msgId)
+    this.inboundAnchor.set(message.msgId, sessionId)
+    this.trimAnchor(this.inboundAnchor)
+    return sessionId
   }
 
   /** Entry point for one classified inbound message. */
   async handle(message: RobotInboundMessage): Promise<void> {
     if (!this.dedupe.markSeen(message.msgId)) return
+    const group = !isDirectSurface(message)
     const replyAnchor: RobotSendOptions = {
       replyMsgId: message.msgId,
       replySummary: message.content.slice(0, 60),
       replyPersonName: message.operatorName,
+      // Group surfaces highlight only the asker; DMs need no targeting.
+      ...(group ? { notifyOpenIds: [message.operatorOpenid] } : {}),
     }
     const command = STANDALONE_COMMAND.exec(message.content.trim())
     const commandName = command?.[1] as RobotCommand | undefined
@@ -142,9 +196,15 @@ export class RobotRouter {
       await this.reply(this.denyText, replyAnchor)
       return
     }
-    const sessionId = dmSessionId(message.robotId, message.operatorOpenid)
+    const sessionId = this.resolveSession(message)
     if (this.muted.has(sessionId)) return
-    await this.reply(this.ackText, replyAnchor)
+    // The ack is a robot message in the chain — anchor it so replies to the
+    // ack (not just to the final answer) continue this session.
+    const ackResult = await this.reply(this.ackText, replyAnchor)
+    if (ackResult.ok && ackResult.msgId !== undefined) {
+      this.outboundAnchor.set(ackResult.msgId, sessionId)
+      this.trimAnchor(this.outboundAnchor)
+    }
     await this.dispatchTurn(sessionId, message)
   }
 
@@ -167,13 +227,16 @@ export class RobotRouter {
   }
 
   private async dispatchTurn(sessionId: SessionId, message: RobotInboundMessage): Promise<void> {
+    const group = !isDirectSurface(message)
+    const anchorOf = (): RobotSendOptions => ({
+      replyMsgId: message.msgId,
+      replySummary: message.content.slice(0, 60),
+      replyPersonName: message.operatorName,
+      ...(group ? { notifyOpenIds: [message.operatorOpenid] } : {}),
+    })
     const agent = await this.ensureAgent(sessionId)
     if (agent === undefined) {
-      await this.reply('内部错误：无法创建会话，请稍后再试。', {
-        replyMsgId: message.msgId,
-        replySummary: message.content.slice(0, 60),
-        replyPersonName: message.operatorName,
-      })
+      await this.reply('内部错误：无法创建会话，请稍后再试。', anchorOf())
       return
     }
     const markerSeq = lastSeq(agent.session.events)
@@ -212,19 +275,14 @@ export class RobotRouter {
     const histogram = events.filter(e => e.seq > markerSeq).map(e => e.type).join(',')
     this.logger?.warn(`robot: turn done for ${sessionId} events=[${histogram}] answer=${answer.length}ch${lastError === undefined ? '' : ` err=${lastError.slice(0, 200)}`}`)
     if (answer === '') {
-      await this.reply(lastError === undefined ? '本轮没有产出回答（会话已记录，可在 DSH 中查看）。' : `处理失败：${lastError.slice(0, 300)}`, {
-        replyMsgId: message.msgId,
-        replySummary: message.content.slice(0, 60),
-        replyPersonName: message.operatorName,
-      })
+      await this.reply(lastError === undefined ? '本轮没有产出回答（会话已记录，可在 DSH 中查看）。' : `处理失败：${lastError.slice(0, 300)}`, anchorOf())
       return
     }
-    const result = await this.reply(answer, {
-      replyMsgId: message.msgId,
-      replySummary: message.content.slice(0, 60),
-      replyPersonName: message.operatorName,
-    })
-    if (result.ok && result.msgId !== undefined) this.outboundAnchor.set(result.msgId, sessionId)
+    const result = await this.reply(answer, anchorOf())
+    if (result.ok && result.msgId !== undefined) {
+      this.outboundAnchor.set(result.msgId, sessionId)
+      this.trimAnchor(this.outboundAnchor)
+    }
   }
 
   private async ensureAgent(sessionId: SessionId): Promise<Agent | undefined> {
@@ -255,7 +313,7 @@ export class RobotRouter {
     message: RobotInboundMessage,
     anchor: RobotSendOptions,
   ): Promise<void> {
-    const sessionId = dmSessionId(message.robotId, message.operatorOpenid)
+    const sessionId = this.resolveSession(message)
     switch (command) {
       case 'help':
         await this.reply([
