@@ -12,6 +12,7 @@ import type { ConnectionRpcHandler } from '@deepseek-ai/dsh-client-connection'
 import type {} from '@dsh-yzj/bridge'
 import type {} from '@dsh-yzj/tool-yzj'
 import { applyWriteGate, type YzjWriteRecord } from './write-gate.ts'
+import { openBoundHome, type HomeOpenFace } from './home-open.ts'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -158,8 +159,8 @@ export interface YzjWriteGateFace {
  * Build the `/yzj` RPC handler: `workspaces`, `docs`, `events`, `groups`,
  * `messages`, `whoami`, `search`, `doc-get`, `doc-blocks`, `sheet-get`,
  * `workspace-get`, `event-get`, `contact-get`, `write-list`, and
- * `write-decide` endpoints, all backed by the yzj-cli bridge and the
- * write-gate. Endpoint payloads are validated as lossless JSON before use.
+ * `write-decide`, `home-open` endpoints, all backed by the yzj-cli bridge, the
+ * write-gate, and `ctx.yzjHome`. Endpoint payloads are validated as lossless JSON before use.
  * @param ctx - Cordis context carrying the bridge service.
  * @param writeGate - the confirmation-card bridge face.
  */
@@ -760,6 +761,36 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
         const models = ctx.get('yzjModels')
         if (models === undefined) return internalError('model-catalog: yzjModels 服务不可用（model-yzj 未挂载）')
         return { ok: true, value: { catalog: await models.catalog() } }
+      }
+      case 'home-open': {
+        const home = ctx.get('yzjHome') as HomeOpenFace | undefined
+        if (home === undefined) return internalError('home-open: yzjHome 服务不可用（tool-yzj 未挂载）')
+        const groupId = stringField(payload, 'groupId') ?? stringField(payload, 'yzjConversationId')
+        if (groupId === undefined) return internalError('home-open endpoint requires a groupId payload')
+        const agentsRaw = ctx.get('agents') as {
+          get: (id: never) => unknown
+          resume: (opts: { resumeSessionId: never }) => Promise<unknown>
+          create: (opts: { sessionId: never; meta?: { cwd: string } }) => Promise<unknown>
+        } | undefined
+        if (agentsRaw === undefined) return internalError('home-open: agents 服务不可用')
+        try {
+          const value = await openBoundHome({
+            home,
+            agents: {
+              get: id => agentsRaw.get(id as never),
+              resume: opts => agentsRaw.resume({ resumeSessionId: opts.resumeSessionId as never }),
+              create: opts => agentsRaw.create({
+                sessionId: opts.sessionId as never,
+                ...(opts.meta === undefined ? {} : { meta: opts.meta }),
+              }),
+            },
+            yzjConversationId: groupId,
+            cwd: process.cwd(),
+          })
+          return { ok: true, value }
+        } catch (error) {
+          return internalError(`home-open failed: ${String(error)}`)
+        }
       }
       default:
         return internalError(`unknown /yzj endpoint ${endpoint}`)

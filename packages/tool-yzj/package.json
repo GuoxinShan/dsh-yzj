@@ -25,7 +25,9 @@
   "dependencies": {
     "@dsh-yzj/bridge": "workspace:^",
     "@deepseek-ai/cordis": "link:../../../deepseek-harness/vendor/cordis",
+    "@deepseek-ai/dsh-storage-domain": "link:../../../deepseek-harness/packages/storage/storage-domain",
     "@deepseek-ai/dsh-tools": "link:../../../deepseek-harness/packages/core/tools",
-    "@deepseek-ai/schemastery": "link:../../../deepseek-harness/vendor/schemastery"
+    "@deepseek-ai/schemastery": "link:../../../deepseek-harness/vendor/schemastery",
+    "zod": "^4.4.3"
   }
 }

@@ -18,6 +18,10 @@ Every tool returns `{ content, truncated, data }`:
 - `content` — the model-facing digest capped at `maxRenderChars` (rendered through `output.render`).
 - `data` — the capped structured payload projected through `output.presentationMeta`. **Never model-visible**; persisted with the session log (`tool/result` meta) so the browser UI reproduces the card on live and replay paths alike.
 
+## Home binding (`ctx.yzjHome`)
+
+Durable 1:1 table: one Yunzhijia conversation (group or DM) ↔ one DSH session (`yzj-home-*`). Shared by robot inbound `followup()` and the panel pick-group path (`/yzj home-open`). Domain `yzj_home_bindings` (storage-domain); a second open is focus (`created: false`), never a parallel row. See `docs/spec/dsh-home-session.md`.
+
 ## Approval guard
 
 `tools/pre-execute` returns `{ kind: 'ask', reason }` for operations that must never run unconfirmed: `yzj_doc_delete`, `yzj_doc_move`, `yzj_doc_block_delete`, `yzj_sheet_table_delete`, `yzj_sheet_record_delete`, `yzj_calendar_event_delete`, `yzj_im_message_send`, `yzj_file_upload`, and `yzj_file_download` with `overwrite: true`. The composed ApprovalService routes the ask to the GUI approval panel and audits the pair on the session log.

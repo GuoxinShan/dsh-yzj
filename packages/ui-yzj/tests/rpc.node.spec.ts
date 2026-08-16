@@ -162,6 +162,43 @@ describe('createRpcHandler', () => {
     expect(catalog.ok && (catalog.value as { catalog: unknown[] }).catalog).toEqual([{ provider: 'deepseek', models: ['glm-4.7'] }])
   })
 
+  it('home-open binds once and focuses the same session on the second call', async () => {
+    const ctx = mountBridge({})
+    const rows = new Map<string, { sessionId: string; yzjKind: 'group' | 'dm' }>()
+    ctx.provide('yzjHome', {
+      ensureBound: async (id: string, kind: 'group' | 'dm') => {
+        const existing = rows.get(id)
+        if (existing !== undefined) return { sessionId: existing.sessionId, created: false, yzjKind: existing.yzjKind }
+        const row = { sessionId: `yzj-home-${id}`, yzjKind: kind }
+        rows.set(id, row)
+        return { ...row, created: true }
+      },
+    })
+    const live = new Map<string, true>()
+    const created: string[] = []
+    ctx.provide('agents', {
+      get: (id: string) => live.get(String(id)) === true ? {} : undefined,
+      resume: async () => { throw new Error('no log') },
+      create: async (opts: { sessionId: string }) => {
+        created.push(String(opts.sessionId))
+        live.set(String(opts.sessionId), true)
+      },
+    })
+    const handler = createRpcHandler(ctx, { list: () => [], decide: () => false })
+    const first = await handler('home-open', { groupId: 'g-a' }, undefined as never)
+    expect(first.ok && first.value).toMatchObject({ sessionId: 'yzj-home-g-a', created: true, yzjKind: 'group' })
+    const second = await handler('home-open', { groupId: 'g-a' }, undefined as never)
+    expect(second.ok && second.value).toMatchObject({ sessionId: 'yzj-home-g-a', created: false })
+    expect(created).toEqual(['yzj-home-g-a'])
+  })
+
+  it('home-open fails closed without yzjHome', async () => {
+    const ctx = mountBridge({})
+    const handler = createRpcHandler(ctx, { list: () => [], decide: () => false })
+    const result = await handler('home-open', { groupId: 'g-a' }, undefined as never)
+    expect(result.ok).toBe(false)
+  })
+
   it('unknown endpoints fail closed', async () => {
     const ctx = mountBridge({})
     const gate: YzjWriteGateFace = { list: () => [], decide: () => false }
