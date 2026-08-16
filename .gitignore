@@ -1,7 +1,20 @@
 node_modules/
-lib/
+packages/*/lib/
 *.tsbuildinfo
 dist/
+
+# The monobundle aggregate output (root lib/) IS committed: git-based installs
+# (dsh plugin add github:...#tag) receive source only — an unbuilt lib would
+# 404. Unignore the aggregate entries explicitly (re-ignored below per-file).
+lib/*
+!lib/bridge.mjs
+!lib/tool-yzj.mjs
+!lib/ui-yzj.mjs
+!lib/robot-yzj.mjs
+!lib/memory-yzj.mjs
+!lib/model-yzj.mjs
+!lib/client.js
+!lib/client.js.map
 
 # sibling checkouts cloned into the workspace root (never part of this repo)
 .openclaw-yzj/
