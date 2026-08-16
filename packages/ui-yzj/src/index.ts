@@ -53,6 +53,12 @@ function stringField(payload: unknown, key: string): string | undefined {
   return typeof value === 'string' && value !== '' ? value : undefined
 }
 
+/** Validate a non-negative integer field of an RPC payload. */
+function numberField(payload: unknown, key: string): number | undefined {
+  const value = typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>)[key] : undefined
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : undefined
+}
+
 /** Cap an integer field at the CLI's real `--limit` bound (1-20 for im). */
 function clampLimit(value: unknown): number | undefined {
   if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) return undefined
@@ -525,6 +531,50 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
           return { ok: true, value: { catalog: await robot.modelCatalog() } }
         } catch (error) {
           return internalError(`robot-models failed: ${String(error)}`)
+        }
+      }
+      case 'robot-diagnostics': {
+        const robot = ctx.get('yzjRobot')
+        if (robot === undefined) return internalError('robot-diagnostics: yzjRobot 服务不可用（robot-yzj 未挂载）')
+        return { ok: true, value: { push: robot.pushDiagnostics(), confirm: robot.confirmDiagnostics(), forks: robot.forkedSessions() } }
+      }
+      case 'robot-notify': {
+        const robot = ctx.get('yzjRobot')
+        if (robot === undefined) return internalError('robot-notify: yzjRobot 服务不可用（robot-yzj 未挂载）')
+        const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
+        const text = stringField(record, 'text')
+        if (text === undefined || text === '') return internalError('robot-notify endpoint requires a text payload')
+        try {
+          return { ok: true, value: { sent: await robot.notify(text, numberField(record, 'robotIndex') ?? 0) } }
+        } catch (error) {
+          return internalError(`robot-notify failed: ${String(error)}`)
+        }
+      }
+      case 'robot-continue': {
+        const robot = ctx.get('yzjRobot')
+        if (robot === undefined) return internalError('robot-continue: yzjRobot 服务不可用（robot-yzj 未挂载）')
+        const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
+        const text = stringField(record, 'text')
+        if (text === undefined || text === '') return internalError('robot-continue endpoint requires a text payload')
+        const groupId = stringField(record, 'groupId')
+        try {
+          return { ok: true, value: { continued: await robot.continueConversation(text, {
+            ...(numberField(record, 'robotIndex') === undefined ? {} : { robotIndex: numberField(record, 'robotIndex') }),
+            ...(groupId === undefined ? {} : { groupId }),
+          }) } }
+        } catch (error) {
+          return internalError(`robot-continue failed: ${String(error)}`)
+        }
+      }
+      case 'robot-fork': {
+        const robot = ctx.get('yzjRobot')
+        if (robot === undefined) return internalError('robot-fork: yzjRobot 服务不可用（robot-yzj 未挂载）')
+        const sessionId = stringField(payload, 'sessionId')
+        if (sessionId === undefined || sessionId === '') return internalError('robot-fork endpoint requires a sessionId payload')
+        try {
+          return { ok: true, value: { forked: await robot.forkSession(sessionId) } }
+        } catch (error) {
+          return internalError(`robot-fork failed: ${String(error)}`)
         }
       }
       default:

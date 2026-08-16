@@ -319,3 +319,20 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 - **任务署名 ack（C12）**：ack 带任务摘要（`收到，处理中…（帮我演示…）`）。
 - **对齐终局**：14 项中 12 项 ✅ 等价或更强、1 项 ⚠️（C3 群内须带 @，协议限制已文档化）、1 项 ➖（C7 自静音显式放弃）；`!fork` 仍留观察。51 单测绿。
 - 遗留观察：取消确认卡后部分轮次无收尾推送（agent 收尾产出为空的情形），非阻塞，下轮观察。
+
+### 20.8 R2.6：DSH→机器人 双向控制 + 工作目录（2026-08-16，`待提交`）
+
+**双向打通（操作者从 DSH 内部驱动机器人通道）——🟢 已落地并经真实通道验证**（设计见 `docs/spec/robot-channel-plan.md` §8）：
+
+- **`robot_status`**：通道连接/cwd/provider/model/allowFrom/已见会话表面（groupId+robotId+lastSessionId）/live session；实测列出 `cwd=D:\dev\deepseek-harness`（宿主进程 cwd，可配置键 `cwd`/`defaultCwd` 覆盖）。
+- **`robot_notify`**：主动通知推送到通道会话；实测群内收到「双向打通验证（来自 DSH 内部控制台）」。
+- **`robot_continue`**：以白名单操作者身份注入消息走完整入站管线（ack/鉴权/确认卡/记忆/intro/轮次/推送）；实测注入后群内 ack + 机器人回答；synthetic 消息不带 reply 锚点（fake msgId 服务端不存在）；跨重启续接靠持久表面域 `robot_yzj_surface`（`surface:<index>:<groupId>` + `recent:<index>`，注入了真实 robotId/groupId/lastSessionId 后实测续接旧会话）。
+- **`robot_fork`**：把机器人会话 fork 成操作者侧根会话（completed-turn seed + cwd + parentSession 谱系）；实测生成 `fork-yzj-robot-…` 会话且出现在 `session.list`（GUI 会话列表可打开继续）。
+- 服务面 + `/yzj` RPC（`robot-notify`/`robot-continue`/`robot-fork`）+ client 注入面同步补齐；工具体拒绝 `yzj-robot-*` 会话调用（防机器人自驱）。
+- 决策记录：工具不过确认门控（机器人是操作者自有通道，allowFrom 已限定），见 spec §8.2。
+
+**定时任务主动通知（C11 定时推送）——🟡 机制就位，端到端触发未闭环**：
+
+- 已证实：jsonl 协调器**实时持久化**机器人会话（cursor 实时前进、日志文件增长）；flush 屏障在工具调用时刻 `ok=true`（tools/execute 探针）；`attachScheduleTools`（ScheduleRuntime + registerScheduleTools + idle 驱动）已复刻 schedule 插件挂载。
+- 未闭环：程序化创建（非 root）的机器人 agent 的工具组装里 **`schedule_create` 仍报 `unknown tool`**（fresh create 路径实测多次；`setup` 注入 `tools` 服务未改善）——见 `docs/pitfalls/pitfall-007`（R2.6 更新：scoped 注册对程序化 agent 不可见，剩余方向=host 注册+agent-id 守卫）。resume 路径曾出现工具（13:09-14:34 轮次 agent 实际调用并返回 `persistence_uncertain`——该返回值源于当时会话日志被多实例交叉写入导致的 cursor 错位，隔离 DSH_HOME 后该现象消失）。
+- 附注：多 DSH 实例（3080 生产 GUI 与 3093 测试实例）共享 `~/.dsh` 时会交叉写入同一批机器人会话日志（cursor 冲突），测试必须用隔离 DSH_HOME；spike 侧一次性解压只出首帧（packed zstd）误判"只有 header"，见 `docs/pitfalls/pitfall-008`。

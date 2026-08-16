@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { RobotRouter, collectAssistantText, highestAssistantSeq } from '../src/router.ts'
+import { RobotRouter, collectAssistantText, completedTurnPrefix, highestAssistantSeq } from '../src/router.ts'
 import type { RobotInboundMessage } from '../src/protocol.ts'
 import type { RobotSendOptions, RobotSendResult } from '../src/outbound.ts'
 
@@ -138,13 +138,15 @@ describe('RobotRouter', () => {
 
   it('anchors a fresh group session per top-level message and continues it on replies', async () => {
     const agents = fakeAgents(() => 'idle')
-    const { router, sendCalls } = makeRouter([], agents)
+    const memory = fakeMemory()
+    const { router, sendCalls } = makeRouter([], agents, ['u-allowed'], { memory })
     // Top-level group @: groupId without the BOT- prefix. The first group
-    // message runs the intro turn (S7) instead of the raw content.
+    // message runs the intro as its own turn ahead of the user's message (S7).
     await router.handle(inbound('群任务A', { groupId: '6a7f37b4e4b0e6211b1c5b87', msgId: 'root-1' }))
     expect(agents.created).toHaveLength(1)
     const firstFollowup = (agents.created[0] as { followup: { mock: { calls: unknown[][] } } }).followup.mock.calls
     expect(String(firstFollowup[0]![0]!.content[0]!.text)).toContain('自我介绍')
+    expect(String(firstFollowup[1]![0]!.content[0]!.text)).toBe('群任务A')
     // Ack carried notifyParams targeting the asker (group surface).
     const ack = sendCalls[0]!.options
     expect(ack?.notifyOpenIds).toEqual(['u-allowed'])
@@ -155,11 +157,12 @@ describe('RobotRouter', () => {
       msgParam: JSON.stringify({ replyMsgId: 'out-1', replyRootMsgId: 'root-1', replyPersonName: '单国鑫', replySummary: '群任务A' }),
     }))
     expect(agents.created).toHaveLength(1)
-    expect((agents.created[0] as { followup: { mock: { calls: unknown[][] } } }).followup.mock.calls).toHaveLength(2)
+    expect((agents.created[0] as { followup: { mock: { calls: unknown[][] } } }).followup.mock.calls).toHaveLength(3)
     // A different top-level message anchors its own session (no second intro).
     await router.handle(inbound('另一个话题', { groupId: '6a7f37b4e4b0e6211b1c5b87', msgId: 'root-2' }))
     expect(agents.created).toHaveLength(2)
     const secondFollowup = (agents.created[1] as { followup: { mock: { calls: unknown[][] } } }).followup.mock.calls
+    expect(secondFollowup).toHaveLength(1)
     expect(String(secondFollowup[0]![0]!.content[0]!.text)).toBe('另一个话题')
   })
 
@@ -197,6 +200,133 @@ describe('RobotRouter', () => {
     await router.handle(inbound('查一下日程'))
     expect(sendCalls[0]!.options?.replyMsgId).toBeDefined()
     expect(sendCalls[0]!.options?.replyPersonName).toBe('单国鑫')
+  })
+
+  it('continueFromDsh injects an operator turn continuing the last group session', async () => {
+    const agents = fakeAgents(() => 'idle')
+    const memory = fakeMemory()
+    const { router, sendCalls } = makeRouter([], agents, ['u-allowed'], { memory })
+    await router.handle(inbound('群任务A', { groupId: 'g1', msgId: 'root-1' }))
+    expect(agents.created).toHaveLength(1)
+    const result = await router.continueFromDsh('再来一条')
+    expect(result.ok).toBe(true)
+    expect(result.sessionId).toContain('root-1')
+    // The synthetic ack carries no reply anchor (the fake msgId never existed
+    // on the server) but still notifies the asker on group surfaces.
+    const syntheticAck = sendCalls[1]!.options
+    expect(syntheticAck?.replyMsgId).toBeUndefined()
+    expect(syntheticAck?.notifyOpenIds).toEqual(['u-allowed'])
+    // Same session, one more user turn (intro + 2 user messages).
+    expect(agents.created).toHaveLength(1)
+    const followups = (agents.created[0] as { followup: { mock: { calls: unknown[][] } } }).followup.mock.calls
+    expect(followups).toHaveLength(3)
+    expect(String(followups[2]![0]!.content[0]!.text)).toBe('再来一条')
+  })
+
+  it('continueFromDsh refuses without a seen surface or a whitelisted operator', async () => {
+    const { router } = makeRouter([], fakeAgents(() => 'idle'), ['u-allowed'])
+    const noSurface = await router.continueFromDsh('你好')
+    expect(noSurface.ok).toBe(false)
+    expect(noSurface.error).toContain('入站')
+    const blocked = makeRouter([], fakeAgents(() => 'idle'), [])
+    const denied = await blocked.router.continueFromDsh('你好')
+    expect(denied.ok).toBe(false)
+    expect(denied.error).toContain('白名单')
+  })
+
+  it('continueFromDsh runs bang commands without driving the agent', async () => {
+    const agents = fakeAgents(() => 'idle')
+    const { router, sendCalls } = makeRouter([], agents, ['u-allowed'])
+    await router.handle(inbound('群任务A', { groupId: 'g1', msgId: 'root-1' }))
+    const result = await router.continueFromDsh('!status')
+    expect(result.ok).toBe(true)
+    expect(sendCalls.at(-1)!.text).toContain('会话')
+    expect(agents.created).toHaveLength(1)
+  })
+
+  it('surfaceSummary lists seen surfaces most recent first', async () => {
+    const { router } = makeRouter([])
+    await router.handle(inbound('甲', { groupId: 'g1', msgId: 'm1' }))
+    await router.handle(inbound('乙', { groupId: 'g2', msgId: 'm2' }))
+    await router.handle(inbound('丙', { groupId: 'g1', msgId: 'm3' }))
+    const summary = router.surfaceSummary()
+    expect(summary.map(entry => entry.groupId)).toEqual(['g1', 'g2'])
+    expect(summary[0]!.robotId).toBe('BOT-r')
+    expect(summary[0]!.lastSessionId).toBeDefined()
+  })
+
+  it('continueFromDsh continues the persisted last session after a restart', async () => {
+    const agents = fakeAgents(() => 'idle')
+    const store = new Map<string, unknown>([
+      ['surface:0:g1', {
+        robotId: 'BOT-r', robotName: '群机器人', groupType: 3, time: 1,
+        lastSessionId: 'yzj-robot-BOT-r-gg1-persisted-root',
+      }],
+    ])
+    const surface = {
+      get: (key: string) => store.get(key),
+      put: async (key: string, value: unknown) => { store.set(key, value) },
+      getMeta: () => undefined,
+      putMeta: async () => {},
+      entries: () => [...store.entries()],
+    }
+    const router = new RobotRouter({
+      agents: agents as never,
+      sender: { send: async () => ({ ok: true, msgId: 'out-1' }) },
+      allowFrom: async () => ['u-allowed'],
+      surface: surface as never,
+    })
+    const result = await router.continueFromDsh('继续之前的对话')
+    expect(result.ok).toBe(true)
+    // No fresh thread at the fake msgId: the persisted session id is reused.
+    expect(result.sessionId).toContain('persisted-root')
+    expect(agents.created).toHaveLength(1)
+  })
+
+  it('surfaceSummary merges persisted surfaces after a restart', async () => {
+    const store = new Map<string, unknown>([
+      ['surface:0:g1', { robotId: 'BOT-r', robotName: '群机器人', groupType: 3, time: 1 }],
+      ['surface:1:g9', { robotId: 'BOT-other', robotName: '别的群', groupType: 3, time: 2 }],
+    ])
+    const surface = {
+      get: (key: string) => store.get(key),
+      put: async () => {},
+      getMeta: () => undefined,
+      putMeta: async () => {},
+      entries: () => [...store.entries()],
+    }
+    const router = new RobotRouter({
+      agents: fakeAgents(() => 'idle') as never,
+      sender: { send: async () => ({ ok: true }) },
+      allowFrom: async () => ['u-allowed'],
+      channelIndex: 0,
+      surface: surface as never,
+    })
+    const summary = router.surfaceSummary()
+    expect(summary.map(entry => entry.groupId)).toEqual(['g1'])
+    expect(summary[0]!.robotId).toBe('BOT-r')
+  })
+
+  it('workdir defaults to the host process cwd and honors the option', () => {
+    const { router } = makeRouter([])
+    expect(router.workdir()).toBe(process.cwd())
+    const custom = new RobotRouter({ agents: fakeAgents(() => 'idle') as never, sender: { send: async () => ({ ok: true }) }, allowFrom: async () => ['u'], cwd: 'C:\\work' })
+    expect(custom.workdir()).toBe('C:\\work')
+  })
+
+  it('completedTurnPrefix slices through the last turn/end only', () => {
+    const events = [
+      { type: 'user/message', seq: 0, time: 0, data: {} },
+      { type: 'assistant/message', seq: 1, time: 0, data: { message: { content: [] } } },
+      { type: 'tool/call', seq: 2, time: 0, data: {} },
+      { type: 'turn/end', seq: 3, time: 0, data: { reason: { kind: 'completed' } } },
+      // Open second turn — must be excluded from the seed.
+      { type: 'user/message', seq: 4, time: 0, data: {} },
+    ] as never as import('@deepseek-ai/dsh-session').SessionEvent[]
+    const seed = completedTurnPrefix(events)
+    expect(seed).toHaveLength(4)
+    expect(seed.at(-1)!.type).toBe('turn/end')
+    expect(completedTurnPrefix(events.slice(0, 3))).toEqual([])
   })
 })
 

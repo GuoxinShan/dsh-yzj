@@ -27,6 +27,13 @@ export interface RobotInboundMessage {
   readonly groupId: string
   /** Stringified JSON reply metadata when the user replied to a message. */
   readonly msgParam?: string
+  /**
+   * True for DSH-side fabricated turns (`robot_continue`): the message never
+   * existed on the server, so outbound replies must not carry a reply anchor
+   * and session resolution continues the last anchored conversation instead
+   * of anchoring a fresh thread at a fake msgId.
+   */
+  readonly synthetic?: boolean
 }
 
 /** Parsed `msgParam` reply chain of one inbound message (measured field set). */

@@ -70,6 +70,14 @@ export interface YzjPanelInject {
   deleteRobotOverride: (key: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Provider/model catalog for the robot settings picker. */
   robotModels: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Live diagnostics: push-hub stashes and open confirmation cards. */
+  robotDiagnostics: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** DSH-side proactive notification via one robot channel. */
+  robotNotify: (text: string, robotIndex?: number) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** DSH-side conversation continuation (operator turn through the full pipeline). */
+  robotContinue: (text: string, options?: { robotIndex?: number; groupId?: string }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Fork one robot conversation into a new operator-side session. */
+  robotFork: (sessionId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
 }
 
 /** Build the inject face from a connection handle; unavailable → failed calls. */
@@ -137,5 +145,16 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
     }),
     deleteRobotOverride: (key) => call('robot-override-delete', { key }),
     robotModels: () => call('robot-models', {}),
+    robotDiagnostics: () => call('robot-diagnostics', {}),
+    robotNotify: (text: string, robotIndex?: number) => call('robot-notify', {
+      text,
+      ...(robotIndex === undefined ? {} : { robotIndex }),
+    }),
+    robotContinue: (text: string, options: { robotIndex?: number; groupId?: string } = {}) => call('robot-continue', {
+      text,
+      ...(options.robotIndex === undefined ? {} : { robotIndex: options.robotIndex }),
+      ...(options.groupId === undefined ? {} : { groupId: options.groupId }),
+    }),
+    robotFork: (sessionId: string) => call('robot-fork', { sessionId }),
   }
 }
