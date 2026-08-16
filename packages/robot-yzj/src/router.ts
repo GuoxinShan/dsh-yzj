@@ -51,6 +51,9 @@ export type AllowFromResolver = () => Promise<readonly string[] | undefined>
 /** Resolves a per-conversation model override; undefined = inherit. */
 export type OverrideResolver = (conversationKey: string) => { provider?: string; model?: string } | undefined
 
+/** Resolves one group's human name (WS frames carry none); undefined = unknown. */
+export type GroupNameResolver = (groupId: string) => Promise<string | undefined>
+
 /** Per-conversation memory face (MemoryStore satisfies it). */
 export interface RouterMemoryFace {
   lines(key: string): readonly string[]
@@ -91,6 +94,8 @@ export interface RobotRouterOptions {
   readonly logger?: RouterLogger
   /** GUI base URL for `!configure` and S2 session deep links; absent = text guidance only. */
   readonly guiUrl?: string
+  /** Resolves group names (for `!fork` by name); absent = groupId-only fork. */
+  readonly resolveGroupName?: GroupNameResolver
 }
 
 const DEFAULT_ACK_TEXT = '收到，处理中…'
@@ -98,12 +103,15 @@ const DEFAULT_DENY_TEXT = '抱歉，你不在本机器人的白名单内。'
 const COMMAND_NAMES = ['help', 'status', 'routines', 'mute', 'unmute', 'restart', 'configure'] as const
 type RobotCommand = typeof COMMAND_NAMES[number]
 const STANDALONE_COMMAND = /^!(help|status|routines|mute|unmute|restart|configure)\s*$/
-/** `!fork <groupId> <instruction>` — cross-group handover (S3): the current
- * session's context summary is forwarded to a new/anchored session of the
- * target group through the full inbound pipeline. */
+/** `!fork <groupId|群名> <instruction>` — cross-group handover (S3): the
+ * current session's context summary is forwarded to a new/anchored session of
+ * the target group through the full inbound pipeline. The target may be a
+ * groupId or a human group name (resolved lazily via resolveGroupName). */
 const FORK_COMMAND = /^!fork\s+(\S+)\s+(.+)$/is
 /** `!feedback <text>` — append to the local feedback log and acknowledge. */
 const FEEDBACK_COMMAND = /^!feedback\s+(.+)$/is
+/** How many known surfaces a group-name `!fork` lookup may resolve (bounded). */
+const GROUP_NAME_LOOKUP_LIMIT = 20
 /** Memory verbs (S4): a leading @-mention is tolerated on group surfaces. */
 const MEMORY_REMEMBER = /^(?:@[^\s@]+\s*)?(?:记住|remember)\s*[:：]?\s+(.+)$/is
 const MEMORY_LIST = /^(?:@[^\s@]+\s*)?(?:!memory|你记住了什么|列出记忆)\s*$/i
@@ -232,6 +240,9 @@ export class RobotRouter {
   private readonly denyText: string
   private readonly logger: RouterLogger | undefined
   private readonly guiUrl: string
+  private readonly resolveGroupName: GroupNameResolver | undefined
+  /** groupId → human group name, resolved lazily for `!fork` by name. */
+  private readonly groupNames = new Map<string, string>()
 
   private readonly dedupe = new InboundDedupe()
   /** Handles for sessions this router created (dispose/restart need them). */
@@ -270,6 +281,7 @@ export class RobotRouter {
     this.denyText = options.denyText ?? DEFAULT_DENY_TEXT
     this.logger = options.logger
     this.guiUrl = options.guiUrl ?? ''
+    this.resolveGroupName = options.resolveGroupName
   }
 
   /** Dispose every agent session this router created; clears all state. */
@@ -602,10 +614,10 @@ export class RobotRouter {
   }
 
   /** Every surface this channel has seen, most recent first (lossless JSON). */
-  surfaceSummary(): { groupId: string; robotId: string; robotName: string; groupType: number; time: number; lastSessionId?: string }[] {
+  surfaceSummary(): { groupId: string; robotId: string; robotName: string; groupType: number; time: number; lastSessionId?: string; groupName?: string }[] {
     const ordered = [...this.recentGroups].reverse()
     const seen = new Set<string>(ordered)
-    const out: { groupId: string; robotId: string; robotName: string; groupType: number; time: number; lastSessionId?: string }[] = []
+    const out: { groupId: string; robotId: string; robotName: string; groupType: number; time: number; lastSessionId?: string; groupName?: string }[] = []
     for (const groupId of ordered) {
       const state = this.surfaces.get(groupId)
       if (state !== undefined) {
@@ -616,6 +628,7 @@ export class RobotRouter {
           groupType: state.groupType,
           time: state.time,
           ...(state.lastSessionId === undefined ? {} : { lastSessionId: state.lastSessionId }),
+          ...(state.groupName === undefined ? {} : { groupName: state.groupName }),
         })
       }
     }
@@ -634,6 +647,7 @@ export class RobotRouter {
         groupType: state.groupType,
         time: state.time,
         ...(state.lastSessionId === undefined ? {} : { lastSessionId: state.lastSessionId }),
+        ...(state.groupName === undefined ? {} : { groupName: state.groupName }),
       })
     }
     return out
@@ -874,21 +888,26 @@ export class RobotRouter {
   }
 
   /**
-   * `!fork <groupId> <instruction>` (S3): hand the current session's context
-   * summary over to the target group's session through the full inbound
-   * pipeline (ack + agent turn in the target group). The target must be a
-   * surface this robot has seen; the group's own session anchors there and
-   * the instruction runs as the operator.
+   * `!fork <groupId|群名> <instruction>` (S3): hand the current session's
+   * context summary over to the target group's session through the full
+   * inbound pipeline (ack + agent turn in the target group). The target must
+   * be a surface this robot has seen; the group's own session anchors there
+   * and the instruction runs as the operator.
    */
   private async runFork(
-    targetGroupId: string,
+    rawTarget: string,
     instruction: string,
     message: RobotInboundMessage,
     anchor: RobotSendOptions,
   ): Promise<void> {
     const trimmed = instruction.trim()
-    if (targetGroupId === message.groupId) {
-      await this.reply('不能交接给当前群。请指定其他群的 groupId（!status 可查本会话；DSH 侧 robot_status 可查全部表面）。', anchor)
+    if (rawTarget === message.groupId) {
+      await this.reply('不能交接给当前群。请指定其他群的群名或 groupId（!status 可查本会话；DSH 侧 robot_status 可查全部表面）。', anchor)
+      return
+    }
+    const target = await this.resolveForkTarget(rawTarget)
+    if (target === undefined) {
+      await this.reply(`交接失败：没有找到群「${rawTarget}」（仅支持机器人已见过的群；群名或 groupId 均可）`, anchor)
       return
     }
     const sessionId = this.resolveSession(message)
@@ -901,16 +920,46 @@ export class RobotRouter {
     const handover = summary === ''
       ? `${trimmed}\n\n（DSH 跨群交接：来自群 ${message.groupId} 的会话，暂无已完成轮次上下文）`
       : `${trimmed}\n\n（DSH 跨群交接：来自群 ${message.groupId} 的会话上下文摘要，见下）\n\n${summary}`
-    const result = await this.continueFromDsh(handover, { groupId: targetGroupId })
+    const result = await this.continueFromDsh(handover, { groupId: target.groupId })
     if (!result.ok) {
       await this.reply(`交接失败：${result.error ?? '未知错误'}`, anchor)
       return
     }
+    const label = target.name === undefined ? target.groupId : `${target.name}（${target.groupId}）`
     const preview = trimmed.length > 40 ? `${trimmed.slice(0, 40)}…` : trimmed
     await this.reply(
-      `已交接给群 ${targetGroupId}：${preview}${summary === '' ? '' : `（附 ${summary.length} 字上下文摘要）`}`,
+      `已交接给群 ${label}：${preview}${summary === '' ? '' : `（附 ${summary.length} 字上下文摘要）`}`,
       anchor,
     )
+  }
+
+  /** Resolve a `!fork` target: exact groupId first, then a lazy group-name
+   * lookup over a bounded window of known surfaces. */
+  private async resolveForkTarget(raw: string): Promise<{ groupId: string; name?: string } | undefined> {
+    const byId = await this.resolveSurface(raw)
+    if (byId !== undefined) {
+      return byId.groupName === undefined ? { groupId: raw } : { groupId: raw, name: byId.groupName }
+    }
+    for (const surface of this.surfaceSummary().slice(0, GROUP_NAME_LOOKUP_LIMIT)) {
+      const name = surface.groupName ?? await this.resolveGroupNameOf(surface.groupId)
+      if (name === raw) return { groupId: surface.groupId, name }
+    }
+    return undefined
+  }
+
+  /** One group's human name: memory cache, then the resolver, then persist. */
+  private async resolveGroupNameOf(groupId: string): Promise<string | undefined> {
+    const cached = this.groupNames.get(groupId)
+    if (cached !== undefined) return cached
+    if (this.resolveGroupName === undefined) return undefined
+    const name = await this.resolveGroupName(groupId)
+    if (name === undefined || name === '') return undefined
+    this.groupNames.set(groupId, name)
+    const state = this.surfaces.get(groupId) ?? this.surface?.get(surfaceKey(this.channelIndex, groupId))
+    if (state !== undefined) {
+      void this.surface?.put(surfaceKey(this.channelIndex, groupId), { ...state, groupName: name }).catch(() => undefined)
+    }
+    return name
   }
 
   /**
