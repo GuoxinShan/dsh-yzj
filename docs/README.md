@@ -11,6 +11,7 @@ docs/
     integration-master-plan.md         云之家×dsh 集成整体方案（v1.7，验收基准）
     todo-design.md                     待办功能设计（v1.2，tag 理念 + §11.2 决策表）
     robot-channel-plan.md              机器人通道调研与双向打通方案（v0.1 调研稿）
+    routines-delivery.md               定时任务引擎选型（dsh-routines 参考调研）+ yzj chatnode 投递契约
   migration/                          ← 架构演进方案
     todo-backend-migration.md          待办 demo 后端 → 原生后端（四层架构 + §3 实测格式事实）
   status/                             ← 实现与设计的对照与验收证据
