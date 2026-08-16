@@ -1,7 +1,14 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { RobotRouter, collectAssistantText, completedTurnPrefix, highestAssistantSeq } from '../src/router.ts'
 import type { RobotInboundMessage } from '../src/protocol.ts'
 import type { RobotSendOptions, RobotSendResult } from '../src/outbound.ts'
+
+/** Scratch channel root for group-surface tests (kept out of the repo tree). */
+const tmpBase = mkdtempSync(join(tmpdir(), 'robot-router-spec-'))
+afterEach(() => { rmSync(tmpBase, { recursive: true, force: true }) })
 
 function inbound(content: string, overrides: Partial<RobotInboundMessage> = {}): RobotInboundMessage {
   return {
@@ -14,12 +21,15 @@ function inbound(content: string, overrides: Partial<RobotInboundMessage> = {}):
 
 function fakeAgents(getStatus: () => 'idle' | 'running') {
   const created: unknown[] = []
+  const createdWith: unknown[] = []
   const byId = new Map<string, unknown>()
   return {
     created,
+    createdWith,
     get: (id: { toString(): string }) => byId.get(String(id)),
     resume: async () => Promise.reject(new Error('no persisted log')),
     create: async (options: { sessionId: { toString(): string } }) => {
+      createdWith.push(options)
       const listeners: ((payload: unknown) => void)[] = []
       const agent = {
         id: `agent-${created.length}`,
@@ -46,7 +56,7 @@ function makeRouter(
   sends: RobotSendResult[],
   agents = fakeAgents(() => 'idle'),
   allowFrom = ['u-allowed'],
-  extra: { memory?: { lines: (key: string) => readonly string[]; remember: (key: string, line: string) => Promise<{ lines: readonly string[]; note: string }>; forget: (key: string, substring: string) => Promise<{ lines: readonly string[]; note: string }> } } = {},
+  extra: { memory?: { lines: (key: string) => readonly string[]; remember: (key: string, line: string) => Promise<{ lines: readonly string[]; note: string }>; forget: (key: string, substring: string) => Promise<{ lines: readonly string[]; note: string }> }; cwd?: string } = {},
 ) {
   const sendCalls: { text: string; options?: RobotSendOptions }[] = []
   const sender = {
@@ -60,6 +70,7 @@ function makeRouter(
     sender,
     allowFrom: async () => allowFrom,
     ...(extra.memory === undefined ? {} : { memory: extra.memory }),
+    ...(extra.cwd === undefined ? {} : { cwd: extra.cwd }),
   })
   return { router, sendCalls, agents }
 }
@@ -139,7 +150,7 @@ describe('RobotRouter', () => {
   it('anchors a fresh group session per top-level message and continues it on replies', async () => {
     const agents = fakeAgents(() => 'idle')
     const memory = fakeMemory()
-    const { router, sendCalls } = makeRouter([], agents, ['u-allowed'], { memory })
+    const { router, sendCalls } = makeRouter([], agents, ['u-allowed'], { memory, cwd: tmpBase })
     // Top-level group @: groupId without the BOT- prefix. The first group
     // message runs the intro as its own turn ahead of the user's message (S7).
     await router.handle(inbound('群任务A', { groupId: '6a7f37b4e4b0e6211b1c5b87', msgId: 'root-1' }))
@@ -205,7 +216,7 @@ describe('RobotRouter', () => {
   it('continueFromDsh injects an operator turn continuing the last group session', async () => {
     const agents = fakeAgents(() => 'idle')
     const memory = fakeMemory()
-    const { router, sendCalls } = makeRouter([], agents, ['u-allowed'], { memory })
+    const { router, sendCalls } = makeRouter([], agents, ['u-allowed'], { memory, cwd: tmpBase })
     await router.handle(inbound('群任务A', { groupId: 'g1', msgId: 'root-1' }))
     expect(agents.created).toHaveLength(1)
     const result = await router.continueFromDsh('再来一条')
@@ -236,7 +247,7 @@ describe('RobotRouter', () => {
 
   it('continueFromDsh runs bang commands without driving the agent', async () => {
     const agents = fakeAgents(() => 'idle')
-    const { router, sendCalls } = makeRouter([], agents, ['u-allowed'])
+    const { router, sendCalls } = makeRouter([], agents, ['u-allowed'], { cwd: tmpBase })
     await router.handle(inbound('群任务A', { groupId: 'g1', msgId: 'root-1' }))
     const result = await router.continueFromDsh('!status')
     expect(result.ok).toBe(true)
@@ -245,7 +256,7 @@ describe('RobotRouter', () => {
   })
 
   it('surfaceSummary lists seen surfaces most recent first', async () => {
-    const { router } = makeRouter([])
+    const { router } = makeRouter([], fakeAgents(() => 'idle'), ['u-allowed'], { cwd: tmpBase })
     await router.handle(inbound('甲', { groupId: 'g1', msgId: 'm1' }))
     await router.handle(inbound('乙', { groupId: 'g2', msgId: 'm2' }))
     await router.handle(inbound('丙', { groupId: 'g1', msgId: 'm3' }))
@@ -274,6 +285,7 @@ describe('RobotRouter', () => {
       agents: agents as never,
       sender: { send: async () => ({ ok: true, msgId: 'out-1' }) },
       allowFrom: async () => ['u-allowed'],
+      cwd: tmpBase,
       surface: surface as never,
     })
     const result = await router.continueFromDsh('继续之前的对话')
@@ -300,6 +312,7 @@ describe('RobotRouter', () => {
       sender: { send: async () => ({ ok: true }) },
       allowFrom: async () => ['u-allowed'],
       channelIndex: 0,
+      cwd: tmpBase,
       surface: surface as never,
     })
     const summary = router.surfaceSummary()
@@ -312,6 +325,49 @@ describe('RobotRouter', () => {
     expect(router.workdir()).toBe(process.cwd())
     const custom = new RobotRouter({ agents: fakeAgents(() => 'idle') as never, sender: { send: async () => ({ ok: true }) }, allowFrom: async () => ['u'], cwd: 'C:\\work' })
     expect(custom.workdir()).toBe('C:\\work')
+  })
+
+  it('resolves per-thread private cwds for group threads and the channel root for DMs (§8.4)', async () => {
+    const agents = fakeAgents(() => 'idle')
+    const { router } = makeRouter([], agents, ['u-allowed'], { cwd: tmpBase })
+    await router.handle(inbound('群任务A', { groupId: 'g1', msgId: 'root-1' }))
+    await router.handle(inbound('另一个话题', { groupId: 'g1', msgId: 'root-2' }))
+    await router.handle(inbound('DM 消息', { groupId: 'BOT-a-BOT-b', msgId: 'dm-1' }))
+    const cwds = agents.createdWith.map(options => (options as { meta: { cwd: string } }).meta.cwd)
+    expect(cwds).toEqual([
+      join(tmpBase, 'groups', 'g1', 'root-1'),
+      join(tmpBase, 'groups', 'g1', 'root-2'),
+      tmpBase,
+    ])
+  })
+
+  it('keeps one thread cwd across reply continuations (§8.4)', async () => {
+    const agents = fakeAgents(() => 'idle')
+    const { router } = makeRouter([], agents, ['u-allowed'], { cwd: tmpBase })
+    await router.handle(inbound('群任务A', { groupId: 'g1', msgId: 'root-1' }))
+    await router.handle(inbound('继续', {
+      groupId: 'g1',
+      msgId: 'reply-1',
+      msgParam: JSON.stringify({ replyMsgId: 'out-1', replyRootMsgId: 'root-1', replyPersonName: '单国鑫', replySummary: '群任务A' }),
+    }))
+    expect(agents.createdWith).toHaveLength(1)
+    expect((agents.createdWith[0] as { meta: { cwd: string } }).meta.cwd).toBe(join(tmpBase, 'groups', 'g1', 'root-1'))
+  })
+
+  it('injects the shared-workspace instruction into group turns only (§8.4)', async () => {
+    const agents = fakeAgents(() => 'idle')
+    const { router } = makeRouter([], agents, ['u-allowed'], { cwd: tmpBase })
+    await router.handle(inbound('群任务A', { groupId: 'g1', msgId: 'root-1' }))
+    const groupAgent = agents.created[0] as { inject: { mock: { calls: unknown[][] } } }
+    const injected = groupAgent.inject.mock.calls.map(call => String(call[0]!.content[0]!.text)).join('\n')
+    expect(injected).toContain('本群共享工作区')
+    expect(injected).toContain(join(tmpBase, 'groups', 'g1', 'shared'))
+    // DM turns get no shared-workspace instruction.
+    const dmAgents = fakeAgents(() => 'idle')
+    const { router: dmRouter } = makeRouter([], dmAgents, ['u-allowed'], { cwd: tmpBase })
+    await dmRouter.handle(inbound('DM 消息', { msgId: 'dm-1' }))
+    const dmAgent = dmAgents.created[0] as { inject: { mock: { calls: unknown[][] } } }
+    expect(dmAgent.inject.mock.calls).toHaveLength(0)
   })
 
   it('completedTurnPrefix slices through the last turn/end only', () => {

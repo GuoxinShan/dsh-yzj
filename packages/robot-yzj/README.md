@@ -32,6 +32,14 @@ personal (or group) Yunzhijia robot and DSH agent sessions.
   through the full inbound pipeline), and `robot_fork` (new operator-side
   session seeded with a robot conversation's completed-turn history). See
   `src/control.ts` and docs/spec/robot-channel-plan.md §8.
+- **Group workspaces** — per-thread private working directories
+  (`<cwd>/groups/<groupId>/<rootMsgId>/`, design §8.4) plus one shared
+  directory per group (`<cwd>/groups/<groupId>/shared/`). `robot_share_write`
+  is the ONLY write channel into the shared area (harness write tools are
+  sandboxed inside each session's private workspace), so robot sessions never
+  need elevated sandbox rights; the write tool rides the standard approval
+  guard (GUI card / in-group suggestion card). `robot_share_list` lists the
+  shared files for pre-write collision checks. See `src/share.ts`.
 
 ## Configuration
 
@@ -41,7 +49,7 @@ personal (or group) Yunzhijia robot and DSH agent sessions.
 | `enabled` | boolean | `true` | Bring the channel up when the plugin loads. |
 | `allowFrom` | string[] | `[]` | openIds allowed to drive the robot; empty list = CLI login user only. |
 | `provider` / `model` | string | `''` | Default route for this robot's sessions; empty = harness default. |
-| `cwd` | string | `''` | Working directory for this robot's sessions; empty = host process cwd (`defaultCwd` applies first). |
+| `cwd` | string | `''` | Channel root for this robot's sessions; empty = host process cwd (`defaultCwd` applies first). DMs work at the root; group threads get `<cwd>/groups/<groupId>/<rootMsgId>/` and the group shared dir sits at `<cwd>/groups/<groupId>/shared/` (§8.4). |
 
 ## Service face (`ctx.yzjRobot`)
 
@@ -59,6 +67,10 @@ personal (or group) Yunzhijia robot and DSH agent sessions.
   operator-side root session (completed-turn seed, cwd + parentSession
   lineage); the fork shows up in the DSH session list.
 - `dmSession(robotId, openId)` — stable DM session id.
+- `shareWrite(robotIndex, groupId?, filename, content, overwrite)` /
+  `shareList(robotIndex, groupId?)` — group shared-workspace writes/lists
+  behind the `robot_share_*` tools (groupId defaults to the channel's most
+  recent surface).
 
 ## Protocol facts (measured 2026-08-16, see docs/机器人通道调研与双向打通方案.md §4.1)
 

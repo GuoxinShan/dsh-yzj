@@ -13,6 +13,8 @@
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { foldScheduleEvents } from '@deepseek-ai/dsh-schedule'
+import { mkdirSync } from 'node:fs'
+import { join } from 'node:path'
 import type { Agent, AgentHandle, CreateAgentOptions, ResumeAgentOptions } from '@deepseek-ai/dsh-agent'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { InboundDedupe, parseReplyMeta, type RobotInboundMessage } from './protocol.ts'
@@ -206,6 +208,8 @@ export class RobotRouter {
   private readonly recentGroups: string[] = []
   /** groupId → last anchored session id (synthetic continuation target). */
   private readonly lastSession = new Map<string, SessionId>()
+  /** Group-thread session id → its private working directory (§8.4). */
+  private readonly sessionCwds = new Map<SessionId, string>()
 
   constructor(options: RobotRouterOptions) {
     this.agents = options.agents
@@ -288,7 +292,29 @@ export class RobotRouter {
     const sessionId = groupSessionId(message.robotId, message.groupId, message.msgId)
     this.inboundAnchor.set(message.msgId, sessionId)
     this.trimAnchor(this.inboundAnchor)
+    this.sessionCwds.set(sessionId, this.groupThreadCwd(message.groupId, message.msgId))
     return sessionId
+  }
+
+  /** Private working directory of one group thread (slugged, stable across restarts). */
+  private groupThreadCwd(groupId: string, rootMsgId: string): string {
+    return join(this.cwd, 'groups', slug(groupId), slug(rootMsgId))
+  }
+
+  /**
+   * The group shared directory (design §8.4): the explicit cross-thread
+   * collaboration area, created on demand. Only `robot_share_write` writes
+   * here — harness file tools stay sandboxed inside each session's private
+   * workspace, so this is the sole write channel outside it.
+   */
+  shareDir(groupId: string): string {
+    const dir = join(this.cwd, 'groups', slug(groupId), 'shared')
+    try {
+      mkdirSync(dir, { recursive: true })
+    } catch (error) {
+      this.logger?.warn(`robot: mkdir shared dir failed for ${dir}: ${String(error)}`)
+    }
+    return dir
   }
 
   /** Entry point for one classified inbound message. */
@@ -621,6 +647,26 @@ export class RobotRouter {
         this.logger?.warn(`robot: memory inject failed: ${String(error)}`)
       }
     }
+    // Group threads learn their shared workspace every turn (§8.4): the
+    // explicit cross-thread collaboration area, writable only through
+    // robot_share_write (harness write tools are sandboxed in the private
+    // workspace and would be denied on this path).
+    if (!isDirectSurface(message)) {
+      const text = [
+        '［本群共享工作区］',
+        `- 绝对路径：${this.shareDir(message.groupId)}`,
+        '- 写共享区必须用 robot_share_write 工具（自动处理同名冲突）；禁止用 write/edit 工具写共享区路径（会被沙箱拒绝）',
+        '- 读共享区文件可直接用内置 read/glob（绝对路径）。',
+      ].join('\n')
+      try {
+        agent.inject(createUserMessage({
+          content: [{ type: 'text', text }],
+          source: { kind: 'plugin', plugin: 'robot-yzj' },
+        }))
+      } catch (error) {
+        this.logger?.warn(`robot: share-dir inject failed: ${String(error)}`)
+      }
+    }
     try {
       agent.followup(createUserMessage({
         content: [{ type: 'text', text: turnText }],
@@ -641,11 +687,21 @@ export class RobotRouter {
     const hasRoute = merged.provider !== undefined && merged.provider !== ''
       || merged.model !== undefined && merged.model !== ''
     const agentOptions = hasRoute ? merged : undefined
-    // Robot sessions live under an explicit working directory (channel `cwd`
-    // option, defaulting to the host process cwd): the persona prompt section
-    // requires {{cwd}} to resolve, and a bare `_no-cwd` session would fail
-    // prompt assembly on its first turn.
-    const meta = { cwd: this.cwd }
+    // Robot sessions live under an explicit working directory: DMs at the
+    // channel root, group threads in their private workspace
+    // (`<cwd>/groups/<groupId>/<rootMsgId>/`, §8.4). The persona prompt
+    // section requires {{cwd}} to resolve, and a bare `_no-cwd` session would
+    // fail prompt assembly on its first turn — so the directory is created
+    // eagerly (recursive) before the agent comes up.
+    const cwd = this.sessionCwds.get(sessionId) ?? this.cwd
+    if (cwd !== this.cwd) {
+      try {
+        mkdirSync(cwd, { recursive: true })
+      } catch (error) {
+        this.logger?.warn(`robot: mkdir session cwd failed for ${cwd}: ${String(error)}`)
+      }
+    }
+    const meta = { cwd }
     // A robot session is durable across host restarts: prefer resuming the
     // persisted log, fall back to a fresh create when none exists. Creating
     // over an existing log is a hard id-collision error in the session store.

@@ -25,7 +25,7 @@ interface ControlToolValue {
 }
 
 /** Shared output contract (mirrors the yzj tool family's shape). */
-const controlOutput: {
+export const controlOutput: {
   readonly schema: {
     readonly type: 'object'
     readonly additionalProperties: false

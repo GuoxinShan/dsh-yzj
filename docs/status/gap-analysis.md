@@ -360,3 +360,13 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
   `tests/bridge.spec.ts` 全路径覆盖（真实 loopback HTTP，181 绿）。
 - 生产布局与验收口径见 `routines-delivery.md` §6；端到端验证在 web profile
   重启（web patch 生效）后进行。
+
+### 20.9 群工作区三层模型 + 共享区工具（2026-08-16，设计随提交）
+
+**背景**：cwd 原为 per-channel（全机器人共享一个目录）——群 A/群 B/DM 文件互通，话题间静默覆盖（harness `write` 是覆盖语义，无保护），与 Claude Tag per-thread 沙箱隔离（C13）存在静默降级。用户拍板三层模型（设计见 `robot-channel-plan.md` §8.4）：
+
+- **目录模型**：群话题 session cwd = `<通道cwd>/groups/<groupId>/<rootMsgId>/`（私有工作区，结构性无冲突）；DM 落通道根；群共享区 = `<通道cwd>/groups/<groupId>/shared/`（跨话题显式协作，等价 Claude Tag 的文件同步通道）；记忆按群不变。
+- **权限模型（session 权限不动）**：机器人会话保持 workspace-write；共享区在 session workspace 外，内置写工具被沙箱拒，`robot_share_write`（插件宿主直写）是唯一写通道；读共享区用内置 `read`/`glob`（只读不受沙箱限制，零新工具）。
+- **工具面**：`robot_share_write`（默认存在即自动唯一名 `name-2.ext`、`overwrite:true` 才覆盖、临时文件 + rename 原子写、filename 防穿越）+ `robot_share_list`（名/大小/mtime）；进 `WRITE_SPECS`（standard），机器人会话自动走群内建议卡；工具不禁机器人会话（区别于 §8.2 operator-only）。
+- **注入**：每轮对群会话注入共享区指令（绝对路径 + 强制走 `robot_share_write`），DM 不注入。
+- **验收**：单测覆盖群/DM cwd 解析、回复续接复用同目录、共享区指令只注入群会话、唯一名/覆盖/穿越拒绝；沙箱行为（内置 `read` 放行共享区绝对路径、内置 `write` 拒绝共享区路径）待真实机器人会话实测，结论回写此处与 spec §8.4 验证点。
