@@ -39,14 +39,18 @@ export interface RobotChannelConfig {
   enabled?: boolean
   /** openIds allowed to drive this robot; defaults to the CLI login user. */
   allowFrom?: string[]
-  /** Provider route for this robot's agent sessions; empty = the harness default. */
+  /** Default provider route for this robot's sessions; empty = the harness default. */
   provider?: string
-  /** Model id for this robot's agent sessions; empty = the harness default. */
+  /** Default model id for this robot's sessions; empty = the harness default. */
   model?: string
 }
 
 /** Plugin configuration: a robot list plus legacy single-robot fields. */
 export interface Config {
+  /** Default provider for every robot without its own; empty = harness default. */
+  defaultProvider?: string
+  /** Default model for every robot without its own; empty = harness default. */
+  defaultModel?: string
   /** Robot channels; each gets its own WS connection, sender, and router. */
   robots?: RobotChannelConfig[]
   /** Legacy single-robot sendMsgUrl — used as robot #0 when `robots` is empty. */
@@ -70,6 +74,8 @@ const RobotChannelSchema: z<RobotChannelConfig> = z.object({
 })
 
 const ConfigSchema: z<Config> = z.object({
+  defaultProvider: z.string().default(''),
+  defaultModel: z.string().default(''),
   robots: z.array(RobotChannelSchema).default([]),
   sendMsgUrl: z.string().default(''),
   enabled: z.boolean().default(true),
@@ -113,17 +119,22 @@ export class YzjRobot extends Service {
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'yzjRobot')
+    const fillDefaults = (robot: RobotChannelConfig): RobotChannelConfig => ({
+      ...robot,
+      ...(robot.provider === undefined || robot.provider === '' ? (config.defaultProvider === undefined || config.defaultProvider === '' ? {} : { provider: config.defaultProvider }) : {}),
+      ...(robot.model === undefined || robot.model === '' ? (config.defaultModel === undefined || config.defaultModel === '' ? {} : { model: config.defaultModel }) : {}),
+    })
     const robots = config.robots !== undefined && config.robots.length > 0
-      ? config.robots
+      ? config.robots.map(fillDefaults)
       : config.sendMsgUrl === undefined || config.sendMsgUrl === ''
         ? []
-        : [{
+        : [fillDefaults({
             sendMsgUrl: config.sendMsgUrl,
             enabled: config.enabled ?? true,
             allowFrom: config.allowFrom ?? [],
             provider: config.provider ?? '',
             model: config.model ?? '',
-          }]
+          })]
     this.startAll(robots)
   }
 
