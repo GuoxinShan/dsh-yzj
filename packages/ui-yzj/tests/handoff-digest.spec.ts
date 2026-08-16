@@ -40,6 +40,6 @@ describe('digestCandidates', () => {
     const digest = composeHandoffDigest(candidates, [], true)
     expect(digest).toContain('全文迁移')
     expect(digest).toContain('秘密')
-    expect(digest).toContain('草稿')
+    expect(digest).toContain('助手：草稿')
   })
 })

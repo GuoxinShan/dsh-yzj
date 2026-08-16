@@ -180,7 +180,7 @@ describe('fusedSnapshot', () => {
     const agent = {
       session: {
         events: [
-          { type: 'user/message', time: 20, data: { source: { kind: 'user' }, content: [{ type: 'text', text: '发给 Claude' }] } },
+          { type: 'user/message', time: 20, data: { source: { kind: 'user' }, content: [{ type: 'text', text: '发给助手' }] } },
           { type: 'user/message', time: 15, data: { source: { kind: 'plugin' }, content: [{ type: 'text', text: '扳机' }] } },
         ],
       },

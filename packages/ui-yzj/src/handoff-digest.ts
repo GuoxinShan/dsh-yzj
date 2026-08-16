@@ -72,7 +72,7 @@ export function composeHandoffDigest(
     : candidates.filter(row => selectedIds.includes(row.id))
   if (rows.length === 0) return ''
   const lines = rows.map(row => {
-    const who = row.role === 'assistant' ? 'Claude' : '用户'
+    const who = row.role === 'assistant' ? '助手' : '用户'
     return `${who}：${row.text}`
   })
   const header = migrateFull
