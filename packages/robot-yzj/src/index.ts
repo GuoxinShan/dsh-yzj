@@ -15,6 +15,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { AgentHandle } from '@deepseek-ai/dsh-agent'
 import type { SocketStatus } from './socket.ts'
@@ -201,7 +202,11 @@ export class YzjRobot extends Service {
     this.config = config
     this.guiUrl = config.guiUrl ?? ''
     this.hub = new PushHub(this.guiUrl === '' ? undefined : this.guiUrl)
-    this.channelsFile = config.channelsFile === undefined || config.channelsFile === '' ? undefined : config.channelsFile
+    // Default channel file: the settings card works with zero config; the
+    // explicit key only overrides the location.
+    this.channelsFile = config.channelsFile === undefined || config.channelsFile === ''
+      ? join(homedir(), '.dsh', 'robot-channels.json')
+      : config.channelsFile
     // When the channels file exists it is the sole source of truth
     // (§8.5); otherwise the patch-level config applies (legacy behavior).
     const source = this.channelsFile === undefined ? undefined : loadChannelsFile(this.channelsFile)

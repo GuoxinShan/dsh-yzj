@@ -428,7 +428,7 @@ robotId 与 CLI groupId 的 ID 空间映射；创建流程的公网测试是否�
 
 **配置来源语义**：
 
-- Config 新增可选键 `channelsFile`（字符串路径，如 `~/.dsh/robot-channels.json`）：
+- 通道文件默认 `~/.dsh/robot-channels.json`，**零配置可用**（设置卡直接读写；显式键 `channelsFile` 仅覆盖位置）：
   - **文件存在且可读 → 文件是唯一来源**（`defaultProvider`/`defaultModel`/`robots` 全从文件读，`config.robots` 与 `config.default*` 被忽略——手改 patch 请改文件，语义写进 README）；
   - 文件不存在 → 退回 `config.robots`（现状兼容，行为不变）；
 - **种子化迁移**：设置卡首次保存时若文件不存在，先写入当前生效配置（`config.robots` + `config.default*`）作为种子，再应用修改——现有两条真实通道自动进文件、之后可编辑，用户无感；
