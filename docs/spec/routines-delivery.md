@@ -66,6 +66,17 @@ interface ChatnodeService {
    结果直接走通道现有链路（我们的 PushHub 正是这个链路）。若不想引入 dsh-routines，
    可仿它做 `robot-yzj` 内嵌 `jobs[]`（cron + 热加载 override.json）。本方案默认选
    dsh-routines 路线（审计与投递抽象更完整），内嵌路线作为备选记录。
+6. **生态部署形态调研（2026-08-16）**：网上定时类插件分三种——
+   a) **独立 profile daemon**（dsh-routines 官方 README 推荐：`dsh --profile ops`
+   daemon 保活 + `headless` 子进程跑 run）——本方案同款，是主流形态；
+   b) **通道内嵌自研 cron**（dsh-wechat-bridge：`override.json` jobs[] 热加载，
+   不走 `ctx.jobs`，代价是无取消/超时/管理）——备选记录（§2.2 第 5 条）；
+   c) 纯通道无调度（dsh-chatnode-wechat 源码只有 `setTimeout` 超时）。
+   dsh-routines README 另写「也可装进 web profile」——该句**依赖 `tool-jobs`
+   （job controller）存在**；新版 harness 的 web profile 禁了 tool-jobs（模型面
+   工具移出 web-app 层），`ctx.jobs.start` 判「无 controller 服务该 owner」抛错
+   （`packages/jobs/jobs-local` `servesOwner`），即本仓库 §5.1 第 1 条实测的崩
+   溃——官方 README 此句在本环境不成立，部署以 §5.1/§6 为准。
 
 ## 3. 选定方案：dsh-routines + yzj chatnode（本仓库实现）
 
