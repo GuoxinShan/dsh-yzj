@@ -377,7 +377,7 @@ robotId 与 CLI groupId 的 ID 空间映射；创建流程的公网测试是否�
 | 续接的身份 | allowFrom 解析出的首个 openId（默认 CLI 登录用户），`operatorName` 标记 `DSH 控制台` | 与入站鉴权同一策略，操作者即白名单首人 |
 | synthetic 消息的出站锚点 | **不带** replyMsgId（真实入站才带） | synthetic msgId 服务端不存在，引用卡无法解析；群面仍带 `notifyOpenIds` 定向提醒 |
 | synthetic 会话续接 | 复用该群面最后锚定的 session（`lastSession` 表）；重启后从持久 `robot_yzj_surface` 域恢复 | 避免 fake msgId 锚出新线程；跨重启续接真实会话 |
-| 工作目录 | **三层模型**（§8.4）：`cwd`/`defaultCwd` 为通道根；DM 会话落通道根；群话题会话落 `<根>/groups/<groupId>/<rootMsgId>/`（私有工作区）；群共享区 `<根>/groups/<groupId>/shared/`。`robot_status` 可见通道根 | 对齐 Claude Tag per-thread 沙箱的隔离语义（话题间结构性无冲突）；共享区等价其「文件同步到持久存储」；写共享区经 `robot_share_write`（唯一通道），session 权限保持 workspace-write 不动 |
+| 工作目录 | **三层模型**（§8.4）：`cwd`/`defaultCwd` 为通道根；**缺省 = 自动分配 `~/.dsh/robot-workspaces/robot-<yzjtype>-<token8>`**（不再回落宿主 cwd，共享区/私有目录自包含）；DM 会话落通道根；群话题会话落 `<根>/groups/<groupId>/<rootMsgId>/`（私有工作区）；群共享区 `<根>/groups/<groupId>/shared/`。`robot_status` 可见通道根 | 对齐 Claude Tag per-thread 沙箱的隔离语义（话题间结构性无冲突）；共享区等价其「文件同步到持久存储」；写共享区经 `robot_share_write`（唯一通道），session 权限保持 workspace-write 不动；cwd 自动分配免用户手填 |
 | fork 的 seed | 最后一个 `turn/end` 之前的完整前缀（与 harness fork 子代理同一边界） | 平衡完成回合前缀才能被会话边界校验接受 |
 | fork 生命周期 | 服务持有 handle，插件卸载时一并 dispose | 根会话随通道插件生命周期，不泄漏 |
 
@@ -435,10 +435,15 @@ robotId 与 CLI groupId 的 ID 空间映射；创建流程的公网测试是否�
 - JSON 结构：`{defaultProvider?, defaultModel?, robots: [{sendMsgUrl, provider?, model?, cwd?, enabled?, allowFrom?}]}`；写回时保留文件里已有的 `default*`（设置卡 v1 不编辑全局默认）；
 - **生效方式**：保存 = 原子写文件（tmp + rename），**当前进程通道不变，重启 GUI 后生效**（与改 host 代码同体验）；不做热生效（动态增删 WS 通道需要改造通道生命周期，风险大，列为后续）。
 
-**设置卡 UI（机器人 tab「通道管理」section，放最前）**：
+**设置卡 UI（机器人 tab，两级结构）**：
 
-- 已注册通道列表（每行）：状态灯 + 类型名 + 已连接 + **内联默认路由编辑**（Provider/Model 下拉，来自 live catalog，保存即写文件）+ 删除按钮；
-- 「添加机器人」表单：`sendMsgUrl` 粘贴（必填）+ 可选 Provider/Model/cwd；内置**创建引导文案**：个人机器人 `yunzhijia.com/im/personalRobotCreate` 零门槛创建 → 复制 sendMsgUrl → 粘贴；群对话机器人需群管理员、创建时需公网测试地址（本机用临时隧道过创建，此后 WS 免公网）；
+- **一级（机器人列表）**：每行 = 状态灯 + 类型名 + 连接状态 + 自动 cwd + **群数徽标**（该机器人见过的群数）；点击进入详情；底部「添加机器人」表单（sendMsgUrl 粘贴 + 可选默认 Provider/Model，**无 cwd 输入——工作目录自动分配**）；
+- **二级（单个机器人详情）**：
+  - 基本信息：类型、sendMsgUrl（只读）、自动 cwd（只读显示）；
+  - **模型配置**：该机器人默认 Provider/Model 下拉 + 保存（写 channelsFile）；
+  - **已配置的群（N）**：该机器人见过的群表面列表（群名 + 最后会话时间），每群行内可指定该群的模型覆盖（保存/删除覆盖，走 `robot-override-set/delete`）；
+  - **群共享工作区**：群下拉（该机器人表面）→ 路径 + 文件列表 + 面板直写；
+  - 危险区：删除该机器人（两段确认）。
 - 保存后提示「已保存，重启 GUI 后生效」；列表显示**当前生效**通道（内存），重启后与文件一致。
 
 **与「按会话指定模型」的关系**：通道管理设置默认路由（作用于该通道全部会话）；按会话覆盖仍是更细粒度（同通道不同群不同模型），保留——两档配置语义：通道默认 > 会话覆盖 > harness 默认。
