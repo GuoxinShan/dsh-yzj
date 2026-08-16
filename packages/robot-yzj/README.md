@@ -14,7 +14,11 @@ personal (or group) Yunzhijia robot and DSH agent sessions.
 - **Routing** — one persistent agent session per (robot, user) DM
   (`yzj-robot-<robotId>-<openId>`), reply-chain continuation anchored on the
   server-maintained `replyRootMsgId`, msgId dedupe, per-session mute, and the
-  standalone bang commands `!help / !status / !mute / !unmute / !restart`.
+  standalone bang commands `!help / !status / !routines / !memory / !mute /
+  !unmute / !restart / !configure` plus the parameterized `!fork <群名|群ID>
+  <指令>` (cross-group handover with a bounded context summary, group names
+  resolved lazily through the CLI) and `!feedback <文本>` (local log +
+  receipt).
 - **ack-then-push** — the HTTP contract's 3-second budget cannot fit an LLM
   turn, so inbound turns are acked immediately (the ack text is the
   "is thinking…" surface) and the assistant's answer — every
@@ -40,6 +44,19 @@ personal (or group) Yunzhijia robot and DSH agent sessions.
   need elevated sandbox rights; the write tool rides the standard approval
   guard (GUI card / in-group suggestion card). `robot_share_list` lists the
   shared files for pre-write collision checks. See `src/share.ts`.
+- **Chatnode bridge** — the cross-process delivery path for an ops scheduler
+  daemon (dsh-routines) that must NOT hold its own robot connection. Two
+  halves of the same `ctx.chatnode` contract in `src/bridge.ts`:
+  - *listener* (web profile, opt-in via `bridgeToken`): an exact
+    `POST /yzj/chatnode` route on the profile's `webServer` (loopback-only,
+    bearer-token checked) that pushes through this plugin's own robot
+    channel;
+  - *client* (`bridgeTarget` set, no robots configured): the plugin provides
+    `ctx.chatnode` as an HTTP client to the listener — no WebSocket, no
+    robot credentials on the scheduler side.
+  Final answers also append a session-record line
+  (`📎 本任务完整记录：<guiUrl>（DSH 会话 <id>）`) when `guiUrl` is set
+  (S2 deep-link analogue — the GUI has no session URL route).
 
 ## Configuration
 
@@ -50,6 +67,10 @@ personal (or group) Yunzhijia robot and DSH agent sessions.
 | `allowFrom` | string[] | `[]` | openIds allowed to drive the robot; empty list = CLI login user only. |
 | `provider` / `model` | string | `''` | Default route for this robot's sessions; empty = harness default. |
 | `cwd` | string | `''` | Channel root for this robot's sessions; empty = host process cwd (`defaultCwd` applies first). DMs work at the root; group threads get `<cwd>/groups/<groupId>/<rootMsgId>/` and the group shared dir sits at `<cwd>/groups/<groupId>/shared/` (§8.4). |
+| `chatnodeRobotIndex` | number | `0` | Which channel `ctx.chatnode.send` pushes to (dsh-routines digests). |
+| `bridgeToken` | string | `''` | Shared bearer token; when set, registers the `POST /yzj/chatnode` bridge listener on the profile's webServer (loopback-only). |
+| `bridgeTarget` | string | `''` | Bridge client mode: with this set (and no robots), the plugin provides `ctx.chatnode` as an HTTP client to the listener — no WS, no credentials. Requires `bridgeToken`. |
+| `guiUrl` | string | `''` | DSH GUI base URL for `!configure` and the S2 session-record line on final answers. |
 
 ## Service face (`ctx.yzjRobot`)
 
