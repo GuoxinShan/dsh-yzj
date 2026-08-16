@@ -60,6 +60,16 @@ export interface YzjPanelInject {
   fetchWrite: (sessionId: string, callId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Settle one pending write-confirmation decision. */
   decideWrite: (writeId: string, outcome: 'allowed-once' | 'rejected') => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Robot channel statuses (one entry per configured robot). */
+  robotStatus: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Every persisted per-conversation model override. */
+  robotOverrides: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Persist one conversation's model override (provider and/or model). */
+  setRobotOverride: (key: string, provider: string | undefined, model: string | undefined) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Remove one conversation's model override. */
+  deleteRobotOverride: (key: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Provider/model catalog for the robot settings picker. */
+  robotModels: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
 }
 
 /** Build the inject face from a connection handle; unavailable → failed calls. */
@@ -118,5 +128,14 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
     ensureTeamTodo: (workspace) => call('todo-ensure-team', { workspace }),
     fetchWrite: (sessionId, callId) => call('write-list', { sessionId, callId }),
     decideWrite: (writeId, outcome) => call('write-decide', { writeId, outcome }),
+    robotStatus: () => call('robot-status', {}),
+    robotOverrides: () => call('robot-overrides', {}),
+    setRobotOverride: (key, provider, model) => call('robot-override-set', {
+      key,
+      ...(provider === undefined ? {} : { provider }),
+      ...(model === undefined ? {} : { model }),
+    }),
+    deleteRobotOverride: (key) => call('robot-override-delete', { key }),
+    robotModels: () => call('robot-models', {}),
   }
 }

@@ -18,6 +18,7 @@ import { RobotSocket } from './socket.ts'
 import { deriveWebSocketUrl } from './protocol.ts'
 import { RobotSender } from './outbound.ts'
 import { RobotRouter, dmSessionId } from './router.ts'
+import { OverrideStore } from './overrides.ts'
 
 /** Plugin name used by loader diagnostics. */
 export const name = 'robot-yzj'
@@ -108,6 +109,7 @@ export class YzjRobot extends Service {
   static inject = ['yzjBridge', 'agents']
 
   private readonly channels: RunningChannel[] = []
+  private readonly overrides = new OverrideStore()
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'yzjRobot')
@@ -152,6 +154,55 @@ export class YzjRobot extends Service {
     return dmSessionId(robotId, operatorOpenid)
   }
 
+  /** Every persisted model override (lossless JSON for RPC). */
+  listOverrides(): { key: string; provider?: string; model?: string }[] {
+    return this.overrides.entries()
+  }
+
+  /** Persist one conversation's model override (whole-record replace). */
+  async setOverride(key: string, override: { provider?: string; model?: string }): Promise<void> {
+    if (override.provider === undefined && override.model === undefined) {
+      await this.overrides.delete(key)
+      return
+    }
+    await this.overrides.put(key, override)
+  }
+
+  /** Remove one conversation's override. */
+  async deleteOverride(key: string): Promise<boolean> {
+    return this.overrides.delete(key)
+  }
+
+  /**
+   * Provider/model catalog for the UI picker: active adapter routes
+   * (`listProviders`) merged with the configurable directory
+   * (`listConfigurableProviders` — dormant-but-selectable providers), each
+   * with its model list when it can be enumerated.
+   */
+  async modelCatalog(): Promise<{ provider: string; models: string[] }[]> {
+    const llm = this.ctx.get('llm') as
+      | {
+          listProviders(): { provider?: string }[]
+          listConfigurableProviders(): { provider?: string }[]
+          listModels(provider: string): Promise<{ id?: string; model?: string }[]>
+        }
+      | undefined
+    if (llm === undefined) return []
+    const names = [...new Set([
+      ...llm.listProviders().map(entry => String(entry.provider ?? '')),
+      ...llm.listConfigurableProviders().map(entry => String(entry.provider ?? '')),
+    ].filter(name => name !== ''))]
+    return Promise.all(names.map(async provider => {
+      try {
+        const models = await llm.listModels(provider)
+        return { provider, models: models.map(m => String(m.id ?? m.model ?? '')).filter(id => id !== '') }
+      } catch (error) {
+        this.ctx.logger.warn(`robot: listModels failed for ${provider}: ${String(error)}`)
+        return { provider, models: [] }
+      }
+    }))
+  }
+
   /** Build and start every channel (idempotent per constructor call). */
   private startAll(robots: readonly RobotChannelConfig[]): void {
     for (const robotConfig of robots) {
@@ -175,6 +226,7 @@ export class YzjRobot extends Service {
       sender,
       allowFrom: () => this.resolveAllowFrom(robotConfig),
       ...(Object.keys(agentOptions).length === 0 ? {} : { agentOptions }),
+      resolveOverride: key => this.overrides.get(key),
       ackText: DEFAULT_ACK_TEXT,
       denyText: DEFAULT_DENY_TEXT,
       logger: { warn: message => this.ctx.logger.warn(message) },
@@ -199,6 +251,23 @@ export class YzjRobot extends Service {
       void channel.router.dispose()
     }
     this.channels.length = 0
+    void this.overrides.close()
+  }
+
+  /** Open the override store once the storage hub has the domain form. */
+  private async ensureOverrides(): Promise<void> {
+    const facility = this.ctx.get('storageDomain')
+    if (facility === undefined) return
+    try {
+      await this.overrides.open(facility as never)
+    } catch (error) {
+      this.ctx.logger.warn(`robot: override store failed to open: ${String(error)}`)
+    }
+  }
+
+  /** Public wrapper for the plugin entry's inject callback. */
+  async openOverridesNow(): Promise<void> {
+    await this.ensureOverrides()
   }
 
   /** allowFrom policy: explicit config list, else the CLI login user once. */
@@ -226,6 +295,12 @@ export class YzjRobot extends Service {
 /** Plugin entry: expose the service and own every channel's lifecycle. */
 export function apply(ctx: Context, config: Config): void {
   const robot = new YzjRobot(ctx, config)
+  // The override store opens as soon as the storage hub mounts the domain
+  // form (web profile: json backend under the harness home). Routers read it
+  // lazily per agent creation, so late opening is fine.
+  ctx.inject(['storageDomain'], () => {
+    void robot.openOverridesNow()
+  })
   ctx.effect(() => {
     return () => robot.stop()
   }, 'robot-yzj: channel lifecycle')

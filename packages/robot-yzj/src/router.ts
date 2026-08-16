@@ -14,6 +14,12 @@ import type { Agent, AgentHandle, CreateAgentOptions, ResumeAgentOptions } from 
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { InboundDedupe, parseReplyMeta, type RobotInboundMessage } from './protocol.ts'
 import type { RobotSendOptions, RobotSendResult } from './outbound.ts'
+import { dmKey, groupKey } from './overrides.ts'
+
+/** DM conversation key of one message (override-table form). */
+function dmKeyOf(message: RobotInboundMessage): string {
+  return dmKey(message.robotId, message.operatorOpenid)
+}
 
 /** The tiny agents-registry face the router needs (fake-able in tests). */
 export interface RouterAgentsFace {
@@ -36,6 +42,9 @@ export interface RouterLogger {
 /** Resolves the allowFrom openId list; undefined keeps the current policy. */
 export type AllowFromResolver = () => Promise<readonly string[] | undefined>
 
+/** Resolves a per-conversation model override; undefined = inherit. */
+export type OverrideResolver = (conversationKey: string) => { provider?: string; model?: string } | undefined
+
 /** Router options; all faces are injectable. */
 export interface RobotRouterOptions {
   readonly agents: RouterAgentsFace
@@ -44,6 +53,8 @@ export interface RobotRouterOptions {
   readonly allowFrom: AllowFromResolver
   /** Provider/model override for created agent sessions; absent = harness default. */
   readonly agentOptions?: { provider?: string; model?: string }
+  /** Per-conversation override lookup (wins over agentOptions); absent = none. */
+  readonly resolveOverride?: OverrideResolver
   readonly ackText?: string
   readonly denyText?: string
   readonly logger?: RouterLogger
@@ -88,6 +99,7 @@ export class RobotRouter {
   private readonly sender: RouterSendFace
   private readonly allowFrom: AllowFromResolver
   private readonly agentOptions: { provider?: string; model?: string } | undefined
+  private readonly resolveOverride: OverrideResolver | undefined
   private readonly ackText: string
   private readonly denyText: string
   private readonly logger: RouterLogger | undefined
@@ -111,6 +123,7 @@ export class RobotRouter {
     this.sender = options.sender
     this.allowFrom = options.allowFrom
     this.agentOptions = options.agentOptions
+    this.resolveOverride = options.resolveOverride
     this.ackText = options.ackText ?? DEFAULT_ACK_TEXT
     this.denyText = options.denyText ?? DEFAULT_DENY_TEXT
     this.logger = options.logger
@@ -228,13 +241,16 @@ export class RobotRouter {
 
   private async dispatchTurn(sessionId: SessionId, message: RobotInboundMessage): Promise<void> {
     const group = !isDirectSurface(message)
+    const conversationKey = group
+      ? groupKey(message.groupId)
+      : dmKeyOf(message)
     const anchorOf = (): RobotSendOptions => ({
       replyMsgId: message.msgId,
       replySummary: message.content.slice(0, 60),
       replyPersonName: message.operatorName,
       ...(group ? { notifyOpenIds: [message.operatorOpenid] } : {}),
     })
-    const agent = await this.ensureAgent(sessionId)
+    const agent = await this.ensureAgent(sessionId, conversationKey)
     if (agent === undefined) {
       await this.reply('内部错误：无法创建会话，请稍后再试。', anchorOf())
       return
@@ -285,15 +301,21 @@ export class RobotRouter {
     }
   }
 
-  private async ensureAgent(sessionId: SessionId): Promise<Agent | undefined> {
+  private async ensureAgent(sessionId: SessionId, conversationKey: string): Promise<Agent | undefined> {
     const existing = this.agents.get(sessionId)
     if (existing !== undefined) return existing
-    const agentOptions = this.agentOptions
-    // Robot DM sessions live under the dsh-yzj checkout: the persona prompt
+    // Resolution order: per-conversation override > channel defaults > harness
+    // default (omit the fields entirely so the agent-loop route applies).
+    const override = this.resolveOverride?.(conversationKey)
+    const merged = { ...(this.agentOptions ?? {}), ...(override ?? {}) }
+    const hasRoute = merged.provider !== undefined && merged.provider !== ''
+      || merged.model !== undefined && merged.model !== ''
+    const agentOptions = hasRoute ? merged : undefined
+    // Robot sessions live under the dsh-yzj checkout: the persona prompt
     // section requires {{cwd}} to resolve, and a bare `_no-cwd` session would
     // fail prompt assembly on its first turn.
     const meta = { cwd: process.cwd() }
-    // A robot DM session is durable across host restarts: prefer resuming the
+    // A robot session is durable across host restarts: prefer resuming the
     // persisted log, fall back to a fresh create when none exists. Creating
     // over an existing log is a hard id-collision error in the session store.
     const handle = await this.agents
