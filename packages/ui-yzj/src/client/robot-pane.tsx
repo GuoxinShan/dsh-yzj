@@ -278,6 +278,8 @@ function RobotDetail(outer: { props: RobotPaneProps; index: number; onBack: () =
   const [route, setRoute] = useState({ provider: asString(channel.provider), model: asString(channel.model) })
   // Editable push address (sendMsgUrl) draft.
   const [sendUrlDraft, setSendUrlDraft] = useState(sendMsgUrl)
+  // Editable workspace directory draft (empty = auto-assigned again).
+  const [cwdDraft, setCwdDraft] = useState(cwd)
   // Per-group override drafts (groupId → {provider, model}).
   const [overrideDrafts, setOverrideDrafts] = useState<Record<string, { provider: string; model: string }>>({})
   // Per-group shared files (each group card owns its own browse + preview state).
@@ -385,6 +387,23 @@ function RobotDetail(outer: { props: RobotPaneProps; index: number; onBack: () =
     saveChannels(robots)
   }
 
+  /** Persist an edited workspace directory (empty draft = auto-assigned again). */
+  const saveCwd = (): void => {
+    if (cwdDraft === cwd) return
+    const robots = asArray(props.channels).map((item, i) => {
+      const record = asRecord(item)
+      return {
+        sendMsgUrl: asString(record.sendMsgUrl),
+        ...(record.enabled === true ? {} : { enabled: false }),
+        ...(Array.isArray(record.allowFrom) ? { allowFrom: record.allowFrom.filter((v): v is string => typeof v === 'string') } : {}),
+        ...(asString(record.provider) === '' ? {} : { provider: asString(record.provider) }),
+        ...(asString(record.model) === '' ? {} : { model: asString(record.model) }),
+        ...(i === index ? (cwdDraft === '' ? {} : { cwd: cwdDraft }) : asString(record.cwd) === '' ? {} : { cwd: asString(record.cwd) }),
+      }
+    }).filter(item => item.sendMsgUrl !== '')
+    saveChannels(robots, () => { setNote(cwdDraft === '' ? '已恢复自动分配，重启后生效' : `已保存工作目录，重启后生效`) })
+  }
+
   const removeChannel = (): void => {
     if (!confirmingDelete) { setConfirmingDelete(true); return }
     const next = asArray(props.channels)
@@ -457,7 +476,35 @@ function RobotDetail(outer: { props: RobotPaneProps; index: number; onBack: () =
             <button type="button" className={css.secondary} onClick={() => { openFolder(undefined) }}>打开工作目录</button>
           </div>
         </div>
-        <p className={css.hint} title={cwd}>工作目录（自动分配，一般不用管）：{cwd}</p>
+        <div className={css.editor}>
+          <label className={css.field}>
+            <span className={css.fieldLabel}>工作目录（默认自动分配；留空保存 = 恢复自动分配）</span>
+            <input
+              className={css.input}
+              value={cwdDraft}
+              onChange={(event) => { setCwdDraft(event.target.value) }}
+              placeholder="留空 = 自动分配（~/.dsh/robot-workspaces/）"
+            />
+          </label>
+          <div className={css.actions}>
+            <button
+              type="button"
+              className={css.primary}
+              disabled={cwdDraft === cwd}
+              onClick={saveCwd}
+            >
+              保存工作目录
+            </button>
+            <button
+              type="button"
+              className={css.secondary}
+              disabled={cwdDraft === ''}
+              onClick={() => { setCwdDraft('') }}
+            >
+              恢复自动分配
+            </button>
+          </div>
+        </div>
       </section>
 
       <section className={css.section}>
