@@ -46,6 +46,31 @@ Files are plain Markdown: human edits are first-class, and a dream never
 clobbers content it did not read — `rev` (content hash) mismatches reject
 that decision item without touching the file.
 
+## Dream consolidation (v0.2)
+
+Consolidation is **off by default** and controlled by a runtime state file —
+`<vaultRoot>/dream.json` (hand-editable, hot-reloaded):
+
+```json
+{ "enabled": false, "provider": "", "model": "", "dailyAt": "03:30", "lastRunDay": "", "lastNote": "" }
+```
+
+- `enabled: false` refuses every consolidation surface — the
+  `memory_dream_apply` tool and the executor — in every process sharing the
+  vault (including the legacy dsh-routines path). Observe/read/search/load
+  are never gated.
+- The in-process executor (`dreamRun`) creates a one-shot agent session
+  (full session log = audit) driven by the canonical prompt in
+  `src/dream.ts`; model resolution: `dream.json` route > plugin default
+  (`ctx.yzjModels`) > harness default.
+- `dailyAt` (HH:mm) arms a daily in-process tick (`lastRunDay` stamps make
+  it restart-safe); triggers: panel「立即固化」(`dream-run`, trigger
+  `panel`) and the daily tick (`schedule`).
+- The dsh-routines template stays as an alternative path
+  ([docs/spec/memory-dream-routine.yaml](../../docs/spec/memory-dream-routine.yaml));
+  its model is the run profile's default (dsh-routines has no per-routine
+  model field).
+
 ## Configuration
 
 | Key | Default | Description |

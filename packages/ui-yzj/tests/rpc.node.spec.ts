@@ -123,6 +123,42 @@ describe('createRpcHandler', () => {
     expect(observed).toEqual([{ scope: 'user', content: '偏好表格周报', source: 'panel' }])
   })
 
+  it('dream and model-default endpoints project their services', async () => {
+    const ctx = new Context()
+    const dreamSets: Record<string, unknown>[] = []
+    const dreamRuns: string[] = []
+    ctx.provide('yzjMemory', {
+      dreamSettings: () => ({ enabled: false }),
+      setDreamSettings: (partial: Record<string, unknown>) => { dreamSets.push(partial); return { enabled: partial.enabled === true } },
+      dreamRun: async (trigger: string) => { dreamRuns.push(trigger); return { ok: true as const, sessionId: 'dream-1', note: '固化完成' } },
+    })
+    const modelSets: { provider: string; model: string }[] = []
+    ctx.provide('yzjModels', {
+      get: () => undefined,
+      get path() { return 'yzj-model.json' },
+      setDefault: async (provider: string, model: string) => { modelSets.push({ provider, model }); return { provider, model } },
+      clear: async () => { modelSets.length = 0 },
+      catalog: async () => [{ provider: 'deepseek', models: ['glm-4.7'] }],
+    })
+    const handler = createRpcHandler(ctx, { list: () => [], decide: () => false })
+    const state = await handler('dream-state', {}, undefined as never)
+    expect(state.ok && (state.value as { state: { enabled: boolean } }).state.enabled).toBe(false)
+    const set = await handler('dream-set', { enabled: true, provider: '', model: '', dailyAt: '03:30' }, undefined as never)
+    expect(set.ok && (set.value as { state: { enabled: boolean } }).state.enabled).toBe(true)
+    expect(dreamSets).toEqual([{ enabled: true, provider: '', model: '', dailyAt: '03:30' }])
+    const run = await handler('dream-run', {}, undefined as never)
+    expect(run.ok && (run.value as { note: string }).note).toBe('固化完成')
+    expect(dreamRuns).toEqual(['panel'])
+    const def = await handler('model-default', {}, undefined as never)
+    expect(def.ok && (def.value as { path: string }).path).toBe('yzj-model.json')
+    const setDef = await handler('model-default-set', { provider: 'deepseek', model: 'glm-4.7' }, undefined as never)
+    expect(setDef.ok && (setDef.value as { route: { model: string } }).route.model).toBe('glm-4.7')
+    await handler('model-default-clear', {}, undefined as never)
+    expect(modelSets).toEqual([])
+    const catalog = await handler('model-catalog', {}, undefined as never)
+    expect(catalog.ok && (catalog.value as { catalog: unknown[] }).catalog).toEqual([{ provider: 'deepseek', models: ['glm-4.7'] }])
+  })
+
   it('unknown endpoints fail closed', async () => {
     const ctx = mountBridge({})
     const gate: YzjWriteGateFace = { list: () => [], decide: () => false }

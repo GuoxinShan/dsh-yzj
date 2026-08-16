@@ -30,3 +30,9 @@
     # widening allowScopes — see docs/spec/memory-vault-design.md §8.
     - id: memory-yzj
       name: '@dsh-yzj/memory-yzj'
+
+    # Plugin-wide default model route ($DSH_HOME/yzj-model.json): the last
+    # link of the robot model-resolution chain and the dream executor's
+    # fallback (ctx.yzjModels).
+    - id: model-yzj
+      name: '@dsh-yzj/model-yzj'

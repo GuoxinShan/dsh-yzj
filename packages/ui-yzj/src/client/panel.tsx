@@ -2429,6 +2429,13 @@ export function YzjPanel(props: YzjPanelProps) {
           memoryScope={() => props.memoryScope()}
           memoryLog={() => props.memoryLog()}
           memoryObserve={(content, tags) => props.memoryObserve(content, tags)}
+          dreamState={() => props.dreamState()}
+          dreamSet={partial => props.dreamSet(partial)}
+          dreamRun={() => props.dreamRun()}
+          modelDefault={() => props.modelDefault()}
+          modelSetDefault={(provider, model) => props.modelSetDefault(provider, model)}
+          modelClearDefault={() => props.modelClearDefault()}
+          modelCatalog={() => props.modelCatalog()}
         />
       )}
 

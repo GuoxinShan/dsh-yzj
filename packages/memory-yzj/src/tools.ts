@@ -108,8 +108,10 @@ function parseDecisionsJson(text: string): unknown[] {
   return parsed
 }
 
-/** Register the five memory tools over one core. */
-export function applyMemoryTools(ctx: Context, core: MemoryCore, budget: MemoryToolBudget): void {
+/** Register the five memory tools over one core.
+ * @param dreamGate - when provided and false, the apply tool refuses (the
+ * runtime dream switch in dream.json; read/write surfaces stay available). */
+export function applyMemoryTools(ctx: Context, core: MemoryCore, budget: MemoryToolBudget, dreamGate?: () => boolean): void {
   ctx.tools.register(defineTool({
     name: 'memory_observe',
     description: 'Record one observation into the memory vault scratchpad (a provisional signal, not yet curated memory). Observations are consolidated into sections/entities by the periodic dream; use this whenever the user states a durable preference, fact, decision, or project context worth keeping.',
@@ -194,6 +196,9 @@ export function applyMemoryTools(ctx: Context, core: MemoryCore, budget: MemoryT
     },
     output: memoryToolOutput,
     async execute(args) {
+      if (dreamGate !== undefined && !dreamGate()) {
+        throw new Error('dream 未开启：固化被 dream.json 的 enabled=false 拒绝（在面板或配置中开启后重试；观察与读取不受影响）')
+      }
       const report = core.dreamApplyRaw(args.scope, parseDecisionsJson(args.decisions), args.summary)
       const { content, truncated } = clip(reportDigest(report), budget.maxRenderChars)
       return { content, truncated, data: clipMeta(report, budget.maxMetaChars) }
