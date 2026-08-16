@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { classifyFrame, deriveWebSocketUrl, InboundDedupe, parseReplyMeta } from '../src/protocol.ts'
+import { ackFrame, classifyFrame, deriveWebSocketUrl, InboundDedupe, parseReplyMeta } from '../src/protocol.ts'
 
 describe('deriveWebSocketUrl', () => {
   it('derives the measured wss shape from a sendMsgUrl', () => {
@@ -17,6 +17,15 @@ describe('classifyFrame', () => {
   it('classifies the measured auth and pong control frames', () => {
     expect(classifyFrame('{"success":true,"cmd":"auth"}')).toEqual({ kind: 'auth' })
     expect(classifyFrame('{"cmd":"pong"}')).toEqual({ kind: 'pong' })
+  })
+
+  it('extracts needAck and seq from a msgChg push and builds the ack', () => {
+    const frame = classifyFrame(JSON.stringify({
+      msg: { dataKey: 'replyCount', data: 1, groupId: 'g', msgId: 'm1' },
+      level: 1, needAck: true, cmd: 'directPush', type: 'msgChg', seq: 4,
+    }))
+    expect(frame).toEqual({ kind: 'message-change', msgId: 'm1', needAck: true, seq: 4 })
+    expect(ackFrame(4)).toBe('{"cmd":"ack","seq":4}')
   })
 
   it('classifies the sync signal frame', () => {

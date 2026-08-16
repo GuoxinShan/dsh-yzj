@@ -51,6 +51,16 @@ export interface RobotSendResponse {
 export const ROBOT_ERROR_CONTENT_TOO_LONG = 1401002
 
 /**
+ * Build the wire ack for a `msgChg` push the server marked `needAck`.
+ * Unacked pushes are re-delivered every ~90s (measured), so every push with
+ * a seq gets exactly one `{"cmd":"ack","seq":N}` reply.
+ * @param seq - the pushed frame's seq.
+ */
+export function ackFrame(seq: number): string {
+  return JSON.stringify({ cmd: 'ack', seq })
+}
+
+/**
  * Derive the inbound WebSocket URL from a robot's sendMsgUrl.
  * `wss://<host>/xuntong/websocket?yzjtoken=<token>` — an outbound-originating
  * long connection, so no public callback is needed.
@@ -72,7 +82,7 @@ export type RobotFrame =
   | { kind: 'pong' }
   | { kind: 'sync'; lastUpdateTime: string }
   | { kind: 'robot-message'; message: RobotInboundMessage; reply?: RobotReplyMeta }
-  | { kind: 'message-change'; msgId: string }
+  | { kind: 'message-change'; msgId: string; needAck: boolean; seq: number }
   | { kind: 'other'; raw: string }
 
 /**
@@ -118,10 +128,13 @@ export function classifyFrame(raw: string): RobotFrame {
   }
   if (cmd === 'directPush' && record.type === 'msgChg') {
     const msg = record.msg
-    const msgId = msg !== null && typeof msg === 'object' && typeof (msg as Record<string, unknown>).msgId === 'string'
-      ? (msg as Record<string, unknown>).msgId as string
-      : ''
-    return { kind: 'message-change', msgId }
+    const inner = msg !== null && typeof msg === 'object' ? msg as Record<string, unknown> | null : null
+    return {
+      kind: 'message-change',
+      msgId: typeof inner?.msgId === 'string' ? inner.msgId : '',
+      needAck: record.needAck === true,
+      seq: typeof record.seq === 'number' ? record.seq : -1,
+    }
   }
   return { kind: 'other', raw }
 }

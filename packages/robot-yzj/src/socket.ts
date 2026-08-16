@@ -7,7 +7,7 @@
  * @module @dsh-yzj/robot-yzj/socket
  */
 
-import { classifyFrame, type RobotFrame, type RobotInboundMessage } from './protocol.ts'
+import { ackFrame, classifyFrame, type RobotFrame, type RobotInboundMessage } from './protocol.ts'
 
 /** Minimal WebSocket face both the `ws` package and the browser global satisfy. */
 export interface WebSocketLike {
@@ -151,7 +151,16 @@ export class RobotSocket {
       this.lastFrameAt = this.now()
       if (typeof event.data !== 'string') return
       const frame = classifyFrame(event.data)
-      if (frame.kind === 'robot-message') this.options.onMessage(frame.message, frame)
+      if (frame.kind === 'robot-message') {
+        this.options.onMessage(frame.message, frame)
+      } else if (frame.kind === 'message-change' && frame.needAck && frame.seq >= 0) {
+        // Unacked pushes redeliver every ~90s (measured); ack immediately.
+        try {
+          socket.send(ackFrame(frame.seq))
+        } catch {
+          // A dead socket's close handler already scheduled the reconnect.
+        }
+      }
     })
     socket.addEventListener('close', () => {
       if (this.stopped) return

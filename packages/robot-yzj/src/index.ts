@@ -19,6 +19,7 @@ import { deriveWebSocketUrl } from './protocol.ts'
 import { RobotSender } from './outbound.ts'
 import { RobotRouter, dmSessionId } from './router.ts'
 import { OverrideStore } from './overrides.ts'
+import { ConfirmBroker, type ConfirmApprovalRequest, type ConfirmAskPending } from './confirm.ts'
 
 /** Plugin name used by loader diagnostics. */
 export const name = 'robot-yzj'
@@ -28,6 +29,14 @@ export const inject = ['yzjBridge', 'agents']
 declare module '@deepseek-ai/cordis' {
   interface Context {
     yzjRobot: YzjRobot
+  }
+  interface Events {
+    /** tool-yzj's guard broadcast before asking on a gated write. */
+    'yzj/ask-pending'(pending: ConfirmAskPending): void
+    'approval/request'(
+      req: ConfirmApprovalRequest,
+      next: () => Promise<'allowed-once' | 'rejected' | 'cancelled' | 'unavailable'>,
+    ): Promise<'allowed-once' | 'rejected' | 'cancelled' | 'unavailable'>
   }
 }
 
@@ -116,6 +125,7 @@ export class YzjRobot extends Service {
 
   private readonly channels: RunningChannel[] = []
   private readonly overrides = new OverrideStore()
+  private readonly confirm = new ConfirmBroker()
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'yzjRobot')
@@ -238,6 +248,7 @@ export class YzjRobot extends Service {
       allowFrom: () => this.resolveAllowFrom(robotConfig),
       ...(Object.keys(agentOptions).length === 0 ? {} : { agentOptions }),
       resolveOverride: key => this.overrides.get(key),
+      confirm: this.confirm,
       ackText: DEFAULT_ACK_TEXT,
       denyText: DEFAULT_DENY_TEXT,
       logger: { warn: message => this.ctx.logger.warn(message) },
@@ -262,6 +273,7 @@ export class YzjRobot extends Service {
       void channel.router.dispose()
     }
     this.channels.length = 0
+    this.confirm.dispose()
     void this.overrides.close()
   }
 
@@ -279,6 +291,19 @@ export class YzjRobot extends Service {
   /** Public wrapper for the plugin entry's inject callback. */
   async openOverridesNow(): Promise<void> {
     await this.ensureOverrides()
+  }
+
+  /** Feed one ask broadcast into the confirmation broker (plugin entry). */
+  noteAsk(pending: ConfirmAskPending): void {
+    this.confirm.noteAsk(pending)
+  }
+
+  /** The approval waterfall slice for robot sessions (plugin entry). */
+  handleApproval(
+    req: ConfirmApprovalRequest & { toolName: string },
+    next: () => Promise<'allowed-once' | 'rejected' | 'cancelled' | 'unavailable'>,
+  ): Promise<'allowed-once' | 'rejected' | 'cancelled' | 'unavailable'> {
+    return this.confirm.handleApproval(req, next)
   }
 
   /** allowFrom policy: explicit config list, else the CLI login user once. */
@@ -311,6 +336,15 @@ export function apply(ctx: Context, config: Config): void {
   // lazily per agent creation, so late opening is fine.
   ctx.inject(['storageDomain'], () => {
     void robot.openOverridesNow()
+  })
+  // Gated writes fired inside robot sessions surface as numbered suggestion
+  // cards in the conversation (确认 N / 取消 N); tool-yzj's ask broadcast
+  // feeds the digest. Declared structurally (same shape as write-gate.ts).
+  ctx.on('yzj/ask-pending', (pending: ConfirmAskPending) => {
+    robot.noteAsk(pending)
+  })
+  ctx.on('approval/request', (req, next) => {
+    return robot.handleApproval(req, next)
   })
   ctx.effect(() => {
     return () => robot.stop()
