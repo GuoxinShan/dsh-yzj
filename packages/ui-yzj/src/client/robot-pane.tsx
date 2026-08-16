@@ -274,6 +274,8 @@ function RobotDetail(outer: { props: RobotPaneProps; index: number; onBack: () =
   }).filter(entry => entry.provider !== ''), [props.catalog])
   // Default route draft.
   const [route, setRoute] = useState({ provider: asString(channel.provider), model: asString(channel.model) })
+  // Editable push address (sendMsgUrl) draft.
+  const [sendUrlDraft, setSendUrlDraft] = useState(sendMsgUrl)
   // Per-group override drafts (groupId → {provider, model}).
   const [overrideDrafts, setOverrideDrafts] = useState<Record<string, { provider: string; model: string }>>({})
   // Per-group shared files (each group card owns its own browse + preview state).
@@ -354,6 +356,23 @@ function RobotDetail(outer: { props: RobotPaneProps; index: number; onBack: () =
     saveChannels(withRoute(route.provider, route.model))
   }
 
+  /** Persist an edited push address for this channel. */
+  const saveSendUrl = (): void => {
+    if (sendUrlDraft === '' || sendUrlDraft === sendMsgUrl) return
+    const robots = asArray(props.channels).map((item, i) => {
+      const record = asRecord(item)
+      return {
+        sendMsgUrl: i === index ? sendUrlDraft : asString(record.sendMsgUrl),
+        ...(record.enabled === true ? {} : { enabled: false }),
+        ...(Array.isArray(record.allowFrom) ? { allowFrom: record.allowFrom.filter((v): v is string => typeof v === 'string') } : {}),
+        ...(asString(record.provider) === '' ? {} : { provider: asString(record.provider) }),
+        ...(asString(record.model) === '' ? {} : { model: asString(record.model) }),
+        ...(i === index ? (cwd === '' ? {} : { cwd }) : asString(record.cwd) === '' ? {} : { cwd: asString(record.cwd) }),
+      }
+    }).filter(item => item.sendMsgUrl !== '')
+    saveChannels(robots)
+  }
+
   const removeChannel = (): void => {
     if (!confirmingDelete) { setConfirmingDelete(true); return }
     const next = asArray(props.channels)
@@ -404,7 +423,27 @@ function RobotDetail(outer: { props: RobotPaneProps; index: number; onBack: () =
           <span className={connected ? css.dotOn : css.dotOff} aria-hidden="true" />
           <span className={css.channelMeta}>{connected ? '已连接' : '未连接'}</span>
         </div>
-        <p className={css.hint} title={sendMsgUrl}>sendMsgUrl：{sendMsgUrl}</p>
+        <div className={css.editor}>
+          <label className={css.field}>
+            <span className={css.fieldLabel}>推送地址（sendMsgUrl，机器人收发消息的凭据；重建机器人后可在此更新）</span>
+            <input
+              className={css.input}
+              value={sendUrlDraft}
+              onChange={(event) => { setSendUrlDraft(event.target.value) }}
+              placeholder="https://www.yunzhijia.com/gateway/robot/webhook/send?yzjtoken=…"
+            />
+          </label>
+          <div className={css.actions}>
+            <button
+              type="button"
+              className={css.primary}
+              disabled={sendUrlDraft === '' || sendUrlDraft === sendMsgUrl}
+              onClick={saveSendUrl}
+            >
+              保存推送地址
+            </button>
+          </div>
+        </div>
         <p className={css.hint} title={cwd}>工作目录（自动分配，一般不用管）：{cwd}</p>
       </section>
 
