@@ -295,3 +295,11 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 - **Config 新增 `defaultProvider` / `defaultModel`**：填进所有未自带 provider/model 的机器人——一行 profile 路由整个机群。**解析序定为四级**：会话覆盖（UI）> 机器人自带 > 插件默认 > harness 默认。
 - **本机落位**：`opencode-go / deepseek-v4-flash` 为通道默认（用户拍板：默认便宜模型，强模型按群在面板覆盖）；之前手配的逐群 flash 覆盖已删（冗余）。
 - **验证**：`verify-flash-default.mjs` PASS（双通道行显示 flash 默认）；真实 @ 往返（11:04，ack→flash 轮次→引用回推）确认默认路由驱动 agent。
+
+### 20.5 R2 全量收口（2026-08-16，`8b97c3b`）
+
+- **msgChg ack**：socket 对 `needAck:true` 的推送立即回 `{"cmd":"ack","seq":N}`——消掉实测的 ~90s 服务端重推。
+- **群内建议卡协议（S8）**：`ConfirmBroker` 接管 `yzj-robot-*` 会话的 approval waterfall（GUI write-gate 让位）——写工具在机器人会话里触发时，推送编号卡（🔒 标准 / 🔴 强确认 + 参数摘要 + 30 分钟窗口），群内回复「`@机器人 确认 N / 取消 N`」裁决（**群面协议只送 @ 消息，确认必须带 @**——文档化）；超时自动取消；跨会话不串卡。**实测全链**：doc_create 卡[1] → @确认 1 → ✅放行 → block_insert 卡[2] → @确认 2 → ✅放行 → 文档真实落《我的知识》+ deep link 回推（11:15–11:21）。
+- **`!routines`**：fold 会话 `schedule/change` 日志列活跃提醒（dsh-schedule 纯函数 fold，无运行时依赖）；`!help` 同步确认流程说明。
+- 已知边界（留档）：确认卡为进程内存态，host 重启即失效（对齐 GUI 确认卡的降级语义）；R2 设计清单仅剩 `!fork`（跨群交接）未做，价值待群使用密度评估。
+- 43 单测全绿（新增 confirm 6 + msgChg ack 2）。
