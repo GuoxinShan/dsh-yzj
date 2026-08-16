@@ -379,3 +379,51 @@
   font-weight: 600;
   color: var(--dsw-text-primary);
 }
+
+.shareOpen {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 2px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.shareOpen:hover .shareName {
+  color: var(--dsw-accent, #2563eb);
+}
+
+.sharePreview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--dsw-surface, #fff);
+  border: 1px solid var(--dsw-border, #d4d4d8);
+}
+
+.sharePreviewHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sharePreviewBody {
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dsw-text-primary);
+  font-family: var(--dsw-font-mono, ui-monospace, monospace);
+}

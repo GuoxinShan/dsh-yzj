@@ -365,6 +365,16 @@ export class YzjRobot extends Service {
   }
 
   /**
+   * Read one shared file's text content (bounded preview, panel 打开).
+   * Read-only — no sandbox or approval implications.
+   */
+  shareRead(robotIndex: number, groupId: string | undefined, filename: string): { ok: boolean; content?: string; truncated?: boolean; error?: string } {
+    const target = this.shareTarget(robotIndex, groupId)
+    if ('error' in target) return { ok: false, error: target.error }
+    return readShareFile(target.dir, filename)
+  }
+
+  /**
    * DSH-side conversation continuation: fabricate an operator turn on one
    * channel and run it through the full inbound pipeline (ack + agent turn +
    * push to the conversation).
@@ -675,6 +685,28 @@ export function listShareFiles(
     return { ok: true, dir, files }
   } catch (error) {
     return { ok: false, dir, files: [], error: `读取共享区失败：${String(error)}` }
+  }
+}
+
+/** Preview cap for shareRead (chars); larger files truncate. */
+export const SHARE_READ_MAX = 20_000
+
+/**
+ * Read one shared file as text (bounded preview). Rejects unsafe names with
+ * the same rule as writes; content beyond the cap truncates with a flag.
+ */
+export function readShareFile(dir: string, filename: string): { ok: boolean; content?: string; truncated?: boolean; error?: string } {
+  if (filename === '.' || filename === '..' || !SHARE_NAME.test(filename)) {
+    return { ok: false, error: '文件名不合法：禁止路径分隔符、Windows 保留字符与空名' }
+  }
+  try {
+    const content = readFileSync(join(dir, filename), 'utf8')
+    if (content.length > SHARE_READ_MAX) {
+      return { ok: true, content: content.slice(0, SHARE_READ_MAX), truncated: true }
+    }
+    return { ok: true, content, truncated: false }
+  } catch (error) {
+    return { ok: false, error: `读取共享区文件失败：${String(error)}` }
   }
 }
 

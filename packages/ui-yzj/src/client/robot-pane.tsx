@@ -103,6 +103,8 @@ export interface RobotPaneProps {
   deleteRobotOverride: (key: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   /** List one group's shared workspace files. */
   robotShareList: (groupId: string, robotIndex?: number) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
+  /** Read one shared file's text content (bounded preview). */
+  robotShareRead: (groupId: string, filename: string, robotIndex?: number) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   /** Panel-direct write into a group's shared workspace (user's own will). */
   robotShareWrite: (input: { groupId: string; filename: string; content: string; overwrite?: boolean; robotIndex?: number }) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   /** Persist the FULL channel configuration to the channels file (§8.5). */
@@ -274,9 +276,10 @@ function RobotDetail(outer: { props: RobotPaneProps; index: number; onBack: () =
   const [route, setRoute] = useState({ provider: asString(channel.provider), model: asString(channel.model) })
   // Per-group override drafts (groupId → {provider, model}).
   const [overrideDrafts, setOverrideDrafts] = useState<Record<string, { provider: string; model: string }>>({})
-  // Per-group shared files (each group card owns its own browse + write state).
+  // Per-group shared files (each group card owns its own browse + preview state).
   const [shareByGroup, setShareByGroup] = useState<Record<string, { dir: string; files: { name: string; size: number; mtime: number }[] | null; loading: boolean; note: string }>>({})
-  const [shareInputs, setShareInputs] = useState<Record<string, { filename: string; content: string }>>({})
+  const [previewByGroup, setPreviewByGroup] = useState<Record<string, { name: string; content: string; truncated: boolean } | null>>({})
+  const [previewLoading, setPreviewLoading] = useState('')
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [note, setNote] = useState('')
 
@@ -307,29 +310,17 @@ function RobotDetail(outer: { props: RobotPaneProps; index: number; onBack: () =
     })
   }
 
-  const writeShareFor = (groupId: string): void => {
-    const input = shareInputs[groupId]
-    if (input === undefined || input.filename === '' || input.content === '') return
-    setShareByGroup(prev => ({ ...prev, [groupId]: { ...(prev[groupId] ?? { dir: '', files: null, loading: false, note: '' }), note: '' } }))
-    void props.robotShareWrite({ groupId, filename: input.filename, content: input.content, robotIndex: index }).then(result => {
-      setShareByGroup(prev => {
-        const current = prev[groupId] ?? { dir: '', files: null, loading: false, note: '' }
-        if (!result.ok) return { ...prev, [groupId]: { ...current, note: `写入失败：${result.error.message}` } }
+  /** Open one shared file's preview in the group card. */
+  const openShareFile = (groupId: string, filename: string): void => {
+    setPreviewLoading(filename)
+    void props.robotShareRead(groupId, filename, index).then(result => {
+      setPreviewLoading('')
+      setPreviewByGroup(prev => {
+        if (!result.ok) return { ...prev, [groupId]: { name: filename, content: `读取失败：${result.error.message}`, truncated: false } }
         const record = asRecord(result.value)
-        if (record.ok !== true) return { ...prev, [groupId]: { ...current, note: `写入失败：${asString(record.error)}` } }
-        const name = asString(record.name)
-        setShareInputs(prevInputs => ({ ...prevInputs, [groupId]: { filename: '', content: '' } }))
-        return {
-          ...prev,
-          [groupId]: {
-            ...current,
-            note: record.existed === true
-              ? `已存入 ${name}（同名文件已存在，自动加序号；原文件未动）`
-              : `已存入 ${name}`,
-          },
-        }
+        if (record.ok !== true) return { ...prev, [groupId]: { name: filename, content: `读取失败：${asString(record.error)}`, truncated: false } }
+        return { ...prev, [groupId]: { name: filename, content: asString(record.content), truncated: record.truncated === true } }
       })
-      loadShareFor(groupId)
     })
   }
 
@@ -451,7 +442,7 @@ function RobotDetail(outer: { props: RobotPaneProps; index: number; onBack: () =
           {groups.map(group => {
             const draft = overrideDrafts[group.groupId] ?? overrideOf(props.overrides, group.groupId) ?? { provider: '', model: '' }
             const share = shareByGroup[group.groupId]
-            const input = shareInputs[group.groupId] ?? { filename: '', content: '' }
+            const preview = previewByGroup[group.groupId]
             return (
               <li key={group.groupId} className={css.groupCard}>
                 <div className={css.groupCardHead}>
@@ -486,7 +477,7 @@ function RobotDetail(outer: { props: RobotPaneProps; index: number; onBack: () =
                   <h4 className={css.groupFilesTitle}>这个群的公共文件</h4>
                   <p className={css.hint}>
                     机器人在这个群处理文件任务时（比如把表格整理成报告、写脚本），产物会存放在这里，群里任何对话都能读取、继续处理；
-                    同名文件自动加序号，不会互相覆盖。你也可以直接放文件进来（你的本人操作，不需要确认）。
+                    点击文件名即可打开查看。
                   </p>
                   {share !== undefined && share.dir !== '' && <p className={css.hint} title={share.dir}>目录：{share.dir}</p>}
                   {share?.loading === true && <p className={css.hint}>加载中…</p>}
@@ -497,37 +488,37 @@ function RobotDetail(outer: { props: RobotPaneProps; index: number; onBack: () =
                         <ul className={css.shareList}>
                           {share.files.map(file => (
                             <li key={file.name} className={css.shareRow}>
-                              <span className={css.shareName}>{file.name}</span>
-                              <span className={css.shareMeta}>{formatSize(file.size)} · {new Date(file.mtime).toLocaleString()}</span>
+                              <button
+                                type="button"
+                                className={css.shareOpen}
+                                title="点击打开查看"
+                                onClick={() => { openShareFile(group.groupId, file.name) }}
+                              >
+                                <span className={css.shareName}>{file.name}</span>
+                                <span className={css.shareMeta}>{formatSize(file.size)}</span>
+                              </button>
                             </li>
                           ))}
                         </ul>
                       )
                   )}
-                  <div className={css.addRow}>
-                    <input
-                      className={css.input}
-                      value={input.filename}
-                      onChange={(event) => { setShareInputs({ ...shareInputs, [group.groupId]: { ...input, filename: event.target.value } }) }}
-                      placeholder="文件名（同名自动加序号）"
-                    />
-                    <button
-                      type="button"
-                      className={css.primary}
-                      disabled={input.filename === '' || input.content === ''}
-                      onClick={() => { writeShareFor(group.groupId) }}
-                    >
-                      存入公共文件区
-                    </button>
-                  </div>
-                  <textarea
-                    className={css.textarea}
-                    value={input.content}
-                    onChange={(event) => { setShareInputs({ ...shareInputs, [group.groupId]: { ...input, content: event.target.value } }) }}
-                    rows={2}
-                    placeholder="要放进公共文件区的文本…"
-                  />
-                  {share !== undefined && share.note !== '' && <p className={css.note} role="status">{share.note}</p>}
+                  {previewLoading !== '' && <p className={css.hint}>打开 {previewLoading}…</p>}
+                  {preview !== null && preview !== undefined && (
+                    <div className={css.sharePreview}>
+                      <div className={css.sharePreviewHead}>
+                        <span className={css.shareName}>{preview.name}</span>
+                        <button
+                          type="button"
+                          className={css.secondary}
+                          onClick={() => { setPreviewByGroup({ ...previewByGroup, [group.groupId]: null }) }}
+                        >
+                          关闭
+                        </button>
+                      </div>
+                      <pre className={css.sharePreviewBody}>{preview.content}</pre>
+                      {preview.truncated && <p className={css.hint}>（内容较长，仅显示前一部分）</p>}
+                    </div>
+                  )}
                 </div>
               </li>
             )

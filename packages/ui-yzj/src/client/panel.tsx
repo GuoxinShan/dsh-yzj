@@ -2389,6 +2389,7 @@ export function YzjPanel(props: YzjPanelProps) {
           setRobotOverride={props.setRobotOverride}
           deleteRobotOverride={props.deleteRobotOverride}
           robotShareList={props.robotShareList}
+          robotShareRead={props.robotShareRead}
           robotShareWrite={props.robotShareWrite}
           robotChannelsSave={props.robotChannelsSave}
         />

@@ -540,6 +540,18 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
         const result = robot.shareList(numberField(record, 'robotIndex') ?? 0, stringField(record, 'groupId'))
         return { ok: true, value: result }
       }
+      case 'robot-share-read': {
+        const robot = ctx.get('yzjRobot')
+        if (robot === undefined) return internalError('robot-share-read: yzjRobot 服务不可用（robot-yzj 未挂载）')
+        const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
+        const groupId = stringField(record, 'groupId')
+        const filename = stringField(record, 'filename')
+        if (groupId === undefined || filename === undefined) {
+          return internalError('robot-share-read endpoint requires groupId and filename payloads')
+        }
+        const result = robot.shareRead(numberField(record, 'robotIndex') ?? 0, groupId, filename)
+        return { ok: true, value: result }
+      }
       case 'robot-share-write': {
         const robot = ctx.get('yzjRobot')
         if (robot === undefined) return internalError('robot-share-write: yzjRobot 服务不可用（robot-yzj 未挂载）')
