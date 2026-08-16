@@ -172,14 +172,13 @@ web profile (web-app + robot-yzj 机器人模式)
   默认扫描）；run 记录落在 `<routine.cwd>/.dsh/routines/runs/`。
 - **dsh-run.mjs**（`C:/Users/rocks/.dsh/`）：`realSpawn` 对 `.mjs` 用 node 直启，
   包装内再 `node --import tsx/esm apps/cli/src/bin.ts <args>`，cwd 固定 harness。
-- 启动：**统一入口 `C:/Users/rocks/.dsh/start-prod.cmd`**（先幂等拉起 ops daemon，
-  再前台起 web GUI）——两个进程一个入口。ops 单独保活：登录自启
-  `%APPDATA%\...\Startup\dsh-ops-daemon.cmd`（幂等：命令行含 `--profile ops`
-  的 node 进程已存在则跳过）；宿主重启后未重新登录时跑一次
-  `start-prod.cmd` 或 `ops-daemon.cmd` 即恢复。**为什么 ops 不能和 GUI 同进程**：
-  web profile 禁用 jobs 控制器（`tool-jobs` 随模型面控件移除），调度器 tick 的
-  `ctx.jobs.start` 抛 "background jobs unavailable" 且未捕获 → 整个 web 进程
-  退出（§5.1 第 1 条实测），故调度器必须 base-only 独立进程。
+- **启动：`dsh web` 是唯一入口**——web profile 的 robot-yzj 配
+  `autoStartOps: true`，启动时经 `~/.dsh/ops-wrapper.mjs`（detached + pid
+  文件 `ops.pid` 幂等）自动拉起 ops daemon；无任何手动启动脚本。
+  **为什么 ops 不能和 GUI 同进程**：web profile 禁用 jobs 控制器
+  （`tool-jobs` 随模型面控件移除），调度器 tick 的 `ctx.jobs.start` 抛
+  "background jobs unavailable" 且未捕获 → 整个 web 进程退出（§5.1 第 1 条
+  实测），故调度器必须 base-only 独立进程。
   调度器 tick 每 15s；run 子进程用 routine 的 `profile:`（默认 headless）。
 - 端到端验证依赖 web profile 重启（web patch 生效才有桥路由）；重启后
   ops 下一次 tick 即完成 ops→桥→群全链路。
@@ -188,9 +187,8 @@ web profile (web-app + robot-yzj 机器人模式)
 
 | 场景 | 动作 |
 |---|---|
-| **`dsh web` 启动** | **自动带起 ops daemon**（web patch `autoStartOps: true` → robot-yzj spawn `~/.dsh/ops-wrapper.mjs`，pid 文件 `ops.pid` 幂等）——**唯一入口就是 dsh web** |
-| 每天开机 | 登录自启 `start-all.cmd`（ops + GUI 全自动；同样 pid 幂等） |
-| ops 意外没了（未重启 web/未登录） | 双击 `C:/Users/rocks/.dsh/ops-daemon.cmd`（pid 幂等）或重启 web |
+| **启动一切** | **`dsh web`**（robot-yzj 自动拉起 ops daemon；pid 幂等） |
+| ops 意外没了（web 未重启） | 重启 web，或手动 `node <DSH_HOME>/ops-wrapper.mjs`（会重新写 pid） |
 | 全链路自检 | 群里每 5 分钟收到 `[completed] c11-prod` 巡检 digest；或看 `~/.dsh/routines/runs/` 有新记录 |
 | 暂停/查看定时任务 | `dsh --profile ops routines list / pause c11-prod`（ops profile 下） |
 

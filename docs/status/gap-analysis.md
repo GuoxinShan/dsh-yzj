@@ -378,7 +378,7 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 | 类别 | 项 | 状态 |
 |---|---|---|
 | 🔴 生产收口 | 生产 GUI 重启 → 桥路由 + 插件市场 UI + digest 进群（R2.8 验收最后一步） | ✅ **已闭环（2026-08-16 21:20/21:26 生产实测）**：桥 POST `{ok:true}`、定时 digest `[completed] c11-prod` 经 ops→桥→生产 GUI→群机器人推送，群内实收 |
-| 🔴 生产收口 | ops daemon 常驻化 | ✅ 已装登录自启（`%APPDATA%\...\Startup\dsh-ops-daemon.cmd` → `~/.dsh/ops-daemon.cmd`）；宿主重启后未重新登录时需手动起该 cmd（计划任务方案因权限被拒） |
+| 🔴 生产收口 | ops daemon 常驻化 | ✅ **`dsh web` 唯一入口**（R2.12：web patch `autoStartOps: true` → robot-yzj 经 `~/.dsh/ops-wrapper.mjs` 自动拉起，pid 文件幂等；手动启动脚本/登录自启已删除） |
 | 🔴 生产收口 | 生产 smoke（`.acceptance/verify-prod-smoke.mjs` 已提交） | 未在生产跑 |
 | 🟡 设计有代码无 | `!fork` 跨群交接（S3/C5；§20.5 标"仅剩"） | ✅ 已实现（R2.10：目标群 surface + 本群最近会话上下文摘要 + continueFromDsh 全管线交接；顶层/链内均可触发；R2.11 目标支持**群名或 groupId**——群名经 CLI `im group recent` 惰性解析并持久化到 surface） |
 | 🟡 设计有代码无 | `!configure` / `!feedback`（S3 命令族表） | ✅ 已实现（R2.10：!configure 回 GUI 设置链接（config `guiUrl`）；!feedback 落 `~/.dsh/robot-feedback.log` + 回执） |
