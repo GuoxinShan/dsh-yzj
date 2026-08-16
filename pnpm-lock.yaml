@@ -176,6 +176,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-primitives':
         specifier: link:../../../deepseek-harness/packages/client/ui-primitives
         version: link:../../../deepseek-harness/packages/client/ui-primitives
+      '@deepseek-ai/dsh-client-ui-settings':
+        specifier: link:../../../deepseek-harness/packages/client/ui-settings
+        version: link:../../../deepseek-harness/packages/client/ui-settings
       '@deepseek-ai/dsh-client-ui-sidebar':
         specifier: link:../../../deepseek-harness/packages/client/ui-sidebar
         version: link:../../../deepseek-harness/packages/client/ui-sidebar

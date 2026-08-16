@@ -1,0 +1,60 @@
+/* 云之家 settings section: segmented control + pane content column.
+ * Semantic --dsw-* tokens (panel conventions). */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 760px;
+}
+
+.switcher {
+  display: inline-flex;
+  gap: 4px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  padding: 4px;
+  align-self: flex-start;
+}
+
+.seg,
+.segOn {
+  border: none;
+  border-radius: 7px;
+  font-size: 12.5px;
+  line-height: 1;
+  padding: 8px 16px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.seg {
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.seg:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.segOn {
+  background: var(--dsw-static-deepseek-100);
+  color: var(--dsw-static-deepseek-600);
+  font-weight: 600;
+}
+
+.content {
+  min-height: 420px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Both panes assume a scrollable flex column; the settings content column
+ * provides the frame, so give the pane a bounded height. */
+.content > * {
+  flex: 1;
+  min-height: 0;
+  max-height: min(70vh, 640px);
+  overflow-y: auto;
+}
