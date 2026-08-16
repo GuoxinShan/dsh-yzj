@@ -13,6 +13,11 @@ import type {} from '@dsh-yzj/bridge'
 import type {} from '@dsh-yzj/tool-yzj'
 import { applyWriteGate, type YzjWriteRecord } from './write-gate.ts'
 import { openBoundHome, type HomeOpenFace } from './home-open.ts'
+import {
+  backfillBoundLog, fusedSnapshot, handoffToGroup, homeIoFrom, parseImSend, sendImAndLog,
+  sessionEventsOf,
+} from './bound-io.ts'
+import { digestCandidates } from './handoff-digest.ts'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -68,6 +73,32 @@ function clampLimit(value: unknown): number | undefined {
 
 /** Hard CLI cap for im `--limit` (verified against yzj-cli 0.x). */
 const CLI_LIMIT_MAX = 20
+
+/** Structural agents face for home-open / handoff (never import dsh-session). */
+function agentsFace(ctx: Context): {
+  get: (id: string) => {
+    session?: { events?: readonly { type: string; time?: number; timestamp?: number; data?: unknown }[] }
+    inject?: (message: unknown) => void
+    followup?: (message: unknown) => void
+  } | undefined
+  resume: (opts: { resumeSessionId: string }) => Promise<unknown>
+  create: (opts: { sessionId: string; meta?: { cwd: string } }) => Promise<unknown>
+} | undefined {
+  const agentsRaw = ctx.get('agents') as {
+    get: (id: never) => unknown
+    resume: (opts: { resumeSessionId: never }) => Promise<unknown>
+    create: (opts: { sessionId: never; meta?: { cwd: string } }) => Promise<unknown>
+  } | undefined
+  if (agentsRaw === undefined) return undefined
+  return {
+    get: id => agentsRaw.get(id as never) as ReturnType<NonNullable<ReturnType<typeof agentsFace>>['get']>,
+    resume: opts => agentsRaw.resume({ resumeSessionId: opts.resumeSessionId as never }),
+    create: opts => agentsRaw.create({
+      sessionId: opts.sessionId as never,
+      ...(opts.meta === undefined ? {} : { meta: opts.meta }),
+    }),
+  }
+}
 
 /* ── file-data proxy (docrest URLs need the CLI's auth) ─────────────── */
 
@@ -159,8 +190,9 @@ export interface YzjWriteGateFace {
  * Build the `/yzj` RPC handler: `workspaces`, `docs`, `events`, `groups`,
  * `messages`, `whoami`, `search`, `doc-get`, `doc-blocks`, `sheet-get`,
  * `workspace-get`, `event-get`, `contact-get`, `write-list`, and
- * `write-decide`, `home-open` endpoints, all backed by the yzj-cli bridge, the
- * write-gate, and `ctx.yzjHome`. Endpoint payloads are validated as lossless JSON before use.
+ * `write-decide`, `home-open` / `home-send` / `home-fused` / `home-handoff`
+ * endpoints, all backed by the yzj-cli bridge, the write-gate, and `ctx.yzjHome`.
+ * Endpoint payloads are validated as lossless JSON before use.
  * @param ctx - Cordis context carrying the bridge service.
  * @param writeGate - the confirmation-card bridge face.
  */
@@ -267,60 +299,11 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
         return bridgeResult(ctx, 'contact user search', ['contact', 'user', 'search', '--keyword', keyword])
       }
       case 'im-send': {
-        const groupId = stringField(payload, 'groupId')
-        if (groupId === undefined) return internalError('im-send endpoint requires a groupId payload')
-        const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
-        const msgType = stringField(record, 'msgType') ?? 'text'
-        if (msgType !== 'text' && msgType !== 'richText' && msgType !== 'file') {
-          return internalError(`im-send endpoint rejects msg-type "${msgType}"`)
-        }
-        const content = stringField(record, 'content')
-        const fileId = stringField(record, 'fileId')
-        const replyMsgId = stringField(record, 'replyMsgId')
-        const rawImages = record.images
-        const images = Array.isArray(rawImages)
-          ? rawImages.filter((item): item is string => typeof item === 'string' && item !== '')
-          : []
-        // Mirror the tool's validation: file needs a fileId and nothing else.
-        if (msgType === 'file') {
-          if (fileId === undefined) return internalError('im-send: msg-type file requires fileId')
-          if (content !== undefined || replyMsgId !== undefined || images.length > 0) {
-            return internalError('im-send: msg-type file does not support content, reply, or images')
-          }
-        } else {
-          if (content === undefined || content.trim() === '') {
-            return internalError('im-send: text/richText require non-empty content')
-          }
-          if (content.length > 4000) return internalError('im-send: content over 4000 chars')
-          if (msgType !== 'richText' && images.length > 0) {
-            return internalError('im-send: images are only supported for msg-type richText')
-          }
-        }
-        // @ mentions (issue #4): mirror the tool's rule — one atOpenId per
-        // @姓名 fragment in the content, in order; @all only when explicit.
-        const rawAt = record.atOpenIds
-        const atOpenIds = Array.isArray(rawAt)
-          ? rawAt.filter((item): item is string => typeof item === 'string' && item !== '')
-          : []
-        const atAll = record.atAll === true
-        if (msgType !== 'file') {
-          const atFragments = (content ?? '').match(/@[^@\s，,、]+/g) ?? []
-          const atNames = atFragments.filter(frag => frag !== '@all')
-          if (atOpenIds.length !== atNames.length) {
-            return internalError(`im-send: atOpenIds (${atOpenIds.length}) must match the @姓名 fragments in content (${atNames.length}), in order`)
-          }
-          if (atAll && !(content ?? '').includes('@all')) {
-            return internalError('im-send: atAll requires an @all fragment in content')
-          }
-        }
-        const command = ['im', 'message', 'send', '--msg-type', msgType, '--group-id', groupId]
-        if (content !== undefined) command.push('--content', content)
-        if (fileId !== undefined) command.push('--file-id', fileId)
-        if (replyMsgId !== undefined) command.push('--reply-msg-id', replyMsgId)
-        for (const image of images) command.push('--image', image)
-        for (const openId of atOpenIds) command.push('--at-open-id', openId)
-        if (atAll) command.push('--at-all')
-        return bridgeResult(ctx, 'im message send', command)
+        const parsed = parseImSend(payload)
+        if (typeof parsed === 'string') return internalError(parsed)
+        const sent = await sendImAndLog(ctx, homeIoFrom(ctx.get('yzjHome')), parsed)
+        if (!sent.ok) return internalError(sent.error)
+        return { ok: true, value: sent.value }
       }
       case 'file-upload': {
         const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
@@ -767,30 +750,99 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
         if (home === undefined) return internalError('home-open: yzjHome 服务不可用（tool-yzj 未挂载）')
         const groupId = stringField(payload, 'groupId') ?? stringField(payload, 'yzjConversationId')
         if (groupId === undefined) return internalError('home-open endpoint requires a groupId payload')
-        const agentsRaw = ctx.get('agents') as {
-          get: (id: never) => unknown
-          resume: (opts: { resumeSessionId: never }) => Promise<unknown>
-          create: (opts: { sessionId: never; meta?: { cwd: string } }) => Promise<unknown>
-        } | undefined
-        if (agentsRaw === undefined) return internalError('home-open: agents 服务不可用')
+        const agents = agentsFace(ctx)
+        if (agents === undefined) return internalError('home-open: agents 服务不可用')
         try {
           const value = await openBoundHome({
             home,
-            agents: {
-              get: id => agentsRaw.get(id as never),
-              resume: opts => agentsRaw.resume({ resumeSessionId: opts.resumeSessionId as never }),
-              create: opts => agentsRaw.create({
-                sessionId: opts.sessionId as never,
-                ...(opts.meta === undefined ? {} : { meta: opts.meta }),
-              }),
-            },
+            agents,
             yzjConversationId: groupId,
             cwd: process.cwd(),
           })
+          const io = homeIoFrom(home)
+          if (io !== undefined) {
+            void backfillBoundLog(ctx, io, groupId).catch(() => undefined)
+          }
           return { ok: true, value }
         } catch (error) {
           return internalError(`home-open failed: ${String(error)}`)
         }
+      }
+      case 'home-binding': {
+        const io = homeIoFrom(ctx.get('yzjHome'))
+        if (io === undefined) return internalError('home-binding: yzjHome 服务不可用（tool-yzj 未挂载）')
+        const sessionId = stringField(payload, 'sessionId')
+        const groupId = stringField(payload, 'groupId')
+        const binding = sessionId !== undefined ? io.getBySession(sessionId)
+          : groupId !== undefined ? io.getByConversation(groupId) : undefined
+        return { ok: true, value: { bound: binding !== undefined, ...(binding === undefined ? {} : { binding }) } }
+      }
+      case 'home-log': {
+        const io = homeIoFrom(ctx.get('yzjHome'))
+        if (io === undefined) return internalError('home-log: yzjHome 服务不可用（tool-yzj 未挂载）')
+        const sessionId = stringField(payload, 'sessionId')
+        const groupId = stringField(payload, 'groupId')
+        const log = sessionId !== undefined ? io.getLogBySession(sessionId)
+          : groupId !== undefined ? io.getLog(groupId) : undefined
+        return { ok: true, value: { log: log ?? null } }
+      }
+      case 'home-fused': {
+        const io = homeIoFrom(ctx.get('yzjHome'))
+        if (io === undefined) return internalError('home-fused: yzjHome 服务不可用（tool-yzj 未挂载）')
+        const sessionId = stringField(payload, 'sessionId')
+        if (sessionId === undefined) return internalError('home-fused endpoint requires a sessionId payload')
+        const agents = agentsFace(ctx)
+        const writes = writeGate.list(sessionId)
+        return { ok: true, value: fusedSnapshot(io, sessionId, agents?.get(sessionId), writes) }
+      }
+      case 'home-backfill': {
+        const io = homeIoFrom(ctx.get('yzjHome'))
+        if (io === undefined) return internalError('home-backfill: yzjHome 服务不可用（tool-yzj 未挂载）')
+        const sessionId = stringField(payload, 'sessionId')
+        const groupId = stringField(payload, 'groupId')
+          ?? (sessionId === undefined ? undefined : io.getBySession(sessionId)?.yzjConversationId)
+        if (groupId === undefined) return internalError('home-backfill endpoint requires a groupId or bound sessionId')
+        try {
+          const stats = await backfillBoundLog(ctx, io, groupId)
+          return { ok: true, value: stats }
+        } catch (error) {
+          return internalError(`home-backfill failed: ${String(error)}`)
+        }
+      }
+      case 'home-send': {
+        const io = homeIoFrom(ctx.get('yzjHome'))
+        if (io === undefined) return internalError('home-send: yzjHome 服务不可用（tool-yzj 未挂载）')
+        const sessionId = stringField(payload, 'sessionId')
+        const bound = sessionId === undefined ? undefined : io.getBySession(sessionId)
+        const groupId = stringField(payload, 'groupId') ?? bound?.yzjConversationId
+        if (groupId === undefined) return internalError('home-send endpoint requires a bound sessionId or groupId')
+        const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
+        const parsed = parseImSend({ ...record, groupId })
+        if (typeof parsed === 'string') return internalError(parsed)
+        const sent = await sendImAndLog(ctx, io, parsed)
+        if (!sent.ok) return internalError(sent.error)
+        return { ok: true, value: sent }
+      }
+      case 'home-digest': {
+        const sessionId = stringField(payload, 'sessionId')
+        if (sessionId === undefined) return internalError('home-digest endpoint requires a sessionId payload')
+        const agents = agentsFace(ctx)
+        const candidates = digestCandidates(sessionEventsOf(agents?.get(sessionId)))
+        return { ok: true, value: { candidates } }
+      }
+      case 'home-handoff': {
+        const io = homeIoFrom(ctx.get('yzjHome'))
+        if (io === undefined) return internalError('home-handoff: yzjHome 服务不可用（tool-yzj 未挂载）')
+        const groupId = stringField(payload, 'groupId')
+        const digest = stringField(payload, 'digest')
+        if (groupId === undefined) return internalError('home-handoff endpoint requires a groupId payload')
+        if (digest === undefined) return internalError('home-handoff endpoint requires a digest payload')
+        const agents = agentsFace(ctx)
+        if (agents === undefined) return internalError('home-handoff: agents 服务不可用')
+        const result = await handoffToGroup({ ctx, home: io, agents, groupId, digest, cwd: process.cwd() })
+        if ('error' in result) return internalError(result.error)
+        void backfillBoundLog(ctx, io, groupId).catch(() => undefined)
+        return { ok: true, value: result }
       }
       default:
         return internalError(`unknown /yzj endpoint ${endpoint}`)

@@ -2,10 +2,10 @@
 
 > 对齐对象：`../spec/integration-master-plan.md`（v1.7 人在闭环验收基准；**v1.8 会话家园产品法见 `../spec/dsh-home-session.md`，实现对照 §22**）↔ 本仓库现有实现（`packages/bridge`、`packages/tool-yzj`、`packages/ui-yzj`、`packages/bundle`、`packages/robot-yzj`）
 > 核验日期：2026-08-14 之后（实现开发期）
-> v1.8 增补：**会话家园产品法**（2026-08-17，Guoxin Shan）——目标是 DSH 唯一家园 + 1:1 绑定。**第一刀（绑定对象）已落地**：入站与挑群打 `yzj-home-*`；fork 不再开新根。面板 composer 与 IM 节点进 transcript 仍开放（§22 G2/G6）。v1.7 完成度口径不因此改写。
+> v1.8 增补：**会话家园产品法**（2026-08-17，Guoxin Shan）——目标是 DSH 唯一家园 + 1:1 绑定。**绑定对象 + 融合时间线已落地**：入站与挑群打 `yzj-home-*`；`conversation.view`「群工作」融合 ①②③④；面板 composer 降为快捷 ②。仍开放 G3/G5。v1.7 完成度口径不因此改写。
 > v1.4 增补：**UI 后续演化对照**（git `08fc7b1` → `af3bf5d`，19 个 ui-yzj commit）——面板四 tab→三 tab、悬浮球唯一入口、面板真 IM composer（用户直写）、拖入快捷动作移除、确认卡去 ID 化、未读持久化；新增 §16。v1.3 增补：**最终验收状态**（git `de3c058`）——全部可开发缺口完成：锚点定位高亮、@ 候选三组、拖入即处理引导均已落地；剩余仅机制受限项（多 chip 合并、通知卡、确认卡事件族，均为 harness 契约边界）与待拍板项（合并确认、快照决策）。全量 build/typecheck/test 通过（58 passed）。v1.2 增补：实现进展状态全量刷新（git 至 `491db61`）——P0 消息回源、P1 门禁分级 + 确认卡、通知层一/三、skill、影子任务库、dbt 预览均已落地；剩余缺口见 §15 更新清单。v1.1 增补：补全实现侧全部工具明细（§2）；新增设计补强「悬浮窗全量拖拽 → composer」（§2A，用户思路）。
 
-**完成度：≈95%（host 侧稳定；UI 侧在验收后继续演化，见 §16——其中「我的」tab 移除仍是对 v1.6 的偏离，终局待拍板；用户直写原则已由 v1.8 D9 拍板）**——按设计 v1.7 验收基准。**v1.8 会话家园不在此百分比内**：绑定对象第一刀已落地（§22 G1/G4），其余缺口见 §22。**禁止**把 §20 机器人通道「已闭环」读成家园完成。
+**完成度：≈95%（host 侧稳定；UI 侧在验收后继续演化，见 §16——其中「我的」tab 移除仍是对 v1.6 的偏离，终局待拍板；用户直写原则已由 v1.8 D9 拍板）**——按设计 v1.7 验收基准。**v1.8 会话家园不在此百分比内**：绑定 + 融合时间线已落地（§22 G1/G2/G4/G6），G3/G5 仍开放。**禁止**把 §20 机器人通道「已闭环」读成家园完成。
 
 *本文档为对照记录，不替代 v1.7 设计原文，也不替代 v1.8 [`dsh-home-session.md`](../spec/dsh-home-session.md)；标注「待拍板」的项目维持原设计的决策归属——其中写路径两分已由会话家园 D9 拍板。*
 
@@ -466,35 +466,38 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 
 ---
 
-## 22. v1.8 增补｜DSH 唯一会话家园（2026-08-17 产品法；2026-08-16 第一刀：绑定对象）
+## 22. v1.8 增补｜DSH 唯一会话家园（2026-08-17 产品法；2026-08-16 第一刀绑定；2026-08-16 第二刀融合时间线）
 
-设计基线：[`../spec/dsh-home-session.md`](../spec/dsh-home-session.md)（v1.0）。总方案 v1.8 仅指针；机器人协议 [`../spec/robot-channel-plan.md`](../spec/robot-channel-plan.md) §9 覆盖隐藏平行 session。**本节记录目标 vs 现状。**
+设计基线：[`../spec/dsh-home-session.md`](../spec/dsh-home-session.md)（v1.0）、[`../spec/dsh-home-transcript.md`](../spec/dsh-home-transcript.md)（v1.1）。总方案 v1.8 仅指针；机器人协议 [`../spec/robot-channel-plan.md`](../spec/robot-channel-plan.md) §9 覆盖隐藏平行 session。**本节记录目标 vs 现状。**
 
-### 22.1 现状（第一刀后）
+### 22.1 现状（第二刀后）
 
 | 面 | 现行行为 | 产品法 |
 |---|---|---|
 | **绑定表** | ✅ `ctx.yzjHome`（tool-yzj，domain `yzj_home_bindings`）：`yzjConversationId` ↔ `dshSessionId` 1:1，重启后同一条。稳定 id `yzj-home-<slug>` | 一条云之家会话恰好一条 DSH session |
-| **DSH 对话** | 挑群走 `/yzj home-open` + `sessions.open`；入站 `followup()` 打同一绑定 id | 唯一家园；绑定群时 transcript 含四类节点（G2 未做） |
-| **面板 IM composer** | 会话 tab 完整 IM 仍在；挑群**额外** focus 绑定会话，不拆 composer | 面板 = 挑选器/历史/引用；无第二 composer（G6） |
-| **机器人 session** | 入站不再分配 `yzj-robot-*` 产品家园；`!fork` / `robot_fork` 打开或恢复绑定会话，禁止 `fork-*` 新根。摘要交接仍走 `!fork` 入站管道（完整「丢进群」确认卡后续） | 入站进绑定对象；fork 开新根错误 |
+| **消息日志** | ✅ domain `yzj_home_logs`：① inbound / ② dsh-send / backfill；主键 `(yzjConversationId, msgId)`；乐观 `local-*`；T12 跳过机器人 openId | ①② 不是 Session.append |
+| **DSH 对话** | 挑群 `/yzj home-open` + 回填；`conversation.view`「群工作」按时间戳融合 ①② + ③④ + write-gate pending overlay。官方 Chat tab 仍在（harness tab ring，不能替换） | 唯一家园；绑定群时 transcript 含四类节点 |
+| **Composer** | 绑定：原生发送 = 发给 agent（`systemPrompt.context` `yzj-bound-window`）；dock「发进群」= ② + `/yzj home-send`，无 user-turn、无确认卡。未绑定：单一发送 + 「丢进群」 | T10/T11 |
+| **面板 IM composer** | 降为快捷发进群：横幅说明家园在 DSH；发送走 `im-send` → 绑定 log ②。挑群仍 focus 绑定会话 | 面板 = 挑选器/历史/引用；无第二 composer 作家园 |
+| **召唤窗口** | 云之家 @：`formatSummonWindow` + `agent.inject` 再 followup。DSH 发给 agent：`systemPrompt.context` 仅 GUI user-turn。空窗口不注入 | T4/T5 |
+| **丢进群** | 未绑定 dock「丢进群」：默认勾选近期可见摘要；全文迁移显式；确认模态后 `home-handoff`（② 发群 + followup）并 focus 绑定会话 | D8 |
+| **write-gate** | 残留 `yzj-robot-*` skip。`ownsConfirm` 的 `yzj-home-*`：GUI user-turn → GUI 卡；plugin / 无 user-message → 群建议卡 | T13 |
+| **机器人 session** | 入站不再分配 `yzj-robot-*` 产品家园；`!fork` / `robot_fork` 打开或恢复绑定会话 | 入站进绑定对象 |
 
-机器人在云之家的帖子仍是通道投递；产品法下它是绑定会话 agent 轮次的投递（D4，渲染未做）。
-
-写路径两分（用户发无卡 / agent 发有卡 / 删除强确认）**原则已拍板**（D9）；用户发的落点仍主要在面板 composer（G6）。入站已注册的绑定会话走群建议卡（`ownsConfirm`）；纯挑群绑定会话仍走 GUI 确认卡。
+写路径两分（用户发无卡 / agent 发有卡 / 删除强确认）**原则已拍板**（D9），发进群落点在绑定 DSH composer（面板为快捷 ②）。
 
 ### 22.2 阻塞缺口
 
 | # | 缺口 | 现状 | 目标 | 本刀 |
 |---|---|---|---|---|
-| G1 | **会话绑定对象** | `ctx.yzjHome` 1:1 表；打开群 = `ensureBound` + focus；入站 `followup()` 打绑定 id | 一条云之家会话恰好一条 DSH session | ✅ 关闭 |
-| G2 | **IM 节点进 transcript** | 云之家消息仍主要在面板消息流；DSH 流仍是 user/agent/tool | 绑定会话四类节点共一条流 | 开放（下一刀） |
-| G3 | **确认卡 pending 不进 session 日志** | harness `KNOWN_SESSION_EVENT_TYPES` 白名单；pending 在 host 内存（§4 / §15 🔒） | 家园即这条 transcript，挂起的「agent 要发群」必须能在该会话流回放 | 开放（harness 限制） |
-| G4 | **fork 开新根** | `!fork` 交到目标群**绑定**会话；`robot_fork` → `openOrResumeBoundHome`，禁止 `fork-yzj-robot-…`。摘要交接可后续加厚 | 打开或恢复绑定会话；跨群/私聊进群走「丢进群」 | ✅ 关闭（不再开新根；丢进群 UI / 确认卡交接仍开放） |
+| G1 | **会话绑定对象** | `ctx.yzjHome` 1:1 表 | 一条云之家会话恰好一条 DSH session | ✅ 关闭 |
+| G2 | **IM 节点进 transcript** | 绑定会话「群工作」tab 融合 ①②③④；打开回填最近 N；去重 (groupId, msgId) | 绑定会话四类节点共一条流 | ✅ 关闭（官方 Chat tab 仍并存，见下） |
+| G3 | **确认卡 pending 不进 session 日志** | harness `KNOWN_SESSION_EVENT_TYPES` 白名单；pending 在 host 内存；融合 VIEW overlay `write-list`（SPA 刷新仍在，host 重启降级） | 家园即这条 transcript，挂起的「agent 要发群」必须能在该会话流回放 | 开放（harness 限制；未发明 Session.append 旁路） |
+| G4 | **fork 开新根 / 丢进群** | `!fork` 交到绑定会话；DSH「丢进群」默认摘要 + 确认模态 + 着陆绑定会话 | 打开或恢复绑定会话；跨群/私聊进群走「丢进群」 | ✅ 关闭 |
 | G5 | **无群搜索** | 沿用 CLI 最近会话翻页（根 README 已知限制） | 「挑群」要找得到群才能切换绑定会话 | 开放 |
-| G6 | **面板 composer 移除/降级** | 会话 tab 真 IM composer 仍是用户发群主入口；挑群已切 DSH | 发送发生在绑定 DSH 会话。面板 composer 删除或降级 | 开放（明确本 PR 不做） |
+| G6 | **面板 composer 移除/降级** | 会话 tab 仍有快捷 IM（写 ② + 横幅）；家园在绑定 DSH composer | 发送发生在绑定 DSH 会话。面板 composer 删除或降级 | ✅ 关闭（降级，未删除；挑选器仍需要消息列表） |
 
-非阻塞但相关：免 @ / ambient（D11，本版明确不做）；解绑 UI；确认卡同会话合并（仍可选）。
+非阻塞但相关：免 @ / ambient（D11，本版明确不做）；解绑 UI；确认卡同会话合并（仍可选）；「群工作」不能设为唯一 Chat（harness `conversation.view` 是 tab ring）。
 
 ### 22.3 验收指针
 
@@ -504,11 +507,11 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 |---|---|---|
 | 1 | 打开群 A 两次 → 一条绑定会话，第二次 focus | ✅ `HomeBindingStore` / `home-open` / 面板挑群 |
 | 2 | @Claude followup 进绑定会话，无新 `yzj-robot-*` 家园 | ✅ robot-yzj `resolveSession` |
-| 3 | 四类节点共一条 transcript | ⚪ G2 |
-| 4 | 用户发群无卡 / agent 发有卡 / 删除强确认 | ⚪ 原则已拍；落点仍面板（G6） |
-| 5 | 面板挑群切 DSH；无独立 IM 作家园 | ◐ 切 DSH 已做；composer 仍在（G6） |
-| 6 | 未绑定只有对 agent 的单一发送 | ⚪ |
-| 7 | 丢进群默认摘要 + 确认卡 | ⚪ |
-| 8 | `!fork` / `robot_fork` 不再 `create` 新根 | ✅ 目标改为绑定会话；摘要加厚后续 |
+| 3 | 四类节点共一条 transcript | ✅ 「群工作」融合流；官方 Chat 仍在 |
+| 4 | 用户发群无卡 / agent 发有卡 / 删除强确认 | ✅ 发进群 = home-send / im-send 无卡；agent 写 GUI 或群建议卡 |
+| 5 | 面板挑群切 DSH；无独立 IM 作家园 | ✅ 挑群切 DSH；面板降为快捷 ② |
+| 6 | 未绑定只有对 agent 的单一发送 | ✅ dock 无「发进群」；有「丢进群」 |
+| 7 | 丢进群默认摘要 + 确认卡 | ✅ 默认勾选近窗；全文迁移显式；确认后 focus |
+| 8 | `!fork` / `robot_fork` 不再 `create` 新根 | ✅ 目标改为绑定会话 |
 
-**禁止**把 §20 机器人通道「已闭环」读成会话家园已达成——那是协议面。家园对象本刀已存在；四类节点与面板降级尚未完成。
+**禁止**把 §20 机器人通道「已闭环」读成会话家园已达成——那是协议面。G3（pending 耐久事件）与 G5（群搜索）仍阻塞完整「找得到群 + 刷新后确认卡还在日志里」。

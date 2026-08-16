@@ -199,6 +199,55 @@ describe('createRpcHandler', () => {
     expect(result.ok).toBe(false)
   })
 
+  it('home-send writes ② into the bound log without a user-turn', async () => {
+    const { BoundLogStore } = await import('@dsh-yzj/tool-yzj')
+    const store = new BoundLogStore()
+    const ctx = new Context()
+    const rows = new Map<string, { dshSessionId: string; yzjConversationId: string; yzjKind: 'group' | 'dm' }>()
+    ctx.provide('yzjHome', {
+      ensureBound: async (id: string, kind: 'group' | 'dm') => {
+        const existing = rows.get(id)
+        if (existing !== undefined) return { sessionId: existing.dshSessionId, created: false, yzjKind: existing.yzjKind }
+        const row = { dshSessionId: `yzj-home-${id}`, yzjConversationId: id, yzjKind: kind }
+        rows.set(id, row)
+        await store.ensureHeader(id, row.dshSessionId, kind)
+        return { sessionId: row.dshSessionId, created: true, yzjKind: kind }
+      },
+      getByConversation: (id: string) => rows.get(id),
+      getBySession: (id: string) => [...rows.values()].find(row => row.dshSessionId === id),
+      appendLog: (id: string, incoming: never, options?: never) => {
+        const row = rows.get(id)
+        if (row === undefined) return Promise.resolve({ accepted: false, reason: 'unbound' })
+        return store.append(id, row.dshSessionId, row.yzjKind, incoming, options)
+      },
+      getLog: (id: string) => store.get(id),
+      getLogBySession: (id: string) => {
+        const row = [...rows.values()].find(item => item.dshSessionId === id)
+        return row === undefined ? undefined : store.get(row.yzjConversationId)
+      },
+      ackLocal: (id: string, local: string, real: string) => store.ackLocal(id, local, real),
+      failLocal: (id: string, local: string) => store.failLocal(id, local),
+      formatSummonWindow: () => '',
+      logs: store,
+    })
+    ctx.provide('agents', {
+      get: () => ({ session: { events: [] } }),
+      resume: async () => { throw new Error('no log') },
+      create: async () => ({}),
+    })
+    ;(ctx as unknown as { yzjBridge: { run: (command: readonly string[]) => Promise<RunResult> } }).yzjBridge = {
+      run: async (command) => command[0] === 'contact' ? runOf([{ openId: 'me', name: '国鑫' }]) : runOf({ msgId: 'm-real' }),
+    }
+    const handler = createRpcHandler(ctx, { list: () => [], decide: () => false })
+    const opened = await handler('home-open', { groupId: 'g-a' }, undefined as never)
+    expect(opened.ok).toBe(true)
+    const sent = await handler('home-send', { sessionId: 'yzj-home-g-a', content: '发进群' }, undefined as never)
+    expect(sent.ok).toBe(true)
+    const fused = await handler('home-fused', { sessionId: 'yzj-home-g-a' }, undefined as never)
+    expect(fused.ok && (fused.value as { bound: boolean }).bound).toBe(true)
+    expect((fused.value as { items: { kind: string }[] }).items.some(item => item.kind === 'im')).toBe(true)
+  })
+
   it('unknown endpoints fail closed', async () => {
     const ctx = mountBridge({})
     const gate: YzjWriteGateFace = { list: () => [], decide: () => false }

@@ -14,6 +14,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { YzjToolCard, YZJ_TOOL_NAMES } from './cards.tsx'
 import { YzjComposerDock, dragInsertRequest, type YzjDropInjected } from './composer.tsx'
+import { YzjFusedView, type YzjFusedInjected } from './transcript.tsx'
+import type { YzjHomeChromeInjected } from './home-chrome.tsx'
 import { applyYzjAtSource } from './input-source.ts'
 import { YzjPanel, YzjFloatBall } from './panel.tsx'
 import { YzjSettingsSection } from './settings-section.tsx'
@@ -134,32 +136,56 @@ export function apply(ctx: ClientContext): void {
       name: 'conversation.input.dock',
       id: 'yzj-drop-band',
       order: 100,
-      inject: (sessionId: string): YzjDropInjected => {
+      inject: (sessionId: string): YzjDropInjected & YzjHomeChromeInjected => {
         const actx = scopeOf(ctx, sessionId)
+        const draftFace = (): { draft: string; draftRev: number } => {
+          const conversation = actx?.get('conversation') as
+            | { input: { for: (actx: unknown) => { state: { getSnapshot(): { draft: string; draftRev: number } } } } }
+            | undefined
+          return conversation?.input.for(actx).state.getSnapshot() ?? { draft: '', draftRev: 0 }
+        }
         return {
+          sessionId,
           insertReference: (ref) => {
             if (actx === undefined) return
-            // Resolve the span from the LIVE input store — component
-            // snapshots are point-in-time and would carry a stale draftRev.
             const attempt = (): boolean => {
-              const conversation = actx.get('conversation') as
-                | { input: { for: (actx: unknown) => { state: { getSnapshot(): { draft: string; draftRev: number } } } } }
-                | undefined
-              const state = conversation?.input.for(actx).state.getSnapshot()
-              const length = state?.draft.length ?? 0
-              const draftRev = state?.draftRev ?? 0
-              return actx.bail(actx, 'slash/input-insert-reference', dragInsertRequest(ref, { start: length, end: length, draftRev })) === true
+              const state = draftFace()
+              const length = state.draft.length
+              return actx.bail(actx, 'slash/input-insert-reference', dragInsertRequest(ref, { start: length, end: length, draftRev: state.draftRev })) === true
             }
-            if (!attempt()) {
-              // One retry after a frame: the drop may have raced an input
-              // mutation that bumped draftRev past our snapshot.
-              setTimeout(() => { attempt() }, 80)
-            }
+            if (!attempt()) setTimeout(() => { attempt() }, 80)
           },
+          readDraft: () => draftFace().draft,
+          clearDraft: () => {
+            if (actx === undefined) return
+            const state = draftFace()
+            actx.bail(actx, 'slash/input-insert-text', { text: '', span: { start: 0, end: state.draft.length, draftRev: state.draftRev } })
+          },
+          homeBinding: (id) => panelInject.homeBinding?.(id) ?? Promise.resolve({ ok: false as const, error: { message: 'homeBinding unavailable' } }),
+          homeSend: (id, content) => panelInject.homeSend?.(id, content) ?? Promise.resolve({ ok: false as const, error: { message: 'homeSend unavailable' } }),
+          homeDigest: (id) => panelInject.homeDigest?.(id) ?? Promise.resolve({ ok: false as const, error: { message: 'homeDigest unavailable' } }),
+          homeHandoff: (groupId, digest) => panelInject.homeHandoff?.(groupId, digest) ?? Promise.resolve({ ok: false as const, error: { message: 'homeHandoff unavailable' } }),
+          fetchGroups: (limit, page) => panelInject.fetchGroups(limit, page),
+          focusBoundSession: panelInject.focusBoundSession,
         }
       },
     },
     YzjComposerDock,
+  ))
+
+  ctx.slots.inject('conversation.view', () => ctx.slots.register(
+    {
+      name: 'conversation.view',
+      id: 'yzj-home',
+      order: -50,
+      label: '群工作',
+      inject: (sessionId: string): YzjFusedInjected => ({
+        sessionId,
+        homeFused: (id) => panelInject.homeFused?.(id) ?? Promise.resolve({ ok: false as const, error: { message: 'homeFused unavailable' } }),
+        homeBackfill: (id) => panelInject.homeBackfill?.(id) ?? Promise.resolve({ ok: false as const, error: { message: 'homeBackfill unavailable' } }),
+      }),
+    },
+    YzjFusedView,
   ))
 
   applyYzjAtSource(ctx, panelInject)
