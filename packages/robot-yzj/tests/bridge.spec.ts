@@ -148,6 +148,17 @@ describe('ChatnodeBridgeClient (client half)', () => {
     await expect(client.send({ text: 'x' })).rejects.toThrow(/HTTP 401 unauthorized/)
   })
 
+  it('treats a 2xx non-{ok:true} body as a failure (SPA-fallback false positive)', async () => {
+    const target = await start((_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/html' })
+      res.end('<!doctype html><title>dsh web</title>')
+    })
+    servers.push(target)
+    const ctx = new Context()
+    const client = new ChatnodeBridgeClient(ctx, `${target.url}/yzj/chatnode`, TOKEN)
+    await expect(client.send({ text: 'x' })).rejects.toThrow(/without ok:true/)
+  })
+
   it('throws when the listener is unreachable', async () => {
     const ctx = new Context()
     const client = new ChatnodeBridgeClient(ctx, 'http://127.0.0.1:1/yzj/chatnode', TOKEN)

@@ -16,6 +16,7 @@
 | 6 | agent 轮次静默无回答的两大来源：session id 碰撞须 resume 不能 create；`_no-cwd` session 过不了 persona 模板 | robot-yzj router / 任何程序化创建 DSH agent 的通道 | [pitfall-006-programmatic-agent-sessions.md](pitfall-006-programmatic-agent-sessions.md) |
 | 7 | 程序化创建的 agent 是裸作用域：harness 工具族（schedule）不会自动挂载，需复刻 schedule 插件的注册路径 | robot-yzj routines / 任何给自建 agent 加 harness 工具的场景 | [pitfall-007-bare-agent-tool-families.md](pitfall-007-bare-agent-tool-families.md) |
 | 8 | packed zstd 会话日志骗过一次性解压：只解出首帧 → "只有 header" → 误判持久化失效 | 任何直接读 `session.jsonl.zstd` 的脚本 / 诊断 | [pitfall-008-packed-zstd-session-logs.md](pitfall-008-packed-zstd-session-logs.md) |
+| 9 | profile 装 bundle 三连坑：autoInstallPeers=false 致 peers 不解析；link 包传递依赖 EPERM；`every Nm` 首次触发依赖 lastRunAt 播种；SPA fallback 2xx 假阳性 | ops daemon / dsh-routines / chatnode 桥 | [pitfall-009-profile-peers-and-routines-seeding.md](pitfall-009-profile-peers-and-routines-seeding.md) |
 
 ## 维护规则
 
