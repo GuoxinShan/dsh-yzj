@@ -25,5 +25,13 @@ export default defineConfig({
     // Only this repo's packages — stray sibling checkouts cloned into the
     // workspace root (e.g. .openclaw-yzj) must not be picked up.
     include: ['packages/*/tests/**/*.{test,spec}.?(c|m)[jt]s?(x)'],
+    server: {
+      deps: {
+        // ui-primitives rc.6 imports katex/dist/katex.min.css; externalized
+        // node_modules deps are loaded raw by Node, which rejects .css.
+        // Inlining routes the css through vitest's transform (empty module).
+        inline: [/@deepseek-ai\/dsh-client-ui-primitives/],
+      },
+    },
   },
 })
