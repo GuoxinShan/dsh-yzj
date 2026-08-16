@@ -201,8 +201,10 @@ DSH「发给 agent」的 ③ 是用户真的对 Claude 说的话，**要渲染**
 
 DSH「发给 agent」
   官方 ③ = composer 正文（可含用户 chip；chip 仍 codec.serialize）
-  → systemPrompt.context({ name: 'yzj-bound-window', text: () => 本轮是召唤则窗口否则 '' })
-  无 systemPrompt 的 profile（ops daemon）不注入，与 memory-yzj 相同 opportunistic
+  → systemPrompt.context({ name: 'yzj-bound-window', text: (assemble) => 本轮是 GUI 召唤则窗口否则 '' })
+  读 `assemble.agent.session.id`（harness `assembleContextFor`：`scope` 是 Agent 对象，不是 session id 字符串——pitfall-011）
+  仅 `latestUserSourceKind === 'user'` 时返回窗口；plugin followup 已走 `agent.inject`
+  无 systemPrompt 的 profile（ops daemon）不注入；`ctx.inject(['systemPrompt'])` 等待该服务
 ```
 
 `agent/request` **不**用来塞窗口（改不了正文）。**不**把窗口写成用户气泡里的隐藏 chip。

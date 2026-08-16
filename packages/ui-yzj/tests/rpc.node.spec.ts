@@ -200,7 +200,7 @@ describe('createRpcHandler', () => {
   })
 
   it('home-send writes ② into the bound log without a user-turn', async () => {
-    const { BoundLogStore } = await import('@dsh-yzj/tool-yzj')
+    const { BoundLogStore } = await import('@dsh-yzj/tool-yzj/src/bound-log.ts')
     const store = new BoundLogStore()
     const ctx = new Context()
     const rows = new Map<string, { dshSessionId: string; yzjConversationId: string; yzjKind: 'group' | 'dm' }>()

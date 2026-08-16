@@ -5,7 +5,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
 import {
   BoundLogStore, formatSummonWindow, type BoundLogLimits, type YzjLogEntry,
-} from '@dsh-yzj/tool-yzj'
+} from '@dsh-yzj/tool-yzj/src/bound-log.ts'
 import {
   backfillBoundLog, fusedSnapshot, handoffToGroup, parseImSend, parseWhoami, robotSkipOpenIds,
   sendImAndLog, type HomeIoFace,

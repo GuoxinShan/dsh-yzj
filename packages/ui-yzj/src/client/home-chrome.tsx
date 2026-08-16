@@ -94,7 +94,7 @@ export function YzjHomeChrome(props: YzjHomeChromeInjected) {
           homeDigest={props.homeDigest}
           homeHandoff={props.homeHandoff}
           fetchGroups={props.fetchGroups}
-          focusBoundSession={props.focusBoundSession}
+          {...(props.focusBoundSession === undefined ? {} : { focusBoundSession: props.focusBoundSession })}
           onClose={() => setHandoffOpen(false)}
         />
       )}
