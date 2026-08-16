@@ -5,6 +5,7 @@
 > 决策人：Guoxin Shan
 > 定位：产品法 + 会话对象契约。整体方案只加 v1.8 指针（[`integration-master-plan.md`](integration-master-plan.md)）；机器人协议仍见 [`robot-channel-plan.md`](robot-channel-plan.md)，其隐藏平行 session / fork 开新根在本法规下作废。
 > 文档形态：**独立 spec**，不塞进总方案——总方案已覆盖工具/面板/旅程/分期，再塞会话对象会不可读。
+> 下一片（绑定后的**可见时间线**：①② 插件消息日志 × ③④ 官方事件融合）：[`dsh-home-transcript.md`](dsh-home-transcript.md)。本文 D1–D11 不变。
 
 ---
 
