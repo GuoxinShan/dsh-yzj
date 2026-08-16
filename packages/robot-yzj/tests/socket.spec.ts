@@ -146,6 +146,23 @@ describe('RobotSocket', () => {
     socket.stop()
   })
 
+  it('acks msgChg pushes that request it', () => {
+    const fake = fakeSocketFactory()
+    const { timers } = fakeTimers()
+    const socket = new RobotSocket({
+      url: 'wss://example/x',
+      socketFactory: fake.factory,
+      timers,
+      onMessage: () => {},
+    })
+    socket.start()
+    const first = fake.sockets[0]!.socket
+    first.emit('open')
+    first.emit('message', { data: JSON.stringify({ msg: { msgId: 'm1' }, level: 1, needAck: true, cmd: 'directPush', type: 'msgChg', seq: 7 }) })
+    expect(first.sent).toEqual(['{"cmd":"ack","seq":7}'])
+    socket.stop()
+  })
+
   it('keeps the factory url untouched', () => {
     const fake = fakeSocketFactory()
     const { timers } = fakeTimers()

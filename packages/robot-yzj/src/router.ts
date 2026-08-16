@@ -10,11 +10,13 @@
 
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import { foldScheduleEvents } from '@deepseek-ai/dsh-schedule'
 import type { Agent, AgentHandle, CreateAgentOptions, ResumeAgentOptions } from '@deepseek-ai/dsh-agent'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { InboundDedupe, parseReplyMeta, type RobotInboundMessage } from './protocol.ts'
 import type { RobotSendOptions, RobotSendResult } from './outbound.ts'
 import { dmKey, groupKey } from './overrides.ts'
+import type { ConfirmBroker } from './confirm.ts'
 
 /** DM conversation key of one message (override-table form). */
 function dmKeyOf(message: RobotInboundMessage): string {
@@ -55,6 +57,8 @@ export interface RobotRouterOptions {
   readonly agentOptions?: { provider?: string; model?: string }
   /** Per-conversation override lookup (wins over agentOptions); absent = none. */
   readonly resolveOverride?: OverrideResolver
+  /** Shared confirmation broker for gated writes (suggestion cards). */
+  readonly confirm?: ConfirmBroker
   readonly ackText?: string
   readonly denyText?: string
   readonly logger?: RouterLogger
@@ -62,9 +66,9 @@ export interface RobotRouterOptions {
 
 const DEFAULT_ACK_TEXT = '收到，处理中…'
 const DEFAULT_DENY_TEXT = '抱歉，你不在本机器人的白名单内。'
-const COMMAND_NAMES = ['help', 'status', 'mute', 'unmute', 'restart'] as const
+const COMMAND_NAMES = ['help', 'status', 'routines', 'mute', 'unmute', 'restart'] as const
 type RobotCommand = typeof COMMAND_NAMES[number]
-const STANDALONE_COMMAND = /^!(help|status|mute|unmute|restart)\s*$/
+const STANDALONE_COMMAND = /^!(help|status|routines|mute|unmute|restart)\s*$/
 
 /** Stable session id for one (robot, user) DM channel. */
 export function dmSessionId(robotId: string, operatorOpenid: string): SessionId {
@@ -100,6 +104,7 @@ export class RobotRouter {
   private readonly allowFrom: AllowFromResolver
   private readonly agentOptions: { provider?: string; model?: string } | undefined
   private readonly resolveOverride: OverrideResolver | undefined
+  private readonly confirm: ConfirmBroker | undefined
   private readonly ackText: string
   private readonly denyText: string
   private readonly logger: RouterLogger | undefined
@@ -124,6 +129,7 @@ export class RobotRouter {
     this.allowFrom = options.allowFrom
     this.agentOptions = options.agentOptions
     this.resolveOverride = options.resolveOverride
+    this.confirm = options.confirm
     this.ackText = options.ackText ?? DEFAULT_ACK_TEXT
     this.denyText = options.denyText ?? DEFAULT_DENY_TEXT
     this.logger = options.logger
@@ -209,8 +215,19 @@ export class RobotRouter {
       await this.reply(this.denyText, replyAnchor)
       return
     }
+    // Confirmation-card replies (确认 N / 取消 N) consume the message before
+    // anything else — no ack, no turn.
+    if (this.confirm !== undefined && this.confirm.checkReply(message)) return
     const sessionId = this.resolveSession(message)
     if (this.muted.has(sessionId)) return
+    this.confirm?.registerSession(sessionId, {
+      sender: this.sender,
+      robotId: message.robotId,
+      group,
+      groupId: message.groupId,
+      askerOpenId: message.operatorOpenid,
+      askerName: message.operatorName,
+    })
     // The ack is a robot message in the chain — anchor it so replies to the
     // ack (not just to the final answer) continue this session.
     const ackResult = await this.reply(this.ackText, replyAnchor)
@@ -341,11 +358,30 @@ export class RobotRouter {
         await this.reply([
           '可用命令（独立成句才生效）：',
           '!status — 查看机器人连接与会话状态',
+          '!routines — 列出本会话的定时提醒',
           '!mute — 静音本会话（不再回复，!unmute 解除）',
           '!unmute — 解除静音',
           '!restart — 重启本会话（保留聊天记录，清空额外上下文）',
+          '',
+          '写操作会先推送确认卡：回复「确认 N / 取消 N」裁决。',
         ].join('\n'), anchor)
         return
+      case 'routines': {
+        const agent = this.agents.get(sessionId)
+        const lines: string[] = []
+        if (agent !== undefined) {
+          try {
+            const folded = foldScheduleEvents(agent.session.events, agent.session.header.seedLength ?? 0)
+            for (const record of folded.active) {
+              lines.push(`· ${record.id} — ${record.prompt}${record.kind === 'every' ? `（每 ${Math.round(record.everySeconds / 60)} 分钟）` : ''}`)
+            }
+          } catch (error) {
+            this.logger?.warn(`robot: routines fold failed: ${String(error)}`)
+          }
+        }
+        await this.reply(lines.length === 0 ? '本会话暂无定时提醒（让 agent 用 schedule_create 建立提醒）。' : `本会话的定时提醒：\n${lines.join('\n')}`, anchor)
+        return
+      }
       case 'status': {
         const agent = this.agents.get(sessionId)
         await this.reply([

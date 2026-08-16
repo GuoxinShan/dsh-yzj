@@ -176,6 +176,10 @@ export function applyWriteGate(ctx: Context): {
 
   ctx.on('approval/request', (req, next) => {
     if (!req.toolName.startsWith('yzj_')) return next()
+    // Robot sessions route their confirmations through the IM suggestion-card
+    // protocol (robot-yzj's ConfirmBroker owns those requests) — the GUI card
+    // would wait for a click nobody makes on an unattended channel.
+    if (req.agent.session.id.startsWith('yzj-robot-')) return next()
     if (req.signal?.aborted === true) return Promise.resolve<YzjApprovalOutcome>('cancelled')
     const claimed = new Set(records.keys())
     const id = findApprovalId(req.agent.session.events, req.callId, claimed)
