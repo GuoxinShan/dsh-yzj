@@ -3,6 +3,13 @@
 Yunzhijia robot channel, host half: the measured two-way bridge between a
 personal (or group) Yunzhijia robot and DSH agent sessions.
 
+**Product law (docs, not yet implemented):** inbound `followup()` must land on
+the **bound DSH session** for that Yunzhijia conversation (`docs/spec/dsh-home-session.md`).
+Hidden `yzj-robot-*` homes and `!fork` / `robot_fork` that `create` a new root
+are wrong under that law — they should open or resume the bound session
+(robot-channel-plan §9, gap-analysis §22 G1/G4). Protocol below is still the
+transport truth.
+
 ## What it does
 
 - **Inbound** — derives `wss://<host>/xuntong/websocket?yzjtoken=…` from the
