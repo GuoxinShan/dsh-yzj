@@ -23,3 +23,10 @@
     # agent sessions (reply-chain continuation, bang commands, ack-then-push).
     - id: robot-yzj
       name: '@dsh-yzj/robot-yzj'
+
+    # Memory vault: sections/entities/observations scopes under
+    # $DSH_HOME/yzj-memory, memory_* tools, dream consolidation surfaces,
+    # and bounded prompt injection (ctx.yzjMemory). Group scopes activate by
+    # widening allowScopes — see docs/spec/memory-vault-design.md §8.
+    - id: memory-yzj
+      name: '@dsh-yzj/memory-yzj'

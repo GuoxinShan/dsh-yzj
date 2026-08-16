@@ -397,3 +397,19 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 - 机器人 tab 三个增量：① 通道状态行显示解析后 cwd（`robot_status` 数据本来就有，UI 补投影）；② 新增「群共享工作区」section——**先选已注册的机器人通道，再选该通道真实见过的群表面**（`robot_status` surface，过滤 DM 的 BOT- 前缀；群名从会话 tab 群缓存解析，缺失显示 groupId）→ 拉 `robot-share-list` 显示共享区路径 + 文件列表（名/大小/mtime，空态）；③ 面板直写表单（文件名 + 内容 → `robot-share-write`，携带所选通道 robotIndex），复用 `writeShareFile` 的自动唯一名语义，**面板直写 = 用户本人意志，不经确认卡**（对齐 im-send 直写语义；agent 会话写仍走确认卡）。多机器人下共享区按通道隔离（各通道 cwd 不同）。
 - RPC 端点 +2（`robot-share-list` / `robot-share-write`），`/yzj` 共 36 端点；注入面 `robotShareList`/`robotShareWrite`。
 - 验收：ui-yzj typecheck/build/bundle 通过、63 单测绿；浏览器走查待 web profile 重启后跑 `verify-robot-pane.mjs` 扩展（面板共享区浏览 + 直写落盘）。
+
+## 21. 记忆库组件 memory-yzj（2026-08-16，设计随提交）
+
+**背景**：用户提供 dream-vault 导出包作参考，要求对照 dsh 插件生态（"dsh find"）的记忆实现，做一个可接定时任务、后续可接群组记忆的记忆组件。调研结论（30+ 记忆插件，代表：dsh-mneme / dsh-native-memory / @max-null/dsh-memory）与全部取舍见 `spec/memory-vault-design.md`（D1-D11 决策表）。
+
+**落地（首版，全部已实现）**：
+
+- 新包 `@dsh-yzj/memory-yzj`（`ctx.yzjMemory`）：明文 Markdown vault，默认根 `$DSH_HOME/yzj-memory`，scope 分仓（`user/`、`group-<id>/` 同构预留）；sections（frontmatter `title/order/tags`）/ entities / observations（open/archived）+ log.md（追加审计）+ index.md（dream 重建）+ sections.yaml（仅 `inject_char_cap`，默认 6000）。
+- 5 个工具：`memory_observe`（草稿区写入，去重 + 容量上限 200，唯一 agent 可写面）/ `memory_read` / `memory_search`（确定性关键词）/ `memory_dream_load`（全量状态 + 内容 rev）/ `memory_dream_apply`（决策 JSON 字符串入参——todo 工具族 records 同款范式；逐条校验，rev 不符或目标缺失仅拒该条；log/index 总是重建）。**不进 WRITE_SPECS**：本地草稿非云之家写（设计 §3/D4）。
+- 注入：`ctx.get('systemPrompt')` 机会式注册 `yzj-memory` 动态 context，每次组装现算 `injectScopes` 投影（无陈旧镜像）；空库零贡献。
+- 定时对接：`spec/memory-dream-routine.yaml`（dsh-routines 真 schema：name/schedule/timezone/profile/cwd/overlap/timeoutMin/deliver/prompt），固化规则全在 prompt，工具只做机械应用；headless profile 需挂 memory-yzj 行。
+- 群组留缝：`allowScopes` 白名单扩 `group:<id>` 即激活（scope 正则 + 目录映射 + 仓间隔离已有单测）；robot-yzj 接群注入/群内「记住」为后续工作（设计 §8）。
+
+**与设计的实现级偏差（设计已同步）**：① sections.yaml 从「段顺序+cap 双职责」简化为仅 cap（段的 order/title 移入各段 frontmatter——一处事实一处存放）；② 服务方法同步实现（注入 provider 契约是同步字符串；单进程串行，跨进程靠纯创建+原子 rename+rev 锁）；③ dream_apply 的 decisions 为 JSON 字符串参数（工具框架的数组 of object 参数不支持，todo records 同款）。
+
+**验收证据**：`pnpm vitest run packages/memory-yzj` 21 测试全绿（frontmatter 参考格式往返、observe 去重/容量/scope 隔离、投影排序与截断、检索命中行、五类决策 + rev 冲突保护人工编辑 + 畸形决策进报告、临时文件卫生）；`pnpm run build`/`typecheck` 全仓通过。**待真实环境验收**（web profile 重启后）：提示组装含 `yzj-memory` 上下文、会话内 observe → 手动 dream → 注入更新；headless routine 端到端（ops→桥→群摘要）复用 routines-delivery §5 链路。
