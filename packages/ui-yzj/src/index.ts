@@ -533,6 +533,36 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
           return internalError(`robot-models failed: ${String(error)}`)
         }
       }
+      case 'robot-share-list': {
+        const robot = ctx.get('yzjRobot')
+        if (robot === undefined) return internalError('robot-share-list: yzjRobot 服务不可用（robot-yzj 未挂载）')
+        const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
+        const result = robot.shareList(numberField(record, 'robotIndex') ?? 0, stringField(record, 'groupId'))
+        return { ok: true, value: result }
+      }
+      case 'robot-share-write': {
+        const robot = ctx.get('yzjRobot')
+        if (robot === undefined) return internalError('robot-share-write: yzjRobot 服务不可用（robot-yzj 未挂载）')
+        const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
+        const groupId = stringField(record, 'groupId')
+        const filename = stringField(record, 'filename')
+        const content = stringField(record, 'content')
+        if (groupId === undefined || filename === undefined || content === undefined) {
+          return internalError('robot-share-write endpoint requires groupId, filename and content payloads')
+        }
+        try {
+          const result = await robot.shareWrite(
+            numberField(record, 'robotIndex') ?? 0,
+            groupId,
+            filename,
+            content,
+            record.overwrite === true,
+          )
+          return { ok: true, value: result }
+        } catch (error) {
+          return internalError(`robot-share-write failed: ${String(error)}`)
+        }
+      }
       case 'robot-diagnostics': {
         const robot = ctx.get('yzjRobot')
         if (robot === undefined) return internalError('robot-diagnostics: yzjRobot 服务不可用（robot-yzj 未挂载）')

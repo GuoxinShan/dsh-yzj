@@ -78,6 +78,10 @@ export interface YzjPanelInject {
   robotContinue: (text: string, options?: { robotIndex?: number; groupId?: string }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Fork one robot conversation into a new operator-side session. */
   robotFork: (sessionId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** List one group's shared workspace files (name/size/mtime). */
+  robotShareList: (groupId: string, robotIndex?: number) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Panel-direct write into a group's shared workspace (user's own will; auto-unique names unless overwrite). */
+  robotShareWrite: (input: { groupId: string; filename: string; content: string; overwrite?: boolean; robotIndex?: number }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
 }
 
 /** Build the inject face from a connection handle; unavailable → failed calls. */
@@ -156,5 +160,16 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
       ...(options.groupId === undefined ? {} : { groupId: options.groupId }),
     }),
     robotFork: (sessionId: string) => call('robot-fork', { sessionId }),
+    robotShareList: (groupId: string, robotIndex?: number) => call('robot-share-list', {
+      groupId,
+      ...(robotIndex === undefined ? {} : { robotIndex }),
+    }),
+    robotShareWrite: (input: { groupId: string; filename: string; content: string; overwrite?: boolean; robotIndex?: number }) => call('robot-share-write', {
+      groupId: input.groupId,
+      filename: input.filename,
+      content: input.content,
+      ...(input.overwrite === undefined ? {} : { overwrite: input.overwrite }),
+      ...(input.robotIndex === undefined ? {} : { robotIndex: input.robotIndex }),
+    }),
   }
 }
