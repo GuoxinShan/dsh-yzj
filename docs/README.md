@@ -9,9 +9,10 @@ docs/
   README.md                          ← 本文件：索引与阅读顺序
   release.md                           发布流程（GitHub 分享 / npm 全量发布 + 前置检查清单）
   spec/                              ← 设计基线（要做什么、为什么、验收口径）
-    integration-master-plan.md         云之家×dsh 集成整体方案（v1.7，验收基准）
-    todo-design.md                     待办功能设计（v1.2，tag 理念 + §11.2 决策表）
-    robot-channel-plan.md              机器人通道调研与双向打通方案（v0.1 调研稿）
+    integration-master-plan.md         云之家×dsh 集成整体方案（v1.8 指针 → 会话家园；正文仍为 v1.7 人在闭环）
+    dsh-home-session.md                DSH 唯一会话家园：会话对象与产品法（v1.0 已拍板，尚未实现）
+    todo-design.md                     待办功能设计（v1.3，tag 理念 + §11.2 决策表；直写原则交叉引用会话家园）
+    robot-channel-plan.md              机器人通道调研与双向打通方案（v0.2：会话落点改打绑定对象）
     routines-delivery.md               定时任务引擎选型（dsh-routines 参考调研）+ yzj chatnode 投递契约
     memory-vault-design.md             记忆库组件设计（v0.2：vault 模型 + dream 开关/进程内固化/模型链 + 插件默认模型 + 群组留缝）
     memory-dream-routine.yaml          dream 固化 routine 模板（dsh-routines，备选路径）
@@ -25,10 +26,11 @@ docs/
 ## 阅读顺序（新 agent 接手）
 
 1. **`README.md`（仓库根）**——三分钟了解包结构与能力面。
-2. **`spec/integration-master-plan.md`**——系统全貌：目标、用户旅程、验收基准。
-3. **`status/gap-analysis.md` §15-§19**——当前实现状态与已验收证据（比设计文档更接近现实）。
-4. **`pitfalls/README.md` 索引**——动手前必查；命中相关条目先读再写代码。
-5. 任务相关的设计文档（todo 域 → `spec/todo-design.md`；机器人 → `spec/robot-channel-plan.md`；定时任务 → `spec/routines-delivery.md`；记忆库 → `spec/memory-vault-design.md`）。
+2. **`spec/integration-master-plan.md`**——系统全貌：目标、用户旅程、人在闭环验收基准（v1.8 起会话家园见下一份）。
+3. **`spec/dsh-home-session.md`**——**产品法**：DSH 是唯一对话家园；会话对象、四类节点、面板角色、@Claude、丢进群、写路径。现行实现仍是三面并行，对照 `status/gap-analysis.md` §22。
+4. **`status/gap-analysis.md`**——当前实现状态与已验收证据（§15–§21 为既有面；**§22 为会话家园目标 vs 三面现状**）。
+5. **`pitfalls/README.md` 索引**——动手前必查；命中相关条目先读再写代码。
+6. 任务相关的设计文档（todo 域 → `spec/todo-design.md`；机器人协议 → `spec/robot-channel-plan.md`（会话落点已被 dsh-home-session 覆盖）；定时任务 → `spec/routines-delivery.md`；记忆库 → `spec/memory-vault-design.md`）。
 
 ## 命名规则
 
