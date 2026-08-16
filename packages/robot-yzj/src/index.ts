@@ -493,12 +493,12 @@ export class YzjRobot extends Service {
   async modelCatalog(): Promise<{ provider: string; models: string[] }[]> {
     const llm = this.ctx.get('llm') as
       | {
-          listProviders(): { provider?: string }[]
+          listProviders(): { id?: string; provider?: string }[]
           listModels(provider: string): Promise<{ id?: string; model?: string }[]>
         }
       | undefined
     if (llm === undefined) return []
-    const names = [...new Set(llm.listProviders().map(entry => String(entry.provider ?? '')).filter(name => name !== ''))]
+    const names = [...new Set(llm.listProviders().map(entry => String(entry.id ?? entry.provider ?? '')).filter(name => name !== ''))]
     return Promise.all(names.map(async provider => {
       try {
         const models = await llm.listModels(provider)
@@ -552,6 +552,7 @@ export class YzjRobot extends Service {
       ackText: DEFAULT_ACK_TEXT,
       denyText: DEFAULT_DENY_TEXT,
       logger: { warn: message => this.ctx.logger.warn(message) },
+      resolveGroupName: groupId => this.resolveGroupNameOf(groupId),
       ...(this.guiUrl === '' ? {} : { guiUrl: this.guiUrl }),
     })
     const status: SocketStatus = { connected: false, attempts: 0, lastError: null, lastFrameAt: 0 }
@@ -638,6 +639,32 @@ export class YzjRobot extends Service {
     next: () => Promise<'allowed-once' | 'rejected' | 'cancelled' | 'unavailable'>,
   ): Promise<'allowed-once' | 'rejected' | 'cancelled' | 'unavailable'> {
     return this.confirm.handleApproval(req, next)
+  }
+
+  /** Resolve one group's human name through the CLI recent-session list
+   * (WS frames carry no group names); undefined when unknown. Bounded: the
+   * first page of 20 recent sessions. */
+  private async resolveGroupNameOf(groupId: string): Promise<string | undefined> {
+    const bridge = this.ctx.get('yzjBridge')
+    if (bridge === undefined) return undefined
+    try {
+      const result = await bridge.run(['im', 'group', 'recent', '--limit', '20'], { timeoutMs: 15_000 })
+      const json = result.json as unknown
+      const list = Array.isArray(json)
+        ? json
+        : Array.isArray((json as { list?: unknown } | null)?.list)
+          ? (json as { list: unknown[] }).list
+          : []
+      for (const item of list) {
+        const record = item as { groupId?: unknown; groupName?: unknown }
+        if (record.groupId === groupId && typeof record.groupName === 'string' && record.groupName !== '') {
+          return record.groupName
+        }
+      }
+      return undefined
+    } catch {
+      return undefined
+    }
   }
 
   /** allowFrom policy: explicit config list, else the CLI login user once. */

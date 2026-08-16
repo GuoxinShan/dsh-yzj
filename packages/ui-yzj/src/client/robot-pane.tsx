@@ -45,20 +45,22 @@ function groupSurfacesOf(channel: unknown): { groupId: string; robotName: string
       robotName: asString(record.robotName),
       time: typeof record.time === 'number' ? record.time : 0,
       ...(asString(record.lastSessionId) === '' ? {} : { lastSessionId: asString(record.lastSessionId) }),
+      ...(asString(record.groupName) === '' ? {} : { groupName: asString(record.groupName) }),
     }]
   })
 }
 
-/** Group display name from the chat-tab cache; falls back to a short id. */
-function groupNameOf(groups: unknown[], groupId: string): string {
+/** Group display name: surface-resolved, then the chat-tab cache (groupName/name), else a short id. */
+function groupNameOf(surface: { groupId: string; groupName?: string }, groups: unknown[]): string {
+  if (surface.groupName !== undefined && surface.groupName !== '') return surface.groupName
   for (const group of asArray(groups)) {
     const record = asRecord(group)
-    if (asString(record.groupId) === groupId) {
-      const name = asString(record.name)
+    if (asString(record.groupId) === surface.groupId) {
+      const name = asString(record.groupName) || asString(record.name)
       if (name !== '') return name
     }
   }
-  return `${groupId.slice(0, 10)}…`
+  return `${surface.groupId.slice(0, 10)}…`
 }
 
 /** Human-relative timestamp: 今天/昨天 HH:mm, else M月d日 HH:mm. */
@@ -440,7 +442,7 @@ function RobotDetail(outer: { props: RobotPaneProps; index: number; onBack: () =
       : props.deleteRobotOverride(key)
     void call.then(result => {
       if (!result.ok) { setNote(`覆盖保存失败：${result.error.message}`); return }
-      setNote(hasValue ? `群「${groupNameOf(props.groups, groupId)}」已指定模型（新会话生效；已有会话发 !restart）` : '覆盖已删除')
+      setNote(hasValue ? `群「${groupNameOf({ groupId }, props.groups)}」已指定模型（新会话生效；已有会话发 !restart）` : '覆盖已删除')
       settle()
     })
   }
@@ -545,7 +547,7 @@ function RobotDetail(outer: { props: RobotPaneProps; index: number; onBack: () =
             return (
               <li key={group.groupId} className={css.groupCard}>
                 <div className={css.groupCardHead}>
-                  <span className={css.overrideName}>{groupNameOf(props.groups, group.groupId)}</span>
+                  <span className={css.overrideName}>{groupNameOf(group, props.groups)}</span>
                   <span className={css.overrideMeta}>
                     {group.time > 0 && `最近互动 ${formatRelativeTime(group.time)}`}
                     {(draft.provider !== '' || draft.model !== '') && ` · 单独用 ${[draft.provider, draft.model].filter(v => v !== '').join('/')}`}
