@@ -7,6 +7,7 @@
 ```
 docs/
   README.md                          ← 本文件：索引与阅读顺序
+  release.md                           发布流程（GitHub 分享 / npm 全量发布 + 前置检查清单）
   spec/                              ← 设计基线（要做什么、为什么、验收口径）
     integration-master-plan.md         云之家×dsh 集成整体方案（v1.7，验收基准）
     todo-design.md                     待办功能设计（v1.2，tag 理念 + §11.2 决策表）

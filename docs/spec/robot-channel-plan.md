@@ -223,7 +223,9 @@ robotId 与 CLI groupId 的 ID 空间映射；创建流程的公网测试是否�
 - 每次交付末尾附 **「在 DSH 中打开会话」deep link**（GUI 会话 URL）= Open session in Claude（等价达成）；R3 卡片消息可升级为可更新 checklist；
 - C12 署名等价：回复首行任务摘要（协议无显示名变体）。
 
-**S3 命令族（C5，全量实现）**
+**S3 命令族（C5，全量实现——R2.10/R2.11 补齐）**
+
+> 状态注：下表为设计基线；实现均已落地（!configure/!feedback/!fork 于 R2.10，!fork 群名支持 R2.11）。行为差异以实现为准：`!configure` 回 GUI 链接（config `guiUrl`，未配置则文本指引）；`!fork` 目标支持群名或 groupId（群名经 CLI `im group recent` 惰性解析并持久化到 surface）；`!feedback` 落 `~/.dsh/robot-feedback.log`；`!routines` 指向 dsh-routines（harness schedule 已退役）；`!restart` 不重读历史（保留聊天记录、清空额外上下文——回源重放未做）。
 
 | 命令 | 行为 |
 |---|---|
@@ -246,7 +248,7 @@ robotId 与 CLI groupId 的 ID 空间映射；创建流程的公网测试是否�
 - C6 判断档 N/A-v1（无全量消息流），价值由 routines 补足；C7 自静音随之 N/A；
 - C8 编辑/删除语义整体 N/A（协议无事件），纠错=新回复（与 Claude Tag 实际指引一致）。
 
-**S6 例行任务（C11）**：DSH schedule（every ≥5min）+ 群 watcher（CLI 轮询增量，混合模式 §3.1）→ 经 ambient session 投递；PR 订阅类无对应源，N/A。
+**S6 例行任务（C11）**：原设计为 DSH schedule（every ≥5min）+ 群 watcher（CLI 轮询增量，混合模式 §3.1）→ 经 ambient session 投递。**实现（R2.7 起）改为外部引擎 dsh-routines**（专用 `ops` daemon + headless 子进程 + chatnode 桥投递，见 `routines-delivery.md`）——harness schedule 在非 root agent 上不可用（pitfall-007）已退役；**群 watcher（关键词轮询）仍未实现**（gap-analysis §20.10 记录）；PR 订阅类无对应源，N/A。
 
 **S7 入群自我介绍（C14）**：机器人配置完成后**首次收到某群消息**时，读该群近期历史（CLI）+ 给出 3 个建议任务——低成本对齐。
 
