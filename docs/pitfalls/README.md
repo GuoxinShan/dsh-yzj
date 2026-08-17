@@ -21,6 +21,10 @@
 | 10 | 客户端 bundle 注册 id 必须等于 loader 条目（profile 行名），不是包名；单测/构建全绿但 web 壳启动报 loaded without registering | ui-yzj browser half / 任何经 monobundle 子路径行名加载的 client bundle | [pitfall-010-loader-entry-id.md](pitfall-010-loader-entry-id.md) |
 | 11 | `systemPrompt.context` 的 assemble.scope 是 Agent 对象，不是 session id 字符串 | tool-yzj 召唤窗口 / 任何仓外 `systemPrompt.context` 按会话分流 | [pitfall-011-assemble-context-scope-is-agent.md](pitfall-011-assemble-context-scope-is-agent.md) |
 | 12 | `yzj-robot-*` 前缀闸在家园 id 改打后不再覆盖绑定会话 | robot_notify / robot_continue / 任何按旧前缀分流的写闸 | [pitfall-012-home-prefix-gate-misses-yzj-home.md](pitfall-012-home-prefix-gate-misses-yzj-home.md) |
+| 13 | 群房间宿主无 `turn/start`：侧栏藏成「新会话」，可被新建会话复用 | ui-yzj home-open / 任何不跑模型回合的程序化 session | [pitfall-013-blank-host-sessions-hidden.md](pitfall-013-blank-host-sessions-hidden.md) |
+| 14 | 发进群 `local-*` 锚了话题后 ack 成真实 msgId，回群房间对不上 | tool-yzj topics / 交给助手幂等 | [pitfall-014-local-id-topic-anchor.md](pitfall-014-local-id-topic-anchor.md) |
+| 15 | 只跑 `pnpm run bundle` 打包的是旧代码——client bundle 入口是 tsc 产物 `lib/types`，改 TS 后须先 `tsc -b`/`pnpm run build` | ui-yzj browser half / 改源→bundle→验收 循环 | [pitfall-015-bundle-needs-tsc-first.md](pitfall-015-bundle-needs-tsc-first.md) |
+| 16 | 悬浮球（fixed 右下）盖住群房间「发进群」按钮：jsdom 全绿、真机点不到；composer 右留白与悬浮球绑定，不可当 hack 删 | ui-yzj 群房间 composer / 视口右下布局 | [pitfall-016-float-ball-covers-send.md](pitfall-016-float-ball-covers-send.md) |
 
 ## 维护规则
 

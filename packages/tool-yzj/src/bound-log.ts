@@ -10,8 +10,8 @@ import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type { YzjConversationKind } from './home.ts'
 
-/** Product origin of one log row (T1/T7). */
-export type YzjLogOrigin = 'inbound' | 'dsh-send' | 'backfill'
+/** Product origin of one log row (T1/T7; R9 adds robot-outbound). */
+export type YzjLogOrigin = 'inbound' | 'dsh-send' | 'backfill' | 'robot-outbound'
 
 /** Wire/status of one log row. Only ② uses pending/failed. */
 export type YzjLogStatus = 'pending' | 'acked' | 'failed'
@@ -30,6 +30,9 @@ export interface YzjLogEntry {
   readonly origin: YzjLogOrigin
   readonly isSelf: boolean
   readonly replyMsgId?: string
+  readonly topicSessionId?: string
+  /** Clipped CLI param snapshot for the group-room renderer (no binaries). */
+  readonly param?: Readonly<Record<string, unknown>>
   readonly status: YzjLogStatus
 }
 
@@ -66,6 +69,8 @@ export interface BoundLogAppendResult {
     | 'duplicate'
     | 'echo-collapsed'
     | 'promoted-to-dsh-send'
+    | 'promoted-to-robot-outbound'
+    | 'enriched'
     | 'robot-skipped'
     | 'anomaly-kept'
     | 'unbound'
@@ -79,9 +84,11 @@ const entrySchema = z.object({
   fromName: z.string(),
   content: z.string(),
   msgType: z.enum(['text', 'richText', 'file', 'other']),
-  origin: z.enum(['inbound', 'dsh-send', 'backfill']),
+  origin: z.enum(['inbound', 'dsh-send', 'backfill', 'robot-outbound']),
   isSelf: z.boolean(),
   replyMsgId: z.string().optional(),
+  topicSessionId: z.string().optional(),
+  param: z.record(z.string(), z.unknown()).optional(),
   status: z.enum(['pending', 'acked', 'failed']),
 }) as unknown as z.ZodType<YzjLogEntry>
 
@@ -146,6 +153,70 @@ export function digestOfCliMessage(record: Record<string, unknown>): string {
   return title === '' ? `[${msgType}]` : title
 }
 
+const PARAM_KEEP = [
+  'file_id', 'name', 'size', 'ext', 'desc',
+  'replyMsgId', 'replySummary', 'replyPersonName',
+  'title', 'thumbUrl', 'webpageUrl', 'sysType', 'interactiveCard',
+] as const
+
+const PARAM_JSON_MAX = 8_192
+
+/**
+ * Keep the renderer-facing CLI param keys. Drop binaries and oversized
+ * adaptive-card JSON so the durable log stays a digest.
+ */
+export function clipLogParam(raw: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (raw === undefined) return undefined
+  const out: Record<string, unknown> = {}
+  for (const key of PARAM_KEEP) {
+    const value = raw[key]
+    if (value !== undefined) out[key] = value
+  }
+  if (Object.keys(out).length === 0) return undefined
+  let text = JSON.stringify(out)
+  if (text.length > PARAM_JSON_MAX) {
+    delete out.interactiveCard
+    text = JSON.stringify(out)
+  }
+  if (text.length > PARAM_JSON_MAX) return undefined
+  return out
+}
+
+function paramMissing(entry: YzjLogEntry): boolean {
+  return entry.param === undefined || Object.keys(entry.param).length === 0
+}
+
+function firstNonEmpty(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === 'string' && value !== '') return value
+  }
+  return ''
+}
+
+function withParam(hit: YzjLogEntry, incoming: YzjLogEntry): YzjLogEntry {
+  if (incoming.param === undefined) return hit
+  if (!paramMissing(hit) && JSON.stringify(hit.param).length >= JSON.stringify(incoming.param).length) {
+    return hit
+  }
+  return {
+    ...hit,
+    param: incoming.param,
+    msgType: hit.msgType === 'text' && incoming.msgType !== 'text' ? incoming.msgType : hit.msgType,
+  }
+}
+
+/** Fill empty identity on a collision without changing origin. */
+function withIdentity(hit: YzjLogEntry, incoming: YzjLogEntry): YzjLogEntry {
+  const fromOpenId = hit.fromOpenId === '' ? incoming.fromOpenId : hit.fromOpenId
+  const fromName = hit.fromName === '' ? incoming.fromName : hit.fromName
+  if (fromOpenId === hit.fromOpenId && fromName === hit.fromName) return hit
+  return { ...hit, fromOpenId, fromName }
+}
+
+function enrichHit(hit: YzjLogEntry, incoming: YzjLogEntry): YzjLogEntry {
+  return withIdentity(withParam(hit, incoming), incoming)
+}
+
 /**
  * Project one CLI `im message list` row into a log entry. Caller sets origin
  * and isSelf; robot skip happens before append.
@@ -163,17 +234,17 @@ export function cliMessageToEntry(
   const param = typeof row.param === 'object' && row.param !== null
     ? row.param as Record<string, unknown>
     : {}
-  const fromOpenId = typeof row.fromOpenId === 'string' ? row.fromOpenId
-    : typeof row.openId === 'string' ? row.openId : ''
   const fromUser = typeof row.fromUser === 'object' && row.fromUser !== null
     ? row.fromUser as Record<string, unknown>
     : {}
-  const fromName = typeof row.fromName === 'string' ? row.fromName
-    : typeof fromUser.name === 'string' ? fromUser.name
-      : typeof row.userName === 'string' ? row.userName : ''
+  const fromOpenId = firstNonEmpty(row.fromOpenId, row.openId, fromUser.openId, fromUser.oId)
+  const fromName = firstNonEmpty(
+    row.fromName, fromUser.name, fromUser.userName, fromUser.nickName, row.userName,
+  )
   const replyMsgId = typeof param.replyMsgId === 'string' && param.replyMsgId !== ''
     ? param.replyMsgId
     : typeof row.replyMsgId === 'string' && row.replyMsgId !== '' ? row.replyMsgId : undefined
+  const clipped = clipLogParam(param)
   const entry: YzjLogEntry = {
     msgId,
     sentAt: parseSendTime(row.sendTime ?? row.time),
@@ -185,6 +256,7 @@ export function cliMessageToEntry(
     isSelf: selfOpenId !== '' && fromOpenId === selfOpenId,
     status: 'acked',
     ...(replyMsgId === undefined ? {} : { replyMsgId }),
+    ...(clipped === undefined ? {} : { param: clipped }),
   }
   return entry
 }
@@ -227,6 +299,36 @@ function sameSpeakerAndBody(a: YzjLogEntry, b: YzjLogEntry): boolean {
   return a.fromOpenId === b.fromOpenId && a.content === b.content
 }
 
+/** Origins that win T8 collisions (user DSH-send and assistant posts). */
+function isStickyOrigin(origin: YzjLogOrigin): boolean {
+  return origin === 'dsh-send' || origin === 'robot-outbound'
+}
+
+/** One assistant post into the group-room log (R9). */
+export function robotOutboundEntry(input: {
+  readonly msgId: string
+  readonly content: string
+  readonly fromOpenId: string
+  readonly fromName?: string
+  readonly topicSessionId?: string
+  readonly replyMsgId?: string
+  readonly sentAt?: number
+}): YzjLogEntry {
+  return {
+    msgId: input.msgId,
+    sentAt: input.sentAt ?? Date.now(),
+    fromOpenId: input.fromOpenId,
+    fromName: input.fromName !== undefined && input.fromName !== '' ? input.fromName : '助手',
+    content: input.content,
+    msgType: 'text',
+    origin: 'robot-outbound',
+    isSelf: false,
+    status: 'acked',
+    ...(input.replyMsgId === undefined || input.replyMsgId === '' ? {} : { replyMsgId: input.replyMsgId }),
+    ...(input.topicSessionId === undefined || input.topicSessionId === '' ? {} : { topicSessionId: input.topicSessionId }),
+  }
+}
+
 function sortEntries(entries: YzjLogEntry[]): YzjLogEntry[] {
   return [...entries].sort((left, right) => {
     if (left.sentAt !== right.sentAt) return left.sentAt - right.sentAt
@@ -253,19 +355,56 @@ export function applyAppend(
   const byId = new Map(existing.map(entry => [entry.msgId, entry]))
   const hit = byId.get(incoming.msgId)
   if (hit !== undefined) {
-    if (hit.origin === 'dsh-send' && incoming.origin !== 'dsh-send') {
+    if (isStickyOrigin(hit.origin) && !isStickyOrigin(incoming.origin)) {
+      const enriched = enrichHit(hit, incoming)
+      if (enriched !== hit) {
+        byId.set(hit.msgId, enriched)
+        return {
+          entries: sortEntries([...byId.values()]),
+          result: { accepted: true, reason: 'enriched', entry: enriched },
+        }
+      }
       return { entries: [...existing], result: { accepted: false, reason: 'echo-collapsed', entry: hit } }
     }
-    if (hit.origin !== 'dsh-send' && incoming.origin === 'dsh-send' && sameSpeakerAndBody(hit, incoming)) {
-      const promoted: YzjLogEntry = { ...hit, origin: 'dsh-send', isSelf: true, status: 'acked' }
+    if (!isStickyOrigin(hit.origin) && incoming.origin === 'dsh-send' && sameSpeakerAndBody(hit, incoming)) {
+      const promoted: YzjLogEntry = {
+        ...enrichHit(hit, incoming),
+        origin: 'dsh-send',
+        isSelf: true,
+        status: 'acked',
+      }
       byId.set(hit.msgId, promoted)
       return {
         entries: sortEntries([...byId.values()]),
         result: { accepted: true, reason: 'promoted-to-dsh-send', entry: promoted },
       }
     }
-    if (hit.origin !== 'dsh-send' && incoming.origin === 'dsh-send') {
+    if (!isStickyOrigin(hit.origin) && incoming.origin === 'robot-outbound') {
+      const filled = withIdentity(hit, incoming)
+      const promoted: YzjLogEntry = {
+        ...filled,
+        origin: 'robot-outbound',
+        isSelf: false,
+        fromName: incoming.fromName === '' ? filled.fromName : incoming.fromName,
+        status: 'acked',
+        ...(incoming.topicSessionId === undefined ? {} : { topicSessionId: incoming.topicSessionId }),
+      }
+      byId.set(hit.msgId, promoted)
+      return {
+        entries: sortEntries([...byId.values()]),
+        result: { accepted: true, reason: 'promoted-to-robot-outbound', entry: promoted },
+      }
+    }
+    if (!isStickyOrigin(hit.origin) && incoming.origin === 'dsh-send') {
       return { entries: [...existing], result: { accepted: false, reason: 'anomaly-kept', entry: hit } }
+    }
+    const enriched = enrichHit(hit, incoming)
+    if (enriched !== hit) {
+      byId.set(hit.msgId, enriched)
+      return {
+        entries: sortEntries([...byId.values()]),
+        result: { accepted: true, reason: 'enriched', entry: enriched },
+      }
     }
     return { entries: [...existing], result: { accepted: false, reason: 'duplicate', entry: hit } }
   }
@@ -302,7 +441,8 @@ export function failLocalEntry(existing: readonly YzjLogEntry[], localId: string
 
 /**
  * Summon-window digest (spec §5.2). Both summon paths MUST call this.
- * Empty window → '' (do not inject an empty block).
+ * Empty log with no groupId → '' (do not inject an empty block).
+ * groupId / per-line msgId are required so the model can send or reply.
  */
 export function formatSummonWindow(
   log: YzjBoundMessageLog | undefined,
@@ -310,10 +450,17 @@ export function formatSummonWindow(
     readonly maxMessages: number
     readonly maxChars: number
     readonly excludeMsgId?: string
+    readonly groupId?: string
+    readonly topic?: {
+      readonly title?: string
+      readonly rootMsgId?: string
+      readonly originWho?: string
+      readonly originText?: string
+    }
   },
 ): string {
-  if (log === undefined) return ''
-  const acked = log.entries.filter(entry => {
+  const groupId = options.groupId ?? log?.yzjConversationId ?? ''
+  const acked = (log?.entries ?? []).filter(entry => {
     if (entry.status !== 'acked') return false
     if (options.excludeMsgId !== undefined && entry.msgId === options.excludeMsgId) return false
     return true
@@ -321,20 +468,41 @@ export function formatSummonWindow(
   const window = acked.slice(-Math.max(0, options.maxMessages))
   const lines: string[] = []
   let chars = 0
-  const header = '［本群最近消息（仅本轮上下文，非完整群档）］'
   for (let index = window.length - 1; index >= 0; index -= 1) {
     const entry = window[index]
     if (entry === undefined) continue
     const when = formatWindowTime(entry.sentAt)
     const who = entry.isSelf ? '我' : (entry.fromName === '' ? entry.fromOpenId : entry.fromName)
-    const reply = entry.replyMsgId === undefined ? '' : ` 回复 ${shortReply(log, entry.replyMsgId)}`
-    const line = `[${when}] ${who}: ${entry.content}${reply}`
+    const replyId = entry.replyMsgId
+    const replyDigest = replyId === undefined ? '' : shortReply(log, replyId)
+    const reply = replyId === undefined
+      ? ''
+      : ` 回复 msgId=${replyId}${replyDigest === '' ? '' : ` ${replyDigest}`}`
+    const line = `[${when}] ${who} msgId=${entry.msgId}: ${entry.content}${reply}`
     if (chars + line.length + 1 > options.maxChars && lines.length > 0) break
     lines.unshift(line)
     chars += line.length + 1
   }
-  if (lines.length === 0) return ''
-  return `${header}\n${lines.join('\n')}`
+  const meta = ['［本群最近消息（仅本轮上下文，非完整群档）］']
+  if (groupId !== '') {
+    meta.push(`groupId: ${groupId}`)
+    meta.push('发群用 yzj_im_message_send 的 groupId；回复某条把 replyMsgId 设成该行 msgId。')
+  }
+  const topic = options.topic
+  if (topic !== undefined) {
+    const title = topic.title?.trim() ?? ''
+    if (title !== '') meta.push(`话题: ${title}`)
+    const root = topic.rootMsgId?.trim() ?? ''
+    if (root !== '') meta.push(`锚点 msgId: ${root}`)
+    const excerpt = (topic.originText ?? '').replace(/\s+/g, ' ').trim().slice(0, 80)
+    if (excerpt !== '') {
+      const who = (topic.originWho ?? '').trim()
+      meta.push(`锚：${who === '' ? '' : `${who}：`}${excerpt}`)
+    }
+  }
+  if (lines.length === 0 && groupId === '' && topic === undefined) return ''
+  if (lines.length === 0) return meta.join('\n')
+  return `${meta.join('\n')}\n${lines.join('\n')}`
 }
 
 function formatWindowTime(sentAt: number): string {
@@ -343,11 +511,10 @@ function formatWindowTime(sentAt: number): string {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
-function shortReply(log: YzjBoundMessageLog, replyMsgId: string): string {
-  const hit = log.entries.find(entry => entry.msgId === replyMsgId)
-  if (hit === undefined) return replyMsgId.slice(0, 8)
-  const digest = hit.content.replace(/\s+/g, ' ').slice(0, 24)
-  return digest === '' ? replyMsgId.slice(0, 8) : digest
+function shortReply(log: YzjBoundMessageLog | undefined, replyMsgId: string): string {
+  const hit = log?.entries.find(entry => entry.msgId === replyMsgId)
+  if (hit === undefined) return ''
+  return hit.content.replace(/\s+/g, ' ').trim().slice(0, 24)
 }
 
 /** Lightweight session event the fused view sorts against. */
@@ -505,7 +672,7 @@ export class BoundLogStore {
   ): Promise<BoundLogAppendResult> {
     const header = await this.ensureHeader(yzjConversationId, dshSessionId, yzjKind)
     const { entries, result } = applyAppend(header.entries, incoming, options)
-    if (!result.accepted && result.reason !== 'promoted-to-dsh-send') return result
+    if (!result.accepted && result.reason !== 'promoted-to-dsh-send' && result.reason !== 'promoted-to-robot-outbound') return result
     const next: YzjBoundMessageLog = {
       ...header,
       updatedAt: Date.now(),

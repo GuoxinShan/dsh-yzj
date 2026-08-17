@@ -17,10 +17,11 @@ import type { BakedActions } from '@deepseek-ai/dsh-client-ui-slots'
 import type { YzjPanelActions, YzjPanelState, YzjTab } from './stores.ts'
 import type { YzjPanelInject } from './rpc.ts'
 import {
-  effectiveUnread, ensureMyProfile, formatListTime, formatMsgTime, formatSize, getGroupWindow,
-  getMessageWindow, markAllRead, markGroupRead, putGroupWindow, putMessageWindow, resolveFileData, resolveSenders,
-  senderNameOf, senderPhotoOf,
+  effectiveUnread, ensureMyProfile, formatListTime, formatMsgTime, getGroupWindow,
+  getMessageWindow, markAllRead, markGroupRead, putGroupWindow, putMessageWindow, resolveSenders,
+  senderNameOf,
 } from './im-cache.ts'
+import { GroupAvatar, MessageBody, SenderAvatar, typeLabelOf } from './im-render.tsx'
 import { emitYzjDropRequest } from './drop-bus.ts'
 import { registerPanelController } from './panel-controller.ts'
 import { TodoPane } from './todo-pane.tsx'
@@ -100,14 +101,6 @@ export function YzjCloudIcon({ size = 16 }: { size?: number }) {
   )
 }
 
-/** Human-readable label for a raw msgType. */
-function typeLabelOf(msgType: string): string {
-  if (msgType === 'richText') return '图文'
-  if (msgType === 'file') return '文件'
-  if (msgType === 'other') return '系统'
-  return '消息'
-}
-
 /** One-line preview of a message for the group list / drag payload. */
 function messagePreview(message: Record<string, unknown>): string {
   const content = asString(message.content)
@@ -140,26 +133,15 @@ function dragTitleOf(message: Record<string, unknown>): string {
   return content === '' ? '(消息)' : content
 }
 
-/** Group avatar: headerUrl image with first-letter fallback. */
-function GroupAvatar({ url, name }: { url: string; name: string }) {
-  const [failed, setFailed] = useState(false)
-  if (url === '' || failed) return <span className={css.groupGlyph}>{name.slice(0, 1)}</span>
-  return (
-    <img
-      className={css.avatar}
-      src={url}
-      alt=""
-      loading="lazy"
-      referrerPolicy="no-referrer"
-      onError={() => setFailed(true)}
-    />
-  )
+/** Chat header inside a group: the group's avatar + name. */
+function groupNameOf(groups: unknown[], groupId: string): string {
+  const group = groups.map(asRecord).find(item => asString(item.groupId) === groupId)
+  return group === undefined ? '' : asString(group.groupName)
 }
 
-/** Chat header inside a group: the group's avatar + name. */
 function GroupHead({ groups, groupId }: { groups: unknown[]; groupId: string }) {
   const group = groups.map(asRecord).find(item => asString(item.groupId) === groupId)
-  const name = group === undefined ? '群聊' : asString(group.groupName)
+  const name = groupNameOf(groups, groupId) || '群聊'
   const avatar = group === undefined ? '' : asString(group.headerUrl)
   return (
     <div className={css.groupHead}>
@@ -169,316 +151,6 @@ function GroupHead({ groups, groupId }: { groups: unknown[]; groupId: string }) 
   )
 }
 
-/** Sender avatar in a message row: photo with a glyph fallback. */
-function SenderAvatar({ openId, fallback }: { openId: string; fallback: string }) {
-  const [failed, setFailed] = useState(false)
-  const photo = senderPhotoOf(openId)
-  if (photo === '' || failed) return <span className={css.msgAvatarFallback}>{fallback.slice(0, 1)}</span>
-  return (
-    <img
-      className={css.msgAvatar}
-      src={photo}
-      alt=""
-      loading="lazy"
-      referrerPolicy="no-referrer"
-      onError={() => setFailed(true)}
-    />
-  )
-}
-
-/**
- * One richText/image/file payload rendered through the file-data proxy
- * (docrest URLs require the authenticated CLI; the panel has no session
- * cookie). Shows a loading placeholder, then the image; failures degrade to
- * a small chip.
- */
-function ProxyImage({ fileId, alt, onOpen, inject }: {
-  fileId: string
-  alt: string
-  onOpen: (src: string) => void
-  inject: Pick<YzjPanelInject, 'fetchFileData'>
-}) {
-  const [src, setSrc] = useState<string | null>(null)
-  const [failed, setFailed] = useState(false)
-  useEffect(() => {
-    let alive = true
-    void resolveFileData(fileId, inject).then(dataUrl => {
-      if (!alive) return
-      if (dataUrl === undefined) setFailed(true)
-      else setSrc(dataUrl)
-    })
-    return () => { alive = false }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fileId])
-  if (failed) return <span className={css.msgImageFail}>图片加载失败</span>
-  if (src === null) return <span className={css.msgImageSkeleton}>加载中…</span>
-  return (
-    <img
-      className={css.msgImage}
-      src={src}
-      alt={alt}
-      onClick={(event) => {
-        event.stopPropagation()
-        onOpen(src)
-      }}
-    />
-  )
-}
-
-/** Extract a minimal adaptive-card face (image + title + action). */
-function cardFace(cardJson: string): { title: string; image: string; actionTitle: string; actionUrl: string } {
-  const face = { title: '', image: '', actionTitle: '', actionUrl: '' }
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(cardJson)
-  } catch {
-    return face
-  }
-  const walk = (node: unknown): void => {
-    if (typeof node !== 'object' || node === null) return
-    const record = node as Record<string, unknown>
-    if (record.type === 'Image' && typeof record.url === 'string' && face.image === '') face.image = record.url
-    if (record.type === 'TextBlock' && typeof record.text === 'string' && record.isSubtle !== true && face.title === '') face.title = record.text
-    if (record.type === 'Action.OpenUrl') {
-      if (typeof record.title === 'string' && face.actionTitle === '') face.actionTitle = record.title
-      if (typeof record.url === 'string' && face.actionUrl === '') face.actionUrl = record.url
-    }
-    for (const value of Object.values(record)) {
-      if (Array.isArray(value)) for (const item of value) walk(item)
-      else if (typeof value === 'object' && value !== null) walk(value)
-    }
-  }
-  walk(parsed)
-  return face
-}
-
-/**
- * One message's body, rendered by msgType: text (bold + emoticon tokens),
- * richText (inline proxy images + text), file (image inline / PDF preview /
- * download chip), other (link card, adaptive card, or system line), withdraw
- * (system line). Images and PDFs open the lightbox.
- */
-function MessageBody({ message, onOpenImage, onOpenPdf, inject }: {
-  message: Record<string, unknown>
-  onOpenImage: (src: string) => void
-  onOpenPdf: (src: string) => void
-  inject: Pick<YzjPanelInject, 'fetchFileData'>
-}) {
-  const content = asString(message.content)
-  const msgType = asString(message.msgType)
-  const param = asRecord(message.param)
-
-  // System rows (撤回 / 入群 / 其他) — centered, tertiary.
-  if (msgType === 'other' && asString(param.title) === '' && asRecord(param.interactiveCard).cardJson === undefined) {
-    return <span className={css.msgSystem}>{content === '' ? '(系统消息)' : emojiText(content)}</span>
-  }
-  if (asString(param.sysType) === 'withdrawMsg') {
-    return <span className={css.msgSystem}>{content === '' ? '撤回了一条消息' : emojiText(content)}</span>
-  }
-
-  // Reply quote above the body.
-  const replyMsgId = asString(param.replyMsgId)
-  const replySummary = asString(param.replySummary)
-  const replyPerson = asString(param.replyPersonName)
-  const quote = replyMsgId !== ''
-    ? <span className={css.msgQuote} title={replySummary}>{`↳ ${replyPerson === '' ? '' : `${replyPerson}：`}${replySummary}`}</span>
-    : null
-
-  // File: image extensions preview inline; PDF previews in the lightbox
-  // with a separate 下载 action; everything else downloads on click.
-  if (msgType === 'file') {
-    const fileId = asString(param.file_id)
-    const name = asString(param.name) !== '' ? asString(param.name) : content.replace(/^\[文件\]:/, '')
-    const size = formatSize(param.size)
-    const ext = asString(param.ext).toLowerCase()
-    if (/^(png|jpe?g|gif|webp|bmp)$/.test(ext) && fileId !== '') {
-      return (
-        <span className={css.msgBody}>
-          {quote}
-          <ProxyImage fileId={fileId} alt={name} onOpen={onOpenImage} inject={inject} />
-        </span>
-      )
-    }
-    const isPdf = ext === 'pdf'
-    const icon = isPdf ? '📕'
-      : /^(mp4|mov|avi|mkv|webm)$/.test(ext) ? '🎬'
-        : /^(xls|xlsx|csv)$/.test(ext) ? '📊'
-          : /^(doc|docx|txt|md)$/.test(ext) ? '📄'
-            : /^(zip|rar|7z|tar|gz)$/.test(ext) ? '📦'
-              : '📎'
-    const download = (): void => {
-      if (fileId === '') return
-      void resolveFileData(fileId, inject).then(dataUrl => {
-        if (dataUrl === undefined) return
-        const link = document.createElement('a')
-        link.href = dataUrl
-        link.download = name
-        document.body.appendChild(link)
-        link.click()
-        link.remove()
-      })
-    }
-    return (
-      <span className={css.msgBody}>
-        {quote}
-        <span className={css.msgFileGroup}>
-          <button
-            type="button"
-            className={css.msgFile}
-            title={isPdf ? `预览 ${name}` : `下载 ${name}`}
-            disabled={fileId === ''}
-            onClick={(event) => {
-              event.stopPropagation()
-              if (fileId === '') return
-              if (!isPdf) {
-                download()
-                return
-              }
-              void resolveFileData(fileId, inject).then(dataUrl => {
-                if (dataUrl !== undefined) onOpenPdf(dataUrl)
-              })
-            }}
-          >
-            <span className={css.msgFileIcon}>{icon}</span>
-            <span className={css.msgFileMeta}>
-              <span className={css.msgFileName}>{name}</span>
-              <span className={css.msgFileSize}>{size === '' ? ext === '' ? '文件' : ext.toUpperCase() : size}</span>
-            </span>
-          </button>
-          {isPdf && fileId !== '' && (
-            <button
-              type="button"
-              className={css.msgFileDownload}
-              onClick={(event) => {
-                event.stopPropagation()
-                download()
-              }}
-            >
-              下载
-            </button>
-          )}
-        </span>
-      </span>
-    )
-  }
-
-  // Link card (survey / light app).
-  if (msgType === 'other' && asString(param.title) !== '') {
-    const title = asString(param.title)
-    const thumb = asString(param.thumbUrl)
-    const url = asString(param.webpageUrl)
-    return (
-      <span className={css.msgBody}>
-        <a
-          className={css.linkCard}
-          href={url === '' ? undefined : url}
-          target="_blank"
-          rel="noreferrer"
-          onClick={(event) => { event.stopPropagation() }}
-        >
-          {thumb !== '' && (
-            <img className={css.linkCardThumb} src={thumb} alt="" loading="lazy" referrerPolicy="no-referrer" />
-          )}
-          <span className={css.linkCardBody}>
-            <span className={css.linkCardTitle}>{title}</span>
-            <span className={css.linkCardDesc}>{emojiText(content)}</span>
-            {url !== '' && <span className={css.linkCardAction}>查看详情 →</span>}
-          </span>
-        </a>
-      </span>
-    )
-  }
-
-  // Adaptive interactive card: first image + title + action, rendered as a
-  // mini card (cloudhub:// deep links stay inert).
-  if (msgType === 'other') {
-    const card = asRecord(param.interactiveCard)
-    const cardJson = asString(card.cardJson)
-    const face = cardJson === '' ? { title: '', image: '', actionTitle: '', actionUrl: '' } : cardFace(cardJson)
-    const title = face.title !== '' ? face.title : content
-    const actionUrl = face.actionUrl.startsWith('http') ? face.actionUrl : ''
-    if (face.title !== '' || face.image !== '') {
-      return (
-        <span className={css.msgBody}>
-          <a
-            className={css.linkCard}
-            href={actionUrl === '' ? undefined : actionUrl}
-            target="_blank"
-            rel="noreferrer"
-            onClick={(event) => { event.stopPropagation() }}
-          >
-            {face.image !== '' && (
-              <img className={css.linkCardThumb} src={face.image} alt="" loading="lazy" referrerPolicy="no-referrer" />
-            )}
-            <span className={css.linkCardBody}>
-              <span className={css.linkCardTitle}>{title}</span>
-              <span className={css.linkCardDesc}>{emojiText(content)}</span>
-              {actionUrl !== '' && <span className={css.linkCardAction}>{face.actionTitle === '' ? '查看详情' : face.actionTitle} →</span>}
-            </span>
-          </a>
-        </span>
-      )
-    }
-    return <span className={css.msgSystem}>{content === '' ? '(系统消息)' : emojiText(content)}</span>
-  }
-
-  // richText: interleave text (with bold + emoticons) and inline images.
-  if (msgType === 'richText') {
-    const desc = asArray(param.desc)
-    const images: { start: number; fileId: string }[] = []
-    const bolds: { start: number; length: number }[] = []
-    for (const raw of desc) {
-      const seg = asRecord(raw)
-      const segType = asString(seg.type)
-      if (segType === 'image') {
-        const fileId = asString(seg.data)
-        if (fileId === '') continue
-        images.push({ start: typeof seg.start === 'number' ? seg.start : -1, fileId })
-      } else if (segType === 'bold' && typeof seg.start === 'number' && typeof seg.length === 'number') {
-        bolds.push({ start: seg.start, length: seg.length })
-      }
-    }
-    const sorted = [...images].sort((a, b) => a.start - b.start)
-    const spans: { text: string; bold: boolean }[] = []
-    const imgSpans: { fileId: string }[] = []
-    let cursor = 0
-    const inBold = (from: number, to: number): boolean =>
-      bolds.some(range => from < range.start + range.length && to > range.start)
-    for (const image of sorted) {
-      const chunk = content.slice(cursor, image.start).replace(/\[图片\]/g, '')
-      if (chunk !== '') spans.push({ text: chunk, bold: inBold(cursor, image.start) })
-      imgSpans.push({ fileId: image.fileId })
-      cursor = image.start + 4
-    }
-    const tail = content.slice(cursor).replace(/\[图片\]/g, '')
-    if (tail !== '') spans.push({ text: tail, bold: inBold(cursor, content.length) })
-    return (
-      <span className={css.msgBody}>
-        {quote}
-        {spans.map((span, index) => (
-          <span key={`t${index}`} className={span.bold ? css.msgBold : undefined}>{emojiText(span.text)}</span>
-        ))}
-        {imgSpans.map((image, index) => (
-          <ProxyImage
-            key={`i${index}`}
-            fileId={image.fileId}
-            alt=""
-            onOpen={onOpenImage}
-            inject={inject}
-          />
-        ))}
-      </span>
-    )
-  }
-
-  // Plain text (with emoticon tokens).
-  return (
-    <span className={css.msgBody}>
-      {quote}
-      {content === '' ? `(${typeLabelOf(msgType)})` : emojiText(content)}
-    </span>
-  )
-}
 
 const TABS: { key: YzjTab; label: string; icon: () => ReactNode }[] = [
   { key: 'docs', label: '知识库', icon: () => <IconFolderOpenOutline16 /> },
@@ -510,52 +182,6 @@ function unreadTotalOf(value: unknown): number {
     return sum + effectiveUnread(asString(group.groupId), server)
   }, 0)
 }
-
-/** Yunzhijia bracket-emoticon tokens → real emoji (messages use [握手] etc.).
- *  Extended set (issue #1): classic IM expressions plus tokens observed in
- *  real traffic (666/doge/衰/捂脸/裂开/机智/嘻嘻/气球/汽车/钟/话筒…).
- *  Unmatched tokens fall back to the raw [text] — still readable. */
-const EMOJI_MAP: Record<string, string> = {
-  // smileys & emotions
-  微笑: '😊', 呲牙: '😁', 大笑: '😂', 开心: '😄', 愉快: '😀', 调皮: '😜', 机智: '🤓', 得意: '😎',
-  害羞: '😳', 难过: '😔', 大哭: '😭', 流泪: '😢', 愤怒: '😡', 惊讶: '😲', 惊恐: '😱', 发呆: '😶',
-  睡觉: '😴', 困: '🥱', 疑问: '🤔', 思考: '🤔', 晕: '😵', 憋气: '😤', 抓狂: '🤯', 黑线: '😑',
-  闷闷不乐: '🙁', 无语: '😮‍💨', 嘘: '🤫', 吐舌头: '😛', 委屈: '🥺', 鄙视: '🙄', 委屈哭: '🥹',
-  奋斗: '💪', 加油: '💪', 强: '👊', 弱: '👎', 赞: '👍', 差评: '👎', 鼓掌: '👏', 抱拳: '🙏',
-  握手: '🤝', 胜利: '✌️', 耶: '✌️', OK: '👌', 勾: '✅', 叉: '❌', 对: '✅', 错: '❌',
-  心: '❤️', 爱心: '❤️', 心碎: '💔', 玫瑰: '🌹', 郁金香: '🌷', 花朵: '🌸', 向日葵: '🌻',
-  咖啡: '☕', 茶: '🍵', 啤酒: '🍺', 干杯: '🍻', 蛋糕: '🎂', 汉堡: '🍔', 西瓜: '🍉', 苹果: '🍎',
-  米饭: '🍚', 面: '🍜', 火锅: '🍲', 粽子: '🍙', 月饼: '🥮',
-  庆祝: '🎉', 烟花: '🎆', 红包: '🧧', 礼物: '🎁', 蛋糕蜡烛: '🎂', 气球: '🎈', 撒花: '🎊',
-  飞机: '✈️', 汽车: '🚗', 火车: '🚄', 火箭: '🚀', 船: '⛵', 自行车: '🚲',
-  太阳: '☀️', 月亮: '🌙', 星星: '⭐', 闪电: '⚡', 雨: '🌧️', 雪: '❄️', 云: '☁️', 风: '🍃',
-  彩虹: '🌈', 伞: '☔',
-  收到: '✅', 求抱抱: '🤗', 比心: '💗', 亲亲: '😘', 飞吻: '😘', 拥抱: '🤗',
-  666: '6️⃣', doge: '🐕', 狗头: '🐕', 衰: '😞', 捂脸: '🤦', 裂开: '🥴', 嘻嘻: '😁',
-  哈哈: '😆', 嗯嗯: '😐', 呵呵: '🫤', 哦: '🫤', 无奈: '🤷', 耸肩: '🤷', 告辞: '👋',
-  再见: '👋', 拜拜: '👋', 你好: '👋', 来吧: '🤝', 稳: '👍', 牛: '🐂', 猪头: '🐷',
-  话筒: '🎤', 唱歌: '🎤', 音乐: '🎵', 跳舞: '💃', 电影: '🎬', 游戏: '🎮', 篮球: '🏀',
-  足球: '⚽', 乒乓球: '🏓', 奖杯: '🏆', 奖牌: '🏅', 第一: '🥇',
-  钟: '⏰', 闹钟: '⏰', 时间: '⏰', 日历: '📅', 电话: '📞', 手机: '📱', 电脑: '💻',
-  书: '📖', 笔: '✏️', 文件: '📄', 文档: '📄', 图片: '🖼️', 相机: '📷', 链接: '🔗',
-  定位: '📍', 家: '🏠', 公司: '🏢', 学校: '🏫', 医院: '🏥', 银行: '🏦',
-  提示: '💡', 灯泡: '💡', 火焰: '🔥', 炸弹: '💣', 刀: '🔪', 锤子: '🔨', 扳手: '🔧',
-  钥匙: '🔑', 锁: '🔒', 放大镜: '🔍', 眼睛: '👁️', 耳朵: '👂',
-  重要: '❗', 感叹号: '❗', 问号: '❓', 警告: '⚠️', 禁止: '🚫', 停止: '✋',
-  上: '⬆️', 下: '⬇️', 左: '⬅️', 右: '➡️', 完成: '✅', 进行中: '⏳', 等待: '⏳',
-}
-
-/** Render message text with [token] emoticons mapped to real emoji. */
-function emojiText(text: string): ReactNode[] {
-  return text.split(/(\[[^\]\n]{1,10}\])/).map((part, index) => {
-    if (part.length > 2 && part.startsWith('[') && part.endsWith(']')) {
-      const emoji = EMOJI_MAP[part.slice(1, -1)]
-      if (emoji !== undefined) return <span key={index}>{emoji}</span>
-    }
-    return part
-  })
-}
-
 /**
  * Fire one browser system notification for new unread messages (design v1.6
  * §5.3 layer 3). dsh ships no Notification wrapper — this plugin owns it.
@@ -1414,7 +1040,7 @@ export function YzjPanel(props: YzjPanelProps) {
     props.actions.setGroupId(id)
     props.actions.setAnchorMsgId('')
     setDraft('')
-    void bindAndFocusGroup(props.homeOpen, props.focusBoundSession, id)
+    void bindAndFocusGroup(props.homeOpen, props.focusBoundSession, id, groupNameOf(state.groups, id))
     // Rendered window is cached ~60s: revisiting a group is instant.
     const cached = getMessageWindow(id)
     if (cached !== undefined) {
@@ -1629,6 +1255,26 @@ export function YzjPanel(props: YzjPanelProps) {
       }).finally(() => setUploading(false))
     }
     reader.readAsDataURL(file)
+  }
+
+  // Retired panel IM composer (R7). Keep the handler graph referenced so
+  // hook order stays stable (pitfall-001).
+  if (false) {
+    void draft
+    void sending
+    void uploading
+    void emojiOpen
+    void replyTo
+    void atMenu
+    void atMatches
+    void EMOJI_LIST
+    void draftRef
+    void imageInputRef
+    void fileInputRef
+    submitMessage()
+    handlePickFile('image', undefined)
+    onDraftChange('', 0)
+    pickAt({ openId: '', name: '' })
   }
 
   return (
@@ -2036,7 +1682,7 @@ export function YzjPanel(props: YzjPanelProps) {
                 <GroupHead groups={state.groups} groupId={state.groupId} />
               </div>
               <div className={css.panelBanner} role="note">
-                快捷发进群：家园在 DSH 绑定会话（挑群会打开那条会话）。此处发送写入绑定日志 ②，不叫助手。
+                点群打开 DSH 群房间。悬浮窗不再发消息。
               </div>
               {anchorActive && (
                 <div className={css.anchorHint} role="status">
@@ -2136,163 +1782,16 @@ export function YzjPanel(props: YzjPanelProps) {
               )}
               </div>
               <div className={css.composer}>
-                {replyTo !== null && (
-                  <div className={css.replyBar}>
-                    <span className={css.replyText}>回复：{replyTo.summary.length > 40 ? `${replyTo.summary.slice(0, 40)}…` : replyTo.summary}</span>
-                    <button
-                      type="button"
-                      className={css.replyCancel}
-                      aria-label="取消回复"
-                      onClick={() => setReplyTo(null)}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                )}
-                {emojiOpen && (
-                  <div className={css.emojiPanel} role="group" aria-label="表情">
-                    {EMOJI_LIST.map(emoji => (
-                      <button
-                        key={emoji}
-                        type="button"
-                        className={css.emojiCell}
-                        onClick={() => {
-                          setDraft(draft + emoji)
-                          draftRef.current?.focus()
-                        }}
-                      >
-                        {emoji}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <div className={css.composerRow}>
-                  <textarea
-                    ref={draftRef}
-                    className={css.composerInput}
-                    value={draft}
-                    rows={1}
-                    onChange={(event) => {
-                      onDraftChange(event.target.value, event.target.selectionStart ?? event.target.value.length)
-                      const el = event.target
-                      el.style.height = 'auto'
-                      el.style.height = `${Math.min(el.scrollHeight, 120)}px`
-                    }}
-                    onBlur={(): void => { window.setTimeout(() => setAtMenu(null), 150) }}
-                    onKeyDown={(event) => {
-                      if (atMenu !== null && atMatches.length > 0) {
-                        if (event.key === 'Escape') { setAtMenu(null); return }
-                        if (event.key === 'Tab' || (event.key === 'Enter' && !event.nativeEvent.isComposing && !event.shiftKey)) {
-                          event.preventDefault()
-                          pickAt(atMatches[0]!)
-                          return
-                        }
-                      }
-                      if (event.key === 'Enter' && !event.nativeEvent.isComposing && !event.shiftKey) {
-                        event.preventDefault()
-                        submitMessage()
-                      }
-                    }}
-                    placeholder="输入消息，回车发送…（@ 提及群友，输入 @all @所有人）"
-                    aria-label="输入消息"
-                    disabled={sending || uploading}
-                  />
-                  {atMenu !== null && (
-                    <div className={css.atMenu} role="listbox" aria-label="提及成员">
-                      {atMatches.length === 0 && (
-                        <div className={css.atHint}>{atCandidates.length === 0 ? '本会话暂无已知成员（发过言才可 @）' : '无匹配成员'}</div>
-                      )}
-                      {atMatches.map(candidate => (
-                        <button
-                          key={candidate.openId}
-                          type="button"
-                          role="option"
-                          className={css.atItem}
-                          onMouseDown={(event) => { event.preventDefault() }}
-                          onClick={() => { pickAt(candidate) }}
-                        >
-                          <span className={css.atGlyph}>{candidate.name.slice(0, 1)}</span>
-                          <span>{candidate.name}</span>
-                        </button>
-                      ))}
-                      <button
-                        type="button"
-                        className={css.atItem}
-                        onMouseDown={(event) => { event.preventDefault() }}
-                        onClick={() => {
-                          if (atMenu === null) return
-                          const after = `${draft.slice(0, atMenu.replaceFrom)}@all ${draft.slice(atMenu.replaceFrom + 1 + atMenu.query.length)}`
-                          setAtMenu(null)
-                          setDraft(after)
-                          draftRef.current?.focus()
-                        }}
-                      >
-                        <span className={css.atGlyph}>@</span>
-                        <span>所有人（@all）</span>
-                      </button>
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    className={css.composerSend}
-                    onClick={submitMessage}
-                    disabled={sending || uploading || draft.trim() === ''}
-                  >
-                    {sending || uploading ? '发送中…' : '发送'}
-                  </button>
-                </div>
-                <div className={css.composerToolbar}>
-                  <button
-                    type="button"
-                    className={css.toolButton}
-                    title="发送图片"
-                    aria-label="发送图片"
-                    disabled={sending || uploading}
-                    onClick={() => imageInputRef.current?.click()}
-                  >
-                    <IconImage14 />
-                  </button>
-                  <button
-                    type="button"
-                    className={css.toolButton}
-                    title="发送文件"
-                    aria-label="发送文件"
-                    disabled={sending || uploading}
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <IconClip14 />
-                  </button>
-                  <button
-                    type="button"
-                    className={css.toolButton}
-                    title="表情"
-                    aria-label="表情"
-                    disabled={sending || uploading}
-                    onClick={() => setEmojiOpen(open => !open)}
-                  >
-                    <IconSmile14 />
-                  </button>
-                  {uploading && <span className={css.toolStatus}>上传中…</span>}
-                  <input
-                    ref={imageInputRef}
-                    type="file"
-                    accept="image/*"
-                    hidden
-                    onChange={(event) => {
-                      handlePickFile('image', event.target.files?.[0])
-                      event.target.value = ''
-                    }}
-                  />
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    hidden
-                    onChange={(event) => {
-                      handlePickFile('file', event.target.files?.[0])
-                      event.target.value = ''
-                    }}
-                  />
-                </div>
+                <button
+                  type="button"
+                  className={css.composerSend}
+                  data-testid="yzj-open-group-room"
+                  onClick={() => {
+                    void bindAndFocusGroup(props.homeOpen, props.focusBoundSession, state.groupId, groupNameOf(state.groups, state.groupId))
+                  }}
+                >
+                  打开群房间
+                </button>
               </div>
             </>
           )}
@@ -2362,40 +1861,6 @@ function IconRefresh14() {
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M20 12a8 8 0 1 1-2.34-5.66" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
       <path d="M20 3v4h-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  )
-}
-
-function IconImage14() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <rect x="3" y="4" width="18" height="16" rx="2.5" stroke="currentColor" strokeWidth="1.8" />
-      <circle cx="9" cy="10" r="1.8" stroke="currentColor" strokeWidth="1.6" />
-      <path d="M4 17.5l4.5-4.5 3.5 3.5 3-3 5 4.5" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
-    </svg>
-  )
-}
-
-function IconClip14() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M9 12.5V8a3 3 0 0 1 6 0v6.5a4.5 4.5 0 0 1-9 0V7"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-      />
-    </svg>
-  )
-}
-
-function IconSmile14() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="8.5" stroke="currentColor" strokeWidth="1.8" />
-      <circle cx="9" cy="10" r="1" fill="currentColor" />
-      <circle cx="15" cy="10" r="1" fill="currentColor" />
-      <path d="M8.5 14.5a4.2 4.2 0 0 0 7 0" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
     </svg>
   )
 }

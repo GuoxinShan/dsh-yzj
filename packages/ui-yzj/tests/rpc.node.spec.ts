@@ -248,6 +248,53 @@ describe('createRpcHandler', () => {
     expect((fused.value as { items: { kind: string }[] }).items.some(item => item.kind === 'im')).toBe(true)
   })
 
+  it('home-nav nests topics under the group room', async () => {
+    const { BoundLogStore } = await import('@dsh-yzj/tool-yzj/src/bound-log.ts')
+    const store = new BoundLogStore()
+    const ctx = new Context()
+    const rows = new Map<string, { dshSessionId: string; yzjConversationId: string; yzjKind: 'group' | 'dm' }>()
+    ctx.provide('yzjHome', {
+      ensureBound: async (id: string, kind: 'group' | 'dm') => {
+        const row = { dshSessionId: `yzj-home-${id}`, yzjConversationId: id, yzjKind: kind }
+        rows.set(id, row)
+        await store.ensureHeader(id, row.dshSessionId, kind)
+        return { sessionId: row.dshSessionId, created: true, yzjKind: kind }
+      },
+      getByConversation: (id: string) => rows.get(id),
+      getBySession: (id: string) => [...rows.values()].find(row => row.dshSessionId === id),
+      appendLog: async () => ({ accepted: false, reason: 'unbound' }),
+      getLog: (id: string) => store.get(id),
+      getLogBySession: () => undefined,
+      ackLocal: (id: string, local: string, real: string) => store.ackLocal(id, local, real),
+      failLocal: (id: string, local: string) => store.failLocal(id, local),
+      formatSummonWindow: () => '',
+      logs: store,
+      listBindings: () => [...rows.values()],
+      listTopics: () => [{
+        dshSessionId: 'yzj-topic-g-a-m1',
+        yzjConversationId: 'g-a',
+        title: '整理接口清单',
+        source: 'dsh',
+        createdAt: 1,
+      }],
+    })
+    ctx.provide('agents', { get: () => ({ session: { events: [{ type: 'session/title', data: { title: '测试群' } }] } }) })
+    ;(ctx as unknown as { yzjBridge: { run: (command: readonly string[]) => Promise<RunResult> } }).yzjBridge = {
+      run: async () => runOf({}),
+    }
+    const handler = createRpcHandler(ctx, { list: () => [], decide: () => false })
+    await handler('home-open', { groupId: 'g-a' }, undefined as never)
+    const nav = await handler('home-nav', {}, undefined as never)
+    expect(nav.ok && nav.value).toMatchObject({
+      rooms: [{
+        groupId: 'g-a',
+        groupName: '测试群',
+        sessionId: 'yzj-home-g-a',
+        topics: [{ sessionId: 'yzj-topic-g-a-m1', title: '整理接口清单' }],
+      }],
+    })
+  })
+
   it('unknown endpoints fail closed', async () => {
     const ctx = mountBridge({})
     const gate: YzjWriteGateFace = { list: () => [], decide: () => false }

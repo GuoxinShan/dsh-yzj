@@ -94,6 +94,18 @@ describe('approval guard', () => {
     expect(pending.every(entry => entry.level === 'standard')).toBe(true)
   })
 
+  it('asks for robot_notify / robot_continue on a yzj-topic-* session (R10)', async () => {
+    const { listener, pending } = guard()
+    const topic = { agent: { session: { id: 'yzj-topic-g-a-root' } } }
+    for (const name of ['robot_notify', 'robot_continue'] as const) {
+      const decision = await listener({
+        name, callId: `c-t-${name}`, arguments: { text: '推群' }, ...topic,
+      }, async () => ({ kind: 'allow' }))
+      expect(decision.kind, name).toBe('ask')
+    }
+    expect(pending.map(entry => entry.toolName)).toEqual(['robot_notify', 'robot_continue'])
+  })
+
   it('asks for robot_notify when the calling session id is missing (fail closed)', async () => {
     const { listener, pending } = guard()
     const decision = await listener({ name: 'robot_notify', callId: 'c1', arguments: { text: 'x' } }, async () => ({ kind: 'allow' }))

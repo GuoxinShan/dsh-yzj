@@ -2,6 +2,7 @@
 
 > 对齐对象：`../spec/integration-master-plan.md`（v1.7 人在闭环验收基准；**v1.8 会话家园产品法见 `../spec/dsh-home-session.md`，实现对照 §22**）↔ 本仓库现有实现（`packages/bridge`、`packages/tool-yzj`、`packages/ui-yzj`、`packages/bundle`、`packages/robot-yzj`）
 > 核验日期：2026-08-14 之后（实现开发期）
+> **v2.0 增补**（2026-08-17，Guoxin Shan）：**群房间 + 话题会话产品法**（[`../spec/group-room-topics.md`](../spec/group-room-topics.md)）取代 v1.8 的 1:1 绑定与融合一条流。**设计已拍板；锚定 / 入站话题 / 群房间视图 / 写闸 / 出站进日志 / 面板第二 IM 退役已落地**，对照 **§23**。§22 保留为 v1.8 实现快照。
 > v1.8 增补：**会话家园产品法**（2026-08-17，Guoxin Shan）——目标是 DSH 唯一家园 + 1:1 绑定。**绑定对象 + 融合时间线已落地**：入站与挑群打 `yzj-home-*`；`conversation.view`「群工作」融合 ①②③④；面板 composer 降为快捷 ②。仍开放 G3/G5。v1.7 完成度口径不因此改写。
 > v1.4 增补：**UI 后续演化对照**（git `08fc7b1` → `af3bf5d`，19 个 ui-yzj commit）——面板四 tab→三 tab、悬浮球唯一入口、面板真 IM composer（用户直写）、拖入快捷动作移除、确认卡去 ID 化、未读持久化；新增 §16。v1.3 增补：**最终验收状态**（git `de3c058`）——全部可开发缺口完成：锚点定位高亮、@ 候选三组、拖入即处理引导均已落地；剩余仅机制受限项（多 chip 合并、通知卡、确认卡事件族，均为 harness 契约边界）与待拍板项（合并确认、快照决策）。全量 build/typecheck/test 通过（58 passed）。v1.2 增补：实现进展状态全量刷新（git 至 `491db61`）——P0 消息回源、P1 门禁分级 + 确认卡、通知层一/三、skill、影子任务库、dbt 预览均已落地；剩余缺口见 §15 更新清单。v1.1 增补：补全实现侧全部工具明细（§2）；新增设计补强「悬浮窗全量拖拽 → composer」（§2A，用户思路）。
 
@@ -515,3 +516,39 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 | 8 | `!fork` / `robot_fork` 不再 `create` 新根 | ✅ 目标改为绑定会话 |
 
 **禁止**把 §20 机器人通道「已闭环」读成会话家园已达成——那是协议面。G3（pending 耐久事件）与 G5（群搜索）仍阻塞完整「找得到群 + 刷新后确认卡还在日志里」。
+
+---
+
+## 23. v2.0｜群房间 + 话题会话（2026-08-17 拍板；e2e 刀）
+
+设计基线：[`../spec/group-room-topics.md`](../spec/group-room-topics.md)（R1–R21，含 v1.1 工作台）。**本节记录目标 vs 现状。** 本刀：锚定表、入站/交给助手开话题、群房间 IM 视图占住对话格、composer takeover「发进群」、`yzj-topic-*` 写闸、出站帖子进房间日志、面板第二 IM 退役；v1.1 P0 把侧栏树换成入口块 + 工作台两栏 + 话题抽屉。v1.1 P1 精致度六条已落地。未完：P2 面板迁入/杀球、P3 status、既有宿主 ③④ 历史迁移。
+
+### 23.1 目标 vs 现状
+
+| # | 面 | 现状 | v2.0 目标 | 状态 |
+|---|---|---|---|---|
+| H1 | 基数 | `yzj-home-*` 群房间 + `yzj_topic_anchors` / `ensureTopic` | 1 群 = 1 群房间 + 0..N 话题（R1） | ✅ 关闭（单测） |
+| H2 | 视图 | 群房间 session 自动切「群房间」view 并隐藏 tab ring；话题/私聊隐藏「群房间」tab，官方 Chat 仍是对话格 | 群房间占对话格；话题 = 官方 chat | ✅ 关闭（不替换 `chat` id；header action 同步 tab ring） |
+| H3 | Composer | 群房间 `conversation.composer` takeover：placeholder「发进 群名…」+ 主按钮「发进群」；轻发送（回复/@/图文件）见 H14 | 群房间唯一动词=发进群；话题唯一动词=问助手 | ✅ 关闭（takeover；确认卡 chain priority 更高；发送面见 H14） |
+| H4 | 话题入口 | 「交给助手」→ `home-topic-open`；@机器人 `resolveSession` 走 `ensureTopic`；回复链续同一话题；丢进群落地房间并开 handoff 话题；发进群 `local-*` ack 后 `retargetAnchor` 到真实 msgId（pitfall-014） | 四入口锚出话题 | 部分（真机 @ 链待 e2e；local-* 锚 retarget 有单测） |
+| H5 | 锚定 | `TopicAnchorStore`：`(groupId, rootMsgId)` + outbound msgId 登记 | R4 锚定表 | ✅ 关闭（单测） |
+| H6 | 出站帖子 | ack / PushHub / `robot_notify` / 回填写入 `robot-outbound`，标话题回链 | R9：进群房间时间线 | ✅ 关闭（单测） |
+| H7 | guard / write-gate | `whenSession` 覆盖 `yzj-home-*` 与 `yzj-topic-*` | R10/R11 | ✅ 关闭（单测） |
+| H8 | 面板 / 悬浮窗 | 会话 tab 挑群打开群房间；composer 退役为「打开群房间」 | 第二聊天淘汰 | ✅ 关闭（单测 + e2e 脚本） |
+| H9 | 迁移 | 既有 `yzj-home-*` ③④ 仍留在宿主 | 降为群房间宿主；历史处置 | 开放 |
+| H10 | 侧栏可见 | 群房间 `session/title` = 群名；话题 `session/title` = `群名 · 话题`（官方列表平铺可扫） | 官方列表能扫出归属 | ✅ 关闭（单测） |
+| H11 | 导航 | `sidebar.footer.action` 云之家入口块（对话/待办/日程/知识库/记忆 + 机器人状态）；`conversation.view` 内会话列表 + 时间线 + 话题抽屉。点「对话」focus 已绑定房间。待办/日程/知识库 P0 仍开旧悬浮窗。记忆占位（本地 vault 文案） | 入口进会话列表；单聊无抽屉；群聊 header「话题 N」开关抽屉 | ✅ P0 关闭（单测）；真机需 GUI 重启 |
+| H12 | 模型上下文 | `formatSummonWindow` 头块 `groupId` + 每行 `msgId` + 话题锚点；空 log 仍给 groupId | 话题里问助手能对群发/回复 | ✅ 关闭（单测） |
+| H13 | 人名 / openId | CLI 解析 `fromUser.openId/oId/name`；撞键补身份；回填通讯录补名；客户端 `resolveSenders` 与 host 共用 `contact-parse.ts` 拆信封（pitfall-003）；时间线禁止「群消息」占位 | 行上是真人名+头像 | ✅ 关闭（单测 + 真机：真人显示真名；机器人账号不在通讯录，按规格兜底显示 openId 尾号） |
+| H14 | 轻发送 | 群房间 composer 接 CLI send 全集：回复 / @ / @all / 正文表情 / 图 / 文件；发送键右留白让位悬浮球（pitfall-016） | 云之家侧能看见对应回复/@/图文件 | ✅ 关闭（单测 + 真机 e2e ALL PASS 2026-08-17） |
+| H15 | 群房间视觉 | 布局跟 canvas：自己靠右、他人靠左、hover 出操作；话题锚点卡只在 session header（chrome 收成「回群房间」文字钮） | 与已拍板原型同一套脸 | ✅ 关闭（单测 + 真机 e2e ALL PASS 2026-08-17；v1.1 侧栏树脸已退役，见 H11） |
+| H16 | 云之家 workspace | 新 `yzj-home-*` / `yzj-topic-*` 的 `meta.cwd` = `~/.dsh-yzj/workspace`（ensure 目录 + `workspaceRegistry.create(..., '云之家')` + `attachSession`）；robot 通道默认 cwd 同路径。旧会话仍是 `process.cwd()`，attach 失败则吞掉、不分组 | 官方侧栏出现「云之家」分组 | ✅ P0 关闭（路径单测；attach 吞错。机器人入站仍用 `<cwd>/groups/<id>` 子目录作 share 沙箱，不 attach 父 workspace——记此） |
+| H17 | lastActivity | `TopicRecord.lastActivity`：创建写入，ensure 已有则 touch；缺省回退 `createdAt`。群行 L1 摘要在话题更新时前缀「话题·标题」；P0 徽标 = 话题总数点（无 status） | 会话行能反映话题活动 | ✅ P0 关闭（单测） |
+| H18 | 话题抽屉 | 「交给助手」/ chip 开抽屉透镜，不 `focus` 原生；抽屉「原生会话 ↗」才 focus；锚点条反跳高亮时间线且不关抽屉；单聊无抽屉 | L3/L6/R17/R19 | ✅ P0 关闭（单测；透镜内气泡流/问助手轻输入为占位，不在 P1 范围） |
+| H19 | 群房间精致度 | 同人连发合并、日期分隔、气泡圆角、hover 文字链、助手产物卡、气泡内「N 条回复」chip | §9.1 / §9.5 P1 | ✅ P1 关闭（`room-layout` + transcript 单测） |
+
+沿用不动：消息日志存储/去重/回填（T1/T7–T9）、召唤窗口（T4/T5）、写路径 D9、群内建议卡（ConfirmBroker）、未绑定私聊与丢进群（D7/D8）。G3 与 G5 继续开放。
+
+### 23.2 验收指针
+
+按 [`group-room-topics.md`](../spec/group-room-topics.md) §7 + §9.7。H2/H3/H5/H6/H7/H8/H10/H11/H12/H13/H14/H15/H16/H17/H18/H19 有单测。H4 入站话题有 router 单测，`local-*`→真实 msgId 的 `retargetAnchor` 有 topics 单测。真机脚本：`.acceptance/verify-group-room-e2e.mjs`（需运行中 GUI + 已登录 yzj-cli；改 host / browser 后面要**新 GUI 实例**——仓外 agent 可自行重启 3080，见 AGENTS.md；改 browser TS 后 bundle 前必须先 `tsc -b`，见 pitfall-015）。2026-08-17 真机全绿：发进群 ② 即时上屏、交给助手锚出话题且幂等、话题 header 锚点卡回跳、真人名（代少兵）经通讯录解析、轻发送工具条在位。**v1.1 P0（2026-08-17 下午）**：入口块 + 会话列表 + 话题抽屉 + `lastActivity` + `~/.dsh-yzj/workspace`。**v1.1 P1（2026-08-17 傍晚）**：时间线精致度六条（合并 / 日期线 / 圆角 / hover 文字链 / 产物卡 / 「N 条回复」chip）；P2 迁面板杀球 / P3 status 未动。

@@ -7,7 +7,7 @@ import {
   BoundLogStore, formatSummonWindow, type BoundLogLimits, type YzjLogEntry,
 } from '@dsh-yzj/tool-yzj/src/bound-log.ts'
 import {
-  backfillBoundLog, fusedSnapshot, handoffToGroup, parseImSend, parseWhoami, robotSkipOpenIds,
+  backfillBoundLog, fusedSnapshot, groupSpaceSnapshot, handoffToGroup, parseImSend, parseWhoami, robotSkipOpenIds,
   sendImAndLog, type HomeIoFace,
 } from '../src/bound-io.ts'
 
@@ -57,9 +57,11 @@ function memoryHomeIo(): HomeIoFace {
     ackLocal: (id, local, real) => store.ackLocal(id, local, real),
     failLocal: (id, local) => store.failLocal(id, local),
     formatSummonWindow: (id, exclude) => formatSummonWindow(store.get(id), {
-      maxMessages: 20, maxChars: 4000, ...(exclude === undefined ? {} : { excludeMsgId: exclude }),
+      maxMessages: 20, maxChars: 4000, groupId: id,
+      ...(exclude === undefined ? {} : { excludeMsgId: exclude }),
     }),
     logs: store,
+    listTopics: () => [],
   }
   return face
 }
@@ -156,7 +158,7 @@ describe('backfillBoundLog', () => {
     expect(commands.some(row => row.includes('newest'))).toBe(true)
   })
 
-  it('skips robot outbound openIds (T12)', async () => {
+  it('keeps robot outbound posts as 助手 (R9, no longer T12 skip)', async () => {
     const home = memoryHomeIo()
     await home.ensureBound('g-a', 'group')
     const ctx = new Context()
@@ -164,11 +166,36 @@ describe('backfillBoundLog', () => {
     ;(ctx as unknown as { yzjBridge: { run: (command: readonly string[]) => Promise<ReturnType<typeof runOf>> } }).yzjBridge = {
       run: async (command) => {
         if (command[0] === 'contact') return runOf([{ openId: 'me' }])
-        return runOf({ list: [{ msgId: 'bot-1', content: '机器人帖', fromOpenId: 'BOT-r', sendTime: '2026-08-16 20:00:00.000' }] })
+        return runOf({ list: [{ msgId: 'bot-1', content: '机器人帖', fromOpenId: 'BOT-r', fromName: '个人助手', sendTime: '2026-08-16 20:00:00.000' }] })
       },
     }
     await backfillBoundLog(ctx, home, 'g-a', 20)
-    expect(home.getLog('g-a')?.entries).toHaveLength(0)
+    expect(home.getLog('g-a')?.entries).toHaveLength(1)
+    expect(home.getLog('g-a')?.entries[0]?.origin).toBe('robot-outbound')
+    expect(home.getLog('g-a')?.entries[0]?.fromName).toBe('个人助手')
+  })
+
+  it('fills empty fromName via contact user get, cached per openId', async () => {
+    const home = memoryHomeIo()
+    await home.ensureBound('g-a', 'group')
+    const ctx = new Context()
+    const contactCalls: string[][] = []
+    ;(ctx as unknown as { yzjBridge: { run: (command: readonly string[]) => Promise<ReturnType<typeof runOf>> } }).yzjBridge = {
+      run: async (command) => {
+        if (command[0] === 'contact') {
+          contactCalls.push([...command])
+          if (command.includes('--open-id')) return runOf([{ openId: 'u2', name: '老黎' }])
+          return runOf([{ openId: 'me', name: '国鑫' }])
+        }
+        return runOf({ list: [
+          { msgId: 'm1', content: '一', fromUser: { openId: 'u2' }, sendTime: '2026-08-16 20:00:00.000' },
+          { msgId: 'm2', content: '二', fromUser: { openId: 'u2' }, sendTime: '2026-08-16 20:01:00.000' },
+        ] })
+      },
+    }
+    await backfillBoundLog(ctx, home, 'g-a', 20)
+    expect(home.getLog('g-a')?.entries.map(row => row.fromName)).toEqual(['老黎', '老黎'])
+    expect(contactCalls.filter(row => row.includes('--open-id'))).toHaveLength(1)
   })
 })
 
@@ -229,5 +256,39 @@ describe('handoffToGroup', () => {
     expect(home.getLog('g-target')?.entries[0]?.origin).toBe('dsh-send')
     expect(home.getLog('g-target')?.entries[0]?.content).toContain('结论')
     expect(followups).toHaveLength(1)
+  })
+})
+
+describe('groupSpaceSnapshot', () => {
+  it('nests topics under the group-room parent', async () => {
+    const home = memoryHomeIo()
+    await home.ensureBound('g-a', 'group')
+    const topics = [{
+      dshSessionId: 'yzj-topic-g-a-m1',
+      yzjConversationId: 'g-a',
+      title: '整理接口清单',
+      source: 'dsh' as const,
+      createdAt: 1,
+    }]
+    home.listBindings = () => [{
+      dshSessionId: 'yzj-home-g-a',
+      yzjConversationId: 'g-a',
+      yzjKind: 'group',
+    }]
+    home.listTopics = () => topics
+    const agents = {
+      get: (id: string) => id === 'yzj-home-g-a'
+        ? { session: { events: [{ type: 'session/title', data: { title: '测试群' } }] } }
+        : undefined,
+    }
+    expect(groupSpaceSnapshot(home, agents)).toEqual({
+      rooms: [{
+        groupId: 'g-a',
+        groupName: '测试群',
+        sessionId: 'yzj-home-g-a',
+        yzjKind: 'group',
+        topics: [{ sessionId: 'yzj-topic-g-a-m1', title: '整理接口清单', source: 'dsh', lastActivity: 1 }],
+      }],
+    })
   })
 })
