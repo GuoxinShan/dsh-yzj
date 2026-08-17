@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { openBoundHome, openTopicHome, publishHostSession, topicSidebarTitle } from '../src/home-open.ts'
 import type { HomeOpenFace } from '../src/home-open.ts'
 
-function memoryHome(): HomeOpenFace {
+function memoryHome(): HomeOpenFace & { topicInputs: Record<string, unknown>[] } {
   const byConv = new Map<string, { sessionId: string; yzjKind: 'group' | 'dm' }>()
   const topics = new Map<string, { sessionId: string; rootMsgId?: string }>()
+  const topicInputs: Record<string, unknown>[] = []
   return {
+    topicInputs,
     async ensureBound(id, kind) {
       const existing = byConv.get(id)
       if (existing !== undefined) return { sessionId: existing.sessionId, created: false, yzjKind: existing.yzjKind }
@@ -14,6 +16,7 @@ function memoryHome(): HomeOpenFace {
       return { sessionId, created: true, yzjKind: kind }
     },
     async ensureTopic(input) {
+      topicInputs.push({ ...input })
       if (input.rootMsgId !== undefined) {
         for (const row of topics.values()) {
           if (row.rootMsgId === input.rootMsgId) return { sessionId: row.sessionId, created: false }
@@ -27,10 +30,15 @@ function memoryHome(): HomeOpenFace {
 }
 
 function fakeAgents() {
-  const live = new Map<string, { session: { events: { type: string; data?: unknown }[]; append: (type: string, data: unknown) => void } }>()
+  const live = new Map<string, {
+    session: { events: { type: string; data?: unknown }[]; append: (type: string, data: unknown) => void }
+    inject: (message: unknown) => void
+  }>()
   const created: string[] = []
+  const injected: unknown[] = []
   return {
     created,
+    injected,
     live,
     get: (id: string) => live.get(id),
     resume: async () => { throw new Error('no log') },
@@ -42,6 +50,7 @@ function fakeAgents() {
           events,
           append: (type: string, data: unknown) => { events.push({ type, data }) },
         },
+        inject: (message: unknown) => { injected.push(message) },
       }
       live.set(options.sessionId, agent)
       return agent
@@ -65,6 +74,8 @@ describe('openBoundHome', () => {
     expect(agents.created).toEqual(['yzj-home-g-a'])
     const types = agents.live.get('yzj-home-g-a')?.session.events.map(event => event.type)
     expect(types).toEqual(['turn/start', 'turn/end', 'session/title'])
+    expect(home.topicInputs).toEqual([])
+    expect(first.legacyTopicSessionId).toBeUndefined()
   })
 
   it('pins the supplied group name as session/title', async () => {
@@ -73,6 +84,43 @@ describe('openBoundHome', () => {
     await openBoundHome({ home, agents, yzjConversationId: 'g-a', cwd: '/tmp', title: '测试群' })
     const title = agents.live.get('yzj-home-g-a')?.session.events.find(event => event.type === 'session/title')
     expect(title?.data).toMatchObject({ title: '测试群', source: { kind: 'user' } })
+  })
+
+  it('mints 历史对话 when the host already has ③④; second open is focus', async () => {
+    const home = memoryHome()
+    const agents = fakeAgents()
+    await agents.create({ sessionId: 'yzj-home-g-a' })
+    agents.live.get('yzj-home-g-a')?.session.append('user/message', {
+      content: '旧问题', source: { kind: 'user' },
+    })
+    const first = await openBoundHome({ home, agents, yzjConversationId: 'g-a', cwd: '/tmp', title: '测试群' })
+    expect(first.legacyTopicSessionId).toBe('yzj-topic-g-a-legacy-host')
+    expect(home.topicInputs[0]).toMatchObject({
+      source: 'handoff',
+      rootMsgId: 'legacy-host',
+      title: '历史对话',
+      fromSessionId: 'yzj-home-g-a',
+    })
+    expect(agents.created).toContain('yzj-topic-g-a-legacy-host')
+    expect(agents.injected).toHaveLength(1)
+    const second = await openBoundHome({ home, agents, yzjConversationId: 'g-a', cwd: '/tmp', title: '测试群' })
+    expect(second.legacyTopicSessionId).toBe(first.legacyTopicSessionId)
+    expect(home.topicInputs.filter(row => row.rootMsgId === 'legacy-host')).toHaveLength(2)
+    expect(agents.created.filter(id => id === 'yzj-topic-g-a-legacy-host')).toEqual(['yzj-topic-g-a-legacy-host'])
+    expect(agents.injected).toHaveLength(1)
+  })
+
+  it('does not mint 历史对话 for a DM host with ③④', async () => {
+    const home = memoryHome()
+    const agents = fakeAgents()
+    await agents.create({ sessionId: 'yzj-home-BOT-a' })
+    agents.live.get('yzj-home-BOT-a')?.session.append('user/message', {
+      content: '私聊旧话', source: { kind: 'user' },
+    })
+    const opened = await openBoundHome({ home, agents, yzjConversationId: 'BOT-a', cwd: '/tmp' })
+    expect(opened.yzjKind).toBe('dm')
+    expect(opened.legacyTopicSessionId).toBeUndefined()
+    expect(home.topicInputs).toEqual([])
   })
 })
 

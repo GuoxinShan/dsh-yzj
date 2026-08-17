@@ -465,6 +465,85 @@ export function roomSnapshot(
   }
 }
 
+/** One bubble in the topic-drawer IM lens (plugin followups omitted). */
+export interface TopicLensBubble {
+  readonly id: string
+  readonly role: 'user' | 'assistant'
+  readonly text: string
+  readonly time: number
+}
+
+/**
+ * Lens stream: topic session events, plus leftover host ③④ when this is
+ * the H9 「历史对话」 topic (`fromSessionId`). Plugin injects stay hidden.
+ */
+export function topicLensBubbles(
+  topic: TopicRecord,
+  agents: { get(id: string): { session?: { events?: readonly { type: string; time?: number; timestamp?: number; data?: unknown }[] } } | undefined },
+): TopicLensBubble[] {
+  const fromHost = topic.fromSessionId === undefined || topic.fromSessionId === ''
+    ? []
+    : digestCandidates(sessionEventsOf(agents.get(topic.fromSessionId))).map((row, index) => ({
+      ...row,
+      id: `h${index}`,
+    }))
+  const fromTopic = digestCandidates(sessionEventsOf(agents.get(topic.dshSessionId))).map((row, index) => ({
+    ...row,
+    id: `t${index}`,
+  }))
+  return [...fromHost, ...fromTopic].sort((a, b) => a.time - b.time)
+}
+
+/** User-authored followup (drawer 「问助手」). Visible in the lens. */
+function userTurn(text: string): {
+  role: 'user'
+  content: { type: 'text'; text: string }[]
+  source: { kind: 'user' }
+} {
+  return {
+    role: 'user',
+    content: [{ type: 'text', text }],
+    source: { kind: 'user' },
+  }
+}
+
+/**
+ * Ask the topic agent without focusing native Chat. Resume-or-create the
+ * topic session, then `followup` a user turn (H18).
+ */
+export async function askTopicAssistant(options: {
+  readonly home: HomeIoFace
+  readonly agents: HomeOpenAgents & {
+    get(sessionId: string): { followup?: (message: unknown) => void } | undefined
+  }
+  readonly cwd: string
+  readonly topicSessionId: string
+  readonly text: string
+}): Promise<{ ok: true } | { error: string }> {
+  const text = options.text.trim()
+  if (text === '') return { error: 'home-topic-ask: text is empty' }
+  const topic = options.home.getTopicBySession?.(options.topicSessionId)
+  if (topic === undefined) return { error: 'home-topic-ask: not a topic session' }
+  if (options.agents.get(options.topicSessionId) === undefined) {
+    try {
+      await options.agents.resume({ resumeSessionId: options.topicSessionId })
+    } catch {
+      await options.agents.create({ sessionId: options.topicSessionId, meta: { cwd: options.cwd } })
+    }
+  }
+  const live = options.agents.get(options.topicSessionId)
+  if (live?.followup === undefined) return { error: 'home-topic-ask: agent followup unavailable' }
+  live.followup(userTurn(text))
+  if (topic.rootMsgId !== undefined && topic.rootMsgId !== '' && options.home.ensureTopic !== undefined) {
+    await options.home.ensureTopic({
+      yzjConversationId: topic.yzjConversationId,
+      source: topic.source,
+      rootMsgId: topic.rootMsgId,
+    })
+  }
+  return { ok: true }
+}
+
 /** One topic row in the workbench session list / topic drawer. */
 export interface GroupSpaceTopic {
   readonly sessionId: string

@@ -79,4 +79,81 @@ describe('YzjTopicDrawer', () => {
     act(() => { nativeBtn?.click() })
     expect(native).toEqual(['yzj-topic-1'])
   })
+
+  it('renders lens bubbles and asks without focusing native chat', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const native: string[] = []
+    const asked: string[] = []
+    await act(async () => {
+      root.render(
+        <YzjTopicDrawer
+          groupName="群"
+          topics={[{
+            dshSessionId: 'yzj-topic-1',
+            title: '排期',
+            source: 'dsh',
+          }]}
+          lensSessionId="yzj-topic-1"
+          onClose={() => undefined}
+          onBack={() => undefined}
+          onOpenLens={() => undefined}
+          onNative={id => { native.push(id) }}
+          onJumpOrigin={() => undefined}
+          homeTopicLens={async () => ({
+            ok: true,
+            value: { bubbles: [{ id: 'h0', role: 'user', text: '旧问题', time: 1 }, { id: 't0', role: 'assistant', text: '旧回答', time: 2 }] },
+          })}
+          homeTopicAsk={async (_id, text) => {
+            asked.push(text)
+            return { ok: true, value: { ok: true } }
+          }}
+        />,
+      )
+    })
+    await act(async () => { await Promise.resolve() })
+    expect(container.textContent).toContain('旧问题')
+    expect(container.textContent).toContain('旧回答')
+    expect(container.textContent).not.toContain('透镜只作对照')
+    const input = container.querySelector('[aria-label="问助手"]') as HTMLInputElement
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+    await act(async () => {
+      setter?.call(input, '继续')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => {
+      container.querySelector('form')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    })
+    expect(asked).toEqual(['继续'])
+    expect(native).toEqual([])
+  })
+
+  it('hides the group-origin jump on the 历史对话 topic', () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    act(() => {
+      root.render(
+        <YzjTopicDrawer
+          groupName="群"
+          topics={[{
+            dshSessionId: 'yzj-topic-legacy',
+            title: '历史对话',
+            source: 'handoff',
+            rootMsgId: 'legacy-host',
+            originText: '不该跳群消息',
+          }]}
+          lensSessionId="yzj-topic-legacy"
+          onClose={() => undefined}
+          onBack={() => undefined}
+          onOpenLens={() => undefined}
+          onNative={() => undefined}
+          onJumpOrigin={() => undefined}
+        />,
+      )
+    })
+    expect(container.querySelector('[data-testid="yzj-drawer-anchor"]')).toBeNull()
+    expect(container.textContent).toContain('还没有助手回合')
+  })
 })

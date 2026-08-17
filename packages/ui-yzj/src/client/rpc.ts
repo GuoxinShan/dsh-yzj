@@ -131,6 +131,10 @@ export interface YzjPanelInject {
     title?: string
     groupName?: string
   }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Topic-drawer lens bubbles (user/assistant; plugin followups omitted). */
+  homeTopicLens?: (sessionId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Ask the topic agent from the drawer; does not focus native Chat. */
+  homeTopicAsk?: (sessionId: string, text: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Backfill recent Yunzhijia messages into the bound log. */
   homeBackfill?: (sessionId: string, opts?: { beforeMsgId?: string; limit?: number }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** DSH「发进群」: optimistic ② + CLI send, no user-turn. */
@@ -270,6 +274,8 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
     homeFused: (sessionId) => call('home-fused', { sessionId }),
     homeNav: () => call('home-nav', {}),
     homeTopicOpen: (input) => call('home-topic-open', input),
+    homeTopicLens: (sessionId) => call('home-topic-lens', { sessionId }),
+    homeTopicAsk: (sessionId, text) => call('home-topic-ask', { sessionId, text }),
     homeBackfill: (sessionId, opts) => call('home-backfill', {
       sessionId,
       ...(opts?.beforeMsgId === undefined ? {} : { beforeMsgId: opts.beforeMsgId }),

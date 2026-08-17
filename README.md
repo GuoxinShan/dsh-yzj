@@ -77,11 +77,11 @@ pnpm --filter @dsh-yzj/ui-yzj bundle   # 仅重建客户端 bundle（改 UI 后�
 
 ## 已知限制
 
-- **依赖解析**：各包以 `link:` 相对路径依赖 harness checkout（`../../../deepseek-harness/...`）；发布前需替换为已发布的版本范围并验证 `dsh plugin add` 从 registry 安装。
+- **依赖解析**：workspace 六包以 `link:` 相对路径依赖兄弟 `../deepseek-harness` checkout（开发事实源，不替换）。对外 `dsh plugin add github:…#tag` 走根 `@dsh-yzj/bundle`，其 `@deepseek-ai/*` 已是 registry 版本范围（见 `docs/release.md`）。
 - **确认卡状态不落会话日志**：harness 对外部插件的自定义 session 事件类型无注册面，确认卡 pending/approved 瞬态由 host 内存表承载（SPA 刷新存活；host 重启降级为普通工具卡），终态由官方工具事件回放。
 - **面板「我的」tab 已移除**（原设计四 tab）：身份经 `yzj_whoami`、找人经 @ 候选；第四 tab 现为**待办**（是否另恢复通讯录浏览待拍板）。
 - **拖入即处理快捷动作已移除**：现为全屏 drop overlay 直接成 chip（v1.6 硬性要求 4 曾实现后删除，终局与否待拍板）。
-- **会话家园 v2.0**：群房间 + 话题（`yzj-home-*` / `yzj-topic-*`）；官方 Chat tab 仍并存。切房间分阶段不闪「私密会话」/上一群。仍开放：确认卡 pending 不进 session 日志、无群搜索、既有宿主 ③④ 历史迁移（[gap-analysis §23](docs/status/gap-analysis.md) H9，§22 G3/G5）。
+- **会话家园 v2.0**：群房间 + 话题（`yzj-home-*` / `yzj-topic-*`）；官方 Chat tab 仍并存。切房间分阶段不闪「私密会话」/上一群。旧宿主 ③④ 打开时迁成「历史对话」话题（不搬事件）。仍开放：确认卡 pending 不进 session 日志、无群搜索（[gap-analysis §22](docs/status/gap-analysis.md) G3/G5）。
 - **无群搜索/消息搜索**：沿用 CLI 能力面（最近会话翻页定位）。会话家园的「挑群」依赖可找到群（gap §22 G5）。
 - **`file download` 只回传摘要**：CLI 的 `downloaded N bytes to <path>` 文本输出不携带结构化路径，卡片回退文本模式。
 - **待办为 demo 阶段**：数据存于多维表格「待办任务库」（个人知识库，首用自动开通）；负责人/标签因 CLI 字段写入限制降级为文本形态；原生后端迁移方案见 `docs/migration/todo-backend-migration.md`。

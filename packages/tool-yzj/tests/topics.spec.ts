@@ -3,7 +3,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
-  TopicAnchorStore, topicActivity, topicSessionId, type TopicRecord,
+  TopicAnchorStore, topicActivity, topicSessionId, LEGACY_HOST_ROOT, type TopicRecord,
 } from '../src/topics.ts'
 
 function memoryFacility(): {
@@ -52,6 +52,11 @@ describe('topicSessionId', () => {
     expect(id.startsWith('yzj-topic-')).toBe(true)
     expect(id.startsWith('yzj-home-')).toBe(false)
     expect(id.startsWith('yzj-robot-')).toBe(false)
+  })
+
+  it('keeps legacy-host as a stable slug', () => {
+    expect(topicSessionId('g-a', LEGACY_HOST_ROOT)).toBe('yzj-topic-g-a-legacy-host')
+    expect(topicSessionId('g-a', LEGACY_HOST_ROOT)).toBe(topicSessionId('g-a', LEGACY_HOST_ROOT))
   })
 })
 

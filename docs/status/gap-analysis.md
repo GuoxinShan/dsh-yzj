@@ -391,7 +391,7 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 | 🟡 外部依赖 | Adaptive 确认卡 / checklist 原地更新（S2/R3） | 协议依据已锁定，等开放平台协调 |
 | ⚪ 可选 | 标准确认同会话合并 / chip 快照标注 / @同事起草入口 / chip 灰化 / 灰 chip | 设计标注可选，未实现 |
 | 🔒 受限 | yzj.write 持久化事件族 / 通知卡按钮 / 多 chip 批量序列化 / 自定义 session 事件 / 确认卡进程内存态 | harness/协议边界，已备案 |
-| 🧹 发布 | link: → registry 版本 + 验证 `dsh plugin add` + 首个 tag（AGENTS.md Pre-release） | 未做（0.x 阶段） |
+| 🧹 发布 | 对外 git 安装走根 `@dsh-yzj/bundle` registry 依赖；workspace 六包保留 `link:` 兄弟 checkout（开发事实源） | ✅ 关闭（2026-08-18）：根 `dependencies` 已是 `^0.1.0-rc.6`，无 `link:`；tag `v0.1.0` / `v0.1.1` 已打。**不要**把 workspace `link:` 换成 registry——会拆掉 vitest alias / 类型闭环。AGENTS.md Pre-release 段已删，口径见 `docs/release.md` |
 | 🧹 业务 | routine 内容为 demo 巡检，真实定时任务未定义 | 待用户提供 |
 
 **文档修正（同提交）**：`robot-channel-plan.md` §3.6.4 对齐表 C5 原标 ✅ 与 §20.5「!fork 未做」矛盾——已改标 ⚠️ 观察项；R2.10 `!fork` 落地后改回 ✅（含 !configure/!feedback/会话 deep link 降级实现）。
@@ -525,7 +525,7 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 
 ## 23. v2.0｜群房间 + 话题会话（2026-08-17 拍板；e2e 刀）
 
-设计基线：[`../spec/group-room-topics.md`](../spec/group-room-topics.md)（R1–R21，含 v1.1 工作台）。**本节记录目标 vs 现状。** 本刀：锚定表、入站/交给助手开话题、群房间 IM 视图占住对话格、composer takeover「发进群」、`yzj-topic-*` 写闸、出站帖子进房间日志、面板第二 IM 退役；v1.1 P0 把侧栏树换成入口块 + 工作台两栏 + 话题抽屉。v1.1 P1 精致度六条、P2 四域迁入工作台并退役悬浮球、P3 `TopicRecord.status` 已落地。**视觉刀（2026-08-17）**：tab ring 真藏（pitfall-018）、发进群 portal 进时间线列、dock「发进群」退役、会话行不以「群房间」占位盖 CLI 群名。**宿主生命周期刀（2026-08-17）**：composer portal 改注册/订阅总线（pitfall-019）；view-ring observer 收窄到 header；e2e 量不到发送盒即失败。仍开放：既有宿主 ③④ 历史迁移（H9）。
+设计基线：[`../spec/group-room-topics.md`](../spec/group-room-topics.md)（R1–R21，含 v1.1 工作台）。**本节记录目标 vs 现状。** 本刀：锚定表、入站/交给助手开话题、群房间 IM 视图占住对话格、composer takeover「发进群」、`yzj-topic-*` 写闸、出站帖子进房间日志、面板第二 IM 退役；v1.1 P0 把侧栏树换成入口块 + 工作台两栏 + 话题抽屉。v1.1 P1 精致度六条、P2 四域迁入工作台并退役悬浮球、P3 `TopicRecord.status` 已落地。**视觉刀（2026-08-17）**：tab ring 真藏（pitfall-018）、发进群 portal 进时间线列、dock「发进群」退役、会话行不以「群房间」占位盖 CLI 群名。**宿主生命周期刀（2026-08-17）**：composer portal 改注册/订阅总线（pitfall-019）；view-ring observer 收窄到 header；e2e 量不到发送盒即失败。v1.2（2026-08-18）：H9 旧宿主 ③④ 迁成「历史对话」话题；H18 抽屉透镜气泡 + 问助手；H4 入站 e2e（未连接 skip）；发布口径与根 registry 依赖对齐。
 
 ### 23.1 目标 vs 现状
 
@@ -534,12 +534,12 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 | H1 | 基数 | `yzj-home-*` 群房间 + `yzj_topic_anchors` / `ensureTopic` | 1 群 = 1 群房间 + 0..N 话题（R1） | ✅ 关闭（单测） |
 | H2 | 视图 | 群房间 session 自动切「群房间」view 并隐藏 tab ring；话题/私聊隐藏「群房间」tab，官方 Chat 仍是对话格 | 群房间占对话格；话题 = 官方 chat | ✅ 关闭（pitfall-018：`display:none !important`；tablist 入场后 observer 只挂 header，不扫整页时间线） |
 | H3 | Composer | 群房间 `conversation.composer` takeover 藏官方条；可见面 portal 进时间线列。宿主由 transcript `ref` 注册、composer 订阅（pitfall-019）。dock「发进群」退役（R2） | 群房间唯一动词=发进群；话题唯一动词=问助手；发送条不压会话列表 | ✅ 关闭（takeover + 宿主总线；切工作台域再切回跟到新节点；确认卡 chain priority 更高；发送面见 H14） |
-| H4 | 话题入口 | 「交给助手」→ `home-topic-open`；@机器人 `resolveSession` 走 `ensureTopic`；回复链续同一话题；丢进群落地房间并开 handoff 话题；发进群 `local-*` ack 后 `retargetAnchor` 到真实 msgId（pitfall-015） | 四入口锚出话题 | 部分（真机 @ 链待 e2e；local-* 锚 retarget 有单测） |
+| H4 | 话题入口 | 「交给助手」→ `home-topic-open`；@机器人 `resolveSession` 走 `ensureTopic`；回复链续同一话题；丢进群落地房间并开 handoff 话题；发进群 `local-*` ack 后 `retargetAnchor` 到真实 msgId（pitfall-015） | 四入口锚出话题 | ✅ 关闭（router 单测 mint `yzj-topic-*`；`.acceptance/verify-robot-at-topic.mjs`：dock 未配置/未连接 skip 退出 0；已连接则断言 dock + 话题抽屉可开。禁止 bash 直调 `yzj-cli` 代发 @） |
 | H5 | 锚定 | `TopicAnchorStore`：`(groupId, rootMsgId)` + outbound msgId 登记 | R4 锚定表 | ✅ 关闭（单测） |
 | H6 | 出站帖子 | ack / PushHub / `robot_notify` / 回填写入 `robot-outbound`，标话题回链 | R9：进群房间时间线 | ✅ 关闭（单测） |
 | H7 | guard / write-gate | `whenSession` 覆盖 `yzj-home-*` 与 `yzj-topic-*` | R10/R11 | ✅ 关闭（单测） |
 | H8 | 面板 / 悬浮窗 | `shell.overlay` 已摘除；四页签迁入工作台；卡片「查看」切 workbench domain | 第二聊天淘汰；球退役（R16） | ✅ P2 关闭（单测：dock 不再 `openPanel`） |
-| H9 | 迁移 | 既有 `yzj-home-*` ③④ 仍留在宿主 | 降为群房间宿主；历史处置 | 开放 |
+| H9 | 迁移 | 打开群房间时，有真实 ③④ 则幂等 `ensureTopic(rootMsgId=legacy-host, title=历史对话, fromSessionId=宿主)`；不搬事件；空白宿主/单聊不迁 | 降为群房间宿主；历史进首条话题 | ✅ 关闭（`home-open` 单测：有 ③④ 才迁、二次幂等、空白不迁、DM 不迁） |
 | H10 | 侧栏可见 | 群房间 `session/title` = 群名；话题 `session/title` = `群名 · 话题`（官方列表平铺可扫） | 官方列表能扫出归属 | ✅ 关闭（单测） |
 | H11 | 导航 | `sidebar.footer.action` 云之家入口块；点五域切 `workbench-domain` 并 focus 房间。对话 = 会话列表 + 时间线 + 话题抽屉；待办/日程/知识库 embed 原面板；记忆 = 本地 vault（「不出本机」） | 入口进工作台；单聊无抽屉；群聊 header「话题 N」开关抽屉 | ✅ P2 关闭（单测） |
 | H12 | 模型上下文 | `formatSummonWindow` 头块 `groupId` + 每行 `msgId` + 话题锚点；空 log 仍给 groupId | 话题里问助手能对群发/回复 | ✅ 关闭（单测） |
@@ -548,11 +548,11 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 | H15 | 群房间视觉 | 布局跟 canvas：自己靠右、他人靠左、hover 出操作；话题锚点卡只在 session header（chrome 收成「回群房间」文字钮）。工作台会话行优先 CLI 群名，占位「群房间」不得盖住真名；`session/title` 占位可被真名升级 | 与已拍板原型同一套脸 | ✅ 关闭（2026-08-17 视觉刀：tab ring / composer 列 / dock 退役 / 群名占位；单测 + e2e） |
 | H16 | 云之家 workspace | 新 `yzj-home-*` / `yzj-topic-*` 的 `meta.cwd` = `~/.dsh-yzj/workspace`（ensure 目录 + `workspaceRegistry.create(..., '云之家')` + `attachSession`）；robot 通道默认 cwd 同路径。旧会话仍是 `process.cwd()`，attach 失败则吞掉、不分组 | 官方侧栏出现「云之家」分组 | ✅ P0 关闭（路径单测；attach 吞错。机器人入站仍用 `<cwd>/groups/<id>` 子目录作 share 沙箱，不 attach 父 workspace——记此） |
 | H17 | lastActivity / status | `lastActivity` 创建写入、ensure 已有则 touch。`status`：pending/approved 写 → `confirm`；交付或取消 → `running`（L5）；显式 `done`。L2 徽标：accent 数字 = 待确认 ＞ 细点 = 进行中 ＞ 完成无标 | 会话行能反映话题活动与待确认 | ✅ P3 关闭（topics / write-gate / conv-list 单测） |
-| H18 | 话题抽屉 | 「交给助手」/ chip 开抽屉透镜，不 `focus` 原生；抽屉「原生会话 ↗」才 focus；锚点条反跳高亮时间线且不关抽屉；单聊无抽屉 | L3/L6/R17/R19 | ✅ P0 关闭（单测；透镜内气泡流/问助手轻输入为占位，不在 P1 范围） |
+| H18 | 话题抽屉 | 「交给助手」/ chip 开抽屉透镜，不 `focus` 原生；抽屉「原生会话 ↗」才 focus；锚点条反跳高亮时间线且不关抽屉；单聊无抽屉；透镜气泡 + 「问助手」`home-topic-lens` / `home-topic-ask`（用户 `followup`，不 focus） | L3/L6/R17/R19 | ✅ 关闭（抽屉单测：气泡渲染、问助手不 focus、`legacy-host` 无群锚跳转） |
 | H19 | 群房间精致度 | 同人连发合并、日期分隔、气泡圆角、hover 文字链、助手产物卡、气泡内「N 条回复」chip | §9.1 / §9.5 P1 | ✅ P1 关闭（`room-layout` + transcript 单测） |
 
 沿用不动：消息日志存储/去重/回填（T1/T7–T9）、召唤窗口（T4/T5）、写路径 D9、群内建议卡（ConfirmBroker）、未绑定私聊与丢进群（D7/D8）。G3 与 G5 继续开放。
 
 ### 23.2 验收指针
 
-按 [`group-room-topics.md`](../spec/group-room-topics.md) §7 + §9.7。H2/H3/H5/H6/H7/H8/H10/H11/H12/H13/H14/H15/H16/H17/H18/H19 有单测。H4 入站话题有 router 单测，`local-*`→真实 msgId 的 `retargetAnchor` 有 topics 单测。真机脚本：`.acceptance/verify-group-room-e2e.mjs`（需运行中 GUI + 已登录 yzj-cli；**禁止杀 3080 / `--profile web` 宿主**——改 host / browser 后请用户手动重启 GUI；改 browser TS 后 bundle 前必须先 `tsc -b`，见 pitfall-016）。**v1.1 P0**：入口块 + 会话列表 + 话题抽屉 + `lastActivity` + `~/.dsh-yzj/workspace`。**P1**：时间线精致度六条。**P2（本刀）**：四域迁入工作台、`shell.overlay` 摘除、72px 留白删除。**P3（本刀）**：`TopicRecord.status` + L2 徽标 + write-gate L5 回落。**视觉刀**：pitfall-018 tab ring、composer 列、dock 退役、群名占位。**宿主生命周期**：pitfall-019 总线 + view-ring 收窄到 header + e2e 盒子缺失即失败。仍开放 H9。
+按 [`group-room-topics.md`](../spec/group-room-topics.md) §7 + §9.7。H2/H3/H5/H6/H7/H8/H9/H10/H11/H12/H13/H14/H15/H16/H17/H18/H19 有单测。H4 入站话题有 router 单测，`local-*`→真实 msgId 的 `retargetAnchor` 有 topics 单测；真机 `.acceptance/verify-robot-at-topic.mjs`（未连接 skip）。真机脚本：`.acceptance/verify-group-room-e2e.mjs`（需运行中 GUI + 已登录 yzj-cli；**禁止杀 3080 / `--profile web` 宿主**——改 host / browser 后请用户手动重启 GUI；改 browser TS 后 bundle 前必须先 `tsc -b`，见 pitfall-016）。**v1.1 P0**：入口块 + 会话列表 + 话题抽屉 + `lastActivity` + `~/.dsh-yzj/workspace`。**P1**：时间线精致度六条。**P2**：四域迁入工作台、`shell.overlay` 摘除、72px 留白删除。**P3**：`TopicRecord.status` + L2 徽标 + write-gate L5 回落。**视觉刀**：pitfall-018 tab ring、composer 列、dock 退役、群名占位。**宿主生命周期**：pitfall-019 总线 + view-ring 收窄到 header + e2e 盒子缺失即失败。**v1.2**：H9 历史对话话题、H18 透镜气泡/问助手、H4 skip 型 e2e、发布口径。

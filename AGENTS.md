@@ -16,9 +16,9 @@ dsh-yzj 是 DeepSeek Harness 的独立插件 bundle 仓库：`yzj-cli` 桥接、
 4. **决策必须留档**：拍板（设计取舍、风险分级、命名）写进对应设计文档的决策表，附理由；不允许只存在于提交信息或对话里的决策。
 5. **不写无人维护的文档**：文档要么随代码演进，要么删掉；「大概如此」的描述比没有更糟（下一个 agent 会信以为真）。
 
-## Pre-release stance：地基优先于爆炸半径
+## 发布依赖口径
 
-**首个 tag 发布时删除本节。** 0.x 无外部消费者，优先做对的地基而非兼容垫片：可自由重命名并同步所有引用。发布前必须把各包指向 `../deepseek-harness` 的 `link:` 依赖替换为已发布版本范围，并验证 `dsh plugin add` 能从 registry 安装（见 README「已知限制」）。
+workspace 六包对 `@deepseek-ai/*` 的 `link:../../../deepseek-harness/...` **保留**（兄弟 checkout 是唯一事实源；vitest alias / 类型闭环依赖它）。对外安装走根 `@dsh-yzj/bundle`，其 `dependencies` 已是 registry `^0.1.0-rc.6`，无 `link:`。tag `v0.1.0` / `v0.1.1` 已打。**不要**把 workspace `link:` 换成 registry。流程见 [docs/release.md](docs/release.md)。
 
 ## Repository layout
 
@@ -67,6 +67,7 @@ node .acceptance/verify-real-data.mjs   # 需运行中的 GUI + 已登录 yzj-cl
 - bridge / 工具逻辑：对应包的 vitest；真实 CLI 行为变化在 `tools.spec.ts` 冒烟断言。
 - 面板 / 卡片 UX：`.acceptance/` 对应 verify 脚本走查，截图提交到 `shots-*/`（`shots/` 被忽略）。
 - 确认流端到端：`verify-confirm-e2e*.mjs` / `verify-todo-confirm-e2e.mjs`。
+- @机器人入站话题：`.acceptance/verify-robot-at-topic.mjs`（dock 未配置/未连接 skip 退出 0）。
 - 不重复跑已通过的检查当提交仪式；全量 `pnpm test` 约 6 秒，提交前跑一次是合理默认。
 
 ## Secrets / 凭据

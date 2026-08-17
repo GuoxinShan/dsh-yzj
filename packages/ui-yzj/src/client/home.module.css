@@ -1121,6 +1121,46 @@
   cursor: pointer;
 }
 
+.topicDrawerSend:disabled,
+.topicDrawerInput:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.topicLensRow {
+  display: flex;
+}
+
+.topicLensRowUser {
+  justify-content: flex-end;
+}
+
+.topicLensRowAssistant {
+  justify-content: flex-start;
+}
+
+.topicLensBubble {
+  max-width: 90%;
+  padding: 6px 8px;
+  font-size: 12px;
+  line-height: 18px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.topicLensBubbleUser {
+  background: var(--dsw-alias-bg-layer-1);
+  border-radius: 8px 2px 8px 8px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.topicLensBubbleAssistant {
+  background: var(--dsw-alias-bg-base);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 2px 8px 8px 8px;
+  color: var(--dsw-alias-label-primary);
+}
+
 .yzjDock {
   flex: none;
   width: 100%;
