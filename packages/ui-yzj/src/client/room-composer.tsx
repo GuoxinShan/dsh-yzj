@@ -3,6 +3,8 @@
  * yzj-home-* sessions: one verb = 发进群, covering the CLI send surface
  * (reply / @ / @all / emoji / image / file). Approval/question entries keep
  * higher or equal priority and still cover the bar when they match.
+ * The visible face portals into the timeline host from `composer-host.ts`
+ * (pitfall-019): do not cache getElementById across workbench remounts.
  */
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
@@ -11,6 +13,9 @@ import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation
 import { EMOJI_LIST, resolveAtMentions, type AtCandidate } from './im-compose.ts'
 import { onRoomReplyRequest, type RoomReplyTarget } from './reply-bus.ts'
 import type { YzjPanelInject } from './rpc.ts'
+import {
+  getRoomComposerHost, subscribeRoomComposerHost,
+} from './composer-host.ts'
 import css from './home.module.css'
 
 /** Injected send / upload / speaker path for the room composer. */
@@ -35,7 +40,7 @@ export function selectGroupRoomComposer({ session, interactions }: ComposerChain
 }
 
 /** Portal target inside the timeline column (`transcript.tsx`). */
-export const ROOM_COMPOSER_HOST_ID = 'yzj-room-composer-host'
+export { ROOM_COMPOSER_HOST_ID } from './composer-host.ts'
 
 type SessionRow = { displayTitle?: string }
 
@@ -58,24 +63,11 @@ function speakersOf(value: unknown): AtCandidate[] {
 }
 
 function useComposerHost(): HTMLElement | null {
-  const [host, setHost] = useState<HTMLElement | null>(() => document.getElementById(ROOM_COMPOSER_HOST_ID))
-  useEffect(() => {
-    const found = document.getElementById(ROOM_COMPOSER_HOST_ID)
-    if (found !== null) {
-      setHost(found)
-      return
-    }
-    const observer = new MutationObserver(() => {
-      const node = document.getElementById(ROOM_COMPOSER_HOST_ID)
-      if (node !== null) {
-        setHost(node)
-        observer.disconnect()
-      }
-    })
-    observer.observe(document.documentElement, { childList: true, subtree: true })
-    return () => observer.disconnect()
-  }, [])
-  return host
+  const [host, setHost] = useState<HTMLElement | null>(() => getRoomComposerHost())
+  useEffect(() => subscribeRoomComposerHost((node) => {
+    setHost(node !== null && node.isConnected ? node : null)
+  }), [])
+  return host !== null && host.isConnected ? host : null
 }
 
 /**

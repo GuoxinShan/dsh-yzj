@@ -51,16 +51,30 @@ export function syncYzjViewRing(kind: YzjViewKind): void {
 
 /**
  * Keep {@link syncYzjViewRing} applied while the header lives: the tablist
- * often mounts after the first sync (pitfall-018).
+ * often mounts after the first sync (pitfall-018). Once the tablist exists,
+ * observe only its parent (header)—not `document.documentElement`, which
+ * fires on every timeline insert.
  */
 export function watchYzjViewRing(kind: YzjViewKind): () => void {
   syncYzjViewRing(kind)
-  const observer = new MutationObserver(() => { syncYzjViewRing(kind) })
-  observer.observe(document.documentElement, {
-    childList: true,
-    subtree: true,
+  let observed: Node | null = null
+  const observer = new MutationObserver(() => {
+    syncYzjViewRing(kind)
+    retarget()
   })
-  return () => observer.disconnect()
+  const retarget = (): void => {
+    const tablist = document.querySelector('[role="tablist"]')
+    const next: Node = tablist?.parentElement ?? document.documentElement
+    if (next === observed) return
+    observer.disconnect()
+    observed = next
+    observer.observe(next, { childList: true, subtree: true })
+  }
+  retarget()
+  return () => {
+    observer.disconnect()
+    observed = null
+  }
 }
 
 /** Undo {@link syncYzjViewRing} when the session header unmounts. */

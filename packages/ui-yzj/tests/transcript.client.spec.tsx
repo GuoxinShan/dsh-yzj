@@ -6,6 +6,7 @@ import { act } from 'react-dom/test-utils'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it } from 'vitest'
 import { YzjFusedView } from '../src/client/transcript.tsx'
+import { subscribeRoomComposerHost } from '../src/client/composer-host.ts'
 
 type Rpc = { ok: true; value: unknown } | { ok: false; error: { message: string } }
 
@@ -288,5 +289,59 @@ describe('YzjFusedView', () => {
     const container = renderView(fused)
     await flush()
     expect(container.querySelector('[data-testid="yzj-topic-badge"]')?.textContent).toBe('1')
+  })
+
+  it('re-registers the composer host after the timeline unmounts', async () => {
+    const fused: Rpc = {
+      ok: true,
+      value: {
+        bound: true,
+        kind: 'room',
+        binding: { yzjConversationId: 'g-a', dshSessionId: 'yzj-home-g-a', yzjKind: 'group' },
+        topics: [],
+        items: [],
+      },
+    }
+    const seen: Array<HTMLElement | null> = []
+    const stop = subscribeRoomComposerHost(el => { seen.push(el) })
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    act(() => {
+      root.render(
+        <YzjFusedView
+          sessionId="yzj-home-g-a"
+          homeFused={async () => fused}
+          homeBackfill={async () => ({ ok: true, value: { appended: 0, skipped: 0 } })}
+        />,
+      )
+    })
+    await flush()
+    const first = container.querySelector('[data-testid="yzj-room-composer-host"]')
+    expect(first).not.toBeNull()
+    expect(seen.at(-1)).toBe(first)
+
+    act(() => { root.unmount() })
+    expect(seen.at(-1)).toBeNull()
+
+    const next = document.createElement('div')
+    document.body.appendChild(next)
+    const root2 = createRoot(next)
+    act(() => {
+      root2.render(
+        <YzjFusedView
+          sessionId="yzj-home-g-a"
+          homeFused={async () => fused}
+          homeBackfill={async () => ({ ok: true, value: { appended: 0, skipped: 0 } })}
+        />,
+      )
+    })
+    await flush()
+    const second = next.querySelector('[data-testid="yzj-room-composer-host"]')
+    expect(second).not.toBeNull()
+    expect(second).not.toBe(first)
+    expect(seen.at(-1)).toBe(second)
+    stop()
+    act(() => { root2.unmount() })
   })
 })

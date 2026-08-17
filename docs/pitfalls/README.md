@@ -27,6 +27,7 @@
 | 16 | 只跑 `pnpm run bundle` 打包的是旧代码——client bundle 入口是 tsc 产物 `lib/types`，改 TS 后须先 `tsc -b`/`pnpm run build` | ui-yzj browser half / 改源→bundle→验收 循环 | [pitfall-016-bundle-needs-tsc-first.md](pitfall-016-bundle-needs-tsc-first.md) |
 | 17 | 悬浮球盖住群房间「发进群」按钮（P2 退役球后此坑应失效） | ui-yzj 群房间 composer / 视口右下布局 | [pitfall-017-float-ball-covers-send.md](pitfall-017-float-ball-covers-send.md) |
 | 18 | harness tablist 的 `display:flex` 盖过 `[hidden]`，群房间藏不住 tab ring | ui-yzj view-ring / 群房间 header | [pitfall-018-tablist-hidden-overridden-by-flex.md](pitfall-018-tablist-hidden-overridden-by-flex.md) |
+| 19 | 发进群 portal 钉在已卸载的时间线宿主上（切工作台域再切回） | ui-yzj room composer / transcript | [pitfall-019-composer-portal-stale-host.md](pitfall-019-composer-portal-stale-host.md) |
 
 ## 维护规则
 

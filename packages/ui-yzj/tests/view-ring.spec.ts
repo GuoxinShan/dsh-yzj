@@ -5,7 +5,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { restoreYzjViewRing, syncYzjViewRing, watchYzjViewRing } from '../src/client/view-ring.ts'
 
-function mountTabs(): { tablist: HTMLDivElement; room: HTMLButtonElement; chat: HTMLButtonElement } {
+function mountTabs(): { header: HTMLElement; tablist: HTMLDivElement; room: HTMLButtonElement; chat: HTMLButtonElement } {
+  const header = document.createElement('header')
   const tablist = document.createElement('div')
   tablist.setAttribute('role', 'tablist')
   tablist.style.display = 'flex'
@@ -22,8 +23,9 @@ function mountTabs(): { tablist: HTMLDivElement; room: HTMLButtonElement; chat: 
     chat.setAttribute('aria-selected', 'false')
   })
   tablist.append(chat, room)
-  document.body.append(tablist)
-  return { tablist, room, chat }
+  header.append(tablist)
+  document.body.append(header)
+  return { header, tablist, room, chat }
 }
 
 describe('syncYzjViewRing', () => {
@@ -61,5 +63,31 @@ describe('syncYzjViewRing', () => {
     expect(tablist.hidden).toBe(true)
     expect(tablist.style.display).toBe('none')
     stop()
+  })
+
+  it('scopes the mutation observer to the tablist parent once tabs exist', () => {
+    const { header } = mountTabs()
+    const NativeObserver = window.MutationObserver
+    const observed: Node[] = []
+    window.MutationObserver = class {
+      private readonly inner: MutationObserver
+      constructor(callback: MutationCallback) {
+        this.inner = new NativeObserver(callback)
+      }
+      observe(target: Node, options?: MutationObserverInit): void {
+        observed.push(target)
+        this.inner.observe(target, options)
+      }
+      disconnect(): void { this.inner.disconnect() }
+      takeRecords(): MutationRecord[] { return this.inner.takeRecords() }
+    } as typeof MutationObserver
+    try {
+      const stop = watchYzjViewRing('room')
+      expect(observed.at(-1)).toBe(header)
+      expect(observed).not.toContain(document.documentElement)
+      stop()
+    } finally {
+      window.MutationObserver = NativeObserver
+    }
   })
 })
