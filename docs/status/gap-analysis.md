@@ -49,12 +49,12 @@
 
 ## 4. 确认流 / 确认卡（§5.2、旅程 7）— 🟢 已落地（含一处受限降级）
 
-**实现形态**：`tools/pre-execute` ask（guard，含分级）→ `yzj/ask-pending` 广播参数 → host `write-gate` 应答 `approval/request` waterfall（yzj_* 接管，配对 `approval/asked` 审计 id，内存 pending 记录）→ 浏览器确认卡（`tool.call.toolview` keyed，22 个写工具）查询/决策（RPC `write-list`/`write-decide`）→ 终态由官方 `tools/result` 驱动。
+**实现形态**：`tools/pre-execute` ask（guard，含分级）→ `yzj/ask-pending` 广播参数 → host `write-gate` 应答 `approval/request` waterfall（yzj_* 加上绑定家园的 `robot_notify` / `robot_continue`，配对 `approval/asked` 审计 id，内存 pending 记录）→ 浏览器确认卡（`tool.call.toolview` keyed）查询/决策（RPC `write-list`/`write-decide`）→ 终态由官方 `tools/result` 驱动。
 
 | 设计点 | 实现 | 状态 |
 |---|---|---|
 | 风险分级（标准/强确认） | ✅ guard 两级 + 卡片红色强确认徽标 | ✅ |
-| 全部写工具入闸 | ✅ 22 项 | ✅ |
+| 全部写工具入闸 | ✅ yzj 写族 + `robot_share_write`；绑定家园另加 `robot_notify` / `robot_continue`（D9） | ✅ |
 | 按 domain 分发渲染 | ✅ im/doc/kb/sheet/calendar/file 六种参数详情 | ✅ |
 | 按钮：确认 / 取消 / 查看上下文 / 编辑 | ✅ 全四按钮（编辑=草稿塞回 composer + 取消请求） | ✅ |
 | 查看上下文跳转 | ✅ 打开面板并切 tab（im→会话群、doc/kb/sheet→知识库、其余→日程） | ✅ |
@@ -481,10 +481,10 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 | **面板 IM composer** | 降为快捷发进群：横幅说明家园在 DSH；发送走 `im-send` → 绑定 log ②。挑群仍 focus 绑定会话 | 面板 = 挑选器/历史/引用；无第二 composer 作家园 |
 | **召唤窗口** | 云之家 @机器人：`formatSummonWindow` + `agent.inject` 再 followup。DSH 发给助手：`systemPrompt.context` 仅 GUI user-turn。空窗口不注入 | T4/T5 |
 | **丢进群** | 未绑定 dock「丢进群」：默认勾选近期可见摘要；全文迁移显式；确认模态后 `home-handoff`（② 发群 + followup）并 focus 绑定会话 | D8 |
-| **write-gate** | 残留 `yzj-robot-*` skip。`ownsConfirm` 的 `yzj-home-*`：GUI user-turn → GUI 卡；plugin / 无 user-message → 群建议卡 | T13 |
+| **write-gate** | 残留 `yzj-robot-*` skip。`ownsConfirm` 的 `yzj-home-*`：GUI user-turn → GUI 卡；plugin / 无 user-message → 群建议卡。绑定家园 `robot_notify` / `robot_continue` 进 WRITE_SPECS（D9） | T13 + D9 |
 | **机器人 session** | 入站不再分配 `yzj-robot-*` 产品家园；`!fork` / `robot_fork` 打开或恢复绑定会话 | 入站进绑定对象 |
 
-写路径两分（用户发无卡 / agent 发有卡 / 删除强确认）**原则已拍板**（D9），发进群落点在绑定 DSH composer（面板为快捷 ②）。
+写路径两分（用户发无卡 / agent 发有卡 / 删除强确认）**原则已拍板**（D9），发进群落点在绑定 DSH composer（面板为快捷 ②）。绑定家园上 agent 经 `robot_notify` / `robot_continue` 推群不再绕过确认卡（cleanup：WRITE_SPECS `whenSession=yzj-home-*` + write-gate 认领这两项；面板 `im-send` / `home-send` 仍无卡）。
 
 ### 22.2 阻塞缺口
 
@@ -508,7 +508,7 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 | 1 | 打开群 A 两次 → 一条绑定会话，第二次 focus | ✅ `HomeBindingStore` / `home-open` / 面板挑群 |
 | 2 | @机器人 followup 进绑定会话，无新 `yzj-robot-*` 家园 | ✅ robot-yzj `resolveSession` |
 | 3 | 四类节点共一条 transcript | ✅ 「群工作」融合流；官方 Chat 仍在 |
-| 4 | 用户发群无卡 / agent 发有卡 / 删除强确认 | ✅ 发进群 = home-send / im-send 无卡；agent 写 GUI 或群建议卡 |
+| 4 | 用户发群无卡 / agent 发有卡 / 删除强确认 | ✅ 发进群 = home-send / im-send 无卡；agent 写 GUI 或群建议卡；绑定家园 `robot_notify` / `robot_continue` 同闸 |
 | 5 | 面板挑群切 DSH；无独立 IM 作家园 | ✅ 挑群切 DSH；面板降为快捷 ② |
 | 6 | 未绑定只有对 agent 的单一发送 | ✅ dock 无「发进群」；有「丢进群」 |
 | 7 | 丢进群默认摘要 + 确认卡 | ✅ 默认勾选近窗；全文迁移显式；确认后 focus |

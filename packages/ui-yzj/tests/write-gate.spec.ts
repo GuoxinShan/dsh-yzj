@@ -1,8 +1,9 @@
 /**
  * Write-gate specs: the confirmation-card bridge answers the
- * `approval/request` waterfall for yzj tools, pairs the audit id, exposes
- * pending records, settles decisions, and lets the official `tools/result`
- * event drive the terminal status. Non-yzj requests delegate via next().
+ * `approval/request` waterfall for yzj_* writes plus bound-home
+ * robot_notify / robot_continue, pairs the audit id, exposes pending
+ * records, settles decisions, and lets the official `tools/result`
+ * event drive the terminal status. Other requests delegate via next().
  */
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
@@ -241,6 +242,69 @@ describe('applyWriteGate', () => {
         },
       },
       toolName: 'yzj_im_message_send',
+      callId: 'c1',
+    }, () => Promise.resolve<YzjApprovalOutcome>('unavailable'))
+    expect(outcome).toBe('unavailable')
+  })
+
+  it('claims robot_notify on a GUI-focused bound home (D9 group-push hole)', async () => {
+    const ctx = new Context()
+    ctx.provide('yzjRobot', { ownsConfirm: () => true })
+    const gate = applyWriteGate(ctx)
+    ctx.emit('yzj/ask-pending', {
+      callId: 'c1', toolName: 'robot_notify', level: 'standard',
+      reason: 'r', args: { text: '推群', robotIndex: 0 },
+    })
+    const pending = ctx.waterfall('approval/request', {
+      agent: {
+        session: {
+          id: 'yzj-home-inbound',
+          events: [
+            { type: 'user/message', data: { source: { kind: 'user' } } },
+            { type: 'approval/asked', data: { id: 'w-notify', callId: 'c1' } },
+          ],
+        },
+      },
+      toolName: 'robot_notify',
+      callId: 'c1',
+    }, () => Promise.resolve<YzjApprovalOutcome>('unavailable'))
+    expect(gate.list('yzj-home-inbound').map(r => r.writeId)).toEqual(['w-notify'])
+    expect(gate.list('yzj-home-inbound')[0]).toMatchObject({
+      toolName: 'robot_notify', domain: 'im', args: { text: '推群' },
+    })
+    gate.decide('w-notify', 'allowed-once')
+    await expect(pending).resolves.toBe('allowed-once')
+  })
+
+  it('claims robot_continue on a pick-group yzj-home-* that ConfirmBroker does not own', async () => {
+    const ctx = new Context()
+    ctx.provide('yzjRobot', { ownsConfirm: () => false })
+    const gate = applyWriteGate(ctx)
+    ctx.emit('yzj/ask-pending', {
+      callId: 'c1', toolName: 'robot_continue', level: 'standard',
+      reason: 'r', args: { text: '续' },
+    })
+    const pending = ctx.waterfall('approval/request', {
+      agent: {
+        session: {
+          id: 'yzj-home-picked',
+          events: [{ type: 'turn/start', data: { turn: 1 } }, { type: 'approval/asked', data: { id: 'w-cont', callId: 'c1' } }],
+        },
+      },
+      toolName: 'robot_continue',
+      callId: 'c1',
+    }, () => Promise.resolve<YzjApprovalOutcome>('unavailable'))
+    expect(gate.list('yzj-home-picked').map(r => r.writeId)).toEqual(['w-cont'])
+    gate.decide('w-cont', 'allowed-once')
+    await expect(pending).resolves.toBe('allowed-once')
+  })
+
+  it('still skips leftover yzj-robot-* for robot_notify (residual prefix)', async () => {
+    const ctx = new Context()
+    applyWriteGate(ctx)
+    const outcome = await ctx.waterfall('approval/request', {
+      agent: { session: { id: 'yzj-robot-old', events: [{ type: 'approval/asked', data: { id: 'w1', callId: 'c1' } }] } },
+      toolName: 'robot_notify',
       callId: 'c1',
     }, () => Promise.resolve<YzjApprovalOutcome>('unavailable'))
     expect(outcome).toBe('unavailable')

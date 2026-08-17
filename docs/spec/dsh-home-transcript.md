@@ -33,7 +33,7 @@
 | T8 | 去重键 | 主键 **`(yzjConversationId, msgId)`**。乐观 ② 先占 `local-*`，CLI 返回真实 `msgId` 后改写；之后同一键的入站/回填回声丢弃，保留 ② 行 | 面板消息流已按 `msgId` 去重。无第二套模糊主键做默认；仅当 CLI 未返回 `msgId` 时才允许 `(fromOpenId, content, sentAt±窗口)` 作临时贴合，贴上即升格为主键 |
 | T9 | 打开绑定会话 | **必须回填**最近 N 条进日志/视图。只靠 live inbound **不够** | 对话机器人 WS 默认只投递 `@机器人`，不是全量群流水。绑定前的历史、DSH 关掉时的非 @ 消息、漏帧，都只有 `im message list` 能补。N 为 Config（默认 50） |
 | T10 | 未绑定 composer | **无 ①② 流**；**单一发送按钮**（只对 agent） | D7。私聊不是群；引用 chip ≠ 绑定 |
-| T11 | 绑定 composer | **两种意图**：发给助手 / 发进群。chrome 可以是双按钮或模式切换，必须在 **DSH composer**，不得放回面板第二 IM | D3/D5/§2.1 不变量 5。面板 composer 目标仍是移除/降级 |
+| T11 | 绑定 composer | **两种意图**：发给助手 / 发进群。chrome 可以是双按钮或模式切换，必须在 **DSH composer**，不得放回面板第二 IM | D3/D5/§2.1 不变量 5。面板 composer 已降级为快捷 ②（G6），不得作家园 |
 | T12 | 机器人出站帖子 | **不进 ①② 日志**（回填/入站遇到本通道机器人发送者则跳过）。群里那条帖子是 ④ 的投递，视图用「已投递到群」标记，不另开说话人 | D4。否则融合流会出现 agent 正文 + 一条「机器人 ①」双影 |
 | T13 | write-gate 的 `yzj-robot-*` skip | **已重划**（家园 UX PR）：残留 `yzj-robot-*` 仍 skip GUI。`ownsConfirm` 的 `yzj-home-*`：最新 user/message 是 GUI 用户轮 → GUI 卡；plugin followup 或尚无 user/message → 群建议卡 | 绑定后 skip 前缀失效；操作者对着绑定会话「发给助手」必须能在 GUI 确认 |
 
@@ -315,18 +315,16 @@ DSH「发给助手」
 6. 机器人自己的群帖子不作为 ① 气泡双影；④ 用「已投递」标记。
 7. 重启 host 后，绑定仍在则 log 仍在；确认卡 pending 仍按既有内存语义（不假装已进 session 日志）。
 
-阻塞项（确认卡事件族、绑定对象本身）不在本片假装已落地。
+阻塞项（确认卡 pending 仍非 session 事件，G3）不在本片假装已落地。绑定对象本身已落地（`ctx.yzjHome`）。
 
 ---
 
 ## 12. 本版明确不做
 
 - 免 @ / ambient / 把每一条 ① 默认送进模型（D11 / T3）。
-- 改 harness：自定义 session 事件、`Session.append` ignorable、让 `agent/request` 改消息正文。
-- 解绑 UI、一条 session 绑多群、无限本地群档。
-- 把云之家客户端做成 DSH 皮肤。
 - 改 harness：自定义 session 事件、`Session.append` ignorable、让 `agent/request` 改消息正文、把 `conversation.view` 做成唯一 Chat。
 - 解绑 UI、一条 session 绑多群、无限本地群档。
+- 把云之家客户端做成 DSH 皮肤。
 - 确认卡 pending 写成官方 session 事件（G3；融合视图 overlay `write-list`，SPA 刷新仍在，host 重启仍降级）。
 
 ---

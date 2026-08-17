@@ -22,11 +22,11 @@ Every tool returns `{ content, truncated, data }`:
 
 Durable 1:1 table: one Yunzhijia conversation (group or DM) ↔ one DSH session (`yzj-home-*`). Shared by robot inbound `followup()` and the panel pick-group path (`/yzj home-open`). Domain `yzj_home_bindings` (storage-domain); a second open is focus (`created: false`), never a parallel row.
 
-**Bound message log** (domain `yzj_home_logs`, keyed by `yzjConversationId`): inbound ① and DSH「发进群」② live here — never as harness `Session.append` events. `formatSummonWindow` is the shared digest both summon paths call (`agent.inject` on 云之家 @Claude, `systemPrompt.context` `yzj-bound-window` on DSH「发给 agent」). See `docs/spec/dsh-home-transcript.md`.
+**Bound message log** (domain `yzj_home_logs`, keyed by `yzjConversationId`): inbound ① and DSH「发进群」② live here — never as harness `Session.append` events. `formatSummonWindow` is the shared digest both summon paths call (`agent.inject` on 云之家 @机器人, `systemPrompt.context` `yzj-bound-window` on DSH「发给助手」). See `docs/spec/dsh-home-transcript.md`.
 
 ## Approval guard
 
-`tools/pre-execute` returns `{ kind: 'ask', reason }` for operations that must never run unconfirmed: `yzj_doc_delete`, `yzj_doc_move`, `yzj_doc_block_delete`, `yzj_sheet_table_delete`, `yzj_sheet_record_delete`, `yzj_calendar_event_delete`, `yzj_im_message_send`, `yzj_file_upload`, and `yzj_file_download` with `overwrite: true`. The composed ApprovalService routes the ask to the GUI approval panel and audits the pair on the session log.
+`tools/pre-execute` returns `{ kind: 'ask', reason }` for operations that must never run unconfirmed: `yzj_doc_delete`, `yzj_doc_move`, `yzj_doc_block_delete`, `yzj_sheet_table_delete`, `yzj_sheet_record_delete`, `yzj_calendar_event_delete`, `yzj_im_message_send`, `yzj_file_upload`, `yzj_file_download` with `overwrite: true`, todo writes, `robot_share_write`, and **bound-home** `robot_notify` / `robot_continue` (D9 group push; the unbound operator console stays ungated). The composed ApprovalService routes the ask to the GUI approval panel (or the in-group suggestion card on inbound homes) and audits the pair on the session log.
 
 ## Config
 

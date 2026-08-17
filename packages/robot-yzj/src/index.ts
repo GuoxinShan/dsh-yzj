@@ -17,7 +17,6 @@ import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import type { AgentHandle } from '@deepseek-ai/dsh-agent'
 import type { SocketStatus } from './socket.ts'
 import { RobotSocket } from './socket.ts'
 import { deriveWebSocketUrl } from './protocol.ts'
@@ -207,8 +206,6 @@ export class YzjRobot extends Service {
   private readonly config: Config
   /** The settings card's channel file (design §8.5); undefined = file not configured. */
   private readonly channelsFile: string | undefined
-  /** Operator-side fork sessions created from robot conversations (owned here). */
-  private readonly forked = new Map<string, AgentHandle>()
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'yzjRobot')
@@ -471,12 +468,10 @@ export class YzjRobot extends Service {
     return this.confirm.ownsSession(sessionId)
   }
 
-  /** Fork sessions this service owns (diagnostics). */
-  forkedSessions(): string[] {
-    return [...this.forked.keys()]
-  }
-
-  /** Stable DM session id for one robot and one user openId. */
+  /**
+   * Leftover: legacy `yzj-robot-*` DM id. Inbound no longer mints this;
+   * bound homes are `yzj-home-*`. Kept so old disk logs stay addressable.
+   */
   dmSession(robotId: string, operatorOpenid: string): string {
     return dmSessionId(robotId, operatorOpenid)
   }
@@ -585,17 +580,13 @@ export class YzjRobot extends Service {
     return { config: robotConfig, sender, router, socket, status }
   }
 
-  /** Stop every channel (idempotent). Disposes router-owned and fork agents. */
+  /** Stop every channel (idempotent). Disposes router-owned agents. */
   stop(): void {
     for (const channel of this.channels) {
       channel.socket.stop()
       void channel.router.dispose()
     }
     this.channels.length = 0
-    for (const handle of this.forked.values()) {
-      void handle.dispose()
-    }
-    this.forked.clear()
     this.confirm.dispose()
     void this.overrides.close()
     void this.surfaces.close()
@@ -914,8 +905,9 @@ export function apply(ctx: Context, config: Config): void {
     return robot.handleApproval(req, next)
   })
   // DSH-side bidirectional controls: proactive notify, conversation
-  // continuation, and session fork, exposed as model tools on every session
-  // (guarded inside so robot sessions cannot drive themselves).
+  // continuation, and session fork, exposed as model tools on every session.
+  // Leftover yzj-robot-* ids refuse at execute; bound-home notify/continue
+  // ride WRITE_SPECS (D9).
   applyRobotControlTools(ctx, robot)
   // Group shared-workspace tools (robot_share_write / robot_share_list): the
   // sole write channel into a group's shared directory. Callable from every

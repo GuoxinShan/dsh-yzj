@@ -3,8 +3,7 @@
  * 1. Real-CLI smoke: mounts the read-only tools over a real YzjBridge and
  *    executes contact/doc/calendar/im reads, asserting digests and payloads.
  *    Self-skips when the machine's yzj-cli is absent or unauthenticated.
- * 2. Approval guard: the pre-execute listener asks for dangerous tools and
- *    delegates everything else.
+ * Guard specs live in guard.spec.ts (WRITE_SPECS / D9 robot_notify).
  */
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
@@ -14,7 +13,6 @@ import { applyDocTools } from '../src/doc.ts'
 import { applyCalendarTools } from '../src/calendar.ts'
 import { applyImTools } from '../src/im.ts'
 import { applyFileTools } from '../src/file.ts'
-import { applyApprovalGuard } from '../src/guard.ts'
 import type { YzjToolBudget } from '../src/shared.ts'
 
 const BUDGET: YzjToolBudget = { timeoutMs: 30_000, maxRenderChars: 5_000, maxMetaChars: 5_000 }
@@ -103,81 +101,5 @@ describe('read-only tools over the real CLI', () => {
     const today = new Date().toISOString().slice(0, 10)
     const result = await byName.get('yzj_calendar_event_list')!.execute({ start: today, end: today })
     expect(result.content.length).toBeGreaterThan(0)
-  })
-})
-
-describe('approval guard', () => {
-  type PreToolDecision = { kind: 'allow' } | { kind: 'ask'; reason: string } | { kind: 'deny'; reason: string }
-  type Listener = (exec: { name: string; callId: string; arguments: unknown }, next: () => Promise<PreToolDecision>) => Promise<PreToolDecision>
-  interface Pending { callId: string; toolName: string; level: string; reason: string; args: Record<string, unknown> }
-
-  function guard(): { listener: Listener; pending: Pending[] } {
-    let listener: Listener = async () => ({ kind: 'allow' })
-    const pending: Pending[] = []
-    const ctx = {
-      on(_event: string, fn: Listener): void {
-        listener = fn
-      },
-      emit(_event: string, payload: Pending): void {
-        pending.push(payload)
-      },
-    } as unknown as Context
-    applyApprovalGuard(ctx)
-    return { listener, pending }
-  }
-
-  it('asks for yzj_doc_delete at strong level', async () => {
-    const { listener, pending } = guard()
-    const decision = await listener({ name: 'yzj_doc_delete', callId: 'c1', arguments: { id: 'x' } }, async () => ({ kind: 'allow' }))
-    expect(decision.kind).toBe('ask')
-    expect((decision as { reason: string }).reason).toContain('删除')
-    expect(pending[0]).toMatchObject({ callId: 'c1', toolName: 'yzj_doc_delete', level: 'strong', args: { id: 'x' } })
-  })
-
-  it('asks for yzj_im_message_send at standard level', async () => {
-    const { listener, pending } = guard()
-    const decision = await listener({ name: 'yzj_im_message_send', callId: 'c1', arguments: { groupId: 'g' } }, async () => ({ kind: 'allow' }))
-    expect(decision.kind).toBe('ask')
-    expect(pending[0].level).toBe('standard')
-  })
-
-  it('asks for yzj_file_download only when overwriting', async () => {
-    const { listener, pending } = guard()
-    const plain = await listener({ name: 'yzj_file_download', callId: 'c1', arguments: { id: 'f' } }, async () => ({ kind: 'allow' }))
-    expect(plain.kind).toBe('allow')
-    const overwrite = await listener({ name: 'yzj_file_download', callId: 'c2', arguments: { id: 'f', overwrite: true } }, async () => ({ kind: 'allow' }))
-    expect(overwrite.kind).toBe('ask')
-    expect(pending[0].level).toBe('standard')
-  })
-
-  it('asks for every design-listed standard write tool', async () => {
-    const { listener, pending } = guard()
-    const names = [
-      'yzj_doc_workspace_create', 'yzj_doc_create', 'yzj_doc_rename', 'yzj_doc_import',
-      'yzj_doc_block_insert', 'yzj_doc_block_update', 'yzj_sheet_create',
-      'yzj_sheet_table_create', 'yzj_sheet_table_rename', 'yzj_sheet_record_create',
-      'yzj_sheet_record_update', 'yzj_calendar_event_create', 'yzj_calendar_event_update',
-      'robot_share_write',
-    ]
-    for (const name of names) {
-      const decision = await listener({ name, callId: `c${name}`, arguments: {} }, async () => ({ kind: 'allow' }))
-      expect(decision.kind, name).toBe('ask')
-    }
-    expect(pending.length).toBe(names.length)
-    expect(pending.every(entry => entry.level === 'standard')).toBe(true)
-  })
-
-  it('asks for robot_share_write with the workspace confirmation prefix', async () => {
-    const { listener, pending } = guard()
-    const decision = await listener({ name: 'robot_share_write', callId: 'c1', arguments: { filename: 'report.md' } }, async () => ({ kind: 'allow' }))
-    expect(decision.kind).toBe('ask')
-    expect((decision as { reason: string }).reason).toContain('工作区写操作确认')
-    expect(pending[0]).toMatchObject({ toolName: 'robot_share_write', level: 'standard', args: { filename: 'report.md' } })
-  })
-
-  it('delegates non-dangerous tools', async () => {
-    const { listener } = guard()
-    const decision = await listener({ name: 'yzj_doc_list', callId: 'c1', arguments: { workspace: 'kb' } }, async () => ({ kind: 'allow' }))
-    expect(decision.kind).toBe('allow')
   })
 })

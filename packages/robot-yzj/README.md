@@ -6,7 +6,7 @@ personal (or group) Yunzhijia robot and DSH agent sessions.
 **Product law (binding + fused timeline landed):** inbound `followup()` lands on the
 **bound DSH session** for that Yunzhijia conversation (`ctx.yzjHome`,
 `docs/spec/dsh-home-session.md`). Session ids are `yzj-home-*`. Inbound also
-appends ① to the shared bound log; @Claude injects `formatSummonWindow` then
+appends ① to the shared bound log; 云之家 @机器人 injects `formatSummonWindow` then
 followup. GUI-focused bound sessions keep the GUI confirm card; inbound
 plugin turns stay on the group suggestion-card path. `!fork` /
 `robot_fork` open or resume that bound session and must not `create` a
@@ -43,8 +43,11 @@ as a session event, group search) are in gap-analysis §22 G3/G5.
   DSH session: `robot_status` (channels, cwd, surfaces, sessions),
   `robot_notify` (proactive push), `robot_continue` (inject an operator turn
   through the full inbound pipeline), and `robot_fork` (open or resume the
-  bound home for that conversation — not a new root). See `src/control.ts`
-  and docs/spec/robot-channel-plan.md §8 / §9.
+  bound home for that conversation — not a new root). On a bound `yzj-home-*`
+  session, `robot_notify` / `robot_continue` enter WRITE_SPECS (D9 confirm
+  card / group suggestion card). The unbound operator console and panel RPC
+  stay card-less. Leftover `yzj-robot-*` sessions still refuse at execute.
+  See `src/control.ts` and docs/spec/robot-channel-plan.md §8 / §9.
 - **Group workspaces** — one working directory per bound group
   (`<cwd>/groups/<groupId>/`) plus one shared directory per group
   (`<cwd>/groups/<groupId>/shared/`). `robot_share_write` is the ONLY write
@@ -91,13 +94,15 @@ as a session event, group search) are in gap-analysis §22 G3/G5.
   turn through the full inbound pipeline (ack, memory, agent turn, push back).
 - `forkSession(sessionId)` — open or resume the bound DSH home for the
   conversation behind this session id (never a `fork-*` parallel root).
-- `dmSession(robotId, openId)` — stable DM session id.
+- `dmSession(robotId, openId)` — leftover. Legacy `yzj-robot-*` DM id;
+  unused by inbound (homes are `yzj-home-*`). Kept so old disk logs stay
+  addressable.
 - `shareWrite(robotIndex, groupId?, filename, content, overwrite)` /
   `shareList(robotIndex, groupId?)` — group shared-workspace writes/lists
   behind the `robot_share_*` tools (groupId defaults to the channel's most
   recent surface).
 
-## Protocol facts (measured 2026-08-16, see docs/机器人通道调研与双向打通方案.md §4.1)
+## Protocol facts (measured 2026-08-16, see docs/spec/robot-channel-plan.md §4.1)
 
 - Personal-robot creation needs no callback URL; the WS connection is the
   entire inbound path.
