@@ -299,6 +299,32 @@ describe('applyWriteGate', () => {
     await expect(pending).resolves.toBe('allowed-once')
   })
 
+  it('claims robot_notify on a GUI-focused yzj-topic-* session (R10)', async () => {
+    const ctx = new Context()
+    ctx.provide('yzjRobot', { ownsConfirm: () => true })
+    const gate = applyWriteGate(ctx)
+    ctx.emit('yzj/ask-pending', {
+      callId: 'c1', toolName: 'robot_notify', level: 'standard',
+      reason: 'r', args: { text: '推群' },
+    })
+    const pending = ctx.waterfall('approval/request', {
+      agent: {
+        session: {
+          id: 'yzj-topic-g-a-root',
+          events: [
+            { type: 'user/message', data: { source: { kind: 'user' } } },
+            { type: 'approval/asked', data: { id: 'w-topic', callId: 'c1' } },
+          ],
+        },
+      },
+      toolName: 'robot_notify',
+      callId: 'c1',
+    }, () => Promise.resolve<YzjApprovalOutcome>('unavailable'))
+    expect(gate.list('yzj-topic-g-a-root').map(r => r.writeId)).toEqual(['w-topic'])
+    gate.decide('w-topic', 'allowed-once')
+    await expect(pending).resolves.toBe('allowed-once')
+  })
+
   it('still skips leftover yzj-robot-* for robot_notify (residual prefix)', async () => {
     const ctx = new Context()
     applyWriteGate(ctx)

@@ -209,11 +209,11 @@ export function applyWriteGate(ctx: Context): {
     // protocol (robot-yzj's ConfirmBroker owns those requests) — the GUI card
     // would wait for a click nobody makes on an unattended channel.
     // Leftover yzj-robot-* ids stay skipped (residuals); bound homes do not.
+    // Leftover yzj-robot-* ids stay skipped (residuals); group-room hosts
+    // and topic sessions do not.
     if (req.agent.session.id.startsWith('yzj-robot-')) return next()
-    // Inbound-bound homes (yzj-home-*) register with ConfirmBroker. Keep the
-    // group suggestion card for plugin followups and for turns that have not
-    // yet grown a user/message (inbound path). A later GUI「发给助手」turn
-    // on the same bound session must keep the GUI card.
+    // Inbound topic sessions (yzj-topic-*) and residual yzj-home-* register
+    // with ConfirmBroker. Keep the group suggestion card for plugin followups.
     const robot = ctx.get('yzjRobot') as { ownsConfirm?: (sessionId: string) => boolean } | undefined
     if (robot?.ownsConfirm?.(req.agent.session.id) === true && !latestUserIsGui(req.agent.session.events)) {
       return next()

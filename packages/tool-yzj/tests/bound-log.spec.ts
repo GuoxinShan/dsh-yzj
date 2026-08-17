@@ -65,12 +65,30 @@ describe('applyAppend / T8 dedupe', () => {
     expect(second.entries[0]?.origin).toBe('dsh-send')
   })
 
-  it('skips robot outbound openIds (T12)', () => {
+  it('skips robot outbound openIds when skipOpenIds is passed (inbound echo)', () => {
     const { result, entries } = applyAppend([], entry({ msgId: 'bot-1', fromOpenId: 'BOT-r' }), {
       skipOpenIds: ['BOT-r'],
     })
     expect(result.reason).toBe('robot-skipped')
     expect(entries).toHaveLength(0)
+  })
+
+  it('promotes a backfill row to robot-outbound (R9)', () => {
+    const first = applyAppend([], entry({ msgId: 'bot-1', fromOpenId: 'BOT-r', origin: 'backfill', content: 'ack' }))
+    const second = applyAppend(first.entries, {
+      ...entry({ msgId: 'bot-1', fromOpenId: 'BOT-r', origin: 'robot-outbound', fromName: '助手', content: 'ack' }),
+      topicSessionId: 'yzj-topic-g-a-root',
+    })
+    expect(second.result.reason).toBe('promoted-to-robot-outbound')
+    expect(second.entries[0]?.origin).toBe('robot-outbound')
+    expect(second.entries[0]?.topicSessionId).toBe('yzj-topic-g-a-root')
+  })
+
+  it('collapses a later backfill of a robot-outbound post', () => {
+    const first = applyAppend([], entry({ msgId: 'bot-1', origin: 'robot-outbound', fromName: '助手' }))
+    const second = applyAppend(first.entries, entry({ msgId: 'bot-1', origin: 'backfill', fromOpenId: 'BOT-r' }))
+    expect(second.result.reason).toBe('echo-collapsed')
+    expect(second.entries[0]?.origin).toBe('robot-outbound')
   })
 })
 
@@ -123,11 +141,55 @@ describe('cli projection', () => {
     expect(extractSendMsgId({ data: { msgId: 'm2' } })).toBe('m2')
     expect(extractSendMsgId({ id: 'm3' })).toBe('m3')
   })
+
+  it('reads fromUser.openId / oId / name when top-level fields are empty', () => {
+    const row = cliMessageToEntry({
+      msgId: 'm-u', content: 'hi', msgType: 'text',
+      sendTime: '2026-08-16 20:00:00.000',
+      fromUser: { openId: 'u-nested', name: '老黎' },
+    }, 'backfill', 'me')
+    expect(row?.fromOpenId).toBe('u-nested')
+    expect(row?.fromName).toBe('老黎')
+  })
+
+  it('prefers fromUser.oId when openId is missing', () => {
+    const row = cliMessageToEntry({
+      msgId: 'm-o', content: 'hi', fromUser: { oId: 'oid-1', userName: '小王' },
+    }, 'inbound', 'me')
+    expect(row?.fromOpenId).toBe('oid-1')
+    expect(row?.fromName).toBe('小王')
+  })
+})
+
+describe('applyAppend param enrich', () => {
+  it('fills param onto an existing digest-only row', () => {
+    const first = applyAppend([], entry({ msgId: 'm1', content: '[图片]' }))
+    const second = applyAppend(first.entries, entry({
+      msgId: 'm1',
+      content: '[图片]',
+      msgType: 'file',
+      param: { file_id: 'fid-1', name: 'shot.png' },
+    }))
+    expect(second.result.reason).toBe('enriched')
+    expect(second.entries[0]?.param).toEqual({ file_id: 'fid-1', name: 'shot.png' })
+    expect(second.entries[0]?.msgType).toBe('file')
+  })
+
+  it('fills empty openId and fromName on a collision without changing origin', () => {
+    const first = applyAppend([], entry({ msgId: 'm1', fromOpenId: '', fromName: '', content: 'hi' }))
+    const second = applyAppend(first.entries, entry({
+      msgId: 'm1', fromOpenId: 'u2', fromName: '老黎', content: 'hi',
+    }))
+    expect(second.result.reason).toBe('enriched')
+    expect(second.entries[0]?.fromOpenId).toBe('u2')
+    expect(second.entries[0]?.fromName).toBe('老黎')
+    expect(second.entries[0]?.origin).toBe('inbound')
+  })
 })
 
 describe('formatSummonWindow', () => {
-  it('returns empty for an empty log (do not inject an empty block)', () => {
-    expect(formatSummonWindow(logOf([]), { maxMessages: 20, maxChars: 4000 })).toBe('')
+  it('returns empty when there is no groupId and no rows', () => {
+    expect(formatSummonWindow(undefined, { maxMessages: 20, maxChars: 4000 })).toBe('')
   })
 
   it('takes the newest N acked rows, drops pending ②, excludes the summon ①', () => {
@@ -151,8 +213,8 @@ describe('formatSummonWindow', () => {
       entry({ msgId: 'm2', content: '回你', isSelf: true, fromName: '国鑫', replyMsgId: 'm1', sentAt: 2 }),
     ]
     const text = formatSummonWindow(logOf(entries), { maxMessages: 20, maxChars: 4000 })
-    expect(text).toContain('我: 回你')
-    expect(text).toContain('回复 原帖很长的内容会被截断')
+    expect(text).toContain('我 msgId=m2: 回你')
+    expect(text).toContain('回复 msgId=m1 原帖很长的内容会被截断')
   })
 
   it('drops older lines to stay inside maxChars, keeping newer', () => {
@@ -163,6 +225,27 @@ describe('formatSummonWindow', () => {
     const text = formatSummonWindow(logOf(entries), { maxMessages: 20, maxChars: 24 })
     expect(text).toContain('BBBB')
     expect(text).not.toContain('AAAA')
+  })
+
+  it('pins groupId and per-line msgId so the model can send or reply', () => {
+    const text = formatSummonWindow(logOf([
+      entry({ msgId: 'm-root', content: '帮我整理', fromName: '老黎', sentAt: 1 }),
+    ]), {
+      maxMessages: 20,
+      maxChars: 4000,
+      topic: { title: '整理接口清单', rootMsgId: 'm-root', originWho: '老黎', originText: '帮我整理' },
+    })
+    expect(text).toContain('groupId: g-a')
+    expect(text).toContain('yzj_im_message_send')
+    expect(text).toContain('话题: 整理接口清单')
+    expect(text).toContain('锚点 msgId: m-root')
+    expect(text).toContain('老黎 msgId=m-root: 帮我整理')
+  })
+
+  it('still injects groupId when the log is empty', () => {
+    const text = formatSummonWindow(undefined, { maxMessages: 20, maxChars: 4000, groupId: 'g-empty' })
+    expect(text).toContain('groupId: g-empty')
+    expect(text).toContain('yzj_im_message_send')
   })
 })
 

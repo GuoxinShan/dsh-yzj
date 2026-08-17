@@ -59,12 +59,13 @@ export function focusBoundSession(
  * no-op so panel IM still loads without the home slice.
  */
 export function bindAndFocusGroup(
-  homeOpen: ((groupId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>) | undefined,
+  homeOpen: ((groupId: string, title?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>) | undefined,
   focus: ((sessionId: string) => void) | undefined,
   groupId: string,
+  title?: string,
 ): Promise<void> {
   if (homeOpen === undefined) return Promise.resolve()
-  return homeOpen(groupId).then(result => {
+  return (title === undefined || title === '' ? homeOpen(groupId) : homeOpen(groupId, title)).then(result => {
     if (!result.ok) return
     const value = typeof result.value === 'object' && result.value !== null
       ? result.value as Record<string, unknown>

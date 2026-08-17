@@ -56,8 +56,9 @@ export const controlOutput: {
 
 /**
  * Reject calls originating inside leftover robot-session ids (no self-driving).
- * Bound homes (`yzj-home-*`) are allowed through here — group push on those
- * ids is gated by WRITE_SPECS at pre-execute, not by this throw.
+ * Bound homes (`yzj-home-*`) and topic sessions (`yzj-topic-*`) are allowed
+ * through here — group push on those ids is gated by WRITE_SPECS at
+ * pre-execute, not by this throw.
  */
 function operatorOnly(sessionId: unknown): void {
   if (typeof sessionId === 'string' && sessionId.startsWith('yzj-robot-')) {

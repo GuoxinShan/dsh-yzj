@@ -21,9 +21,9 @@ interface DangerousSpec {
   when?: (args: Record<string, unknown>) => boolean
   /**
    * Optional session filter. `undefined` session id asks (fail closed).
-   * Used by robot_notify/continue: bound homes must confirm (D9); the
-   * unbound operator console stays ungated; leftover yzj-robot-* still
-   * refuse at execute (operatorOnly).
+   * Used by robot_notify/continue: group-room hosts and topic sessions must
+   * confirm (D9 / R10); the unbound operator console stays ungated; leftover
+   * yzj-robot-* still refuse at execute (operatorOnly).
    */
   whenSession?: (sessionId: string | undefined) => boolean
   /** Confirmation-prefix override for non-yzj tools (e.g. the shared workspace); defaults to the yzj wording. */
@@ -75,9 +75,11 @@ const WRITE_SPECS: Record<string, DangerousSpec> = {
   },
 }
 
-/** Bound product homes (`yzj-home-*`). Missing id → ask (fail closed on the D9 hole). */
+/** Group-room host or a topic session. Missing id → ask (fail closed on the D9 hole). */
 function isBoundHomeSession(sessionId: string | undefined): boolean {
-  return sessionId === undefined || sessionId.startsWith('yzj-home-')
+  return sessionId === undefined
+    || sessionId.startsWith('yzj-home-')
+    || sessionId.startsWith('yzj-topic-')
 }
 
 /** Structural session id on a tools/pre-execute exec (agent is present in harness). */

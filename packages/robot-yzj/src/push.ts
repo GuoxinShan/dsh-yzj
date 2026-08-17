@@ -38,6 +38,8 @@ export interface PushConversation {
   readonly lastInbound: { msgId: string; summary: string; personName: string }
   /** True for DSH-side synthetic turns: pushes must not anchor replies (the msgId never existed on the server). */
   readonly noReplyAnchor?: boolean
+  /** Record a delivered robot post into the group-room log (R9). */
+  readonly onOutbound?: (msgId: string, text: string, replyMsgId?: string) => void
 }
 
 /** Structural session-event face (firehose payloads we consume). */
@@ -141,16 +143,20 @@ export class PushHub {
   /** Send with the conversation's reply anchor; notify only final answers. */
   private async sendSafely(conversation: PushConversation, text: string, notify = false): Promise<void> {
     try {
-      await conversation.sender.send(text, {
-        ...(conversation.noReplyAnchor === true
+      const replyMsgId = conversation.noReplyAnchor === true ? undefined : conversation.lastInbound.msgId
+      const result = await conversation.sender.send(text, {
+        ...(replyMsgId === undefined
           ? {}
           : {
-              replyMsgId: conversation.lastInbound.msgId,
+              replyMsgId,
               replySummary: conversation.lastInbound.summary,
               replyPersonName: conversation.lastInbound.personName,
             }),
         ...(notify && conversation.group ? { notifyOpenIds: [conversation.askerOpenId] } : {}),
       })
+      if (result.ok && result.msgId !== undefined) {
+        conversation.onOutbound?.(result.msgId, text, replyMsgId)
+      }
     } catch {
       // Outbound failures are logged by the sender's channel; never throw
       // from a firehose listener.

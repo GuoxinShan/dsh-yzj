@@ -14,8 +14,11 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { YzjToolCard, YZJ_TOOL_NAMES } from './cards.tsx'
 import { YzjComposerDock, dragInsertRequest, type YzjDropInjected } from './composer.tsx'
-import { YzjFusedView, type YzjFusedInjected } from './transcript.tsx'
 import type { YzjHomeChromeInjected } from './home-chrome.tsx'
+import { YzjRoomComposer, selectGroupRoomComposer, type YzjRoomComposerInjected } from './room-composer.tsx'
+import { YzjSessionShell, type YzjSessionShellInjected } from './session-shell.tsx'
+import { YzjYunzhijiaDock, type YzjGroupSpaceInjected } from './group-space.tsx'
+import { YzjRoomShell, type YzjRoomShellInjected } from './room-shell.tsx'
 import { applyYzjAtSource } from './input-source.ts'
 import { YzjPanel, YzjFloatBall } from './panel.tsx'
 import { YzjSettingsSection } from './settings-section.tsx'
@@ -178,14 +181,68 @@ export function apply(ctx: ClientContext): void {
       name: 'conversation.view',
       id: 'yzj-home',
       order: -50,
-      label: '群工作',
-      inject: (sessionId: string): YzjFusedInjected => ({
+      label: '群房间',
+      inject: (sessionId: string): YzjRoomShellInjected => ({
         sessionId,
         homeFused: (id) => panelInject.homeFused?.(id) ?? Promise.resolve({ ok: false as const, error: { message: 'homeFused unavailable' } }),
-        homeBackfill: (id) => panelInject.homeBackfill?.(id) ?? Promise.resolve({ ok: false as const, error: { message: 'homeBackfill unavailable' } }),
+        homeBackfill: (id, opts) => panelInject.homeBackfill?.(id, opts) ?? Promise.resolve({ ok: false as const, error: { message: 'homeBackfill unavailable' } }),
+        homeTopicOpen: (input) => panelInject.homeTopicOpen?.(input) ?? Promise.resolve({ ok: false as const, error: { message: 'homeTopicOpen unavailable' } }),
+        focusBoundSession: panelInject.focusBoundSession,
+        fetchFileData: panelInject.fetchFileData,
+        fetchContact: panelInject.fetchContact,
+        homeNav: () => panelInject.homeNav?.() ?? Promise.resolve({ ok: false as const, error: { message: 'homeNav unavailable' } }),
+        fetchGroups: (limit, page) => panelInject.fetchGroups(limit, page),
+        ...(panelInject.homeOpen === undefined ? {} : { homeOpen: panelInject.homeOpen }),
       }),
     },
-    YzjFusedView,
+    YzjRoomShell,
+  ))
+
+  ctx.slots.inject('conversation.composer', () => ctx.slots.register(
+    {
+      name: 'conversation.composer',
+      select: selectGroupRoomComposer,
+      inject: (sessionId: string): YzjRoomComposerInjected => ({
+        sessionId,
+        homeSend: (id, content, opts) => panelInject.homeSend?.(id, content, opts) ?? Promise.resolve({ ok: false as const, error: { message: 'homeSend unavailable' } }),
+        uploadFile: panelInject.uploadFile,
+        homeFused: (id) => panelInject.homeFused?.(id) ?? Promise.resolve({ ok: false as const, error: { message: 'homeFused unavailable' } }),
+        fetchContact: panelInject.fetchContact,
+      }),
+    },
+    YzjRoomComposer,
+  ))
+
+  ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register(
+    {
+      name: 'conversation.session.header.actions',
+      id: 'yzj-session-shell',
+      order: -80,
+      label: '群房间',
+      inject: (sessionId: string): YzjSessionShellInjected => ({
+        sessionId,
+        homeBinding: (id) => panelInject.homeBinding?.(id) ?? Promise.resolve({ ok: false as const, error: { message: 'homeBinding unavailable' } }),
+        focusBoundSession: panelInject.focusBoundSession,
+      }),
+    },
+    YzjSessionShell,
+  ))
+
+  ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register(
+    {
+      name: 'sidebar.footer.action',
+      id: 'yzj-group-space',
+      order: -80,
+      inject: (): YzjGroupSpaceInjected => ({
+        homeNav: () => panelInject.homeNav?.() ?? Promise.resolve({ ok: false as const, error: { message: 'homeNav unavailable' } }),
+        focusBoundSession: panelInject.focusBoundSession,
+        fetchGroups: (limit, page) => panelInject.fetchGroups(limit, page),
+        robotStatus: () => panelInject.robotStatus(),
+        openPanel: (target) => openPanelTarget(target),
+        ...(panelInject.homeOpen === undefined ? {} : { homeOpen: panelInject.homeOpen }),
+      }),
+    },
+    YzjYunzhijiaDock,
   ))
 
   applyYzjAtSource(ctx, panelInject)

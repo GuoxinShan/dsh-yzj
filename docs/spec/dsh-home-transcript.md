@@ -1,5 +1,6 @@
 # DSH 绑定会话的可见时间线：插件消息日志
 
+> **v2.0 覆盖（2026-08-17，Guoxin Shan）**：[`group-room-topics.md`](group-room-topics.md) 取代融合视图与 composer 条款——T2（融合一条流）、T10/T11（composer 双意图）作废，T12 改写（出站帖子进群房间时间线）；T1/T3–T9/T13 的存储、去重、回填、召唤窗口与 write-gate 机制**沿用**（消息日志改按群索引，服务群房间视图）。对照见该文 §6。本文正文不改写，作历史快照。
 > 版本：v1.1（已拍板；**实现已落地**——插件消息日志 + 融合视图 + composer 双意图 + 召唤窗口注入）+ **v1.2 文案**（2026-08-16）：产品手势是云之家 @机器人、DSH「发给助手」；「产品文案 @Claude」作废。Claude Tag 仅对照。
 > 日期：2026-08-16
 > 决策人：Guoxin Shan
@@ -85,13 +86,14 @@ YzjBoundMessageLog
 YzjLogEntry
   msgId:        string          // 云之家消息 id；乐观 ② 可为 local-<epochMs>
   sentAt:       number          // unix ms，融合排序键
-  fromOpenId:   string
-  fromName:     string          // 展示名；回填时按通讯录补，可空
+  fromOpenId:   string          // 解析顺序：顶层 fromOpenId / openId，再 fromUser.openId / fromUser.oId；可空
+  fromName:     string          // 展示名；解析 fromName / fromUser.name|userName|nickName；仍空且有 openId 则回填按通讯录补；可空，禁止 UI 用「群消息」做人名
   content:      string          // 文本 digest（富文本/图片/文件见 §3.3）
   msgType:      'text' | 'richText' | 'file' | 'other'
   origin:       'inbound' | 'dsh-send' | 'backfill'
   isSelf:       boolean         // 发送者 == 当前 CLI 登录用户
   replyMsgId?:  string          // 群内回复关系（产品法：链是节点引用，不是新 session）
+  param?:       object          // 有界 CLI param 快照（file_id / desc / 回复摘要 / 链接卡）；无二进制。缺省=旧日志，读面退回 digest
   status:       'pending' | 'acked' | 'failed'   // 仅 ② 用 pending/failed；①/回填为 acked
 ```
 
@@ -103,11 +105,11 @@ YzjLogEntry
 | `dsh-send` | 用户在 **DSH** 点「发进群」 | **②** |
 | `backfill` | 打开/focus 绑定会话时 `im message list` 补入，且尚未被 inbound/dsh-send 占键 | 按 `isSelf` 与是否已有 `dsh-send` 同行：无 ② 则视为 ① |
 
-回填撞上已有 `(yzjConversationId, msgId)`：**不改 origin**（② 不被回填降成 ①）。
+回填撞上已有 `(yzjConversationId, msgId)`：**不改 origin**（② 不被回填降成 ①）。旧行缺 `fromOpenId` / `fromName` 时允许用新行补上（与缺 param 则补同一路径）。
 
 ### 3.3 非文本
 
-MVP 日志存 **digest**：图片/文件记 `msgType` + 文件名/短描述，不把二进制塞进 log。完整回源仍走既有 chip/codec（拖入或 @ 消息）。发进群的图片/文件：直写路径与现行 `/yzj im-send` 一致，乐观 ② 用同一 digest。
+日志存 **digest + 有界 `param` 快照**：图片/文件记 `msgType` + `file_id`/`desc`/文件名，不把二进制塞进 log。群房间读面用同一套悬浮窗渲染（经 `/yzj file-data` 代理出图）。完整回源仍走既有 chip/codec（拖入或 @ 消息）。发进群的图片/文件：直写路径与现行 `/yzj im-send` 一致，乐观 ② 带同一 param。回填撞上已有键时不改 origin，但若旧行缺 param 则补上。`param` JSON 上限 8KB，超限丢 `interactiveCard`。
 
 ### 3.4 配置（schema 字段，不是代码常量）
 
@@ -140,7 +142,7 @@ MVP 日志存 **digest**：图片/文件记 `msgType` + 文件名/短描述，�
 
 ### 4.3 渲染口径（验收，非像素处方）
 
-- ①② = IM 气泡（发送人、时间、`replyMsgId` 回复关系、`isSelf` 右对齐）。**住在 DSH 会话**，不是面板第二套日志。
+- ①② = IM 行（发送人名+头像、时间、表情 token、图文/文件预览、`replyMsgId` 回复引用、`isSelf` 标「我」）。渲染与悬浮窗会话共用组件。**住在 DSH 会话**，不是面板第二套日志。更早历史走「加载更早消息」再回填一页（§3.4），不是无限本地档。
 - ③④ = 既有 DSH 用户轮 / assistant / 工具卡。
 - ④ 已投递到群：终态「已投递到群」，不出现「机器人说：」。
 - 确认卡是 ④ 的挂起态，必须出现在**这条**融合流里（pending 仍在 host 内存，视图 overlay，与现行 GUI 卡同一条 writeId）。
@@ -182,11 +184,11 @@ DSH「发给助手」的 ③ 是用户真的对助手说的话，**要渲染**�
 
 函数语义：`formatSummonWindow(log, opts) → string`。
 
-- 输入：该绑定 log 的 `acked` 行（`pending`/`failed` ② 不进模型），按 `sentAt` 升序。
+- 输入：该绑定 log 的 `acked` 行（`pending`/`failed` ② 不进模型），按 `sentAt` 升序。可选 `groupId`（缺省用 log.yzjConversationId）、话题锚点。
 - 切窗口：从末尾取至多 `summonWindowMessages` 条，再从最旧向前截到 `summonWindowChars`（超限丢更旧，保留较新）。
 - **不含本轮问句对应的那条 ①**：@机器人 时去掉与 inbound `msgId` 相同的行（问句走 followup 正文）；DSH「发给助手」时日志里本无这条 ③，窗口即当前 ①② 近窗。
-- 行格式（模型可见，中文标签）：`[时间] 显示名: digest`；`isSelf` 标「我」；有 `replyMsgId` 则附「回复 <短摘要或 id>」。
-- 头一行固定：`［本群最近消息（仅本轮上下文，非完整群档）］`。空窗口 → 不注入（不要送空块）。
+- 行格式（模型可见，中文标签）：`[时间] 显示名 msgId=<id>: digest`；`isSelf` 标「我」；有 `replyMsgId` 则附「回复 msgId=<id> <短摘要>」。
+- 头块固定：第一行 `［本群最近消息（仅本轮上下文，非完整群档）］`；第二行 `groupId: <yzjConversationId>`；第三行用法一句（发群用 `yzj_im_message_send` 的 groupId，回复某条把 `replyMsgId` 设成该行 msgId）。话题会话再附 `话题:` / `锚点 msgId:` / `锚：谁：摘要`。空窗口但已有 groupId 时**仍注入头块**（模型要发群必须有 id）；log 与 id 都没有才不注入。
 
 两条召唤入口**必须调用同一函数**，禁止 robot 与 DSH composer 各拼一套。
 
@@ -261,7 +263,7 @@ DSH「发给助手」
 
 **触发**：focus / 打开一条 `bound` DSH session（含挑群切换、@机器人 打开家园、丢进群着陆）。
 
-**动作**：`im message list --group-id <yzjConversationId>`，最近 `backfillLimit` 条，按 §3.2 / §7 写入。过滤 T12。补 `fromName`（whoami / 通讯录，失败则空）。
+**动作**：`im message list --group-id <yzjConversationId>`，最近 `backfillLimit` 条，按 §3.2 / §7 写入。过滤 T12。解析 `fromUser.openId/oId/name`。`fromName` 仍空且有 `fromOpenId` 时 `contact user get` 写入（进程内按 openId 缓存；失败则空）。
 
 **不够的情况**：只订阅机器人 inbound。WS 不保证全量群消息；绑定前历史、离线期非 @ 消息，没有回填就没有 ①。
 

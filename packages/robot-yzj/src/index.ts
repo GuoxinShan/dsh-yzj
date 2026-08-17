@@ -33,6 +33,7 @@ import { ChatnodeBridge, ChatnodeBridgeClient, type WebServerFace } from './brid
 import { dshHomeOf, maybeAutoStartOps } from './ops-autostart.ts'
 import { applyRobotControlTools } from './control.ts'
 import { applyRobotShareTools } from './share.ts'
+import { ensureYzjWorkspaceDirSync } from './yzj-cwd.ts'
 
 /** Plugin name used by loader diagnostics. */
 export const name = 'robot-yzj'
@@ -320,7 +321,33 @@ export class YzjRobot extends Service {
     const channel = this.channels[robotIndex]
     if (channel === undefined) return { ok: false, error: `no robot channel at index ${robotIndex}` }
     if (!(channel.config.enabled ?? true)) return { ok: false, error: `robot channel ${robotIndex} is disabled` }
-    return channel.sender.send(text)
+    const result = await channel.sender.send(text)
+    if (result.ok && result.msgId !== undefined) {
+      const surface = channel.router.surfaceSummary()[0]
+      const home = this.ctx.get('yzjHome') as RouterHomeFace | undefined
+      if (surface !== undefined && home?.appendLog !== undefined) {
+        const kind = surface.groupId.startsWith('BOT-') ? 'dm' as const : 'group' as const
+        await home.ensureBound(surface.groupId, kind)
+        const topicSessionId = surface.lastSessionId !== undefined && surface.lastSessionId.startsWith('yzj-topic-')
+          ? surface.lastSessionId : undefined
+        await home.appendLog(surface.groupId, {
+          msgId: result.msgId,
+          sentAt: Date.now(),
+          fromOpenId: surface.robotId,
+          fromName: surface.robotName === '' ? '助手' : surface.robotName,
+          content: text,
+          msgType: 'text',
+          origin: 'robot-outbound',
+          isSelf: false,
+          status: 'acked',
+          ...(topicSessionId === undefined ? {} : { topicSessionId }),
+        })
+        if (surface.lastSessionId !== undefined) {
+          await home.registerTopicOutbound?.(result.msgId, surface.lastSessionId)
+        }
+      }
+    }
+    return result
   }
 
   /** DSH-side proactive card notification (application-style card). */
@@ -459,7 +486,7 @@ export class YzjRobot extends Service {
       home,
       surfaces,
       agents,
-      cwd: process.cwd(),
+      cwd: ensureYzjWorkspaceDirSync(),
     })
   }
 
@@ -553,7 +580,7 @@ export class YzjRobot extends Service {
       confirm: this.confirm,
       push: this.hub,
       channelIndex,
-      cwd: robotConfig.cwd ?? process.cwd(),
+      cwd: robotConfig.cwd !== undefined && robotConfig.cwd !== '' ? robotConfig.cwd : ensureYzjWorkspaceDirSync(),
       surface: this.surfaces,
       memory: {
         lines: key => this.memory.lines(key),

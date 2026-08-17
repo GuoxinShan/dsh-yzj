@@ -76,6 +76,13 @@ describe('HomeBindingStore', () => {
     expect(store.getByConversation('g-b')?.dshSessionId).toBe(b.sessionId)
   })
 
+  it('listBindings returns every row', async () => {
+    const store = new HomeBindingStore()
+    await store.ensureBound('g-a', 'group')
+    await store.ensureBound('BOT-x', 'dm')
+    expect(store.listBindings().map(row => row.yzjConversationId).sort()).toEqual(['BOT-x', 'g-a'])
+  })
+
   it('survives reopen against the same durable tables (restart)', async () => {
     const { facility, conv } = memoryFacility()
     const first = new HomeBindingStore()
