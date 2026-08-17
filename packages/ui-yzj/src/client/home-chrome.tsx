@@ -1,6 +1,6 @@
 /**
  * Bound / unbound composer chrome in `conversation.input.dock`.
- * Bound: 「发进群」beside the native send (发给 agent). Unbound: 「丢进群」.
+ * Bound: 「发进群」beside the native send (发给助手). Unbound: 「丢进群」.
  * 发进群 writes ② and must not submit a DSH user-turn.
  */
 import { useEffect, useState } from 'react'
@@ -31,7 +31,7 @@ function asArray(value: unknown): unknown[] {
 }
 
 /**
- * Dual-intent chrome. Native composer submit stays 「发给 agent」.
+ * Dual-intent chrome. Native composer submit stays 「发给助手」.
  */
 export function YzjHomeChrome(props: YzjHomeChromeInjected) {
   const [bound, setBound] = useState(false)

@@ -19,6 +19,13 @@ interface DangerousSpec {
   level: YzjRiskLevel
   /** Optional predicate over the parsed call arguments; defaults to always ask. */
   when?: (args: Record<string, unknown>) => boolean
+  /**
+   * Optional session filter. `undefined` session id asks (fail closed).
+   * Used by robot_notify/continue: bound homes must confirm (D9); the
+   * unbound operator console stays ungated; leftover yzj-robot-* still
+   * refuse at execute (operatorOnly).
+   */
+  whenSession?: (sessionId: string | undefined) => boolean
   /** Confirmation-prefix override for non-yzj tools (e.g. the shared workspace); defaults to the yzj wording. */
   prefix?: string
 }
@@ -55,6 +62,28 @@ const WRITE_SPECS: Record<string, DangerousSpec> = {
   yzj_todo_complete: { reason: '完成待办（状态置 done）', level: 'standard' },
   // --- robot-yzj group shared workspace (design robot-channel-plan §8.4) ---
   robot_share_write: { reason: '写入群共享工作区文件（<cwd>/groups/<groupId>/shared/）', level: 'standard', prefix: '工作区写操作确认' },
+  // --- robot-yzj group push from a bound home (D9; operator console stays ungated) ---
+  robot_notify: {
+    reason: '通过机器人通道向云之家会话推送消息，发出后不可撤回',
+    level: 'standard',
+    whenSession: isBoundHomeSession,
+  },
+  robot_continue: {
+    reason: '向机器人会话注入操作者消息并走入站管线（含群内回复推送）',
+    level: 'standard',
+    whenSession: isBoundHomeSession,
+  },
+}
+
+/** Bound product homes (`yzj-home-*`). Missing id → ask (fail closed on the D9 hole). */
+function isBoundHomeSession(sessionId: string | undefined): boolean {
+  return sessionId === undefined || sessionId.startsWith('yzj-home-')
+}
+
+/** Structural session id on a tools/pre-execute exec (agent is present in harness). */
+function callingSessionId(exec: { agent?: { session?: { id?: unknown } } }): string | undefined {
+  const id = exec.agent?.session?.id
+  return typeof id === 'string' ? id : undefined
 }
 
 /** The host-internal ask-pending event the guard emits before returning ask. */
@@ -86,6 +115,7 @@ export function applyApprovalGuard(ctx: Context): void {
       ? exec.arguments as Record<string, unknown>
       : {}
     if (spec.when !== undefined && !spec.when(args)) return next()
+    if (spec.whenSession !== undefined && !spec.whenSession(callingSessionId(exec))) return next()
     const reason = `${spec.prefix ?? '云之家操作确认'}：${spec.reason}`
     ctx.emit('yzj/ask-pending', {
       callId: exec.callId,

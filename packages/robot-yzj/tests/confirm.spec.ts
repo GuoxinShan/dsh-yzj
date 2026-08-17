@@ -176,4 +176,26 @@ describe('ConfirmBroker', () => {
     expect(next).toHaveBeenCalledOnce()
     expect(outcome).toBe('unavailable')
   })
+
+  it('owns robot_notify on an inbound yzj-home-* plugin turn (group suggestion card)', async () => {
+    const cards: string[] = []
+    const broker = new ConfirmBroker({ timers: fakeTimers() })
+    broker.registerSession('yzj-home-g-a' as never, makeContext([], cards))
+    const next = vi.fn(async () => 'unavailable' as const)
+    const settled = broker.handleApproval({
+      agent: {
+        session: {
+          id: 'yzj-home-g-a',
+          events: [{ type: 'user/message', data: { source: { kind: 'plugin', plugin: 'robot-yzj' } } }],
+        },
+      },
+      toolName: 'robot_notify',
+      callId: 'c-notify',
+    }, next)
+    await Promise.resolve()
+    expect(next).not.toHaveBeenCalled()
+    expect(cards[0]).toContain('写操作待确认')
+    expect(broker.checkReply(inbound('确认 1'))).toBe(true)
+    await expect(settled).resolves.toBe('allowed-once')
+  })
 })

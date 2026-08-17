@@ -28,7 +28,7 @@ docs/
 
 1. **`README.md`（仓库根）**——三分钟了解包结构与能力面。
 2. **`spec/integration-master-plan.md`**——系统全貌：目标、用户旅程、人在闭环验收基准（v1.8 起会话家园见下一份）。
-3. **`spec/dsh-home-session.md`**——**产品法**：DSH 是唯一对话家园；会话对象、四类节点、面板角色、@机器人、丢进群、写路径。第一刀绑定对象已落地；其余对照 `status/gap-analysis.md` §22。
+3. **`spec/dsh-home-session.md`**——**产品法**：DSH 是唯一对话家园；会话对象、四类节点、面板角色、@机器人、丢进群、写路径。绑定对象 + 融合时间线已落地；G3/G5 仍开放，对照 `status/gap-analysis.md` §22。
 4. **`spec/dsh-home-transcript.md`**——绑定会话的**可见时间线**：①② 插件消息日志、与 ③④ 的融合视图、召唤窗口注入、发进群路径、去重/回填、composer 双意图；已落地，对照 gap §22。
 5. **`status/gap-analysis.md`**——当前实现状态与已验收证据（§15–§21 为既有面；**§22 为会话家园**：G1/G2/G4/G6 关闭，G3/G5 仍开放）。
 6. **`pitfalls/README.md` 索引**——动手前必查；命中相关条目先读再写代码。

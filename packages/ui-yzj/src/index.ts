@@ -598,7 +598,7 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
       case 'robot-diagnostics': {
         const robot = ctx.get('yzjRobot')
         if (robot === undefined) return internalError('robot-diagnostics: yzjRobot 服务不可用（robot-yzj 未挂载）')
-        return { ok: true, value: { push: robot.pushDiagnostics(), confirm: robot.confirmDiagnostics(), forks: robot.forkedSessions() } }
+        return { ok: true, value: { push: robot.pushDiagnostics(), confirm: robot.confirmDiagnostics() } }
       }
       case 'robot-notify': {
         const robot = ctx.get('yzjRobot')

@@ -107,7 +107,7 @@ export function apply(ctx: Context, config: Config): void {
 }
 
 /**
- * DSH「发给 agent」summon window (T5): opportunistic systemPrompt.context.
+ * DSH「发给助手」summon window (T5): opportunistic systemPrompt.context.
  * Returns the bound log window only when this assembly's latest user message
  * is a real GUI turn (not a plugin followup — those inject via agent.inject).
  */
@@ -125,7 +125,7 @@ function applySummonWindow(ctx: Context, home: YzjHomeService): void {
       const binding = home.getBySession(sessionId)
       if (binding === undefined) return ''
       const events = eventsFromAssemble(assemble)
-      // Only GUI「发给 agent」turns. Plugin followups already agent.inject()
+      // Only GUI「发给助手」turns. Plugin followups already agent.inject()
       // the same digest; empty logs (no user/message yet) stay silent.
       if (latestUserSourceKind(events) !== 'user') return ''
       return home.formatSummonWindow(binding.yzjConversationId)

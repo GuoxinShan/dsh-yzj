@@ -81,7 +81,7 @@ pnpm --filter @dsh-yzj/ui-yzj bundle   # 仅重建客户端 bundle（改 UI 后�
 - **确认卡状态不落会话日志**：harness 对外部插件的自定义 session 事件类型无注册面，确认卡 pending/approved 瞬态由 host 内存表承载（SPA 刷新存活；host 重启降级为普通工具卡），终态由官方工具事件回放。
 - **面板「我的」tab 已移除**（原设计四 tab）：身份经 `yzj_whoami`、找人经 @ 候选；第四 tab 现为**待办**（是否另恢复通讯录浏览待拍板）。
 - **拖入即处理快捷动作已移除**：现为全屏 drop overlay 直接成 chip（v1.6 硬性要求 4 曾实现后删除，终局与否待拍板）。
-- **会话家园第一刀已落地、终局未完**：绑定表 + 入站/挑群打 `yzj-home-*` + fork 不再开新根，见 [docs/spec/dsh-home-session.md](docs/spec/dsh-home-session.md)。仍开放：IM 节点进 transcript、确认卡 pending 不进 session 日志、无群搜索、面板 composer 待移除/降级（[gap-analysis §22](docs/status/gap-analysis.md) G2/G3/G5/G6）。机器人通道是投递/入站，**不是**第三家园。
+- **会话家园绑定 + 融合时间线已落地，终局未完**：入站/挑群打 `yzj-home-*`；绑定会话「群工作」tab 融合 ①②③④（官方 Chat tab 仍并存，不能替换）；面板 composer 降为快捷发进群（写 ②，未删除）。仍开放：确认卡 pending 不进 session 日志、无群搜索（[gap-analysis §22](docs/status/gap-analysis.md) G3/G5）。G2/G6 已关闭（降级/tab，不是「替换 Chat」或「删除面板 composer」）。机器人通道是投递/入站，**不是**第三家园。
 - **无群搜索/消息搜索**：沿用 CLI 能力面（最近会话翻页定位）。会话家园的「挑群」依赖可找到群（gap §22 G5）。
 - **`file download` 只回传摘要**：CLI 的 `downloaded N bytes to <path>` 文本输出不携带结构化路径，卡片回退文本模式。
 - **待办为 demo 阶段**：数据存于多维表格「待办任务库」（个人知识库，首用自动开通）；负责人/标签因 CLI 字段写入限制降级为文本形态；原生后端迁移方案见 `docs/migration/todo-backend-migration.md`。

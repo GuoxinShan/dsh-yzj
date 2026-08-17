@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { RobotRouter, collectAssistantText, completedTurnPrefix, conversationSummary, highestAssistantSeq } from '../src/router.ts'
+import { RobotRouter, collectAssistantText, conversationSummary, highestAssistantSeq } from '../src/router.ts'
 import type { RobotInboundMessage } from '../src/protocol.ts'
 import type { RobotSendOptions, RobotSendResult } from '../src/outbound.ts'
 
@@ -427,7 +427,7 @@ describe('RobotRouter', () => {
     expect(appended[0]).toMatchObject({ origin: 'inbound', isSelf: true, content: '我在客户端发的', msgId: 'm-self' })
   })
 
-  it('injects the shared summon window on @Claude turns (T5)', async () => {
+  it('injects the shared summon window on @机器人 turns (T5)', async () => {
     const home = {
       ...memoryHome(),
       formatSummonWindow: () => '［本群最近消息（仅本轮上下文，非完整群档）］\n[20:00] 同事: 上下文',
@@ -439,21 +439,6 @@ describe('RobotRouter', () => {
     const injected = agent.inject.mock.calls.map(call => String(call[0]!.content[0]!.text)).join('\n')
     expect(injected).toContain('本群最近消息')
     expect(injected).toContain('本群共享工作区')
-  })
-
-  it('completedTurnPrefix slices through the last turn/end only', () => {
-    const events = [
-      { type: 'user/message', seq: 0, time: 0, data: {} },
-      { type: 'assistant/message', seq: 1, time: 0, data: { message: { content: [] } } },
-      { type: 'tool/call', seq: 2, time: 0, data: {} },
-      { type: 'turn/end', seq: 3, time: 0, data: { reason: { kind: 'completed' } } },
-      // Open second turn — must be excluded from the seed.
-      { type: 'user/message', seq: 4, time: 0, data: {} },
-    ] as never as import('@deepseek-ai/dsh-session').SessionEvent[]
-    const seed = completedTurnPrefix(events)
-    expect(seed).toHaveLength(4)
-    expect(seed.at(-1)!.type).toBe('turn/end')
-    expect(completedTurnPrefix(events.slice(0, 3))).toEqual([])
   })
 
   it('!configure without guiUrl gives panel guidance; with guiUrl gives the link', async () => {

@@ -471,9 +471,10 @@ robotId 与 CLI groupId 的 ID 空间映射；创建流程的公网测试是否�
 |---|---|
 | 每 (robot, user) DM 持久 session，id `yzj-robot-<robot>-<user>` | ❌ 隐藏平行家园。应绑定该云之家 DM 的 **一条** DSH session，`followup()` 进它 |
 | 群：顶层 @ → **开新** session；引用回复续链；另加 ambient session | ❌ 一条群 ↔ 一条绑定 DSH session。回复链是节点引用，不是新根。ambient / 免 @ 非本版 MVP；routines 投递进**同一条**绑定会话 |
-| `!fork` 把上下文交到目标群**新 session** | ❌ 打开或恢复目标群绑定会话；摘要交接 + 确认卡（「丢进群」跨群形态），禁止新根 |
+| `!fork` 把上下文交到目标群**新 session** | ❌ 打开或恢复目标群绑定会话（bind+continue，无确认卡）。跨群摘要交接走 DSH「丢进群」（有确认模态），禁止新根 |
 | `robot_fork` → `agents.create` 操作者侧新根（`fork-yzj-robot-…`） | ❌ 应 `focus`/resume 绑定会话。工具若保留，语义改为打开绑定对象，不 `create` 新根 |
 | 入站在 session 里当普通轮次；面板另有 IM composer | 绑定会话 transcript 含四类节点（入站群消息、用户本人发群、对 agent、agent 轮次）。面板降为挑选器，无第二 composer |
 | 机器人帖子像独立说话人 | 机器人帖子 = agent 轮次在云之家的**投递**，不是产品模型第三身份 |
+| `robot_notify` / `robot_continue` 不过确认门控（§8.2）；`operatorOnly` 只拦 `yzj-robot-*` | ❌ 入站改打 `yzj-home-*` 后旧前缀闸失效。绑定家园上这两项进 WRITE_SPECS（D9）；未绑定操作者控制台与面板 RPC 仍无卡；残留 `yzj-robot-*` 仍 execute 拒绝 |
 
-实现：**绑定表已落地**（`ctx.yzjHome`）；入站 `followup()` 打 `yzj-home-*`；`!fork` / `robot_fork` 打开或恢复绑定会话，不再 `create` 平行根。面板 composer 与四类节点 transcript 仍开放。对照与阻塞项：[`../status/gap-analysis.md`](../status/gap-analysis.md) §22。
+实现：**绑定表已落地**（`ctx.yzjHome`）；入站 `followup()` 打 `yzj-home-*`；`!fork` / `robot_fork` 打开或恢复绑定会话（bind+continue，**不**弹确认卡——确认卡是 DSH「丢进群」跨群交接，见 G4）。绑定会话「群工作」融合 ①②③④（官方 Chat tab 仍在）；面板 composer 降为快捷发进群（写 ②，未删除）。绑定家园上 `robot_notify` / `robot_continue` 走 WRITE_SPECS + write-gate / ConfirmBroker（D9）；未绑定操作者控制台与面板 RPC 仍无卡。仍开放 G3/G5。对照：[`../status/gap-analysis.md`](../status/gap-analysis.md) §22。

@@ -110,7 +110,7 @@ type AuditEventShape = AskedEventShape | DecidedEventShape | { type: string; dat
 
 /** Map a tool name to its confirmation-card domain. */
 export function domainOf(toolName: string): string {
-  if (toolName.startsWith('yzj_im_')) return 'im'
+  if (toolName.startsWith('yzj_im_') || toolName === 'robot_notify' || toolName === 'robot_continue') return 'im'
   if (toolName.startsWith('yzj_doc_workspace_')) return 'kb'
   if (toolName.startsWith('yzj_doc_')) return 'doc'
   if (toolName.startsWith('yzj_sheet_')) return 'sheet'
@@ -120,7 +120,12 @@ export function domainOf(toolName: string): string {
   return 'other'
 }
 
-/** True when the latest user/message is a plugin followup (inbound @Claude). */
+/** Tools this gate answers. yzj_* family plus bound-home robot group-push (D9). */
+export function isWriteGateTool(toolName: string): boolean {
+  return toolName.startsWith('yzj_') || toolName === 'robot_notify' || toolName === 'robot_continue'
+}
+
+/** True when the latest user/message is a plugin followup (inbound @机器人). */
 export function latestUserIsPlugin(events: readonly { type: string; data: unknown }[]): boolean {
   return latestUserSource(events) === 'plugin'
 }
@@ -199,14 +204,15 @@ export function applyWriteGate(ctx: Context): {
   })
 
   ctx.on('approval/request', (req, next) => {
-    if (!req.toolName.startsWith('yzj_')) return next()
+    if (!isWriteGateTool(req.toolName)) return next()
     // Robot sessions route their confirmations through the IM suggestion-card
     // protocol (robot-yzj's ConfirmBroker owns those requests) — the GUI card
     // would wait for a click nobody makes on an unattended channel.
+    // Leftover yzj-robot-* ids stay skipped (residuals); bound homes do not.
     if (req.agent.session.id.startsWith('yzj-robot-')) return next()
     // Inbound-bound homes (yzj-home-*) register with ConfirmBroker. Keep the
     // group suggestion card for plugin followups and for turns that have not
-    // yet grown a user/message (inbound path). A later GUI「发给 agent」turn
+    // yet grown a user/message (inbound path). A later GUI「发给助手」turn
     // on the same bound session must keep the GUI card.
     const robot = ctx.get('yzjRobot') as { ownsConfirm?: (sessionId: string) => boolean } | undefined
     if (robot?.ownsConfirm?.(req.agent.session.id) === true && !latestUserIsGui(req.agent.session.events)) {
