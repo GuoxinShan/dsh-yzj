@@ -31,6 +31,7 @@ export const YZJ_WRITE_TOOL_NAMES = [
   'yzj_sheet_table_rename', 'yzj_sheet_record_create', 'yzj_sheet_record_update',
   'yzj_calendar_event_create', 'yzj_calendar_event_update',
   'yzj_todo_create', 'yzj_todo_update', 'yzj_todo_complete',
+  'robot_notify', 'robot_continue',
 ] as const
 
 /** The injected decision face the confirmation card receives. */
@@ -93,6 +94,8 @@ const WRITE_TITLES: Record<string, string> = {
   yzj_todo_create: '新建待办',
   yzj_todo_update: '更新待办',
   yzj_todo_complete: '完成待办',
+  robot_notify: '机器人推送',
+  robot_continue: '注入机器人会话',
 }
 
 /** Domain labels for the card header. */
@@ -114,6 +117,8 @@ export function writableDraft(record: YzjWriteRecord): string {
   const args = asRecord(record.args)
   const content = asString(args.content)
   if (content !== '') return content
+  const text = asString(args.text)
+  if (text !== '') return text
   const records = asString(args.records)
   if (records !== '') return records
   const title = asString(args.title)
@@ -191,8 +196,9 @@ function ArgBody({ record, names }: { record: YzjWriteRecord; names: Record<stri
       const toOpenId = str('toOpenId')
       push('目标', groupId !== '' ? `群聊${nameOf(groupId, '') === '' ? '' : ` · ${nameOf(groupId, '')}`}` : `单聊${nameOf(toOpenId, '') === '' ? '' : ` · ${nameOf(toOpenId, '')}`}`, 't')
       push('类型', str('msgType'), 'mt')
-      if (str('content') !== '') {
-        rows.push(<div className={css.fullText} key="c">{str('content')}</div>)
+      const body = str('content') !== '' ? str('content') : str('text')
+      if (body !== '') {
+        rows.push(<div className={css.fullText} key="c">{body}</div>)
       }
       const ats = list('atOpenIds')
       if (ats.length > 0) push('提及', `${ats.length} 人`, 'at')

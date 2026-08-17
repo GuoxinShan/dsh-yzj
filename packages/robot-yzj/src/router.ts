@@ -150,19 +150,11 @@ const MEMORY_FORGET = /^(?:@[^\s@]+\s*)?(?:忘掉|忘记|forget)\s+[:：]?\s*(.+
 
 /**
  * Legacy DM id shape (`yzj-robot-*`). Not the product home — inbound uses
- * {@link homeSessionIdOf} / ctx.yzjHome. Kept so status helpers and old
- * disk logs remain addressable.
+ * {@link homeSessionIdOf} / ctx.yzjHome. Leftover export so status helpers
+ * and old disk logs remain addressable; do not mint new product sessions.
  */
 export function dmSessionId(robotId: string, operatorOpenid: string): SessionId {
   return SessionId(`yzj-robot-${slug(robotId)}-${slug(operatorOpenid)}`)
-}
-
-/**
- * Legacy per-thread group id (Claude-Tag analogue). Not the product home.
- * @deprecated dsh-home-session 1:1 binding replaces per-rootMsgId sessions.
- */
-export function groupSessionId(robotId: string, groupId: string, rootMsgId: string): SessionId {
-  return SessionId(`yzj-robot-${slug(robotId)}-g${slug(groupId)}-${slug(rootMsgId)}`)
 }
 
 /** In-process product-home id when ctx.yzjHome is not mounted (tests / ops). */
@@ -209,26 +201,6 @@ function introPrompt(): string {
 function slug(value: string): string {
   const cleaned = value.replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '')
   return cleaned === '' ? 'x' : cleaned.slice(0, 40)
-}
-
-/** @see slug — public so the service can derive fork session ids. */
-export function slugId(value: string): string {
-  return slug(value)
-}
-
-/**
- * The balanced completed-turn prefix of a session log: every event up to and
- * including the last `turn/end`. The in-flight turn is excluded; before any
- * completed turn the result is empty. Because live sequence numbers equal
- * array indexes, the result is a valid fork `seed` beginning at sequence zero
- * (same boundary the harness fork subagent uses).
- * @param events - the source session's full event log.
- * @returns the seed events, contiguous from seq 0; empty when no turn has completed.
- */
-export function completedTurnPrefix(events: readonly SessionEvent[]): SessionEvent[] {
-  const lastEnd = events.findLast(event => event.type === 'turn/end')
-  if (lastEnd === undefined) return []
-  return events.slice(0, lastEnd.seq + 1)
 }
 
 /**

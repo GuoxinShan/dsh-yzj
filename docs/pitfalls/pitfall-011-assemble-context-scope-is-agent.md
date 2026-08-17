@@ -2,7 +2,7 @@
 
 ## 现象
 
-DSH「发给 agent」的召唤窗口（`systemPrompt.context` `yzj-bound-window`）在绑定会话里始终为空：模型看不到近窗群消息。云之家 `@机器人` 路径正常（那条走 `agent.inject`，不经过 assemble）。
+DSH「发给助手」的召唤窗口（`systemPrompt.context` `yzj-bound-window`）在绑定会话里始终为空：模型看不到近窗群消息。云之家 `@机器人` 路径正常（那条走 `agent.inject`，不经过 assemble）。
 
 ## 复现条件
 

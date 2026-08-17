@@ -188,7 +188,7 @@ describe('mergeFused', () => {
     expect(session?.kind === 'session' && session.hide).toBe(true)
   })
 
-  it('does not hide a real DSH 发给 agent user turn', () => {
+  it('does not hide a real DSH 发给助手 user turn', () => {
     const items = mergeFused(
       [],
       [{ type: 'user/message', time: 1, data: { source: { kind: 'user' } } }],

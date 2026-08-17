@@ -29,7 +29,7 @@ export type { YzjHomeChromeInjected }
 
 /**
  * The composer dock: drop-bus chip insert plus bound/unbound home chrome
- * (发进群 / 丢进群). Native send stays 「发给 agent」.
+ * (发进群 / 丢进群). Native send stays 「发给助手」.
  */
 export function YzjComposerDock(props: PropsRuntime<'conversation.input.dock'> & YzjDropInjected & YzjHomeChromeInjected) {
   useEffect(() => {

@@ -4,11 +4,14 @@
  * notifications (`robot_notify`), conversation continuation (`robot_continue`,
  * fabricates an operator turn through the full inbound pipeline), and session
  * fork (`robot_fork`, opens or resumes the bound DSH home for that
- * conversation — never a parallel `fork-*` root). These are operator-trusted channels:
- * unlike the yzj write family they are deliberately NOT gated by the
- * confirmation guard — the robot is the operator's own bot, its outbound is
- * already allowFrom-restricted, and the tool bodies refuse to run inside
- * robot sessions themselves.
+ * conversation — never a parallel `fork-*` root).
+ *
+ * Confirmation (D9): `robot_notify` / `robot_continue` on a bound home
+ * (`yzj-home-*`) enter WRITE_SPECS and ride write-gate / ConfirmBroker —
+ * they are agent-proposed group sends. The unbound operator console stays
+ * ungated (allowFrom already restricts outbound). Leftover `yzj-robot-*`
+ * sessions still refuse at execute (`operatorOnly`). User-initiated panel
+ * RPC / chatnode call the service methods directly and stay card-less.
  * @module @dsh-yzj/robot-yzj/control
  */
 
@@ -51,7 +54,11 @@ export const controlOutput: {
   presentationMeta: (_args, value) => value.data ?? null,
 }
 
-/** Reject calls originating inside robot sessions (no self-driving). */
+/**
+ * Reject calls originating inside leftover robot-session ids (no self-driving).
+ * Bound homes (`yzj-home-*`) are allowed through here — group push on those
+ * ids is gated by WRITE_SPECS at pre-execute, not by this throw.
+ */
 function operatorOnly(sessionId: unknown): void {
   if (typeof sessionId === 'string' && sessionId.startsWith('yzj-robot-')) {
     throw new Error('robot_* 工具仅限操作者会话使用，机器人会话不能驱动自身')

@@ -32,4 +32,4 @@ No direct effect: the node half contributes no prompt text, and the browser half
 - **User-direct writes are un-gated by design** — DSH「发进群」, the demoted panel shortcut, and todo checkboxes act as the user's own hand; only agent-initiated writes pass the confirmation card. Product law (dsh-home-session D9).
 - **`file download` card is text-only** — the CLI returns no structured path metadata for downloads.
 - **Locale namespace not registered** — cards use Chinese literals; a `locale` namespace can be added when i18n is needed.
-- **`panel.tsx` is a 2000-line module** — split before adding the planned 待办 tab.
+- **`panel.tsx` is a large module** — the 待办 tab already exists (workspace is four tabs: 知识库 / 日程 / 会话 / 待办). Split before further panel growth.

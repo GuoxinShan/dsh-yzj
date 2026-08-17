@@ -141,7 +141,7 @@ export class ConfirmBroker {
     const context = this.sessionContext.get(sessionId)
     if (context === undefined) return next()
     // GUI-focused bound sessions (latest user/message is a real user turn)
-    // keep the GUI confirmation card. Inbound @Claude turns stay on the
+    // keep the GUI confirmation card. Inbound @机器人 turns stay on the
     // group suggestion-card path.
     if (latestUserIsGui(req.agent.session.events)) return next()
     const ask = req.callId === undefined ? undefined : this.askByCallId.get(req.callId)
