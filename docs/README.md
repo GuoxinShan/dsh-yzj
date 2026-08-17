@@ -11,7 +11,7 @@ docs/
   spec/                              ← 设计基线（要做什么、为什么、验收口径）
     integration-master-plan.md         云之家×dsh 集成整体方案（v1.8 指针 → 会话家园；正文仍为 v1.7 人在闭环）
     dsh-home-session.md                DSH 唯一会话家园：会话对象与产品法（v1.0 已拍板；绑定 + 融合时间线已落地，G3/G5 仍开放）
-    dsh-home-transcript.md             绑定会话可见时间线：插件消息日志 × 官方事件融合（v1.1 已落地）
+    dsh-home-transcript.md             绑定会话可见时间线：插件消息日志 × 官方事件融合（v1.3：切会话分阶段 + 与面板同 IM 渲染器）
     todo-design.md                     待办功能设计（v1.3，tag 理念 + §11.2 决策表；直写原则交叉引用会话家园）
     robot-channel-plan.md              机器人通道调研与双向打通方案（v0.2：会话落点改打绑定对象）
     routines-delivery.md               定时任务引擎选型（dsh-routines 参考调研）+ yzj chatnode 投递契约

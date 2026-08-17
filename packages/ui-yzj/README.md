@@ -6,6 +6,9 @@ Yunzhijia browser surface, dual-face package (`dsh.client`, `platform: web`).
 see `docs/spec/dsh-home-session.md`. "挑群" opens or switches the bound DSH
 session (`/yzj home-open` + `sessions.open`). Bound sessions register
 `conversation.view`「群工作」merging the plugin IM log with official events.
+The fused IM rows reuse the panel renderer (avatars, bracket-emoticons, files,
+quotes). Switching the bound session paints cache first and never flashes the
+private-chat hint while fused/backfill is in flight.
 The 会话-tab composer is a shortcut that writes ② into that log (gap-analysis §22 G6 closed as demotion).
 
 ## Node half
@@ -17,7 +20,7 @@ Registers the `/yzj` Connection RPC channel over `ctx.yzjBridge` (authority `loo
 Registers into `shell.overlay` (floating ball + workspace panel), `conversation.view` (fused「群工作」timeline), `conversation.input.dock` (drop band + 发进群 / 丢进群 chrome), and `tool.call.toolview` (keyed cards):
 
 - **Tool cards** — one keyed view per yzj tool name (41) plus the five `memory_*` tools: pending calls render the family title from args; settled calls render the structured `meta` payload with the digest text as fallback, and an error summary on failure. Card ↔ panel two-way jumps (查看上下文 opens the panel at the anchored tab/entry).
-- **Workspace panel** — floating-ball entry (hover quick-dock, persistent toggle), four operational tabs: 知识库, 日程, 会话 (message list plus a shortcut composer that writes ②; **picking a group also focuses its bound DSH session**), 待办. Unread counts come from CLI `unreadCount` plus locally persisted read-state. All panel entries remain draggable into the composer as reference chips.
+- **Workspace panel** — floating-ball entry (hover quick-dock, persistent toggle), four operational tabs: 知识库, 日程, 会话 (message list plus a shortcut composer that writes ②; **picking a group also focuses its bound DSH session**; switching a conversation paints the cached window immediately, and a cache miss clears the previous rows and loads only in the right pane — never the global 加载中 bar), 待办. Unread counts come from CLI `unreadCount` plus locally persisted read-state. All panel entries remain draggable into the composer as reference chips.
 - **设置 → 云之家** — the management home (NOT a workspace tab; user decision): a segmented 机器人｜记忆库 control mounting the same RobotPane (channel status with resolved cwd, per-conversation model overrides, group shared workspace, channel management) and MemoryPane (vault browser over `ctx.yzjMemory`, dream switch/schedule/model, plugin default model picker). The wrapper self-fetches on mount and its RPC verb wrappers refresh local state, so every pane-internal refresh path (observe submit, dream run, override edits) re-renders.
 - **@ trigger sources** — 云之家·同事 / 云之家·会话 / 云之家·文档 (plus the codec carrier source).
 

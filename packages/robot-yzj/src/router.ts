@@ -73,6 +73,7 @@ export interface RouterHomeFace {
     readonly isSelf: boolean
     readonly replyMsgId?: string
     readonly status: 'pending' | 'acked' | 'failed'
+    readonly param?: Record<string, unknown>
   }, options?: { readonly skipOpenIds?: readonly string[] }): Promise<unknown>
   /** Shared summon-window digest (T5); empty → do not inject. */
   formatSummonWindow?(yzjConversationId: string, excludeMsgId?: string): string
@@ -555,6 +556,15 @@ export class RobotRouter {
     }
     const reply = parseReplyMeta(message.msgParam).reply
     const selfOpenId = this.allowFromCache?.[0] ?? ''
+    let param: Record<string, unknown> | undefined
+    if (message.msgParam !== undefined) {
+      try {
+        const parsed: unknown = JSON.parse(message.msgParam)
+        if (typeof parsed === 'object' && parsed !== null) param = parsed as Record<string, unknown>
+      } catch {
+        param = undefined
+      }
+    }
     try {
       await home.appendLog(message.groupId, {
         msgId: message.msgId,
@@ -567,6 +577,7 @@ export class RobotRouter {
         isSelf: selfOpenId !== '' && message.operatorOpenid === selfOpenId,
         status: 'acked',
         ...(reply?.replyMsgId === undefined || reply.replyMsgId === '' ? {} : { replyMsgId: reply.replyMsgId }),
+        ...(param === undefined || Object.keys(param).length === 0 ? {} : { param }),
       }, { skipOpenIds: [message.robotId] })
     } catch (error) {
       this.logger?.warn(`robot: inbound log append failed: ${String(error)}`)

@@ -21,6 +21,7 @@
 | 10 | 客户端 bundle 注册 id 必须等于 loader 条目（profile 行名），不是包名；单测/构建全绿但 web 壳启动报 loaded without registering | ui-yzj browser half / 任何经 monobundle 子路径行名加载的 client bundle | [pitfall-010-loader-entry-id.md](pitfall-010-loader-entry-id.md) |
 | 11 | `systemPrompt.context` 的 assemble.scope 是 Agent 对象，不是 session id 字符串 | tool-yzj 召唤窗口 / 任何仓外 `systemPrompt.context` 按会话分流 | [pitfall-011-assemble-context-scope-is-agent.md](pitfall-011-assemble-context-scope-is-agent.md) |
 | 12 | `yzj-robot-*` 前缀闸在家园 id 改打后不再覆盖绑定会话 | robot_notify / robot_continue / 任何按旧前缀分流的写闸 | [pitfall-012-home-prefix-gate-misses-yzj-home.md](pitfall-012-home-prefix-gate-misses-yzj-home.md) |
+| 13 | 切群/切会话闪「私密会话」或上一群消息 | 群工作 fused 视图 / 面板会话 tab | [pitfall-013-session-switch-flash.md](pitfall-013-session-switch-flash.md) |
 
 ## 维护规则
 

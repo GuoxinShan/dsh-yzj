@@ -31,6 +31,8 @@ export interface YzjLogEntry {
   readonly isSelf: boolean
   readonly replyMsgId?: string
   readonly status: YzjLogStatus
+  /** CLI `param` (file_id / desc / reply quote / cards). Optional so old blobs still parse. */
+  readonly param?: Record<string, unknown>
 }
 
 /** One conversation's log header + rows (ascending sentAt). */
@@ -83,6 +85,7 @@ const entrySchema = z.object({
   isSelf: z.boolean(),
   replyMsgId: z.string().optional(),
   status: z.enum(['pending', 'acked', 'failed']),
+  param: z.record(z.string(), z.unknown()).optional(),
 }) as unknown as z.ZodType<YzjLogEntry>
 
 const logSchema = z.object({
@@ -185,6 +188,7 @@ export function cliMessageToEntry(
     isSelf: selfOpenId !== '' && fromOpenId === selfOpenId,
     status: 'acked',
     ...(replyMsgId === undefined ? {} : { replyMsgId }),
+    ...(Object.keys(param).length === 0 ? {} : { param }),
   }
   return entry
 }

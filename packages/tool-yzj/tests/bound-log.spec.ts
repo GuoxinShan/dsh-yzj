@@ -112,6 +112,25 @@ describe('cli projection', () => {
     expect(row?.sentAt).toBe(parseSendTime('2026-08-16 20:00:00.000'))
   })
 
+  it('keeps CLI param so the fused IM renderer can show files and quotes', () => {
+    const row = cliMessageToEntry({
+      msgId: 'f1', content: '', msgType: 'file',
+      param: { file_id: 'fid', name: 'a.pdf', size: 12, replyMsgId: 'm0' },
+      fromOpenId: 'u',
+    }, 'backfill', '')
+    expect(row?.msgType).toBe('file')
+    expect(row?.param?.file_id).toBe('fid')
+    expect(row?.param?.name).toBe('a.pdf')
+    expect(row?.replyMsgId).toBe('m0')
+  })
+
+  it('omits param when the CLI row has none (old blobs still parse)', () => {
+    const row = cliMessageToEntry({
+      msgId: 'm9', content: '纯文本', msgType: 'text', fromOpenId: 'u',
+    }, 'inbound', '')
+    expect(row?.param).toBeUndefined()
+  })
+
   it('unwraps list envelopes (pitfall-003)', () => {
     expect(cliMessageList([{ msgId: 'a' }])).toHaveLength(1)
     expect(cliMessageList({ list: [{ msgId: 'b' }] })).toHaveLength(1)

@@ -1,7 +1,7 @@
 # DSH 绑定会话的可见时间线：插件消息日志
 
-> 版本：v1.1（已拍板；**实现已落地**——插件消息日志 + 融合视图 + composer 双意图 + 召唤窗口注入）+ **v1.2 文案**（2026-08-16）：产品手势是云之家 @机器人、DSH「发给助手」；「产品文案 @Claude」作废。Claude Tag 仅对照。
-> 日期：2026-08-16
+> 版本：v1.1（已拍板；**实现已落地**——插件消息日志 + 融合视图 + composer 双意图 + 召唤窗口注入）+ **v1.2 文案**（2026-08-16）：产品手势是云之家 @机器人、DSH「发给助手」；「产品文案 @Claude」作废。Claude Tag 仅对照。+ **v1.3 UI**（2026-08-17）：①② 复用面板 IM 渲染器；切会话分阶段，禁止闪「私密会话」/上一群残留。
+> 日期：2026-08-17
 > 决策人：Guoxin Shan
 > 定位：会话家园产品法（[`dsh-home-session.md`](dsh-home-session.md)）落地后的**下一片**：绑定 DSH 会话里人看见的那条融合时间线。本文规定存储对象、合并规则、模型上下文、发送路径、去重、回填、composer chrome，以及**为什么 ①② 不是 `Session.append`**。
 > 前置：绑定对象 `yzjConversationId ↔ dshSessionId` 已在 `ctx.yzjHome` 落地；本文不改绑定基数、不重写 D1–D11。
@@ -93,6 +93,7 @@ YzjLogEntry
   isSelf:       boolean         // 发送者 == 当前 CLI 登录用户
   replyMsgId?:  string          // 群内回复关系（产品法：链是节点引用，不是新 session）
   status:       'pending' | 'acked' | 'failed'   // 仅 ② 用 pending/failed；①/回填为 acked
+  param?:       object          // CLI `param` 原样留下（file_id / desc / 引用 / 卡片）；旧 blob 无此字段仍合法
 ```
 
 `origin` 判别：
@@ -107,7 +108,7 @@ YzjLogEntry
 
 ### 3.3 非文本
 
-MVP 日志存 **digest**：图片/文件记 `msgType` + 文件名/短描述，不把二进制塞进 log。完整回源仍走既有 chip/codec（拖入或 @ 消息）。发进群的图片/文件：直写路径与现行 `/yzj im-send` 一致，乐观 ② 用同一 digest。
+日志存 **digest**（`content`）+ 可选 `param`（CLI 元数据，无二进制）。图片/文件靠 `msgType` + `param.file_id` / `param.desc` 在融合视图走与面板相同的 `file-data` 代理回源；旧 blob 只有 digest、没有 `param` 时退化成文字芯片。发进群的图片/文件：直写路径与现行 `/yzj im-send` 一致，乐观 ② 写入同一 digest 与 `param`。
 
 ### 3.4 配置（schema 字段，不是代码常量）
 
@@ -140,10 +141,17 @@ MVP 日志存 **digest**：图片/文件记 `msgType` + 文件名/短描述，�
 
 ### 4.3 渲染口径（验收，非像素处方）
 
-- ①② = IM 气泡（发送人、时间、`replyMsgId` 回复关系、`isSelf` 右对齐）。**住在 DSH 会话**，不是面板第二套日志。
+- ①② = IM 气泡（发送人、时间、`replyMsgId` 回复关系、`isSelf` 右对齐）。**住在 DSH 会话**，不是面板第二套日志。复用面板会话 tab 的同一套渲染器：头像、括号表情（`[握手]`→🤝）、图文/文件/`file-data` 代理、引用条、链接卡、lightbox。发送人**禁止**用「群消息」占位：空名 → 通讯录 → openId 尾号 →「未知」。
 - ③④ = 既有 DSH 用户轮 / assistant / 工具卡。
 - ④ 已投递到群：终态「已投递到群」，不出现「机器人说：」。
 - 确认卡是 ④ 的挂起态，必须出现在**这条**融合流里（pending 仍在 host 内存，视图 overlay，与现行 GUI 卡同一条 writeId）。
+- **切会话分阶段**（与面板 `openGroup` 对齐，禁止闪一下）：
+  1. header / 会话身份立刻换；
+  2. 该 session 的融合缓存（若有）同步上屏，**不得**残留上一会话的行；
+  3. cache miss：右栏「加载群消息…」，**在 `home-fused` 确认 `bound: false` 之前禁止画「私密会话」**；
+  4. 先画本地 `home-fused`（插件日志，快），再 `home-backfill`（CLI）后重画；
+  5. 通讯录补人名、媒体走 `file-data`。
+  面板 cache miss 同样先清空上一群消息，只在右栏出「加载中…」，不得打全局顶栏 loading、不得在新群名下闪旧消息。
 
 ### 4.4 召唤 followup 不是第二句人话
 
@@ -338,3 +346,11 @@ DSH「发给助手」
 | [`robot-channel-plan.md`](robot-channel-plan.md) | 协议（WS、ack-then-push、sendMsgUrl）不变。入站落点是绑定 session；inbound 正文先落本 log 再按 T4 决定是否 `followup` |
 | [`todo-design.md`](todo-design.md) / 记忆库 | 用户直写、`systemPrompt.context` 有界注入可对照；不把待办/记忆行写进本 log |
 | 根 README / AGENTS.md | 写路径两分仍以家园 D9 为准；发进群 = 用户直写，发给助手 = 官方轮次 |
+
+## 14. v1.3 变更（2026-08-17）
+
+切会话闪一下：融合视图曾把初始 `{ bound: false }` 当成已确认未绑定，回填 CLI 期间闪「私密会话」；面板 cache miss 会在新群名下残留上一群消息并打全局 loading。本版：
+
+- ①② 复用面板 IM 渲染器（头像 / 表情 / 图文文件 / 引用 / lightbox）。
+- 切会话：缓存同步上屏 → miss 只出右栏「加载群消息…」→ 先本地 fused 再 CLI 回填；**confirmed unbound 之前不画「私密会话」**。
+- 日志可选 `param`（旧 blob 无字段仍合法），回填/发进群才能在融合流里画出媒体与引用。
