@@ -26,6 +26,7 @@
     # DSH→robot controls, group shared workspaces, chatnode bridge.
     - id: robot-yzj
       name: '@dsh-yzj/bundle/robot-yzj'
+      config: {}
 
     # Memory vault: sections/entities/observations scopes under
     # $DSH_HOME/yzj-memory, memory_* tools, dream consolidation surfaces,

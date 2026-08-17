@@ -1,9 +1,9 @@
 /**
- * Browser half: the sidebar-foot 云之家 toggle plus the frame-overlay
- * workspace panel, sharing one store, and the keyed tool-result cards for
- * every yzj tool. All data flows through the Connection RPC channel (`/yzj`)
- * registered by this package's node half; components receive every fact and
- * verb through the standard props shares.
+ * Browser half: the sidebar-foot 云之家 dock plus the group-room workbench
+ * (conversation.view) and keyed tool-result cards. All data flows through
+ * the Connection RPC channel (`/yzj`) registered by this package's node
+ * half; components receive every fact and verb through the standard props
+ * shares. P2 retired the floating ball (`shell.overlay`).
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
@@ -14,10 +14,12 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { YzjToolCard, YZJ_TOOL_NAMES } from './cards.tsx'
 import { YzjComposerDock, dragInsertRequest, type YzjDropInjected } from './composer.tsx'
-import { YzjFusedView, type YzjFusedInjected } from './transcript.tsx'
 import type { YzjHomeChromeInjected } from './home-chrome.tsx'
+import { YzjRoomComposer, selectGroupRoomComposer, type YzjRoomComposerInjected } from './room-composer.tsx'
+import { YzjSessionShell, type YzjSessionShellInjected } from './session-shell.tsx'
+import { YzjYunzhijiaDock, type YzjGroupSpaceInjected } from './group-space.tsx'
+import { YzjRoomShell, type YzjRoomShellInjected } from './room-shell.tsx'
 import { applyYzjAtSource } from './input-source.ts'
-import { YzjPanel, YzjFloatBall } from './panel.tsx'
 import { YzjSettingsSection } from './settings-section.tsx'
 import { createYzjStore } from './stores.ts'
 import { createYzjPanelInject } from './rpc.ts'
@@ -77,9 +79,9 @@ function insertDraftText(actx: import('@deepseek-ai/dsh-client-runtime/client').
 }
 
 /**
- * Client plugin body: register the sidebar toggle, the overlay panel, the
- * keyed tool views, and the write-confirmation cards. All registrations are
- * fiber-scoped effects.
+ * Client plugin body: register the sidebar dock, the group-room workbench,
+ * the keyed tool views, and the write-confirmation cards. All registrations
+ * are fiber-scoped effects.
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
@@ -96,11 +98,6 @@ export function apply(ctx: ClientContext): void {
   }
   const openWriteContextFor = (record: YzjWriteRecord): void => openWriteContext(record)
 
-  ctx.slots.inject('shell.overlay', () => ctx.slots.register(
-    { name: 'shell.overlay', id: 'yzj-panel', order: 100, store, inject: () => panelInject },
-    YzjPanel,
-  ))
-
   // 云之家 settings section (设置 → 云之家): the management home for the
   // robot channels and the memory vault — NOT workspace-panel tabs (user
   // decision). `slots.inject` defers until the settings shell declares the
@@ -110,27 +107,12 @@ export function apply(ctx: ClientContext): void {
     YzjSettingsSection,
   ))
 
-  // Floating ball entry: the ONLY panel entry (no sidebar button). Shares the
-  // panel store; hidden while the panel is open; hover shows a quick-dock of
-  // tab shortcuts. Lower order so the panel entry wins the stack.
-  ctx.slots.inject('shell.overlay', () => ctx.slots.register(
-    {
-      name: 'shell.overlay',
-      id: 'yzj-ball',
-      order: 90,
-      store,
-      inject: () => ({
-        fetchGroups: (limit, page) => panelInject.fetchGroups(limit, page),
-      }),
-    },
-    YzjFloatBall,
-  ))
-
   // Drop band: registered in `conversation.input.dock` (its own row above the
   // composer card) because `conversation.composer.dock` only renders in the
   // non-hero phase — a brand-new session would have no drop target at all.
   // The band itself stays hidden until a yzj drag crosses the window
-  // (see composer.tsx); the panel entry is the floating ball only.
+  // (see composer.tsx). P2 retired the floating ball; domains live in the
+  // workbench.
   ctx.slots.inject('conversation.input.dock', () => ctx.slots.register(
     {
       name: 'conversation.input.dock',
@@ -178,16 +160,69 @@ export function apply(ctx: ClientContext): void {
       name: 'conversation.view',
       id: 'yzj-home',
       order: -50,
-      label: '群工作',
-      inject: (sessionId: string): YzjFusedInjected => ({
+      label: '群房间',
+      store,
+      inject: (sessionId: string): YzjRoomShellInjected => ({
         sessionId,
         homeFused: (id) => panelInject.homeFused?.(id) ?? Promise.resolve({ ok: false as const, error: { message: 'homeFused unavailable' } }),
-        homeBackfill: (id) => panelInject.homeBackfill?.(id) ?? Promise.resolve({ ok: false as const, error: { message: 'homeBackfill unavailable' } }),
-        fetchFileData: (fileId) => panelInject.fetchFileData(fileId),
-        fetchContact: (openId) => panelInject.fetchContact(openId),
+        homeBackfill: (id, opts) => panelInject.homeBackfill?.(id, opts) ?? Promise.resolve({ ok: false as const, error: { message: 'homeBackfill unavailable' } }),
+        homeTopicOpen: (input) => panelInject.homeTopicOpen?.(input) ?? Promise.resolve({ ok: false as const, error: { message: 'homeTopicOpen unavailable' } }),
+        focusBoundSession: panelInject.focusBoundSession,
+        fetchFileData: panelInject.fetchFileData,
+        fetchContact: panelInject.fetchContact,
+        homeNav: () => panelInject.homeNav?.() ?? Promise.resolve({ ok: false as const, error: { message: 'homeNav unavailable' } }),
+        fetchGroups: (limit, page) => panelInject.fetchGroups(limit, page),
+        panel: panelInject,
+        ...(panelInject.homeOpen === undefined ? {} : { homeOpen: panelInject.homeOpen }),
       }),
     },
-    YzjFusedView,
+    YzjRoomShell,
+  ))
+
+  ctx.slots.inject('conversation.composer', () => ctx.slots.register(
+    {
+      name: 'conversation.composer',
+      select: selectGroupRoomComposer,
+      inject: (sessionId: string): YzjRoomComposerInjected => ({
+        sessionId,
+        homeSend: (id, content, opts) => panelInject.homeSend?.(id, content, opts) ?? Promise.resolve({ ok: false as const, error: { message: 'homeSend unavailable' } }),
+        uploadFile: panelInject.uploadFile,
+        homeFused: (id) => panelInject.homeFused?.(id) ?? Promise.resolve({ ok: false as const, error: { message: 'homeFused unavailable' } }),
+        fetchContact: panelInject.fetchContact,
+      }),
+    },
+    YzjRoomComposer,
+  ))
+
+  ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register(
+    {
+      name: 'conversation.session.header.actions',
+      id: 'yzj-session-shell',
+      order: -80,
+      label: '群房间',
+      inject: (sessionId: string): YzjSessionShellInjected => ({
+        sessionId,
+        homeBinding: (id) => panelInject.homeBinding?.(id) ?? Promise.resolve({ ok: false as const, error: { message: 'homeBinding unavailable' } }),
+        focusBoundSession: panelInject.focusBoundSession,
+      }),
+    },
+    YzjSessionShell,
+  ))
+
+  ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register(
+    {
+      name: 'sidebar.footer.action',
+      id: 'yzj-group-space',
+      order: -80,
+      inject: (): YzjGroupSpaceInjected => ({
+        homeNav: () => panelInject.homeNav?.() ?? Promise.resolve({ ok: false as const, error: { message: 'homeNav unavailable' } }),
+        focusBoundSession: panelInject.focusBoundSession,
+        fetchGroups: (limit, page) => panelInject.fetchGroups(limit, page),
+        robotStatus: () => panelInject.robotStatus(),
+        ...(panelInject.homeOpen === undefined ? {} : { homeOpen: panelInject.homeOpen }),
+      }),
+    },
+    YzjYunzhijiaDock,
   ))
 
   applyYzjAtSource(ctx, panelInject)
@@ -202,7 +237,7 @@ export function apply(ctx: ClientContext): void {
       {
         name: 'tool.call.toolview',
         key: toolName,
-        // Cards can jump into the floating panel (查看详情 → focused view).
+        // Cards jump into the workbench domain (查看详情).
         inject: () => ({ openPanel: openPanelTarget }),
       },
       YzjToolCard,

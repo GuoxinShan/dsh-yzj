@@ -1,5 +1,5 @@
 /**
- * Bound-home I/O: optimistic ② send, im message list backfill, fused VIEW
+ * Bound-home I/O: optimistic ② send, im message list backfill, group-room
  * snapshot. Lives on the node half so robot/ui share `ctx.yzjHome` logs
  * without the browser importing host packages.
  * @module @dsh-yzj/ui-yzj/bound-io
@@ -7,13 +7,15 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import {
-  cliMessageList, cliMessageToEntry, extractSendMsgId, localMsgId, mergeFused,
+  cliMessageList, cliMessageToEntry, clipLogParam, extractSendMsgId, localMsgId, mergeFused,
   type BoundLogLimits, type FusedItem, type FusedPending, type FusedSessionEvent,
   type YzjBoundMessageLog, type YzjLogEntry, type YzjLogMsgType,
 } from '@dsh-yzj/tool-yzj/src/bound-log.ts'
+import { parseContactUser } from './contact-parse.ts'
 import { digestCandidates, type DigestCandidate } from './handoff-digest.ts'
-import { openBoundHome, type HomeOpenAgents, type HomeOpenFace } from './home-open.ts'
+import { openBoundHome, openTopicHome, lastSessionTitle, type HomeOpenAgents, type HomeOpenFace } from './home-open.ts'
 import type { YzjWriteRecord } from './write-gate.ts'
+import type { TopicEnsureInput, TopicEnsureResult, TopicRecord } from '@dsh-yzj/tool-yzj/src/topics.ts'
 
 /** CLI `--limit` cap for `im message list` (measured). */
 export const CLI_LIST_PAGE = 20
@@ -42,8 +44,15 @@ export interface HomeIoFace extends HomeOpenFace {
   getLogBySession(dshSessionId: string): YzjBoundMessageLog | undefined
   ackLocal(yzjConversationId: string, localId: string, realMsgId: string): Promise<YzjBoundMessageLog | undefined>
   failLocal(yzjConversationId: string, localId: string): Promise<YzjBoundMessageLog | undefined>
-  formatSummonWindow(yzjConversationId: string, excludeMsgId?: string): string
+  formatSummonWindow(yzjConversationId: string, excludeMsgId?: string, sessionId?: string): string
   logs: { getLimits(): BoundLogLimits }
+  ensureTopic?(input: TopicEnsureInput): Promise<TopicEnsureResult>
+  getTopicBySession?(dshSessionId: string): TopicRecord | undefined
+  getTopicByOutbound?(msgId: string): TopicRecord | undefined
+  listTopics?(yzjConversationId: string): TopicRecord[]
+  setTopicStatus?(dshSessionId: string, status: NonNullable<TopicRecord['status']>): Promise<void>
+  /** Every group-room binding (workbench session list / L1 merge). */
+  listBindings?(): { dshSessionId: string; yzjConversationId: string; yzjKind: 'group' | 'dm' }[]
 }
 
 /** Parsed `/yzj im-send` / home-send payload. */
@@ -66,17 +75,8 @@ export type ImSendResult =
 
 /** Login-user projection from `contact user get` (pitfall-003 envelopes). */
 export function parseWhoami(json: unknown): { openId: string; name: string } {
-  const rows = Array.isArray(json) ? json
-    : typeof json === 'object' && json !== null && Array.isArray((json as { list?: unknown }).list)
-      ? (json as { list: unknown[] }).list
-      : typeof json === 'object' && json !== null && Array.isArray((json as { data?: unknown }).data)
-        ? (json as { data: unknown[] }).data
-        : typeof json === 'object' && json !== null ? [json] : []
-  const user = typeof rows[0] === 'object' && rows[0] !== null ? rows[0] as Record<string, unknown> : {}
-  const openId = typeof user.openId === 'string' && user.openId !== '' ? user.openId
-    : typeof user.oId === 'string' ? user.oId : ''
-  const name = typeof user.name === 'string' ? user.name : ''
-  return { openId, name }
+  const user = parseContactUser(json)
+  return { openId: user.openId, name: user.name }
 }
 
 /** Robot openIds to skip on backfill (T12). Surfaces carry robotId after inbound. */
@@ -172,19 +172,6 @@ function digestOfSend(input: ImSendInput): { content: string; msgType: YzjLogMsg
   return { content: input.content ?? '', msgType: 'text' }
 }
 
-/** Persist enough CLI `param` for the fused IM renderer (file / images / quote). */
-function paramOfSend(input: ImSendInput): Record<string, unknown> | undefined {
-  const param: Record<string, unknown> = {}
-  if (input.fileId !== undefined) param.file_id = input.fileId
-  if (input.fileName !== undefined) param.name = input.fileName
-  if (input.replyMsgId !== undefined) param.replyMsgId = input.replyMsgId
-  if (input.images.length > 0) {
-    const start = (input.content ?? '').length
-    param.desc = input.images.map(fileId => ({ type: 'image', data: fileId, start }))
-  }
-  return Object.keys(param).length === 0 ? undefined : param
-}
-
 /** Whoami via the bridge; empty on failure. */
 export async function whoamiOf(ctx: Context): Promise<{ openId: string; name: string }> {
   try {
@@ -193,6 +180,24 @@ export async function whoamiOf(ctx: Context): Promise<{ openId: string; name: st
     return parseWhoami(result.json)
   } catch {
     return { openId: '', name: '' }
+  }
+}
+
+const contactNameCache = new Map<string, string>()
+
+/** Directory lookup for an empty fromName. Process-local cache keyed by openId. */
+async function contactNameOf(ctx: Context, openId: string): Promise<string> {
+  if (openId === '') return ''
+  const cached = contactNameCache.get(openId)
+  if (cached !== undefined) return cached
+  try {
+    const result = await ctx.yzjBridge.run(['contact', 'user', 'get', '--open-id', openId])
+    if (!result.ok) return ''
+    const name = parseWhoami(result.json).name
+    if (name !== '') contactNameCache.set(openId, name)
+    return name
+  } catch {
+    return ''
   }
 }
 
@@ -213,8 +218,23 @@ export async function sendImAndLog(ctx: Context, home: HomeIoFace | undefined, i
     }
     const self = await whoamiOf(ctx)
     const digest = digestOfSend(input)
-    const param = paramOfSend(input)
     localId = localMsgId()
+    const sendParam = clipLogParam({
+      ...(input.replyMsgId === undefined ? {} : { replyMsgId: input.replyMsgId }),
+      ...(input.msgType === 'file'
+        ? { file_id: input.fileId ?? '', name: input.fileName ?? '', ext: (input.fileName ?? '').split('.').pop() ?? '' }
+        : {}),
+      ...(input.msgType === 'richText' && input.images.length > 0
+        ? {
+            desc: input.images.map(fileId => ({
+              type: 'image',
+              data: fileId,
+              start: (input.content ?? '').indexOf('[图片]'),
+              length: 4,
+            })),
+          }
+        : {}),
+    })
     const entry: YzjLogEntry = {
       msgId: localId,
       sentAt: Date.now(),
@@ -226,7 +246,7 @@ export async function sendImAndLog(ctx: Context, home: HomeIoFace | undefined, i
       isSelf: true,
       status: 'pending',
       ...(input.replyMsgId === undefined ? {} : { replyMsgId: input.replyMsgId }),
-      ...(param === undefined ? {} : { param }),
+      ...(sendParam === undefined ? {} : { param: sendParam }),
     }
     try {
       await home.appendLog(input.groupId, entry)
@@ -266,20 +286,22 @@ export async function backfillBoundLog(
   home: HomeIoFace,
   yzjConversationId: string,
   limit?: number,
-): Promise<{ appended: number; skipped: number }> {
+  beforeMsgId?: string,
+): Promise<{ appended: number; skipped: number; more: boolean }> {
   let binding = home.getByConversation(yzjConversationId)
   if (binding === undefined) {
     await home.ensureBound(yzjConversationId, yzjConversationId.startsWith('BOT-') ? 'dm' : 'group')
     binding = home.getByConversation(yzjConversationId)
   }
-  if (binding === undefined) return { appended: 0, skipped: 0 }
+  if (binding === undefined) return { appended: 0, skipped: 0, more: false }
   const cap = Math.max(1, limit ?? home.logs.getLimits().backfillLimit)
   const self = await whoamiOf(ctx)
   const skip = robotSkipOpenIds(ctx.get('yzjRobot') as { statuses?: () => readonly { surface?: readonly { robotId?: string }[] }[] } | undefined)
   let appended = 0
   let skipped = 0
   let remaining = cap
-  let cursor: string | undefined
+  let cursor: string | undefined = beforeMsgId
+  let more = false
   while (remaining > 0) {
     const page = Math.min(CLI_LIST_PAGE, remaining)
     const command = ['im', 'message', 'list', '--group-id', yzjConversationId, '--limit', String(page)]
@@ -293,26 +315,48 @@ export async function backfillBoundLog(
     }
     if (!result.ok) break
     const rows = cliMessageList(result.json)
-    if (rows.length === 0) break
+    if (rows.length === 0) {
+      more = false
+      break
+    }
     const oldest = rows[0]
     const oldestId = typeof oldest === 'object' && oldest !== null
       ? String((oldest as { msgId?: unknown }).msgId ?? (oldest as { id?: unknown }).id ?? '')
       : ''
+    more = rows.length === page
     for (const row of rows) {
-      const entry = cliMessageToEntry(row, 'backfill', self.openId)
-      if (entry === undefined) {
+      const parsed = cliMessageToEntry(row, 'backfill', self.openId)
+      if (parsed === undefined) {
         skipped += 1
         continue
       }
-      const outcome = await home.appendLog(yzjConversationId, entry, { skipOpenIds: skip })
+      const filledName = parsed.fromName === '' && parsed.fromOpenId !== ''
+        ? await contactNameOf(ctx, parsed.fromOpenId)
+        : parsed.fromName
+      const entry = filledName === parsed.fromName ? parsed : { ...parsed, fromName: filledName }
+      const robotHit = skip.includes(entry.fromOpenId)
+      const topic = home.getTopicByOutbound?.(entry.msgId)
+      const incoming = robotHit
+        ? {
+            ...entry,
+            origin: 'robot-outbound' as const,
+            isSelf: false,
+            fromName: entry.fromName === '' ? '助手' : entry.fromName,
+            ...(topic === undefined ? {} : { topicSessionId: topic.dshSessionId }),
+          }
+        : entry
+      const outcome = await home.appendLog(yzjConversationId, incoming)
       if (outcome.accepted) appended += 1
       else skipped += 1
     }
     remaining -= rows.length
-    if (rows.length < page || oldestId === '' || oldestId === cursor) break
+    if (rows.length < page || oldestId === '' || oldestId === cursor) {
+      more = rows.length === page && oldestId !== '' && oldestId !== cursor
+      break
+    }
     cursor = oldestId
   }
-  return { appended, skipped }
+  return { appended, skipped, more }
 }
 
 function eventTime(event: { time?: unknown; timestamp?: unknown }): number {
@@ -355,14 +399,116 @@ export function fusedSnapshot(
   log?: YzjBoundMessageLog
   items: FusedItem[]
   candidates: DigestCandidate[]
+  topics: TopicRecord[]
 } {
   const events = sessionEventsOf(agent)
   const candidates = digestCandidates(events)
+  const topic = home.getTopicBySession?.(sessionId)
   const binding = home.getBySession(sessionId)
-  if (binding === undefined) return { bound: false, items: [], candidates }
+    ?? (topic === undefined ? undefined : home.getByConversation(topic.yzjConversationId))
+  if (binding === undefined) return { bound: false, items: [], candidates, topics: [] }
   const log = home.getLog(binding.yzjConversationId)
   const items = mergeFused(log?.entries ?? [], events, pendingOf(writes))
-  return { bound: true, binding, ...(log === undefined ? {} : { log }), items, candidates }
+  const topics = home.listTopics?.(binding.yzjConversationId) ?? []
+  return { bound: true, binding, ...(log === undefined ? {} : { log }), items, candidates, topics }
+}
+
+/** Group-room VIEW: IM rows + topic list, no ③④ (R2). */
+export function roomSnapshot(
+  home: HomeIoFace,
+  sessionId: string,
+): {
+  bound: boolean
+  kind: 'room' | 'topic' | 'unbound'
+  binding?: { dshSessionId: string; yzjConversationId: string; yzjKind: 'group' | 'dm' }
+  topic?: TopicRecord
+  topics: TopicRecord[]
+  items: FusedItem[]
+} {
+  const topic = home.getTopicBySession?.(sessionId)
+  if (topic !== undefined) {
+    const binding = home.getByConversation(topic.yzjConversationId)
+    return {
+      bound: true,
+      kind: 'topic',
+      ...(binding === undefined ? {} : { binding }),
+      topic,
+      topics: home.listTopics?.(topic.yzjConversationId) ?? [],
+      items: [],
+    }
+  }
+  const binding = home.getBySession(sessionId)
+  if (binding === undefined) return { bound: false, kind: 'unbound', topics: [], items: [] }
+  const log = home.getLog(binding.yzjConversationId)
+  const items: FusedItem[] = (log?.entries ?? []).map(entry => ({
+    kind: 'im' as const,
+    time: entry.sentAt,
+    entry,
+  }))
+  return {
+    bound: true,
+    kind: 'room',
+    binding,
+    topics: home.listTopics?.(binding.yzjConversationId) ?? [],
+    items,
+  }
+}
+
+/** One topic row in the workbench session list / topic drawer. */
+export interface GroupSpaceTopic {
+  readonly sessionId: string
+  readonly title: string
+  readonly source: string
+  readonly lastActivity: number
+  readonly status: 'running' | 'confirm' | 'done'
+  readonly rootMsgId?: string
+  readonly originWho?: string
+  readonly originText?: string
+  readonly originTime?: number
+}
+
+/** One group-room parent (bound rooms feeding L1 merge). */
+export interface GroupSpaceRoom {
+  readonly groupId: string
+  readonly groupName: string
+  readonly sessionId: string
+  readonly yzjKind: 'group' | 'dm'
+  readonly topics: readonly GroupSpaceTopic[]
+}
+
+/**
+ * Bound-room snapshot: every binding as a parent plus its topics (L1 merge).
+ * Group display name prefers the pinned host `session/title`.
+ */
+export function groupSpaceSnapshot(
+  home: HomeIoFace,
+  agents?: { get(id: string): { session?: { events?: readonly { type: string; data?: unknown }[] } } | undefined },
+): { rooms: GroupSpaceRoom[] } {
+  const rooms = (home.listBindings?.() ?? []).map((binding) => {
+    const topics = (home.listTopics?.(binding.yzjConversationId) ?? []).map(topic => ({
+      sessionId: topic.dshSessionId,
+      title: topic.title,
+      source: topic.source,
+      lastActivity: topic.lastActivity ?? topic.createdAt,
+      status: topic.status === 'confirm' || topic.status === 'done' ? topic.status : 'running' as const,
+      ...(topic.rootMsgId === undefined ? {} : { rootMsgId: topic.rootMsgId }),
+      ...(topic.originWho === undefined ? {} : { originWho: topic.originWho }),
+      ...(topic.originText === undefined ? {} : { originText: topic.originText }),
+      ...(topic.originTime === undefined ? {} : { originTime: topic.originTime }),
+    }))
+    const pinned = lastSessionTitle(agents?.get(binding.dshSessionId)?.session?.events ?? [])
+    const groupName = pinned !== ''
+      ? pinned
+      : (binding.yzjKind === 'dm' ? '私聊房间' : '群房间')
+    return {
+      groupId: binding.yzjConversationId,
+      groupName,
+      sessionId: binding.dshSessionId,
+      yzjKind: binding.yzjKind,
+      topics,
+    }
+  })
+  return { rooms }
 }
 
 /** Structural plugin user-turn (ui-yzj must not import dsh-llm — dual-face tsconfig). */
@@ -375,8 +521,9 @@ function pluginTurn(text: string): { role: 'user'; content: { type: 'text'; text
 }
 
 /**
- * D8 handoff: bind the target group, post the confirmed digest as ②, then
- * inject the summon window and followup so Claude continues as the group home.
+ * D8 handoff: bind the target group room, post the confirmed digest as ②,
+ * then mint a handoff topic and followup there (R3). Lands the user on the
+ * group room; the topic is listed underneath.
  */
 export async function handoffToGroup(options: {
   readonly ctx: Context
@@ -390,7 +537,7 @@ export async function handoffToGroup(options: {
   readonly groupId: string
   readonly digest: string
   readonly cwd: string
-}): Promise<{ sessionId: string; created: boolean } | { error: string }> {
+}): Promise<{ sessionId: string; created: boolean; topicSessionId?: string } | { error: string }> {
   if (options.digest.trim() === '') return { error: 'home-handoff: digest is empty' }
   let opened
   try {
@@ -412,16 +559,27 @@ export async function handoffToGroup(options: {
     atAll: false,
   })
   if (!sent.ok) return { error: sent.error }
-  const live = options.agents.get(opened.sessionId)
-  const agent = typeof live === 'object' && live !== null
-    ? live as { inject?: (message: unknown) => void; followup?: (message: unknown) => void }
-    : undefined
-  const window = options.home.formatSummonWindow(options.groupId)
+  let topicSessionId: string | undefined
   try {
+    const topic = await openTopicHome({
+      home: options.home,
+      agents: options.agents,
+      yzjConversationId: options.groupId,
+      cwd: options.cwd,
+      source: 'handoff',
+      originText: options.digest,
+      title: '丢进群交接',
+    })
+    topicSessionId = topic.sessionId
+    const live = options.agents.get(topic.sessionId)
+    const agent = typeof live === 'object' && live !== null
+      ? live as { inject?: (message: unknown) => void; followup?: (message: unknown) => void }
+      : undefined
+    const window = options.home.formatSummonWindow(options.groupId, undefined, topic.sessionId)
     if (window !== '') agent?.inject?.(pluginTurn(window))
     agent?.followup?.(pluginTurn('用户从私密会话把工作丢进了本群。请基于群里刚发出的摘要，以本群共享身份继续协作。'))
   } catch (error) {
     return { error: `home-handoff followup failed: ${String(error)}` }
   }
-  return { sessionId: opened.sessionId, created: opened.created }
+  return { sessionId: opened.sessionId, created: opened.created, ...(topicSessionId === undefined ? {} : { topicSessionId }) }
 }

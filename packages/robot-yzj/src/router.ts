@@ -15,6 +15,7 @@ import { foldScheduleEvents } from '@deepseek-ai/dsh-schedule'
 import { appendFileSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { yzjWorkspacePath } from './yzj-cwd.ts'
 import type { Agent, AgentHandle, CreateAgentOptions, ResumeAgentOptions } from '@deepseek-ai/dsh-agent'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { InboundDedupe, parseReplyMeta, type RobotInboundMessage } from './protocol.ts'
@@ -69,14 +70,29 @@ export interface RouterHomeFace {
     readonly fromName: string
     readonly content: string
     readonly msgType: 'text' | 'richText' | 'file' | 'other'
-    readonly origin: 'inbound' | 'dsh-send' | 'backfill'
+    readonly origin: 'inbound' | 'dsh-send' | 'backfill' | 'robot-outbound'
     readonly isSelf: boolean
     readonly replyMsgId?: string
+    readonly topicSessionId?: string
     readonly status: 'pending' | 'acked' | 'failed'
     readonly param?: Record<string, unknown>
   }, options?: { readonly skipOpenIds?: readonly string[] }): Promise<unknown>
   /** Shared summon-window digest (T5); empty → do not inject. */
-  formatSummonWindow?(yzjConversationId: string, excludeMsgId?: string): string
+  formatSummonWindow?(yzjConversationId: string, excludeMsgId?: string, sessionId?: string): string
+  /** Mint or focus a topic under this group (R4). Absent = 1:1 room fallback. */
+  ensureTopic?(input: {
+    readonly yzjConversationId: string
+    readonly source: 'dsh' | 'yzj' | 'handoff'
+    readonly title?: string
+    readonly rootMsgId?: string
+    readonly originWho?: string
+    readonly originText?: string
+    readonly originTime?: number
+    readonly fromSessionId?: string
+  }): Promise<{ sessionId: string; created: boolean }>
+  getTopicByAnchor?(yzjConversationId: string, rootMsgId: string): { dshSessionId: string } | undefined
+  getTopicByOutbound?(msgId: string): { dshSessionId: string } | undefined
+  registerTopicOutbound?(msgId: string, dshSessionId: string): Promise<void>
 }
 
 /** Per-conversation memory face (MemoryStore satisfies it). */
@@ -274,6 +290,8 @@ export class RobotRouter {
   private allowFromCache: readonly string[] | undefined
   /** groupId → last seen surface identity (in-memory mirror of the store). */
   private readonly surfaces = new Map<string, SurfaceState>()
+  /** Last inbound surface, used to stamp robot-outbound log rows (R9). */
+  private lastSurface: { groupId: string; robotId: string; robotName: string; sessionId: string } | undefined
   /** Recency order of seen groupIds (most recent last). */
   private readonly recentGroups: string[] = []
   /** groupId → last anchored session id (synthetic continuation target). */
@@ -294,7 +312,7 @@ export class RobotRouter {
     this.surface = options.surface
     this.home = options.home
     this.channelIndex = options.channelIndex ?? 0
-    this.cwd = options.cwd ?? process.cwd()
+    this.cwd = options.cwd !== undefined && options.cwd !== '' ? options.cwd : yzjWorkspacePath()
     this.ackText = options.ackText ?? DEFAULT_ACK_TEXT
     this.denyText = options.denyText ?? DEFAULT_DENY_TEXT
     this.logger = options.logger
@@ -343,19 +361,88 @@ export class RobotRouter {
     return typeof this.home === 'function' ? this.home() : this.home
   }
 
+  /** Stamp one delivered robot post into the group-room log (R9). */
+  private noteRobotPost(
+    surface: { groupId: string; robotId: string; robotName: string; sessionId: string },
+    msgId: string,
+    content: string,
+    replyMsgId?: string,
+  ): void {
+    const topicSessionId = surface.sessionId.startsWith('yzj-topic-') ? surface.sessionId : undefined
+    void this.homeFace()?.appendLog?.(surface.groupId, {
+      msgId,
+      sentAt: Date.now(),
+      fromOpenId: surface.robotId,
+      fromName: surface.robotName === '' ? '助手' : surface.robotName,
+      content,
+      msgType: 'text',
+      origin: 'robot-outbound',
+      isSelf: false,
+      status: 'acked',
+      ...(replyMsgId === undefined || replyMsgId === '' ? {} : { replyMsgId }),
+      ...(topicSessionId === undefined ? {} : { topicSessionId }),
+    })
+    if (surface.sessionId !== '') {
+      void this.homeFace()?.registerTopicOutbound?.(msgId, surface.sessionId)
+    }
+  }
+
   /**
-   * Resolve the owning session for one message. Product law: one Yunzhijia
-   * conversation ↔ one bound DSH session. The shared home table is the
-   * authority; without it this process still mints `yzj-home-*` (never a
-   * `yzj-robot-*` product home). Reply chains do not allocate a new root.
+   * Resolve the owning session for one message. Product law v2.0: a top-level
+   * @ mints (or focuses) a topic; a reply chain continues that topic. The
+   * group-room host (`yzj-home-*`) is not the agent work session. Without a
+   * topic face this process still falls back to the 1:1 room id (tests / ops).
    */
   private async resolveSession(message: RobotInboundMessage): Promise<SessionId> {
     const kind = isDirectSurface(message) ? 'dm' : 'group'
     const home = this.homeFace()
+    const continued = this.continuedTopicId(message, home)
+    if (continued !== undefined) {
+      return this.rememberResolved(message, kind, continued)
+    }
+    if (home?.ensureTopic !== undefined) {
+      const minted = await home.ensureTopic({
+        yzjConversationId: message.groupId,
+        source: 'yzj',
+        rootMsgId: message.msgId,
+        originWho: message.operatorName,
+        originText: message.content,
+        originTime: message.time,
+      })
+      return this.rememberResolved(message, kind, SessionId(minted.sessionId))
+    }
     const sessionId = home === undefined
       ? homeSessionIdOf(message.groupId)
       : SessionId((await home.ensureBound(message.groupId, kind)).sessionId)
-    if (kind === 'group') this.sessionCwds.set(sessionId, this.groupHomeCwd(message.groupId))
+    return this.rememberResolved(message, kind, sessionId)
+  }
+
+  /** Reply-chain or synthetic continuation target, if any. */
+  private continuedTopicId(message: RobotInboundMessage, home: RouterHomeFace | undefined): SessionId | undefined {
+    if (message.synthetic === true) {
+      const last = this.lastSession.get(message.groupId)
+      if (last !== undefined) return last
+    }
+    const reply = parseReplyMeta(message.msgParam).reply
+    if (reply === undefined) return undefined
+    const fromOutbound = this.outboundAnchor.get(reply.replyMsgId)
+      ?? (reply.replyMsgId === '' ? undefined : home?.getTopicByOutbound?.(reply.replyMsgId)?.dshSessionId)
+    if (fromOutbound !== undefined) return SessionId(String(fromOutbound))
+    const rootId = reply.replyRootMsgId !== '' ? reply.replyRootMsgId : reply.replyMsgId
+    if (rootId === '') return undefined
+    const fromRoot = this.inboundAnchor.get(rootId)
+      ?? home?.getTopicByAnchor?.(message.groupId, rootId)?.dshSessionId
+    return fromRoot === undefined ? undefined : SessionId(String(fromRoot))
+  }
+
+  /** Persist cwd + inbound root mapping for one resolved session. */
+  private rememberResolved(message: RobotInboundMessage, kind: 'group' | 'dm', sessionId: SessionId): SessionId {
+    if (kind === 'group') {
+      const cwd = String(sessionId).startsWith('yzj-topic-')
+        ? join(this.cwd, 'groups', slug(message.groupId), slug(String(sessionId).slice('yzj-topic-'.length)))
+        : this.groupHomeCwd(message.groupId)
+      this.sessionCwds.set(sessionId, cwd)
+    }
     this.inboundAnchor.set(message.msgId, sessionId)
     this.trimAnchor(this.inboundAnchor)
     return sessionId
@@ -386,6 +473,12 @@ export class RobotRouter {
   async handle(message: RobotInboundMessage): Promise<void> {
     if (!this.dedupe.markSeen(message.msgId)) return
     this.noteSurface(message)
+    this.lastSurface = {
+      groupId: message.groupId,
+      robotId: message.robotId,
+      robotName: message.robotName,
+      sessionId: '',
+    }
     if (message.synthetic !== true) {
       await this.noteInboundLog(message)
     }
@@ -433,6 +526,9 @@ export class RobotRouter {
     if (this.confirm !== undefined && this.confirm.checkReply(message)) return
     const sessionId = await this.resolveSession(message)
     this.noteSession(message, sessionId)
+    if (this.lastSurface !== undefined) {
+      this.lastSurface = { ...this.lastSurface, sessionId: String(sessionId) }
+    }
     if (this.muted.has(sessionId)) return
     const conversationKey = group ? groupKey(message.groupId) : dmKeyOf(message)
     // Memory verbs (S4) manage the conversation's long-lived instructions
@@ -463,6 +559,14 @@ export class RobotRouter {
       // Synthetic turns reference a msgId the server never saw: pushes must
       // not anchor replies to it.
       ...(message.synthetic === true ? { noReplyAnchor: true } : {}),
+      onOutbound: (msgId, text, replyMsgId) => {
+        this.noteRobotPost({
+          groupId: message.groupId,
+          robotId: message.robotId,
+          robotName: message.robotName,
+          sessionId: String(sessionId),
+        }, msgId, text, replyMsgId)
+      },
     })
     // The ack is a robot message in the chain — anchor it so replies to the
     // ack (not just to the final answer) continue this session. The task
@@ -471,11 +575,7 @@ export class RobotRouter {
     const ackText = taskSummary.length >= 12
       ? `${this.ackText}（${taskSummary}${message.content.trim().length > 24 ? '…' : ''}）`
       : this.ackText
-    const ackResult = await this.reply(ackText, replyAnchor)
-    if (ackResult.ok && ackResult.msgId !== undefined) {
-      this.outboundAnchor.set(ackResult.msgId, sessionId)
-      this.trimAnchor(this.outboundAnchor)
-    }
+    await this.reply(ackText, replyAnchor)
     // The first conversation in a group prepends a self-introduction turn
     // (S7/C14) ahead of the user's message — the intro runs as its own turn,
     // never replacing the user's request. The introduced flag persists in
@@ -746,7 +846,15 @@ export class RobotRouter {
   }
 
   private async reply(text: string, anchor: RobotSendOptions): Promise<RobotSendResult> {
-    return this.sender.send(text, anchor)
+    const result = await this.sender.send(text, anchor)
+    if (result.ok && result.msgId !== undefined && this.lastSurface !== undefined) {
+      if (this.lastSurface.sessionId !== '') {
+        this.outboundAnchor.set(result.msgId, SessionId(this.lastSurface.sessionId))
+        this.trimAnchor(this.outboundAnchor)
+      }
+      this.noteRobotPost(this.lastSurface, result.msgId, text, anchor.replyMsgId)
+    }
+    return result
   }
 
   /**
@@ -801,7 +909,7 @@ export class RobotRouter {
         this.logger?.warn(`robot: share-dir inject failed: ${String(error)}`)
       }
     }
-    const window = this.homeFace()?.formatSummonWindow?.(message.groupId, message.msgId) ?? ''
+    const window = this.homeFace()?.formatSummonWindow?.(message.groupId, message.msgId, sessionId) ?? ''
     if (window !== '') {
       try {
         agent.inject(createUserMessage({
@@ -908,8 +1016,8 @@ export class RobotRouter {
         return
       case 'configure':
         await this.reply(this.guiUrl === ''
-          ? '机器人设置：在 DSH 面板（悬浮球）的「机器人」tab 调整模型覆盖与通道状态。'
-          : `机器人设置面板：${this.guiUrl}（「机器人」tab：模型覆盖、通道状态、会话列表）`, anchor)
+          ? '机器人设置：在 DSH「设置 → 云之家」调整模型覆盖与通道状态。'
+          : `机器人设置面板：${this.guiUrl}（设置 → 云之家：模型覆盖、通道状态）`, anchor)
         return
       case 'routines': {
         const agent = this.agents.get(sessionId)

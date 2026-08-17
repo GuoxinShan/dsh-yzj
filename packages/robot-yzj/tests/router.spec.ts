@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { RobotRouter, collectAssistantText, conversationSummary, highestAssistantSeq } from '../src/router.ts'
 import type { RobotInboundMessage } from '../src/protocol.ts'
@@ -76,17 +76,60 @@ function memoryHome() {
   }
 }
 
+function memoryTopicHome() {
+  const rooms = memoryHome()
+  const topics = new Map<string, { dshSessionId: string; yzjConversationId: string; rootMsgId?: string }>()
+  const outbound = new Map<string, string>()
+  const slug = (id: string): string => {
+    const cleaned = id.replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '')
+    return cleaned === '' ? 'x' : cleaned.slice(0, 40)
+  }
+  return {
+    ...rooms,
+    async ensureTopic(input: { yzjConversationId: string; rootMsgId?: string }) {
+      await rooms.ensureBound(input.yzjConversationId, input.yzjConversationId.startsWith('BOT-') ? 'dm' : 'group')
+      if (input.rootMsgId !== undefined) {
+        for (const row of topics.values()) {
+          if (row.yzjConversationId === input.yzjConversationId && row.rootMsgId === input.rootMsgId) {
+            return { sessionId: row.dshSessionId, created: false }
+          }
+        }
+      }
+      const sessionId = `yzj-topic-${slug(input.yzjConversationId)}-${slug(input.rootMsgId ?? `n${topics.size}`)}`
+      topics.set(sessionId, {
+        dshSessionId: sessionId,
+        yzjConversationId: input.yzjConversationId,
+        ...(input.rootMsgId === undefined ? {} : { rootMsgId: input.rootMsgId }),
+      })
+      return { sessionId, created: true }
+    },
+    getTopicByAnchor(groupId: string, rootMsgId: string) {
+      for (const row of topics.values()) {
+        if (row.yzjConversationId === groupId && row.rootMsgId === rootMsgId) return row
+      }
+      return undefined
+    },
+    getTopicByOutbound(msgId: string) {
+      const id = outbound.get(msgId)
+      return id === undefined ? undefined : topics.get(id)
+    },
+    async registerTopicOutbound(msgId: string, sessionId: string) {
+      outbound.set(msgId, sessionId)
+    },
+  }
+}
+
 function makeRouter(
   sends: RobotSendResult[],
   agents = fakeAgents(() => 'idle'),
   allowFrom = ['u-allowed'],
-  extra: {
+    extra: {
     memory?: { lines: (key: string) => readonly string[]; remember: (key: string, line: string) => Promise<{ lines: readonly string[]; note: string }>; forget: (key: string, substring: string) => Promise<{ lines: readonly string[]; note: string }> }
     cwd?: string
     guiUrl?: string
     surface?: unknown
     resolveGroupName?: (groupId: string) => Promise<string | undefined>
-    home?: ReturnType<typeof memoryHome>
+    home?: ReturnType<typeof memoryHome> | ReturnType<typeof memoryTopicHome>
   } = {},
 ) {
   const sendCalls: { text: string; options?: RobotSendOptions }[] = []
@@ -212,6 +255,27 @@ describe('RobotRouter', () => {
     expect(agents.created).toHaveLength(1)
     const followups = (agents.created[0] as { followup: { mock: { calls: unknown[][] } } }).followup.mock.calls
     expect(String(followups.at(-1)![0]!.content[0]!.text)).toBe('另一个话题')
+  })
+
+  it('mints a yzj-topic-* per top-level @ and continues it on the reply chain', async () => {
+    const agents = fakeAgents(() => 'idle')
+    const memory = fakeMemory()
+    const { router } = makeRouter([], agents, ['u-allowed'], { memory, cwd: tmpBase, home: memoryTopicHome() })
+    await router.handle(inbound('群任务A', { groupId: '6a7f37b4e4b0e6211b1c5b87', msgId: 'root-1' }))
+    expect(agents.created).toHaveLength(1)
+    const firstId = String((agents.createdWith[0] as { sessionId: { toString(): string } }).sessionId)
+    expect(firstId.startsWith('yzj-topic-')).toBe(true)
+    await router.handle(inbound('继续刚才的', {
+      groupId: '6a7f37b4e4b0e6211b1c5b87',
+      msgId: 'reply-1',
+      msgParam: JSON.stringify({ replyMsgId: 'out-1', replyRootMsgId: 'root-1', replyPersonName: '单国鑫', replySummary: '群任务A' }),
+    }))
+    expect(agents.created).toHaveLength(1)
+    await router.handle(inbound('另一个话题', { groupId: '6a7f37b4e4b0e6211b1c5b87', msgId: 'root-2' }))
+    expect(agents.created).toHaveLength(2)
+    const secondId = String((agents.createdWith[1] as { sessionId: { toString(): string } }).sessionId)
+    expect(secondId.startsWith('yzj-topic-')).toBe(true)
+    expect(secondId).not.toBe(firstId)
   })
 
   it('rides the task summary in the ack (C12) for long-enough prompts', async () => {
@@ -362,9 +426,9 @@ describe('RobotRouter', () => {
     expect(summary[0]!.robotId).toBe('BOT-r')
   })
 
-  it('workdir defaults to the host process cwd and honors the option', () => {
+  it('workdir defaults to the 云之家 workspace and honors the option', () => {
     const { router } = makeRouter([])
-    expect(router.workdir()).toBe(process.cwd())
+    expect(router.workdir()).toBe(join(homedir(), '.dsh-yzj', 'workspace'))
     const custom = new RobotRouter({ agents: fakeAgents(() => 'idle') as never, sender: { send: async () => ({ ok: true }) }, allowFrom: async () => ['u'], cwd: 'C:\\work' })
     expect(custom.workdir()).toBe('C:\\work')
   })
@@ -423,8 +487,8 @@ describe('RobotRouter', () => {
     }
     const { router } = makeRouter([], fakeAgents(() => 'idle'), ['u-allowed'], { home: home as never, cwd: tmpBase })
     await router.handle(inbound('我在客户端发的', { groupId: 'g1', msgId: 'm-self', operatorOpenid: 'u-allowed' }))
-    expect(appended).toHaveLength(1)
-    expect(appended[0]).toMatchObject({ origin: 'inbound', isSelf: true, content: '我在客户端发的', msgId: 'm-self' })
+    expect(appended.some(row => row.origin === 'inbound' && row.msgId === 'm-self')).toBe(true)
+    expect(appended.some(row => row.origin === 'robot-outbound')).toBe(true)
   })
 
   it('stores inbound reply param so the fused renderer can quote before backfill', async () => {

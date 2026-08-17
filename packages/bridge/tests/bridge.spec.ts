@@ -121,7 +121,8 @@ describe('resolveNpmLauncher', () => {
       '"%_prog%"  "%dp0%\\node_modules\\@yunzhijia\\cli\\scripts\\run.js" %*',
     ].join('\r\n'))
     const script = resolveNpmLauncher(cmdPath)
-    expect(script).toBe(join(dir, 'node_modules', '@yunzhijia', 'cli', 'scripts', 'run.js'))
+    const norm = (value: string): string => value.replaceAll('\\', '/')
+    expect(norm(script ?? '')).toBe(norm(join(dir, 'node_modules', '@yunzhijia', 'cli', 'scripts', 'run.js')))
   })
 
   it('returns undefined for non-npm launchers and missing files', () => {

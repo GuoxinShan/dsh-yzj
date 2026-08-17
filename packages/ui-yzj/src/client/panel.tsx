@@ -34,6 +34,10 @@ import css from './panel.module.css'
 export interface YzjPanelProps extends YzjPanelInject {
   useStore: <R>(selector: (state: YzjPanelState) => R) => R
   actions: BakedActions<YzjPanelState, YzjPanelActions>
+  /** Workbench embed (P2): no overlay chrome, always mounted. */
+  embedded?: boolean
+  /** Force a tab when embedded (chat stays in the IM workbench). */
+  forceTab?: Exclude<YzjTab, 'chat'>
 }
 
 type UnknownRecord = Record<string, unknown>
@@ -136,9 +140,15 @@ function dragTitleOf(message: Record<string, unknown>): string {
 }
 
 /** Chat header inside a group: the group's avatar + name. */
+function groupNameOf(groups: unknown[], groupId: string): string {
+  const group = groups.map(asRecord).find(item => asString(item.groupId) === groupId)
+  return group === undefined ? '' : asString(group.groupName)
+}
+
+
 function GroupHead({ groups, groupId }: { groups: unknown[]; groupId: string }) {
   const group = groups.map(asRecord).find(item => asString(item.groupId) === groupId)
-  const name = group === undefined ? '群聊' : asString(group.groupName)
+  const name = groupNameOf(groups, groupId) || '群聊'
   const avatar = group === undefined ? '' : asString(group.headerUrl)
   return (
     <div className={css.groupHead}>
@@ -178,7 +188,6 @@ function unreadTotalOf(value: unknown): number {
     return sum + effectiveUnread(asString(group.groupId), server)
   }, 0)
 }
-
 /**
  * Fire one browser system notification for new unread messages (design v1.6
  * §5.3 layer 3). dsh ships no Notification wrapper — this plugin owns it.
@@ -435,8 +444,12 @@ function loadTab(
 export function YzjPanel(props: YzjPanelProps) {
   const open = props.useStore(state => state.open)
   const tab = props.useStore(state => state.tab)
+  const embedded = props.embedded === true
   // Persisted tabs may hold removed keys (me/robot/memory); fall back to docs.
-  const activeTab: YzjTab = tab === 'docs' || tab === 'calendar' || tab === 'chat' || tab === 'todo' ? tab : 'docs'
+  const storedTab: YzjTab = tab === 'docs' || tab === 'calendar' || tab === 'chat' || tab === 'todo' ? tab : 'docs'
+  const activeTab: YzjTab = embedded
+    ? (props.forceTab ?? (storedTab === 'chat' ? 'todo' : storedTab))
+    : storedTab
   const anchorActive = props.useStore(state => state.anchorMsgId !== '')
   const state = props.useStore(s => s)
   const panelRef = useRef<HTMLDivElement | null>(null)
@@ -790,14 +803,14 @@ export function YzjPanel(props: YzjPanelProps) {
   }, [open])
 
   useEffect(() => {
-    if (!open) return
+    if (!open && !embedded) return
     loadTab(activeTab, props)
     // tab switches and opens are the load triggers; state reads inside the
     // loader come from the snapshot taken at effect time.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, activeTab])
+  }, [open, activeTab, embedded])
 
-  if (!open) return null
+  if (!open && !embedded) return null
 
   const startDrag = (event: ReactPointerEvent<HTMLElement>): void => {
     if (event.button !== 0) return
@@ -1041,11 +1054,10 @@ export function YzjPanel(props: YzjPanelProps) {
     props.actions.setAnchorMsgId('')
     setDraft('')
     setReplyTo(null)
-    void bindAndFocusGroup(props.homeOpen, props.focusBoundSession, id)
+    void bindAndFocusGroup(props.homeOpen, props.focusBoundSession, id, groupNameOf(state.groups, id))
     // Stage 1: header swaps immediately. Stage 2: cached window paints
-    // instantly (same path as a revisit). Stage 3: cache miss clears the
-    // previous group's rows so they never flash under the new name, then
-    // fetches into the right pane only — never the global 加载中 bar.
+    // instantly. Stage 3: cache miss clears previous rows so they never
+    // flash under the new name, then fetches into the right pane only.
     const cached = getMessageWindow(id)
     if (cached !== undefined) {
       setMessagesFetching(false)
@@ -1259,14 +1271,36 @@ export function YzjPanel(props: YzjPanelProps) {
     reader.readAsDataURL(file)
   }
 
+  // Retired panel IM composer (R7). Keep the handler graph referenced so
+  // hook order stays stable (pitfall-001).
+  if (false) {
+    void draft
+    void sending
+    void uploading
+    void emojiOpen
+    void replyTo
+    void atMenu
+    void atMatches
+    void EMOJI_LIST
+    void draftRef
+    void imageInputRef
+    void fileInputRef
+    submitMessage()
+    handlePickFile('image', undefined)
+    onDraftChange('', 0)
+    pickAt({ openId: '', name: '' })
+  }
+
   return (
     <div
       ref={panelRef}
-      className={css.panel}
+      className={embedded ? `${css.panel} ${css.panelEmbedded}` : css.panel}
       role="dialog"
       aria-label="云之家"
-      style={dockStyle}
+      data-testid={embedded ? 'yzj-workbench-domain' : undefined}
+      style={embedded ? undefined : dockStyle}
     >
+      {!embedded && (
       <header className={css.header} onPointerDown={startDrag}>
         <span className={css.brand}><YzjCloudIcon size={18} /></span>
         <span className={css.title}>云之家</span>
@@ -1293,6 +1327,8 @@ export function YzjPanel(props: YzjPanelProps) {
           <IconClose14 />
         </button>
       </header>
+      )}
+      {!embedded && (
       <nav className={css.tabs} aria-label="云之家功能" onPointerDown={(event) => { event.stopPropagation() }}>
         {TABS.map(item => (
           <button
@@ -1307,6 +1343,7 @@ export function YzjPanel(props: YzjPanelProps) {
           </button>
         ))}
       </nav>
+      )}
 
       {state.error !== '' && (
         <div className={css.error} role="alert">
@@ -1664,7 +1701,7 @@ export function YzjPanel(props: YzjPanelProps) {
                 <GroupHead groups={state.groups} groupId={state.groupId} />
               </div>
               <div className={css.panelBanner} role="note">
-                快捷发进群：家园在 DSH 绑定会话（挑群会打开那条会话）。此处发送写入绑定日志 ②，不叫助手。
+                点群打开 DSH 群房间。悬浮窗不再发消息。
               </div>
               {anchorActive && (
                 <div className={css.anchorHint} role="status">
@@ -1765,163 +1802,16 @@ export function YzjPanel(props: YzjPanelProps) {
               )}
               </div>
               <div className={css.composer}>
-                {replyTo !== null && (
-                  <div className={css.replyBar}>
-                    <span className={css.replyText}>回复：{replyTo.summary.length > 40 ? `${replyTo.summary.slice(0, 40)}…` : replyTo.summary}</span>
-                    <button
-                      type="button"
-                      className={css.replyCancel}
-                      aria-label="取消回复"
-                      onClick={() => setReplyTo(null)}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                )}
-                {emojiOpen && (
-                  <div className={css.emojiPanel} role="group" aria-label="表情">
-                    {EMOJI_LIST.map(emoji => (
-                      <button
-                        key={emoji}
-                        type="button"
-                        className={css.emojiCell}
-                        onClick={() => {
-                          setDraft(draft + emoji)
-                          draftRef.current?.focus()
-                        }}
-                      >
-                        {emoji}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <div className={css.composerRow}>
-                  <textarea
-                    ref={draftRef}
-                    className={css.composerInput}
-                    value={draft}
-                    rows={1}
-                    onChange={(event) => {
-                      onDraftChange(event.target.value, event.target.selectionStart ?? event.target.value.length)
-                      const el = event.target
-                      el.style.height = 'auto'
-                      el.style.height = `${Math.min(el.scrollHeight, 120)}px`
-                    }}
-                    onBlur={(): void => { window.setTimeout(() => setAtMenu(null), 150) }}
-                    onKeyDown={(event) => {
-                      if (atMenu !== null && atMatches.length > 0) {
-                        if (event.key === 'Escape') { setAtMenu(null); return }
-                        if (event.key === 'Tab' || (event.key === 'Enter' && !event.nativeEvent.isComposing && !event.shiftKey)) {
-                          event.preventDefault()
-                          pickAt(atMatches[0]!)
-                          return
-                        }
-                      }
-                      if (event.key === 'Enter' && !event.nativeEvent.isComposing && !event.shiftKey) {
-                        event.preventDefault()
-                        submitMessage()
-                      }
-                    }}
-                    placeholder="输入消息，回车发送…（@ 提及群友，输入 @all @所有人）"
-                    aria-label="输入消息"
-                    disabled={sending || uploading}
-                  />
-                  {atMenu !== null && (
-                    <div className={css.atMenu} role="listbox" aria-label="提及成员">
-                      {atMatches.length === 0 && (
-                        <div className={css.atHint}>{atCandidates.length === 0 ? '本会话暂无已知成员（发过言才可 @）' : '无匹配成员'}</div>
-                      )}
-                      {atMatches.map(candidate => (
-                        <button
-                          key={candidate.openId}
-                          type="button"
-                          role="option"
-                          className={css.atItem}
-                          onMouseDown={(event) => { event.preventDefault() }}
-                          onClick={() => { pickAt(candidate) }}
-                        >
-                          <span className={css.atGlyph}>{candidate.name.slice(0, 1)}</span>
-                          <span>{candidate.name}</span>
-                        </button>
-                      ))}
-                      <button
-                        type="button"
-                        className={css.atItem}
-                        onMouseDown={(event) => { event.preventDefault() }}
-                        onClick={() => {
-                          if (atMenu === null) return
-                          const after = `${draft.slice(0, atMenu.replaceFrom)}@all ${draft.slice(atMenu.replaceFrom + 1 + atMenu.query.length)}`
-                          setAtMenu(null)
-                          setDraft(after)
-                          draftRef.current?.focus()
-                        }}
-                      >
-                        <span className={css.atGlyph}>@</span>
-                        <span>所有人（@all）</span>
-                      </button>
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    className={css.composerSend}
-                    onClick={submitMessage}
-                    disabled={sending || uploading || draft.trim() === ''}
-                  >
-                    {sending || uploading ? '发送中…' : '发送'}
-                  </button>
-                </div>
-                <div className={css.composerToolbar}>
-                  <button
-                    type="button"
-                    className={css.toolButton}
-                    title="发送图片"
-                    aria-label="发送图片"
-                    disabled={sending || uploading}
-                    onClick={() => imageInputRef.current?.click()}
-                  >
-                    <IconImage14 />
-                  </button>
-                  <button
-                    type="button"
-                    className={css.toolButton}
-                    title="发送文件"
-                    aria-label="发送文件"
-                    disabled={sending || uploading}
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <IconClip14 />
-                  </button>
-                  <button
-                    type="button"
-                    className={css.toolButton}
-                    title="表情"
-                    aria-label="表情"
-                    disabled={sending || uploading}
-                    onClick={() => setEmojiOpen(open => !open)}
-                  >
-                    <IconSmile14 />
-                  </button>
-                  {uploading && <span className={css.toolStatus}>上传中…</span>}
-                  <input
-                    ref={imageInputRef}
-                    type="file"
-                    accept="image/*"
-                    hidden
-                    onChange={(event) => {
-                      handlePickFile('image', event.target.files?.[0])
-                      event.target.value = ''
-                    }}
-                  />
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    hidden
-                    onChange={(event) => {
-                      handlePickFile('file', event.target.files?.[0])
-                      event.target.value = ''
-                    }}
-                  />
-                </div>
+                <button
+                  type="button"
+                  className={css.composerSend}
+                  data-testid="yzj-open-group-room"
+                  onClick={() => {
+                    void bindAndFocusGroup(props.homeOpen, props.focusBoundSession, state.groupId, groupNameOf(state.groups, state.groupId))
+                  }}
+                >
+                  打开群房间
+                </button>
               </div>
             </>
           )}
@@ -1974,40 +1864,6 @@ function IconRefresh14() {
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M20 12a8 8 0 1 1-2.34-5.66" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
       <path d="M20 3v4h-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  )
-}
-
-function IconImage14() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <rect x="3" y="4" width="18" height="16" rx="2.5" stroke="currentColor" strokeWidth="1.8" />
-      <circle cx="9" cy="10" r="1.8" stroke="currentColor" strokeWidth="1.6" />
-      <path d="M4 17.5l4.5-4.5 3.5 3.5 3-3 5 4.5" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
-    </svg>
-  )
-}
-
-function IconClip14() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M9 12.5V8a3 3 0 0 1 6 0v6.5a4.5 4.5 0 0 1-9 0V7"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-      />
-    </svg>
-  )
-}
-
-function IconSmile14() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="8.5" stroke="currentColor" strokeWidth="1.8" />
-      <circle cx="9" cy="10" r="1" fill="currentColor" />
-      <circle cx="15" cy="10" r="1" fill="currentColor" />
-      <path d="M8.5 14.5a4.2 4.2 0 0 0 7 0" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
     </svg>
   )
 }

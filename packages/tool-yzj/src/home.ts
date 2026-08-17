@@ -1,9 +1,8 @@
 /**
- * Durable DSH-home binding table: one Yunzhijia conversation (group or DM)
- * maps to exactly one DSH session. This is the product object in
- * docs/spec/dsh-home-session.md — shared by robot inbound `followup()` and
- * the panel pick-group path — not a private lastSession hint inside
- * robot-yzj.
+ * Durable group-room binding plus topic index. One Yunzhijia conversation
+ * maps to one group-room host session (`yzj-home-*`) and 0..N topic sessions
+ * (`yzj-topic-*`). Shared by robot inbound and the panel pick-group path
+ * (docs/spec/group-room-topics.md).
  * @module @dsh-yzj/tool-yzj/home
  */
 
@@ -15,6 +14,9 @@ import {
   BoundLogStore, formatSummonWindow, type BoundLogAppendResult, type BoundLogLimits,
   type YzjBoundMessageLog, type YzjLogEntry,
 } from './bound-log.ts'
+import {
+  TopicAnchorStore, type TopicEnsureInput, type TopicEnsureResult, type TopicRecord, type TopicStatus,
+} from './topics.ts'
 
 /** Yunzhijia conversation kind (CLI groupId space; BOT- prefix = DM). */
 export type YzjConversationKind = 'group' | 'dm'
@@ -51,7 +53,16 @@ export interface YzjHomeFace {
   getLogBySession?(dshSessionId: string): YzjBoundMessageLog | undefined
   ackLocal?(yzjConversationId: string, localId: string, realMsgId: string): Promise<YzjBoundMessageLog | undefined>
   failLocal?(yzjConversationId: string, localId: string): Promise<YzjBoundMessageLog | undefined>
-  formatSummonWindow?(yzjConversationId: string, excludeMsgId?: string): string
+  formatSummonWindow?(yzjConversationId: string, excludeMsgId?: string, sessionId?: string): string
+  ensureTopic?(input: TopicEnsureInput): Promise<TopicEnsureResult>
+  getTopicBySession?(dshSessionId: string): TopicRecord | undefined
+  getTopicByAnchor?(yzjConversationId: string, rootMsgId: string): TopicRecord | undefined
+  getTopicByOutbound?(msgId: string): TopicRecord | undefined
+  listTopics?(yzjConversationId: string): TopicRecord[]
+  registerTopicOutbound?(msgId: string, dshSessionId: string): Promise<void>
+  setTopicStatus?(dshSessionId: string, status: TopicStatus): Promise<void>
+  /** Every group-room binding (for the workbench session list). */
+  listBindings?(): HomeBindingRecord[]
 }
 
 const bindingSchema = z.object({
@@ -75,8 +86,8 @@ export const yzjHomeDomainSpec = defineDomain({
 })
 
 /**
- * Stable product-home session id for one Yunzhijia conversation. Not a
- * `yzj-robot-*` parallel home — this id IS the bound DSH session.
+ * Stable group-room host session id for one Yunzhijia conversation.
+ * Agent work lives on `yzj-topic-*` ids (see {@link topicSessionId}).
  */
 export function homeSessionId(yzjConversationId: string): string {
   const cleaned = yzjConversationId.replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '')
@@ -136,6 +147,14 @@ export class HomeBindingStore implements YzjHomeFace {
     return this.getByConversation(conversationId)
   }
 
+  /** Every persisted binding row (group rooms and bound DMs). */
+  listBindings(): HomeBindingRecord[] {
+    if (this.conversations !== undefined) {
+      return [...this.conversations.entries()].map(([, record]) => record)
+    }
+    return [...this.memoryConv.values()]
+  }
+
   /**
    * Return the existing bound session, or allocate and persist one.
    * A second call for the same conversation is focus (created=false), never
@@ -173,6 +192,7 @@ export class HomeBindingStore implements YzjHomeFace {
 export class YzjHomeService extends Service implements YzjHomeFace {
   readonly store = new HomeBindingStore()
   readonly logs = new BoundLogStore()
+  readonly topics = new TopicAnchorStore()
 
   constructor(ctx: Context, limits?: Partial<BoundLogLimits>) {
     super(ctx, 'yzjHome')
@@ -193,6 +213,11 @@ export class YzjHomeService extends Service implements YzjHomeFace {
     } catch (error) {
       this.ctx.logger.warn(`yzjHome: bound-log store failed to open: ${String(error)}`)
     }
+    try {
+      await this.topics.open(facility as never)
+    } catch (error) {
+      this.ctx.logger.warn(`yzjHome: topic store failed to open: ${String(error)}`)
+    }
   }
 
   /** @see HomeBindingStore.ensureBound */
@@ -212,6 +237,11 @@ export class YzjHomeService extends Service implements YzjHomeFace {
     return this.store.getBySession(dshSessionId)
   }
 
+  /** @see HomeBindingStore.listBindings */
+  listBindings(): HomeBindingRecord[] {
+    return this.store.listBindings()
+  }
+
   /** Append one ①/②/backfill row; no-ops without a binding. */
   async appendLog(
     yzjConversationId: string,
@@ -228,16 +258,22 @@ export class YzjHomeService extends Service implements YzjHomeFace {
     return this.logs.get(yzjConversationId)
   }
 
-  /** Log for the conversation bound to this DSH session. */
+  /** Log for the conversation bound to this DSH session (room or topic). */
   getLogBySession(dshSessionId: string): YzjBoundMessageLog | undefined {
     const binding = this.getBySession(dshSessionId)
-    if (binding === undefined) return undefined
-    return this.logs.get(binding.yzjConversationId)
+    if (binding !== undefined) return this.logs.get(binding.yzjConversationId)
+    const topic = this.topics.getBySession(dshSessionId)
+    if (topic === undefined) return undefined
+    return this.logs.get(topic.yzjConversationId)
   }
 
-  /** @see BoundLogStore.ackLocal */
-  ackLocal(yzjConversationId: string, localId: string, realMsgId: string): Promise<YzjBoundMessageLog | undefined> {
-    return this.logs.ackLocal(yzjConversationId, localId, realMsgId)
+  /** @see BoundLogStore.ackLocal — also retargets topic anchors off local-* ids. */
+  async ackLocal(yzjConversationId: string, localId: string, realMsgId: string): Promise<YzjBoundMessageLog | undefined> {
+    const log = await this.logs.ackLocal(yzjConversationId, localId, realMsgId)
+    if (localId !== realMsgId) {
+      await this.topics.retargetAnchor(yzjConversationId, localId, realMsgId)
+    }
+    return log
   }
 
   /** @see BoundLogStore.failLocal */
@@ -246,13 +282,60 @@ export class YzjHomeService extends Service implements YzjHomeFace {
   }
 
   /** Shared summon-window digest (robot inject + DSH systemPrompt). */
-  formatSummonWindow(yzjConversationId: string, excludeMsgId?: string): string {
+  formatSummonWindow(yzjConversationId: string, excludeMsgId?: string, sessionId?: string): string {
     const limits = this.logs.getLimits()
+    const topic = sessionId === undefined ? undefined : this.topics.getBySession(sessionId)
     return formatSummonWindow(this.logs.get(yzjConversationId), {
       maxMessages: limits.summonWindowMessages,
       maxChars: limits.summonWindowChars,
+      groupId: yzjConversationId,
       ...(excludeMsgId === undefined ? {} : { excludeMsgId }),
+      ...(topic === undefined ? {} : {
+        topic: {
+          ...(topic.title.trim() === '' ? {} : { title: topic.title }),
+          ...(topic.rootMsgId === undefined ? {} : { rootMsgId: topic.rootMsgId }),
+          ...(topic.originWho === undefined ? {} : { originWho: topic.originWho }),
+          ...(topic.originText === undefined ? {} : { originText: topic.originText }),
+        },
+      }),
     })
+  }
+
+  /** Mint or focus a topic under this group room. Ensures the room row exists. */
+  async ensureTopic(input: TopicEnsureInput): Promise<TopicEnsureResult> {
+    const kind = conversationKindOf(input.yzjConversationId)
+    await this.ensureBound(input.yzjConversationId, kind)
+    return this.topics.ensureTopic(input)
+  }
+
+  /** Topic for one DSH session. */
+  getTopicBySession(dshSessionId: string): TopicRecord | undefined {
+    return this.topics.getBySession(dshSessionId)
+  }
+
+  /** Topic anchored on one inbound root. */
+  getTopicByAnchor(yzjConversationId: string, rootMsgId: string): TopicRecord | undefined {
+    return this.topics.getByAnchor(yzjConversationId, rootMsgId)
+  }
+
+  /** Topic that posted this outbound robot message. */
+  getTopicByOutbound(msgId: string): TopicRecord | undefined {
+    return this.topics.getByOutbound(msgId)
+  }
+
+  /** Every topic of one group. */
+  listTopics(yzjConversationId: string): TopicRecord[] {
+    return this.topics.listByConversation(yzjConversationId)
+  }
+
+  /** Register a robot outbound post onto a topic. */
+  registerTopicOutbound(msgId: string, dshSessionId: string): Promise<void> {
+    return this.topics.registerOutbound(msgId, dshSessionId)
+  }
+
+  /** P3 / L2 / L5: pending write → confirm; delivery or cancel → running. */
+  setTopicStatus(dshSessionId: string, status: TopicStatus): Promise<void> {
+    return this.topics.setStatus(dshSessionId, status)
   }
 }
 

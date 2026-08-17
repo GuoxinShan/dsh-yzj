@@ -5,6 +5,7 @@
  *   chat rows show real names instead of raw openIds
  * - time/size formatters and yunzhijia media URL builders
  */
+import { parseContactUser } from '../contact-parse.ts'
 import type { YzjPanelInject } from './rpc.ts'
 
 export interface MessageWindow {
@@ -167,13 +168,7 @@ export async function ensureMyProfile(
   if (myProfile !== null) return myProfile
   const result = await inject.fetchWhoami()
   if (!result.ok) return { openId: '', name: '', photoUrl: '' }
-  const list = Array.isArray(result.value) ? result.value : []
-  const user = (list[0] ?? {}) as Record<string, unknown>
-  myProfile = {
-    openId: typeof user.openId === 'string' ? user.openId : typeof user.oId === 'string' ? user.oId : '',
-    name: typeof user.name === 'string' ? user.name : '',
-    photoUrl: typeof user.photoUrl === 'string' ? user.photoUrl : '',
-  }
+  myProfile = parseContactUser(result.value)
   return myProfile
 }
 
@@ -203,10 +198,10 @@ export async function resolveSenders(
       pending = inject.fetchContact(openId).then((result) => {
         const info: SenderInfo = { name: '', photoUrl: '' }
         if (result.ok) {
-          const list = Array.isArray(result.value) ? result.value : []
-          const user = (list[0] ?? {}) as Record<string, unknown>
-          info.name = typeof user.name === 'string' ? user.name : ''
-          info.photoUrl = typeof user.photoUrl === 'string' ? user.photoUrl : ''
+          // pitfall-003: contact-get may answer bare array / list / data / one object.
+          const user = parseContactUser(result.value)
+          info.name = user.name
+          info.photoUrl = user.photoUrl
           if (info.name !== '' || info.photoUrl !== '') senderNames.set(openId, info)
         }
         return info
