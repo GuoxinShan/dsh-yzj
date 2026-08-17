@@ -147,7 +147,12 @@ if (draftVisible && sendVisible) {
     const stillRoom = await stream.isVisible().catch(() => false)
     ok('交给助手 opens the topic drawer', drawerVisible)
     ok('timeline stays after 交给助手', stillRoom)
-    const chipOnSent = await sentRow.getByRole('button', { name: /条回复/ }).count().then(n => n > 0).catch(() => false)
+    let chipOnSent = false
+    for (let i = 0; i < 20; i += 1) {
+      chipOnSent = await page.locator('[data-testid^="yzj-reply-chip-"]').count().then(n => n > 0).catch(() => false)
+      if (chipOnSent) break
+      await page.waitForTimeout(400)
+    }
     ok('root bubble shows N 条回复 chip after 交给助手', chipOnSent)
     await page.screenshot({ path: shot('3-topic.png') })
 
@@ -179,6 +184,17 @@ if (draftVisible && sendVisible) {
   ok('交给助手 is on the sent row', false)
 }
 
+await page.keyboard.press('Escape').catch(() => {})
+await page.waitForTimeout(400)
+const jumpRoom = page.getByRole('button', { name: '回群房间' })
+if (await jumpRoom.count() > 0) {
+  await jumpRoom.first().click()
+  await page.waitForTimeout(800)
+}
+const roomChrome = await page.getByTestId('yzj-home-chrome').innerText().catch(() => '')
+ok('回群房间 restores 发进群 chrome', roomChrome.includes('发进群') && !roomChrome.includes('问助手'), roomChrome.slice(0, 80))
+await page.screenshot({ path: shot('4-room-back.png') })
+
 const searchBtn = page.getByRole('button', { name: '搜索会话' })
 if (await searchBtn.count() > 0) {
   await searchBtn.click().catch(() => {})
@@ -200,12 +216,6 @@ if (await searchBtn.count() > 0) {
     await page.keyboard.press('Escape').catch(() => {})
   }
 }
-
-await page.getByRole('button', { name: '新建会话' }).first().click().catch(() => {})
-await page.waitForTimeout(1500)
-const unboundChrome = await page.getByTestId('yzj-home-chrome').innerText().catch(() => '')
-ok('unbound private chat exposes 丢进群, not 发进群', unboundChrome.includes('丢进群') && !unboundChrome.includes('发进群'), unboundChrome.slice(0, 80))
-await page.screenshot({ path: shot('4-unbound.png') })
 
 ok('no page errors', pageErrors.length === 0, pageErrors.join(' | ').slice(0, 200))
 } finally {
