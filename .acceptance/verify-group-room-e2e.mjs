@@ -87,8 +87,13 @@ ok('tab ring is hidden on the group room', !tablistVisible)
 const convBox = await convList.boundingBox().catch(() => null)
 const sendBox = await page.getByTestId('yzj-send-to-group').boundingBox().catch(() => null)
 ok(
+  '发进群 and the session list both have a layout box',
+  convBox !== null && sendBox !== null,
+  convBox && sendBox ? 'ok' : `convBox=${convBox === null ? 'null' : 'ok'} sendBox=${sendBox === null ? 'null' : 'ok'}`,
+)
+ok(
   '发进群 sits in the timeline column, not under the session list',
-  convBox === null || sendBox === null || sendBox.x >= convBox.x + convBox.width - 12,
+  convBox !== null && sendBox !== null && sendBox.x >= convBox.x + convBox.width - 12,
   convBox && sendBox ? `listRight=${Math.round(convBox.x + convBox.width)} sendX=${Math.round(sendBox.x)}` : 'missing box',
 )
 const toolbarText = await roomComposer.innerText().catch(() => '')

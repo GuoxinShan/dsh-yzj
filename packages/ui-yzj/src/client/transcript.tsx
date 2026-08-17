@@ -11,7 +11,7 @@ import { emitRoomReplyRequest } from './reply-bus.ts'
 import type { YzjPanelInject } from './rpc.ts'
 import { YzjTopicDrawer } from './topic-drawer.tsx'
 import { topicListBadge } from './conv-list.tsx'
-import { ROOM_COMPOSER_HOST_ID } from './room-composer.tsx'
+import { registerRoomComposerHost, ROOM_COMPOSER_HOST_ID } from './composer-host.ts'
 import {
   artifactOf, layoutRoomItems, topicReplyCount,
   type LayoutImEntry,
@@ -541,6 +541,7 @@ export function YzjFusedView(props: YzjFusedInjected) {
           })}
         </div>
         <div
+          ref={registerRoomComposerHost}
           id={ROOM_COMPOSER_HOST_ID}
           className={css.roomComposerHost}
           data-testid="yzj-room-composer-host"

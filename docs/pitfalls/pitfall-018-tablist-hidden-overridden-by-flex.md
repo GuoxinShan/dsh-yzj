@@ -14,7 +14,7 @@ harness `ConversationRoot.module.css` 的 `.tabs { display: flex }` 是作者样
 
 ## 解法
 
-`hideTablist` 同时设 `hidden`、`data-yzj-ring=off` 和 `style.setProperty('display', 'none', 'important')`，才能压过 `.tabs { display:flex }`。已经藏过则直接 return，避免 MutationObserver 死循环。`watchYzjViewRing` 只观察 `childList`（等 tab 入场），不观察 `style`/`hidden` 属性。不 fork harness。
+`hideTablist` 同时设 `hidden`、`data-yzj-ring=off` 和 `style.setProperty('display', 'none', 'important')`，才能压过 `.tabs { display:flex }`。已经藏过则直接 return，避免 MutationObserver 死循环。`watchYzjViewRing` 只观察 `childList`（等 tab 入场），不观察 `style`/`hidden` 属性。tablist 入场后 observer 收窄到其父节点（header），禁止一直挂在 `document.documentElement` 上——时间线每插一条消息都会 `subtree` 触发，整页 `querySelectorAll('[role="tab"]')`。不 fork harness。
 
 ## 回归覆盖
 
