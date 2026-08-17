@@ -183,6 +183,8 @@ export function apply(ctx: ClientContext): void {
         sessionId,
         homeFused: (id) => panelInject.homeFused?.(id) ?? Promise.resolve({ ok: false as const, error: { message: 'homeFused unavailable' } }),
         homeBackfill: (id) => panelInject.homeBackfill?.(id) ?? Promise.resolve({ ok: false as const, error: { message: 'homeBackfill unavailable' } }),
+        fetchFileData: (fileId) => panelInject.fetchFileData(fileId),
+        fetchContact: (openId) => panelInject.fetchContact(openId),
       }),
     },
     YzjFusedView,

@@ -427,6 +427,25 @@ describe('RobotRouter', () => {
     expect(appended[0]).toMatchObject({ origin: 'inbound', isSelf: true, content: '我在客户端发的', msgId: 'm-self' })
   })
 
+  it('stores inbound reply param so the fused renderer can quote before backfill', async () => {
+    const appended: { replyMsgId?: string; param?: Record<string, unknown> }[] = []
+    const home = {
+      ...memoryHome(),
+      appendLog: async (_id: string, incoming: { replyMsgId?: string; param?: Record<string, unknown> }) => {
+        appended.push(incoming)
+        return { accepted: true, reason: 'appended' }
+      },
+    }
+    const { router } = makeRouter([], fakeAgents(() => 'idle'), ['u-allowed'], { home: home as never, cwd: tmpBase })
+    await router.handle(inbound('回复一句', {
+      groupId: 'g1',
+      msgId: 'm-reply',
+      msgParam: JSON.stringify({ replyMsgId: 'm0', replyPersonName: '同事', replySummary: '原话' }),
+    }))
+    expect(appended[0]?.replyMsgId).toBe('m0')
+    expect(appended[0]?.param).toMatchObject({ replyMsgId: 'm0', replyPersonName: '同事', replySummary: '原话' })
+  })
+
   it('injects the shared summon window on @机器人 turns (T5)', async () => {
     const home = {
       ...memoryHome(),

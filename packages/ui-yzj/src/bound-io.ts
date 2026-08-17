@@ -172,6 +172,19 @@ function digestOfSend(input: ImSendInput): { content: string; msgType: YzjLogMsg
   return { content: input.content ?? '', msgType: 'text' }
 }
 
+/** Persist enough CLI `param` for the fused IM renderer (file / images / quote). */
+function paramOfSend(input: ImSendInput): Record<string, unknown> | undefined {
+  const param: Record<string, unknown> = {}
+  if (input.fileId !== undefined) param.file_id = input.fileId
+  if (input.fileName !== undefined) param.name = input.fileName
+  if (input.replyMsgId !== undefined) param.replyMsgId = input.replyMsgId
+  if (input.images.length > 0) {
+    const start = (input.content ?? '').length
+    param.desc = input.images.map(fileId => ({ type: 'image', data: fileId, start }))
+  }
+  return Object.keys(param).length === 0 ? undefined : param
+}
+
 /** Whoami via the bridge; empty on failure. */
 export async function whoamiOf(ctx: Context): Promise<{ openId: string; name: string }> {
   try {
@@ -200,6 +213,7 @@ export async function sendImAndLog(ctx: Context, home: HomeIoFace | undefined, i
     }
     const self = await whoamiOf(ctx)
     const digest = digestOfSend(input)
+    const param = paramOfSend(input)
     localId = localMsgId()
     const entry: YzjLogEntry = {
       msgId: localId,
@@ -212,6 +226,7 @@ export async function sendImAndLog(ctx: Context, home: HomeIoFace | undefined, i
       isSelf: true,
       status: 'pending',
       ...(input.replyMsgId === undefined ? {} : { replyMsgId: input.replyMsgId }),
+      ...(param === undefined ? {} : { param }),
     }
     try {
       await home.appendLog(input.groupId, entry)

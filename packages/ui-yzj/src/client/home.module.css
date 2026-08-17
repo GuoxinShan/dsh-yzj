@@ -32,19 +32,41 @@
 
 .row {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 8px;
   max-width: 86%;
 }
 
 .rowSelf {
   align-self: flex-end;
-  align-items: flex-end;
+  flex-direction: row-reverse;
 }
 
 .rowOther {
   align-self: flex-start;
-  align-items: flex-start;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.daySep {
+  display: flex;
+  justify-content: center;
+  margin: 8px 0 4px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.daySep span {
+  padding: 1px 10px;
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-2);
 }
 
 .meta {

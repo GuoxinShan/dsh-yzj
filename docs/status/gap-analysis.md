@@ -468,7 +468,7 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 
 ## 22. v1.8 增补｜DSH 唯一会话家园（2026-08-17 产品法；2026-08-16 第一刀绑定；2026-08-16 第二刀融合时间线）
 
-设计基线：[`../spec/dsh-home-session.md`](../spec/dsh-home-session.md)（v1.0 + v1.1 文案）、[`../spec/dsh-home-transcript.md`](../spec/dsh-home-transcript.md)（v1.1 + v1.2 文案）。总方案 v1.8 仅指针；机器人协议 [`../spec/robot-channel-plan.md`](../spec/robot-channel-plan.md) §9 覆盖隐藏平行 session。**本节记录目标 vs 现状。** **文案订正**（2026-08-16）：用户可见手势是云之家 @机器人、DSH「发给助手」；说话人「助手」。Claude Tag / @Claude 仅对照类比，不是产品名。行为 / ID / 协议未变。
+设计基线：[`../spec/dsh-home-session.md`](../spec/dsh-home-session.md)（v1.0 + v1.1 文案）、[`../spec/dsh-home-transcript.md`](../spec/dsh-home-transcript.md)（v1.1 + v1.2 文案 + **v1.3 切会话 UI**）。总方案 v1.8 仅指针；机器人协议 [`../spec/robot-channel-plan.md`](../spec/robot-channel-plan.md) §9 覆盖隐藏平行 session。**本节记录目标 vs 现状。** **文案订正**（2026-08-16）：用户可见手势是云之家 @机器人、DSH「发给助手」；说话人「助手」。Claude Tag / @Claude 仅对照类比，不是产品名。行为 / ID / 协议未变。
 
 ### 22.1 现状（第二刀后）
 
@@ -476,7 +476,7 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 |---|---|---|
 | **绑定表** | ✅ `ctx.yzjHome`（tool-yzj，domain `yzj_home_bindings`）：`yzjConversationId` ↔ `dshSessionId` 1:1，重启后同一条。稳定 id `yzj-home-<slug>` | 一条云之家会话恰好一条 DSH session |
 | **消息日志** | ✅ domain `yzj_home_logs`：① inbound / ② dsh-send / backfill；主键 `(yzjConversationId, msgId)`；乐观 `local-*`；T12 跳过机器人 openId | ①② 不是 Session.append |
-| **DSH 对话** | 挑群 `/yzj home-open` + 回填；`conversation.view`「群工作」按时间戳融合 ①② + ③④ + write-gate pending overlay。官方 Chat tab 仍在（harness tab ring，不能替换） | 唯一家园；绑定群时 transcript 含四类节点 |
+| **DSH 对话** | 挑群 `/yzj home-open` + 回填；`conversation.view`「群工作」按时间戳融合 ①② + ③④ + write-gate pending overlay。IM 行与面板会话 tab 共用渲染器（头像/表情/图文文件/引用）。切会话：缓存先画、miss 不闪「私密会话」、先本地 fused 再 CLI 回填。官方 Chat tab 仍在（harness tab ring，不能替换） | 唯一家园；绑定群时 transcript 含四类节点 |
 | **Composer** | 绑定：原生发送 = 发给助手（`systemPrompt.context` `yzj-bound-window`）；dock「发进群」= ② + `/yzj home-send`，无 user-turn、无确认卡。未绑定：单一发送 + 「丢进群」 | T10/T11 |
 | **面板 IM composer** | 降为快捷发进群：横幅说明家园在 DSH；发送走 `im-send` → 绑定 log ②。挑群仍 focus 绑定会话 | 面板 = 挑选器/历史/引用；无第二 composer 作家园 |
 | **召唤窗口** | 云之家 @机器人：`formatSummonWindow` + `agent.inject` 再 followup。DSH 发给助手：`systemPrompt.context` 仅 GUI user-turn。空窗口不注入 | T4/T5 |
@@ -515,3 +515,7 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 | 8 | `!fork` / `robot_fork` 不再 `create` 新根 | ✅ 目标改为绑定会话 |
 
 **禁止**把 §20 机器人通道「已闭环」读成会话家园已达成——那是协议面。G3（pending 耐久事件）与 G5（群搜索）仍阻塞完整「找得到群 + 刷新后确认卡还在日志里」。
+
+### 22.4 切会话 UI（2026-08-17）
+
+点任意群/单聊会闪一下：融合视图把初始 `bound: false` 当成未绑定（回填期间闪「私密会话」）；面板 cache miss 在新标题下残留上一群消息并打全局「加载中…」。已对齐面板分阶段路径：header 立刻换、缓存同步上屏、miss 清空后只在消息窗 loading、人名/媒体后补。日志增加可选 `param`（回填 CLI + 入站 `msgParam` + 发进群乐观 ②），旧 blob 缺字段仍能 rehydrate（pitfall-002 精神）。验收：`packages/ui-yzj/tests/transcript.client.spec.tsx`、`packages/ui-yzj/tests/panel-switch.client.spec.tsx`、`packages/tool-yzj/tests/bound-log.spec.ts`、`packages/robot-yzj/tests/router.spec.ts`。
