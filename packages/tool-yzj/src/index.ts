@@ -122,13 +122,14 @@ function applySummonWindow(ctx: Context, home: YzjHomeService): void {
     text: (assemble) => {
       const sessionId = sessionIdFromAssemble(assemble)
       if (sessionId === undefined) return ''
-      const binding = home.getBySession(sessionId)
-      if (binding === undefined) return ''
+      const conversationId = home.getBySession(sessionId)?.yzjConversationId
+        ?? home.getTopicBySession(sessionId)?.yzjConversationId
+      if (conversationId === undefined) return ''
       const events = eventsFromAssemble(assemble)
       // Only GUI「发给助手」turns. Plugin followups already agent.inject()
-      // the same digest; empty logs (no user/message yet) stay silent.
+      // the same digest. Empty logs still return the groupId header.
       if (latestUserSourceKind(events) !== 'user') return ''
-      return home.formatSummonWindow(binding.yzjConversationId)
+      return home.formatSummonWindow(conversationId, undefined, sessionId)
     },
   }))
 }
@@ -172,13 +173,20 @@ export {
   HomeBindingStore, conversationKindOf, homeSessionId, yzjHomeDomainSpec,
 } from './home.ts'
 export {
+  TopicAnchorStore, topicSessionId, topicAnchorKey, yzjTopicDomainSpec,
+} from './topics.ts'
+export {
   BoundLogStore, applyAppend, ackLocalEntry, failLocalEntry, formatSummonWindow,
   mergeFused, cliMessageToEntry, cliMessageList, extractSendMsgId, localMsgId,
-  isPluginFollowup, latestUserSourceKind, DEFAULT_BOUND_LOG_LIMITS, yzjHomeLogDomainSpec,
+  robotOutboundEntry, isPluginFollowup, latestUserSourceKind, DEFAULT_BOUND_LOG_LIMITS, yzjHomeLogDomainSpec,
+  clipLogParam,
 } from './bound-log.ts'
 export type {
   HomeBindingRecord, HomeEnsureResult, YzjConversationKind, YzjHomeFace,
 } from './home.ts'
+export type {
+  TopicRecord, TopicEnsureInput, TopicEnsureResult, TopicSource,
+} from './topics.ts'
 export type {
   YzjBoundMessageLog, YzjLogEntry, YzjLogOrigin, BoundLogLimits, BoundLogAppendResult,
   FusedItem, FusedSessionEvent, FusedPending,

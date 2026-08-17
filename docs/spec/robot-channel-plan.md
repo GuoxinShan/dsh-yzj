@@ -1,6 +1,7 @@
 # 云之家机器人通道调研与双向打通方案（对接 ui-yzj）
 
-> 版本：v0.2（调研稿 + 会话落点覆盖）｜ 日期：2026-08-17
+> 版本：v0.3（调研稿 + 会话落点两次覆盖）｜ 日期：2026-08-17
+> v0.3 变更：**v2.0 产品法再覆盖会话落点**（Guoxin Shan，[`group-room-topics.md`](group-room-topics.md)）——1 群 = 1 群房间 + N 话题会话；§3.6 S1 的 per-thread 锚定**复活**为 `(groupId, rootMsgId) → 话题会话`（加「话题必须在群房间可见」不变量）；§9 与 v0.2 的「打开/恢复绑定会话」相应改为「锚定或新建话题会话」。协议面（WS、ack-then-push、sendMsgUrl、allowFrom、工作区三层）继续有效。
 > v0.2 变更：**产品法覆盖会话落点**（Guoxin Shan，[`dsh-home-session.md`](dsh-home-session.md)）——DSH 是唯一家园；一条云之家会话 ↔ 恰好一条 DSH session；隐藏 `yzj-robot-*` 平行 session、以及 `!fork` / `robot_fork` 开新根，在该法下错误，应打开/恢复绑定会话。本文 §1–§8 **不改写**：协议、spike、S1/S3/§8 工具面仍是当时设计与实现快照。覆盖条款见 **§9**。
 > 调研来源：云之家开放平台官方文档（opendocs，2026-08-16 抓取）、openclaw-yzj v2026.4.9 源码（本地参考 `.openclaw-yzj/`，不入 workspace）、yzj-cli 实测。
 > 定位：整体方案 §8「无人值守衔接点」的落地前调研 + ui-yzj 集成设计。回答两个问题：**机器人体系到底长什么样**、**双向打通怎么接进我们已经做好的东西**。v0.2 起第三个问题由会话家园回答：**打进哪一条 DSH session**。

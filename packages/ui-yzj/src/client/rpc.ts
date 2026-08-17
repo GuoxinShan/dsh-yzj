@@ -113,17 +113,28 @@ export interface YzjPanelInject {
    * that session. Second open is focus (`created: false`). Optional so test
    * fakes need not stub it — pick-group still loads panel IM without it.
    */
-  homeOpen?: (groupId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  homeOpen?: (groupId: string, title?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Client-side focus of a bound session (sessions.open after list ready). */
   focusBoundSession?: (sessionId: string) => void
   /** Binding row for one DSH session (or unbound). */
   homeBinding?: (sessionId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Fused VIEW snapshot (log ①② + session ③④ + pending overlay). */
+  /** Fused / room VIEW snapshot (IM log + topic list). */
   homeFused?: (sessionId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Workbench session list: bound rooms plus their topics (L1). */
+  homeNav?: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Mint or focus a topic session under a group (交给助手). */
+  homeTopicOpen?: (input: {
+    groupId: string
+    rootMsgId?: string
+    originWho?: string
+    originText?: string
+    title?: string
+    groupName?: string
+  }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Backfill recent Yunzhijia messages into the bound log. */
-  homeBackfill?: (sessionId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  homeBackfill?: (sessionId: string, opts?: { beforeMsgId?: string; limit?: number }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** DSH「发进群」: optimistic ② + CLI send, no user-turn. */
-  homeSend?: (sessionId: string, content: string, opts?: YzjPanelInject['sendMessageOpts']) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  homeSend?: (sessionId: string, content: string | undefined, opts?: YzjPanelInject['sendMessageOpts']) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Private-transcript digest candidates for 丢进群. */
   homeDigest?: (sessionId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Confirmed D8 handoff into a bound group session. */
@@ -251,10 +262,19 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
     modelSetDefault: (provider, model) => call('model-default-set', { provider, model }),
     modelClearDefault: () => call('model-default-clear', {}),
     modelCatalog: () => call('model-catalog', {}),
-    homeOpen: (groupId) => call('home-open', { groupId }),
+    homeOpen: (groupId, title) => call('home-open', {
+      groupId,
+      ...(title === undefined || title === '' ? {} : { title }),
+    }),
     homeBinding: (sessionId) => call('home-binding', { sessionId }),
     homeFused: (sessionId) => call('home-fused', { sessionId }),
-    homeBackfill: (sessionId) => call('home-backfill', { sessionId }),
+    homeNav: () => call('home-nav', {}),
+    homeTopicOpen: (input) => call('home-topic-open', input),
+    homeBackfill: (sessionId, opts) => call('home-backfill', {
+      sessionId,
+      ...(opts?.beforeMsgId === undefined ? {} : { beforeMsgId: opts.beforeMsgId }),
+      ...(opts?.limit === undefined ? {} : { limit: opts.limit }),
+    }),
     homeSend: (sessionId, content, opts) => call('home-send', {
       sessionId,
       ...(content === undefined ? {} : { content }),

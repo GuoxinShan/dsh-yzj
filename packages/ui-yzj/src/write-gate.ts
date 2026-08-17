@@ -199,6 +199,31 @@ export function applyWriteGate(ctx: Context): {
     if (settled.length > SETTLED_WINDOW) settled.splice(0, settled.length - SETTLED_WINDOW)
   }
 
+  /**
+   * P3 / L2 / L5: a topic with a live confirmation (pending or approved-not-
+   * yet-done) is 待确认; after cancel or delivery it falls back to 进行中.
+   * Explicit `done` is left alone unless a new pending write appears.
+   */
+  const syncTopicStatus = (sessionId: string): void => {
+    if (!sessionId.startsWith('yzj-topic-')) return
+    const home = ctx.get('yzjHome') as {
+      getTopicBySession?: (id: string) => { status?: 'running' | 'confirm' | 'done' } | undefined
+      setTopicStatus?: (id: string, status: 'running' | 'confirm' | 'done') => Promise<void>
+    } | undefined
+    const row = home?.getTopicBySession?.(sessionId)
+    const setStatus = home?.setTopicStatus
+    if (row === undefined || setStatus === undefined) return
+    const blocking = [...records.values(), ...settled].some(item => (
+      item.sessionId === sessionId && (item.status === 'pending' || item.status === 'approved')
+    ))
+    const current = row.status === 'confirm' || row.status === 'done' ? row.status : 'running'
+    if (blocking) {
+      if (current !== 'confirm') void setStatus(sessionId, 'confirm')
+      return
+    }
+    if (current === 'confirm') void setStatus(sessionId, 'running')
+  }
+
   ctx.on('yzj/ask-pending', (pending: YzjWriteAskPending) => {
     askPending.set(pending.callId, pending)
   })
@@ -209,11 +234,11 @@ export function applyWriteGate(ctx: Context): {
     // protocol (robot-yzj's ConfirmBroker owns those requests) — the GUI card
     // would wait for a click nobody makes on an unattended channel.
     // Leftover yzj-robot-* ids stay skipped (residuals); bound homes do not.
+    // Leftover yzj-robot-* ids stay skipped (residuals); group-room hosts
+    // and topic sessions do not.
     if (req.agent.session.id.startsWith('yzj-robot-')) return next()
-    // Inbound-bound homes (yzj-home-*) register with ConfirmBroker. Keep the
-    // group suggestion card for plugin followups and for turns that have not
-    // yet grown a user/message (inbound path). A later GUI「发给助手」turn
-    // on the same bound session must keep the GUI card.
+    // Inbound topic sessions (yzj-topic-*) and residual yzj-home-* register
+    // with ConfirmBroker. Keep the group suggestion card for plugin followups.
     const robot = ctx.get('yzjRobot') as { ownsConfirm?: (sessionId: string) => boolean } | undefined
     if (robot?.ownsConfirm?.(req.agent.session.id) === true && !latestUserIsGui(req.agent.session.events)) {
       return next()
@@ -247,6 +272,7 @@ export function applyWriteGate(ctx: Context): {
           record.decidedAt = Date.now()
         }
         retain(record)
+        syncTopicStatus(record.sessionId)
         resolve(outcome)
       }
       const onAbort = (): void => { settle('cancelled') }
@@ -254,6 +280,7 @@ export function applyWriteGate(ctx: Context): {
       record.removeAbort = () => req.signal?.removeEventListener('abort', onAbort)
       req.signal?.addEventListener('abort', onAbort, { once: true })
       records.set(record.writeId, record)
+      syncTopicStatus(req.agent.session.id)
     })
   })
 
@@ -274,10 +301,16 @@ export function applyWriteGate(ctx: Context): {
       return false
     }
     for (const record of records.values()) {
-      if (apply(record)) return
+      if (apply(record)) {
+        syncTopicStatus(record.sessionId)
+        return
+      }
     }
     for (const record of settled) {
-      if (apply(record)) return
+      if (apply(record)) {
+        syncTopicStatus(record.sessionId)
+        return
+      }
     }
   })
 

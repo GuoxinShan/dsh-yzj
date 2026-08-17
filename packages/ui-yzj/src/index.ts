@@ -12,12 +12,13 @@ import type { ConnectionRpcHandler } from '@deepseek-ai/dsh-client-connection'
 import type {} from '@dsh-yzj/bridge'
 import type {} from '@dsh-yzj/tool-yzj'
 import { applyWriteGate, type YzjWriteRecord } from './write-gate.ts'
-import { openBoundHome, type HomeOpenFace } from './home-open.ts'
+import { openBoundHome, openTopicHome, type HomeOpenFace } from './home-open.ts'
 import {
-  backfillBoundLog, fusedSnapshot, handoffToGroup, homeIoFrom, parseImSend, sendImAndLog,
+  backfillBoundLog, fusedSnapshot, groupSpaceSnapshot, handoffToGroup, homeIoFrom, parseImSend, roomSnapshot, sendImAndLog,
   sessionEventsOf,
 } from './bound-io.ts'
 import { digestCandidates } from './handoff-digest.ts'
+import { attachYzjSession, ensureYzjHostWorkspace } from './yzj-cwd.ts'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -190,7 +191,7 @@ export interface YzjWriteGateFace {
  * Build the `/yzj` RPC handler: `workspaces`, `docs`, `events`, `groups`,
  * `messages`, `whoami`, `search`, `doc-get`, `doc-blocks`, `sheet-get`,
  * `workspace-get`, `event-get`, `contact-get`, `write-list`, and
- * `write-decide`, `home-open` / `home-send` / `home-fused` / `home-handoff`
+ * `write-decide`, `home-open` / `home-send` / `home-fused` / `home-nav` / `home-handoff`
  * endpoints, all backed by the yzj-cli bridge, the write-gate, and `ctx.yzjHome`.
  * Endpoint payloads are validated as lossless JSON before use.
  * @param ctx - Cordis context carrying the bridge service.
@@ -753,12 +754,16 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
         const agents = agentsFace(ctx)
         if (agents === undefined) return internalError('home-open: agents 服务不可用')
         try {
+          const title = stringField(payload, 'title')
+          const cwd = await ensureYzjHostWorkspace(ctx)
           const value = await openBoundHome({
             home,
             agents,
             yzjConversationId: groupId,
-            cwd: process.cwd(),
+            cwd,
+            ...(title === undefined ? {} : { title }),
           })
+          void attachYzjSession(ctx, value.sessionId)
           const io = homeIoFrom(home)
           if (io !== undefined) {
             void backfillBoundLog(ctx, io, groupId).catch(() => undefined)
@@ -775,7 +780,18 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
         const groupId = stringField(payload, 'groupId')
         const binding = sessionId !== undefined ? io.getBySession(sessionId)
           : groupId !== undefined ? io.getByConversation(groupId) : undefined
-        return { ok: true, value: { bound: binding !== undefined, ...(binding === undefined ? {} : { binding }) } }
+        const topic = sessionId === undefined ? undefined : io.getTopicBySession?.(sessionId)
+        const room = topic === undefined ? binding : io.getByConversation(topic.yzjConversationId)
+        const kind = topic !== undefined ? 'topic' : room !== undefined ? 'room' : 'unbound'
+        return {
+          ok: true,
+          value: {
+            bound: room !== undefined,
+            kind,
+            ...(room === undefined ? {} : { binding: room }),
+            ...(topic === undefined ? {} : { topic }),
+          },
+        }
       }
       case 'home-log': {
         const io = homeIoFrom(ctx.get('yzjHome'))
@@ -793,7 +809,46 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
         if (sessionId === undefined) return internalError('home-fused endpoint requires a sessionId payload')
         const agents = agentsFace(ctx)
         const writes = writeGate.list(sessionId)
-        return { ok: true, value: fusedSnapshot(io, sessionId, agents?.get(sessionId), writes) }
+        return { ok: true, value: { ...fusedSnapshot(io, sessionId, agents?.get(sessionId), writes), ...roomSnapshot(io, sessionId) } }
+      }
+      case 'home-nav': {
+        const io = homeIoFrom(ctx.get('yzjHome'))
+        if (io === undefined) return internalError('home-nav: yzjHome 服务不可用（tool-yzj 未挂载）')
+        return { ok: true, value: groupSpaceSnapshot(io, agentsFace(ctx)) }
+      }
+      case 'home-topic-open': {
+        const home = ctx.get('yzjHome') as HomeOpenFace | undefined
+        if (home === undefined) return internalError('home-topic-open: yzjHome 服务不可用（tool-yzj 未挂载）')
+        const groupId = stringField(payload, 'groupId') ?? stringField(payload, 'yzjConversationId')
+        if (groupId === undefined) return internalError('home-topic-open endpoint requires a groupId payload')
+        const agents = agentsFace(ctx)
+        if (agents === undefined) return internalError('home-topic-open: agents 服务不可用')
+        try {
+          const rootMsgId = stringField(payload, 'rootMsgId')
+          const originWho = stringField(payload, 'originWho')
+          const originText = stringField(payload, 'originText')
+          const title = stringField(payload, 'title')
+          const groupName = stringField(payload, 'groupName')
+          const cwd = await ensureYzjHostWorkspace(ctx)
+          const value = await openTopicHome({
+            home,
+            agents,
+            yzjConversationId: groupId,
+            cwd,
+            source: 'dsh',
+            ...(rootMsgId === undefined ? {} : { rootMsgId }),
+            ...(originWho === undefined ? {} : { originWho }),
+            ...(originText === undefined ? {} : { originText }),
+            ...(title === undefined ? {} : { title }),
+            ...(groupName === undefined ? {} : { groupName }),
+          })
+          void attachYzjSession(ctx, value.sessionId)
+          const io = homeIoFrom(home)
+          if (io !== undefined) void backfillBoundLog(ctx, io, groupId).catch(() => undefined)
+          return { ok: true, value }
+        } catch (error) {
+          return internalError(`home-topic-open failed: ${String(error)}`)
+        }
       }
       case 'home-backfill': {
         const io = homeIoFrom(ctx.get('yzjHome'))
@@ -803,7 +858,15 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
           ?? (sessionId === undefined ? undefined : io.getBySession(sessionId)?.yzjConversationId)
         if (groupId === undefined) return internalError('home-backfill endpoint requires a groupId or bound sessionId')
         try {
-          const stats = await backfillBoundLog(ctx, io, groupId)
+          const beforeMsgId = stringField(payload, 'beforeMsgId')
+          const limit = numberField(payload, 'limit')
+          const stats = await backfillBoundLog(
+            ctx,
+            io,
+            groupId,
+            limit,
+            beforeMsgId,
+          )
           return { ok: true, value: stats }
         } catch (error) {
           return internalError(`home-backfill failed: ${String(error)}`)
@@ -839,8 +902,12 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
         if (digest === undefined) return internalError('home-handoff endpoint requires a digest payload')
         const agents = agentsFace(ctx)
         if (agents === undefined) return internalError('home-handoff: agents 服务不可用')
-        const result = await handoffToGroup({ ctx, home: io, agents, groupId, digest, cwd: process.cwd() })
+        const cwd = await ensureYzjHostWorkspace(ctx)
+        const result = await handoffToGroup({ ctx, home: io, agents, groupId, digest, cwd })
         if ('error' in result) return internalError(result.error)
+        if ('sessionId' in result) void attachYzjSession(ctx, result.sessionId)
+        const topicId = 'topicSessionId' in result ? result.topicSessionId : undefined
+        if (typeof topicId === 'string' && topicId !== '') void attachYzjSession(ctx, topicId)
         void backfillBoundLog(ctx, io, groupId).catch(() => undefined)
         return { ok: true, value: result }
       }
@@ -858,4 +925,5 @@ export function apply(ctx: Context): void {
   const writeGate = applyWriteGate(ctx)
   const handler = createRpcHandler(ctx, writeGate)
   ctx.connection.rpc.handle('/yzj', handler, { authority: 'loopback' })
+  void ensureYzjHostWorkspace(ctx).catch(() => undefined)
 }

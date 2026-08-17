@@ -20,9 +20,9 @@ Every tool returns `{ content, truncated, data }`:
 
 ## Home binding (`ctx.yzjHome`)
 
-Durable 1:1 table: one Yunzhijia conversation (group or DM) ↔ one DSH session (`yzj-home-*`). Shared by robot inbound `followup()` and the panel pick-group path (`/yzj home-open`). Domain `yzj_home_bindings` (storage-domain); a second open is focus (`created: false`), never a parallel row.
+Durable group-room table: one Yunzhijia conversation (group or DM) ↔ one DSH host session (`yzj-home-*`) plus 0..N topic sessions (`yzj-topic-*`). Shared by robot inbound `followup()` and the workbench pick-group path (`/yzj home-open`). Domain `yzj_home_bindings` (storage-domain); a second open is focus (`created: false`), never a parallel row. `TopicAnchorStore` keys `(conversation, rootMsgId)` and stores `lastActivity` / `status` (`running` | `confirm` | `done`).
 
-**Bound message log** (domain `yzj_home_logs`, keyed by `yzjConversationId`): inbound ① and DSH「发进群」② live here — never as harness `Session.append` events. `formatSummonWindow` is the shared digest both summon paths call (`agent.inject` on 云之家 @机器人, `systemPrompt.context` `yzj-bound-window` on DSH「发给助手」). See `docs/spec/dsh-home-transcript.md`.
+**Bound message log** (domain `yzj_home_logs`, keyed by `yzjConversationId`): inbound ① and DSH「发进群」② live here — never as harness `Session.append` events. Rows keep a clipped CLI `param` snapshot (`file_id` / `desc` / reply) so the group-room view can reuse the floating-panel renderer (avatars, emoticons, images). `formatSummonWindow` is the shared digest both summon paths call (`agent.inject` on 云之家 @机器人, `systemPrompt.context` `yzj-bound-window` on DSH「发给助手」). The digest always pins `groupId` and per-line `msgId` (topic sessions also pin the anchor `msgId`) so the model can call `yzj_im_message_send` / `replyMsgId`. See `docs/spec/dsh-home-transcript.md` §5.2.
 
 ## Approval guard
 

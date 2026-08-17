@@ -299,6 +299,32 @@ describe('applyWriteGate', () => {
     await expect(pending).resolves.toBe('allowed-once')
   })
 
+  it('claims robot_notify on a GUI-focused yzj-topic-* session (R10)', async () => {
+    const ctx = new Context()
+    ctx.provide('yzjRobot', { ownsConfirm: () => true })
+    const gate = applyWriteGate(ctx)
+    ctx.emit('yzj/ask-pending', {
+      callId: 'c1', toolName: 'robot_notify', level: 'standard',
+      reason: 'r', args: { text: '推群' },
+    })
+    const pending = ctx.waterfall('approval/request', {
+      agent: {
+        session: {
+          id: 'yzj-topic-g-a-root',
+          events: [
+            { type: 'user/message', data: { source: { kind: 'user' } } },
+            { type: 'approval/asked', data: { id: 'w-topic', callId: 'c1' } },
+          ],
+        },
+      },
+      toolName: 'robot_notify',
+      callId: 'c1',
+    }, () => Promise.resolve<YzjApprovalOutcome>('unavailable'))
+    expect(gate.list('yzj-topic-g-a-root').map(r => r.writeId)).toEqual(['w-topic'])
+    gate.decide('w-topic', 'allowed-once')
+    await expect(pending).resolves.toBe('allowed-once')
+  })
+
   it('still skips leftover yzj-robot-* for robot_notify (residual prefix)', async () => {
     const ctx = new Context()
     applyWriteGate(ctx)
@@ -308,5 +334,40 @@ describe('applyWriteGate', () => {
       callId: 'c1',
     }, () => Promise.resolve<YzjApprovalOutcome>('unavailable'))
     expect(outcome).toBe('unavailable')
+  })
+
+  it('pending write on yzj-topic-* sets confirm and falls back after delivery', async () => {
+    const ctx = new Context()
+    const rows = new Map<string, { status: 'running' | 'confirm' | 'done' }>([
+      ['yzj-topic-1', { status: 'running' }],
+    ])
+    ctx.provide('yzjHome', {
+      getTopicBySession: (id: string) => rows.get(id),
+      setTopicStatus: async (id: string, status: 'running' | 'confirm' | 'done') => {
+        rows.set(id, { status })
+      },
+    })
+    const gate = applyWriteGate(ctx)
+    const session = {
+      id: 'yzj-topic-1',
+      events: [
+        { type: 'turn/start', data: { turn: 1 } },
+        { type: 'approval/asked', data: { id: 'w1', callId: 'c1' } },
+      ],
+    }
+    ctx.emit('yzj/ask-pending', {
+      callId: 'c1', toolName: 'yzj_im_message_send', level: 'standard', reason: 'r', args: {},
+    })
+    const pending = ctx.waterfall('approval/request', {
+      agent: { session },
+      toolName: 'yzj_im_message_send',
+      callId: 'c1',
+    }, () => Promise.resolve<YzjApprovalOutcome>('unavailable'))
+    expect(rows.get('yzj-topic-1')?.status).toBe('confirm')
+    expect(gate.decide('w1', 'allowed-once')).toBe(true)
+    await pending
+    expect(rows.get('yzj-topic-1')?.status).toBe('confirm')
+    ctx.emit('tools/result', { name: 'yzj_im_message_send', callId: 'c1' }, { isError: false, content: [] })
+    expect(rows.get('yzj-topic-1')?.status).toBe('running')
   })
 })

@@ -11,6 +11,7 @@ import type { YzjPanelActions, YzjPanelState } from './stores.ts'
 import type { YzjPanelInject } from './rpc.ts'
 import type { YzjJumpTarget } from './cards.tsx'
 import { bindAndFocusGroup } from './home-focus.ts'
+import { setWorkbenchDomain } from './workbench-domain.ts'
 
 type PanelActions = BakedActions<YzjPanelState, YzjPanelActions>
 
@@ -49,6 +50,15 @@ function asString(value: unknown): string {
  */
 export function openPanelTarget(target: YzjJumpTarget, anchorMsgId?: string): void {
   const c = controller
+  if (target.kind === 'group') {
+    setWorkbenchDomain('im')
+  } else if (target.kind === 'todo') {
+    setWorkbenchDomain('todo')
+  } else if (target.kind === 'doc' || target.kind === 'workspace') {
+    setWorkbenchDomain('docs')
+  } else {
+    setWorkbenchDomain('calendar')
+  }
   if (c === null) return
   const actions = c.actions
   actions.setOpen(true)

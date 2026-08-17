@@ -1,6 +1,7 @@
 /**
- * Shared Yunzhijia IM read-face (panel 会话 + bound fused transcript).
- * Avatars, bracket-emoticons, inline images/files, reply quotes, lightbox.
+ * Shared Yunzhijia IM read-face (panel 会话 + group-room transcript).
+ * Avatars, bracket-emoticons, inline images/files, reply quotes.
+ * Does not implement reactions / recall / forward (R7).
  */
 import { useEffect, useState, type ReactNode } from 'react'
 import type { YzjPanelInject } from './rpc.ts'
@@ -28,6 +29,7 @@ export function typeLabelOf(msgType: string): string {
   if (msgType === 'other') return '系统'
   return '消息'
 }
+
 /** Group avatar: headerUrl image with first-letter fallback. */
 export function GroupAvatar({ url, name }: { url: string; name: string }) {
   const [failed, setFailed] = useState(false)
@@ -43,6 +45,7 @@ export function GroupAvatar({ url, name }: { url: string; name: string }) {
     />
   )
 }
+
 /** Sender avatar in a message row: photo with a glyph fallback. */
 export function SenderAvatar({ openId, fallback }: { openId: string; fallback: string }) {
   const [failed, setFailed] = useState(false)
@@ -66,7 +69,7 @@ export function SenderAvatar({ openId, fallback }: { openId: string; fallback: s
  * cookie). Shows a loading placeholder, then the image; failures degrade to
  * a small chip.
  */
-function ProxyImage({ fileId, alt, onOpen, inject }: {
+export function ProxyImage({ fileId, alt, onOpen, inject }: {
   fileId: string
   alt: string
   onOpen: (src: string) => void
@@ -129,8 +132,7 @@ function cardFace(cardJson: string): { title: string; image: string; actionTitle
 /**
  * One message's body, rendered by msgType: text (bold + emoticon tokens),
  * richText (inline proxy images + text), file (image inline / PDF preview /
- * download chip), other (link card, adaptive card, or system line), withdraw
- * (system line). Images and PDFs open the lightbox.
+ * download chip), other (link card, adaptive card, or system line).
  */
 export function MessageBody({ message, onOpenImage, onOpenPdf, inject }: {
   message: Record<string, unknown>
@@ -142,7 +144,6 @@ export function MessageBody({ message, onOpenImage, onOpenPdf, inject }: {
   const msgType = asString(message.msgType)
   const param = asRecord(message.param)
 
-  // System rows (撤回 / 入群 / 其他) — centered, tertiary.
   if (msgType === 'other' && asString(param.title) === '' && asRecord(param.interactiveCard).cardJson === undefined) {
     return <span className={css.msgSystem}>{content === '' ? '(系统消息)' : emojiText(content)}</span>
   }
@@ -150,7 +151,6 @@ export function MessageBody({ message, onOpenImage, onOpenPdf, inject }: {
     return <span className={css.msgSystem}>{content === '' ? '撤回了一条消息' : emojiText(content)}</span>
   }
 
-  // Reply quote above the body.
   const replyMsgId = asString(param.replyMsgId)
   const replySummary = asString(param.replySummary)
   const replyPerson = asString(param.replyPersonName)
@@ -158,8 +158,6 @@ export function MessageBody({ message, onOpenImage, onOpenPdf, inject }: {
     ? <span className={css.msgQuote} title={replySummary}>{`↳ ${replyPerson === '' ? '' : `${replyPerson}：`}${replySummary}`}</span>
     : null
 
-  // File: image extensions preview inline; PDF previews in the lightbox
-  // with a separate 下载 action; everything else downloads on click.
   if (msgType === 'file') {
     const fileId = asString(param.file_id)
     const name = asString(param.name) !== '' ? asString(param.name) : content.replace(/^\[文件\]:/, '')
@@ -215,7 +213,7 @@ export function MessageBody({ message, onOpenImage, onOpenPdf, inject }: {
           >
             <span className={css.msgFileIcon}>{icon}</span>
             <span className={css.msgFileMeta}>
-              <span className={css.msgFileName}>{name}</span>
+              <span className={css.msgFileName}>{name === '' ? '文件' : name}</span>
               <span className={css.msgFileSize}>{size === '' ? ext === '' ? '文件' : ext.toUpperCase() : size}</span>
             </span>
           </button>
@@ -236,7 +234,6 @@ export function MessageBody({ message, onOpenImage, onOpenPdf, inject }: {
     )
   }
 
-  // Link card (survey / light app).
   if (msgType === 'other' && asString(param.title) !== '') {
     const title = asString(param.title)
     const thumb = asString(param.thumbUrl)
@@ -263,8 +260,6 @@ export function MessageBody({ message, onOpenImage, onOpenPdf, inject }: {
     )
   }
 
-  // Adaptive interactive card: first image + title + action, rendered as a
-  // mini card (cloudhub:// deep links stay inert).
   if (msgType === 'other') {
     const card = asRecord(param.interactiveCard)
     const cardJson = asString(card.cardJson)
@@ -296,7 +291,6 @@ export function MessageBody({ message, onOpenImage, onOpenPdf, inject }: {
     return <span className={css.msgSystem}>{content === '' ? '(系统消息)' : emojiText(content)}</span>
   }
 
-  // richText: interleave text (with bold + emoticons) and inline images.
   if (msgType === 'richText') {
     const desc = asArray(param.desc)
     const images: { start: number; fileId: string }[] = []
@@ -345,7 +339,6 @@ export function MessageBody({ message, onOpenImage, onOpenPdf, inject }: {
     )
   }
 
-  // Plain text (with emoticon tokens).
   return (
     <span className={css.msgBody}>
       {quote}
@@ -353,12 +346,9 @@ export function MessageBody({ message, onOpenImage, onOpenPdf, inject }: {
     </span>
   )
 }
-/** Yunzhijia bracket-emoticon tokens → real emoji (messages use [握手] etc.).
- *  Extended set (issue #1): classic IM expressions plus tokens observed in
- *  real traffic (666/doge/衰/捂脸/裂开/机智/嘻嘻/气球/汽车/钟/话筒…).
- *  Unmatched tokens fall back to the raw [text] — still readable. */
+
+/** Yunzhijia bracket-emoticon tokens → real emoji. Unmatched tokens stay raw. */
 const EMOJI_MAP: Record<string, string> = {
-  // smileys & emotions
   微笑: '😊', 呲牙: '😁', 大笑: '😂', 开心: '😄', 愉快: '😀', 调皮: '😜', 机智: '🤓', 得意: '😎',
   害羞: '😳', 难过: '😔', 大哭: '😭', 流泪: '😢', 愤怒: '😡', 惊讶: '😲', 惊恐: '😱', 发呆: '😶',
   睡觉: '😴', 困: '🥱', 疑问: '🤔', 思考: '🤔', 晕: '😵', 憋气: '😤', 抓狂: '🤯', 黑线: '😑',
@@ -388,7 +378,7 @@ const EMOJI_MAP: Record<string, string> = {
 }
 
 /** Render message text with [token] emoticons mapped to real emoji. */
-function emojiText(text: string): ReactNode[] {
+export function emojiText(text: string): ReactNode[] {
   return text.split(/(\[[^\]\n]{1,10}\])/).map((part, index) => {
     if (part.length > 2 && part.startsWith('[') && part.endsWith(']')) {
       const emoji = EMOJI_MAP[part.slice(1, -1)]
@@ -398,17 +388,12 @@ function emojiText(text: string): ReactNode[] {
   })
 }
 
-/** Full-screen image / PDF preview; click the backdrop to close. */
+/** Full-screen image / PDF preview (same chrome as the floating panel). */
 export function ImLightbox({ src, kind, onClose }: {
   src: string
   kind: 'image' | 'pdf'
   onClose: () => void
 }) {
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent): void => { if (event.key === 'Escape') onClose() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
   return (
     <div className={css.lightbox} role="presentation" onClick={onClose}>
       {kind === 'pdf'
@@ -426,4 +411,3 @@ export function ImLightbox({ src, kind, onClose }: {
     </div>
   )
 }
-
