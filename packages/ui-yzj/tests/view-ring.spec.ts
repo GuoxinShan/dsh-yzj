@@ -3,11 +3,12 @@
  * View-ring sync: group rooms occupy the pane; other sessions hide 群房间.
  */
 import { afterEach, describe, expect, it } from 'vitest'
-import { restoreYzjViewRing, syncYzjViewRing } from '../src/client/view-ring.ts'
+import { restoreYzjViewRing, syncYzjViewRing, watchYzjViewRing } from '../src/client/view-ring.ts'
 
 function mountTabs(): { tablist: HTMLDivElement; room: HTMLButtonElement; chat: HTMLButtonElement } {
   const tablist = document.createElement('div')
   tablist.setAttribute('role', 'tablist')
+  tablist.style.display = 'flex'
   const chat = document.createElement('button')
   chat.setAttribute('role', 'tab')
   chat.setAttribute('aria-selected', 'true')
@@ -35,6 +36,8 @@ describe('syncYzjViewRing', () => {
     syncYzjViewRing('room')
     expect(room.getAttribute('aria-selected')).toBe('true')
     expect(tablist.hidden).toBe(true)
+    expect(tablist.style.display).toBe('none')
+    expect(tablist.style.getPropertyPriority('display')).toBe('important')
   })
 
   it('hides the 群房间 tab on topic and private chats', () => {
@@ -47,5 +50,16 @@ describe('syncYzjViewRing', () => {
     restoreYzjViewRing()
     expect(tablist.hidden).toBe(false)
     expect(room.hidden).toBe(false)
+    expect(tablist.style.display).not.toBe('none')
+  })
+
+  it('hides a tablist that mounts after the first sync', async () => {
+    const stop = watchYzjViewRing('room')
+    const { tablist, room } = mountTabs()
+    await new Promise<void>(resolve => { window.setTimeout(resolve, 0) })
+    expect(room.getAttribute('aria-selected')).toBe('true')
+    expect(tablist.hidden).toBe(true)
+    expect(tablist.style.display).toBe('none')
+    stop()
   })
 })

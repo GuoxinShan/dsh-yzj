@@ -34,12 +34,12 @@ function mount(bound: boolean) {
 }
 
 describe('YzjHomeChrome', () => {
-  it('bound sessions expose 发进群 and not 丢进群', async () => {
+  it('bound group rooms hide dock 发进群 (R2 retired)', async () => {
     const { container } = mount(true)
     await act(async () => { await Promise.resolve() })
-    expect(container.textContent).toContain('发进群')
-    expect(container.textContent).toContain('群房间')
+    expect(container.textContent).not.toContain('发进群')
     expect(container.textContent).not.toContain('丢进群')
+    expect(container.querySelector('[data-testid="yzj-home-chrome"]')).toBeNull()
   })
 
   it('unbound sessions expose 丢进群 and a single-send hint', async () => {
@@ -50,7 +50,7 @@ describe('YzjHomeChrome', () => {
     expect(container.textContent).not.toContain('发进群')
   })
 
-  it('intercepts native submit on a group room into homeSend', async () => {
+  it('native submit on a group room still routes into homeSend', async () => {
     const sent: string[] = []
     const actions = { submit: () => { sent.push('native') } }
     const container = document.createElement('div')
@@ -119,16 +119,5 @@ describe('YzjHomeChrome', () => {
     const jump = [...container.querySelectorAll('button')].find(node => node.textContent?.includes('回群房间'))
     await act(async () => { jump?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     expect(focused).toEqual(['yzj-home-g-a'])
-  })
-
-  it('发进群 consumes the draft via homeSend and clears it', async () => {
-    const { container, sent, draftRef } = mount(true)
-    await act(async () => { await Promise.resolve() })
-    const button = [...container.querySelectorAll('button')].find(node => node.textContent?.includes('发进群'))
-    expect(button).toBeDefined()
-    await act(async () => { button?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
-    await act(async () => { await Promise.resolve() })
-    expect(sent).toEqual(['发进群草稿'])
-    expect(draftRef()).toBe('')
   })
 })

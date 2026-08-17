@@ -71,6 +71,7 @@ describe('YzjFusedView', () => {
     expect(text).not.toContain('发给助手')
     expect(text).not.toContain('助手回答一句')
     expect(text).not.toContain('本群话题')
+    expect(container.querySelector('[data-testid="yzj-room-composer-host"]')).not.toBeNull()
   })
 
   it('maps Yunzhijia emoticon tokens like the floating panel', async () => {

@@ -5,6 +5,7 @@
  * higher or equal priority and still cover the bar when they match.
  */
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { createPortal } from 'react-dom'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { EMOJI_LIST, resolveAtMentions, type AtCandidate } from './im-compose.ts'
@@ -33,6 +34,9 @@ export function selectGroupRoomComposer({ session, interactions }: ComposerChain
   return { room: true }
 }
 
+/** Portal target inside the timeline column (`transcript.tsx`). */
+export const ROOM_COMPOSER_HOST_ID = 'yzj-room-composer-host'
+
 type SessionRow = { displayTitle?: string }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -53,6 +57,27 @@ function speakersOf(value: unknown): AtCandidate[] {
   return [...byId.entries()].map(([openId, name]) => ({ openId, name }))
 }
 
+function useComposerHost(): HTMLElement | null {
+  const [host, setHost] = useState<HTMLElement | null>(() => document.getElementById(ROOM_COMPOSER_HOST_ID))
+  useEffect(() => {
+    const found = document.getElementById(ROOM_COMPOSER_HOST_ID)
+    if (found !== null) {
+      setHost(found)
+      return
+    }
+    const observer = new MutationObserver(() => {
+      const node = document.getElementById(ROOM_COMPOSER_HOST_ID)
+      if (node !== null) {
+        setHost(node)
+        observer.disconnect()
+      }
+    })
+    observer.observe(document.documentElement, { childList: true, subtree: true })
+    return () => observer.disconnect()
+  }, [])
+  return host
+}
+
 /**
  * Canvas-shaped composer: placeholder 「发进 群名…」, primary button 「发进群」,
  * toolbar for emoji / image / file, reply bar above the input.
@@ -64,7 +89,7 @@ export function YzjRoomComposer(
   const groupName = props.useSessions(s => {
     const row = (s as { byId?: Record<string, SessionRow> }).byId?.[props.sessionId]
     const title = row?.displayTitle
-    return typeof title === 'string' && title !== '' ? title : '群'
+    return typeof title === 'string' && title !== '' && title !== '群房间' && title !== '私聊房间' ? title : '群'
   })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -185,7 +210,23 @@ export function YzjRoomComposer(
     reader.readAsDataURL(file)
   }
 
-  return (
+  const host = useComposerHost()
+  useEffect(() => {
+    if (host === null) return
+    const seat = document.querySelector<HTMLElement>('[data-composer-seat]')
+    if (seat === null) return
+    seat.style.setProperty('height', '0')
+    seat.style.setProperty('min-height', '0')
+    seat.style.setProperty('overflow', 'hidden')
+    seat.style.setProperty('padding', '0')
+    return () => {
+      seat.style.removeProperty('height')
+      seat.style.removeProperty('min-height')
+      seat.style.removeProperty('overflow')
+      seat.style.removeProperty('padding')
+    }
+  }, [host])
+  const face = (
     <div className={css.roomComposer} data-testid="yzj-room-composer">
       {replyTo !== null && (
         <div className={css.roomReplyBar} data-testid="yzj-room-reply">
@@ -249,9 +290,16 @@ export function YzjRoomComposer(
         </button>
       </div>
       <p className={css.roomComposerCaption}>
-        这里发送只有一个意思：以本人身份发进群（公开，无确认卡）。@ 同事须是本群发过言的人。要用助手，点消息旁的「交给助手」。
+        本人身份直发，无确认卡。要用助手，点消息旁的「交给助手」。
       </p>
       {error !== '' && <p role="alert">{error}</p>}
     </div>
+  )
+  if (host === null) return face
+  return (
+    <>
+      <span className={css.roomComposerSeat} data-testid="yzj-room-composer-seat" hidden />
+      {createPortal(face, host)}
+    </>
   )
 }

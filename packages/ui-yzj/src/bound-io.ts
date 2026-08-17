@@ -13,7 +13,7 @@ import {
 } from '@dsh-yzj/tool-yzj/src/bound-log.ts'
 import { parseContactUser } from './contact-parse.ts'
 import { digestCandidates, type DigestCandidate } from './handoff-digest.ts'
-import { openBoundHome, openTopicHome, lastSessionTitle, type HomeOpenAgents, type HomeOpenFace } from './home-open.ts'
+import { openBoundHome, openTopicHome, lastSessionTitle, isPlaceholderRoomTitle, type HomeOpenAgents, type HomeOpenFace } from './home-open.ts'
 import type { YzjWriteRecord } from './write-gate.ts'
 import type { TopicEnsureInput, TopicEnsureResult, TopicRecord } from '@dsh-yzj/tool-yzj/src/topics.ts'
 
@@ -400,6 +400,7 @@ export function fusedSnapshot(
   items: FusedItem[]
   candidates: DigestCandidate[]
   topics: TopicRecord[]
+  groupName?: string
 } {
   const events = sessionEventsOf(agent)
   const candidates = digestCandidates(events)
@@ -410,7 +411,17 @@ export function fusedSnapshot(
   const log = home.getLog(binding.yzjConversationId)
   const items = mergeFused(log?.entries ?? [], events, pendingOf(writes))
   const topics = home.listTopics?.(binding.yzjConversationId) ?? []
-  return { bound: true, binding, ...(log === undefined ? {} : { log }), items, candidates, topics }
+  const pinned = lastSessionTitle(events)
+  const groupName = pinned !== '' && !isPlaceholderRoomTitle(pinned) ? pinned : ''
+  return {
+    bound: true,
+    binding,
+    ...(log === undefined ? {} : { log }),
+    items,
+    candidates,
+    topics,
+    ...(groupName === '' ? {} : { groupName }),
+  }
 }
 
 /** Group-room VIEW: IM rows + topic list, no ③④ (R2). */
@@ -497,7 +508,7 @@ export function groupSpaceSnapshot(
       ...(topic.originTime === undefined ? {} : { originTime: topic.originTime }),
     }))
     const pinned = lastSessionTitle(agents?.get(binding.dshSessionId)?.session?.events ?? [])
-    const groupName = pinned !== ''
+    const groupName = pinned !== '' && !isPlaceholderRoomTitle(pinned)
       ? pinned
       : (binding.yzjKind === 'dm' ? '私聊房间' : '群房间')
     return {

@@ -28,8 +28,8 @@ export interface YzjDropInjected {
 export type { YzjHomeChromeInjected }
 
 /**
- * The composer dock: drop-bus chip insert plus room/topic/unbound chrome.
- * Group room send = 发进群; topic/private native send = 问助手.
+ * The composer dock: drop-bus chip insert plus topic/unbound chrome.
+ * Group-room dock 发进群 is retired; the timeline column owns 发进群.
  */
 export function YzjComposerDock(props: PropsRuntime<'conversation.input.dock'> & YzjDropInjected & YzjHomeChromeInjected) {
   useEffect(() => {

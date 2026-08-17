@@ -75,6 +75,25 @@ describe('buildConvRows', () => {
     expect(rows[0]?.hasRunning).toBe(true)
     expect(rows[0]?.preview).toBe('群里一句')
   })
+
+  it('does not let a 群房间 placeholder override the CLI group name', () => {
+    const rows = buildConvRows(
+      [{
+        groupId: 'g-a',
+        groupName: '金蝶最小DSH交流群',
+        lastMsg: { content: '群里一句' },
+        lastMsgSendTime: '2026-08-17 10:00:00',
+      }],
+      [{
+        groupId: 'g-a',
+        sessionId: 'yzj-home-g-a',
+        groupName: '群房间',
+        yzjKind: 'group',
+        topics: [],
+      }],
+    )
+    expect(rows[0]?.groupName).toBe('金蝶最小DSH交流群')
+  })
 })
 
 describe('YzjConvList', () => {

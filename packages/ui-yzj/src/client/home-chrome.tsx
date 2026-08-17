@@ -1,6 +1,7 @@
 /**
  * Bound / unbound composer chrome in `conversation.input.dock`.
- * Group room: 「发进群」only. Topic: native send = 问助手. Unbound: 「丢进群」.
+ * Group room: dock 发进群 is retired (R2) — the timeline column owns 发进群.
+ * Topic: native send = 问助手. Unbound: 「丢进群」.
  */
 import { useEffect, useRef, useState } from 'react'
 import {
@@ -32,31 +33,38 @@ function asArray(value: unknown): unknown[] {
 }
 
 /**
- * Room chrome: native send is intercepted to 发进群. Topic/private keep
- * the official submit as 问助手.
+ * Room chrome: native send is intercepted to 发进群 (safety net if the
+ * official bar is still up). Topic/private keep the official submit as 问助手.
+ * The room dock UI itself is retired — 发进群 lives in the timeline column.
  */
 export function YzjHomeChrome(props: YzjHomeChromeInjected) {
-  const [kind, setKind] = useState<'room' | 'topic' | 'unbound'>('unbound')
+  const [kind, setKind] = useState<'room' | 'topic' | 'unbound'>(() => (
+    props.sessionId.startsWith('yzj-home-') ? 'room'
+      : props.sessionId.startsWith('yzj-topic-') ? 'topic'
+        : 'unbound'
+  ))
   const [roomSessionId, setRoomSessionId] = useState('')
-  const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [handoffOpen, setHandoffOpen] = useState(false)
   const sendRef = useRef<() => Promise<void>>(async () => {})
 
   useEffect(() => {
     let cancelled = false
-    setKind('unbound')
+    const fromId = props.sessionId.startsWith('yzj-home-') ? 'room'
+      : props.sessionId.startsWith('yzj-topic-') ? 'topic'
+        : 'unbound' as const
+    setKind(fromId)
     setRoomSessionId('')
     const tick = async (): Promise<void> => {
       const result = await props.homeBinding(props.sessionId)
       if (cancelled) return
       if (!result.ok) {
-        setKind('unbound')
+        setKind(fromId)
         return
       }
       const raw = asRecord(result.value)
       const next = raw.kind === 'room' || raw.kind === 'topic' ? raw.kind
-        : raw.bound === true ? 'room' : 'unbound'
+        : raw.bound === true ? 'room' : fromId === 'unbound' ? 'unbound' : fromId
       setKind(next)
       const binding = asRecord(raw.binding)
       setRoomSessionId(typeof binding.dshSessionId === 'string' ? binding.dshSessionId : '')
@@ -76,10 +84,8 @@ export function YzjHomeChrome(props: YzjHomeChromeInjected) {
       setError('先写点内容再发进群')
       return
     }
-    setBusy(true)
     setError('')
     const result = await props.homeSend(props.sessionId, draft)
-    setBusy(false)
     if (!result.ok) {
       setError(result.error.message)
       return
@@ -95,31 +101,16 @@ export function YzjHomeChrome(props: YzjHomeChromeInjected) {
     if (actions !== undefined && original !== undefined) {
       actions.submit = () => { void sendRef.current() }
     }
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return
-      if (!(event.target instanceof HTMLTextAreaElement)) return
-      if (event.target.closest('[role="dialog"]') !== null) return
-      event.preventDefault()
-      event.stopPropagation()
-      void sendRef.current()
-    }
-    document.addEventListener('keydown', onKey, true)
     return () => {
-      document.removeEventListener('keydown', onKey, true)
       if (actions !== undefined && original !== undefined) actions.submit = original
     }
   }, [kind, props.inputActions])
 
+  if (kind === 'room') return null
+
   return (
     <div className={css.chrome} data-testid="yzj-home-chrome">
-      {kind === 'room' ? (
-        <>
-          <span>群房间 · 发送 = 发进群（不叫助手）</span>
-          <button type="button" className={`${css.chromeBtn} ${css.chromePrimary}`} disabled={busy} onClick={() => { void sendToGroup() }}>
-            {busy ? '发进群…' : '发进群'}
-          </button>
-        </>
-      ) : kind === 'topic' ? (
+      {kind === 'topic' ? (
         <>
           <span>话题 · 下方发送 = 问助手。助手要发群会出确认卡。</span>
           {/* The anchor card itself lives in the session header (session-shell);

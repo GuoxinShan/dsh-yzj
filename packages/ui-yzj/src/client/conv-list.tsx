@@ -63,6 +63,20 @@ export function topicNavLabel(groupName: string, title: string): string {
   return body || '话题'
 }
 
+function isPlaceholderName(name: string): boolean {
+  return name === '群房间' || name === '私聊房间'
+}
+
+/** Prefer the CLI recent name over a host `session/title` placeholder. */
+export function displayGroupName(hostName: string | undefined, recentName: string, kind: 'group' | 'dm'): string {
+  const recent = recentName.trim()
+  const host = (hostName ?? '').trim()
+  if (recent !== '' && !isPlaceholderName(recent)) return recent
+  if (host !== '' && !isPlaceholderName(host)) return host
+  if (recent !== '') return recent
+  return kind === 'dm' ? '私聊' : '群聊'
+}
+
 function kindOf(groupId: string): 'group' | 'dm' {
   return groupId.startsWith('BOT-') ? 'dm' : 'group'
 }
@@ -186,7 +200,7 @@ export function buildConvRows(
     const badge = topicListBadge(topics)
     rows.push({
       groupId: item.groupId,
-      groupName: host?.groupName || item.groupName,
+      groupName: displayGroupName(host?.groupName, item.groupName, host?.yzjKind ?? kindOf(item.groupId)),
       sessionId: host?.sessionId ?? '',
       yzjKind: host?.yzjKind ?? kindOf(item.groupId),
       preview,
@@ -208,7 +222,7 @@ export function buildConvRows(
     const badge = topicListBadge(host.topics)
     rows.push({
       groupId: host.groupId,
-      groupName: host.groupName,
+      groupName: displayGroupName(host.groupName, '', host.yzjKind),
       sessionId: host.sessionId,
       yzjKind: host.yzjKind,
       preview: latestTopic === undefined ? '' : `话题·${topicNavLabel(host.groupName, latestTopic.title)}`,

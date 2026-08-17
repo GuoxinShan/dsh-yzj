@@ -76,13 +76,21 @@ if (!roomReady) {
 }
 await page.waitForTimeout(500)
 
-const chrome = page.getByTestId('yzj-home-chrome')
 const roomPill = page.getByTestId('yzj-room-pill')
 const roomComposer = page.getByTestId('yzj-room-composer')
 await roomComposer.waitFor({ state: 'visible', timeout: 20000 }).catch(() => {})
-await chrome.waitFor({ state: 'visible', timeout: 2000 }).catch(() => {})
-const chromeText = `${await chrome.innerText().catch(() => '')}\n${await roomComposer.innerText().catch(() => '')}\n${await roomPill.innerText().catch(() => '')}`
+const chromeText = `${await roomComposer.innerText().catch(() => '')}\n${await roomPill.innerText().catch(() => '')}`
 ok('group room chrome is 发进群, not 丢进群', chromeText.includes('发进群') && !chromeText.includes('丢进群'), chromeText.slice(0, 80))
+ok('dock 发进群 chrome is gone', await page.getByTestId('yzj-home-chrome').count().then(n => n === 0).catch(() => true))
+const tablistVisible = await page.getByRole('tablist').filter({ has: page.getByRole('tab', { name: '群房间' }) }).isVisible().catch(() => false)
+ok('tab ring is hidden on the group room', !tablistVisible)
+const convBox = await convList.boundingBox().catch(() => null)
+const sendBox = await page.getByTestId('yzj-send-to-group').boundingBox().catch(() => null)
+ok(
+  '发进群 sits in the timeline column, not under the session list',
+  convBox === null || sendBox === null || sendBox.x >= convBox.x + convBox.width - 12,
+  convBox && sendBox ? `listRight=${Math.round(convBox.x + convBox.width)} sendX=${Math.round(sendBox.x)}` : 'missing box',
+)
 const toolbarText = await roomComposer.innerText().catch(() => '')
 ok('light-send toolbar exposes 表情/图片/文件 (H14)', ['表情', '图片', '文件'].every(label => toolbarText.includes(label)), toolbarText.slice(0, 60))
 const streamText = await stream.innerText().catch(() => '')
@@ -191,7 +199,7 @@ if (await jumpRoom.count() > 0) {
   await jumpRoom.first().click()
   await page.waitForTimeout(800)
 }
-const roomChrome = await page.getByTestId('yzj-home-chrome').innerText().catch(() => '')
+const roomChrome = await page.getByTestId('yzj-room-composer').innerText().catch(() => '')
 ok('回群房间 restores 发进群 chrome', roomChrome.includes('发进群') && !roomChrome.includes('问助手'), roomChrome.slice(0, 80))
 await page.screenshot({ path: shot('4-room-back.png') })
 
