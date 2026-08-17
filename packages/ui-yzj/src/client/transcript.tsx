@@ -61,6 +61,8 @@ export interface YzjFusedInjected {
     originWho?: string
     originText?: string
   }) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
+  homeTopicLens?: (sessionId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
+  homeTopicAsk?: (sessionId: string, text: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   focusBoundSession?: (sessionId: string) => void
   fetchFileData?: YzjPanelInject['fetchFileData']
   fetchContact?: YzjPanelInject['fetchContact']
@@ -562,6 +564,8 @@ export function YzjFusedView(props: YzjFusedInjected) {
               if (sessionId !== '') props.focusBoundSession?.(sessionId)
             }}
             onJumpOrigin={(msgId) => setHighlightMsgId(msgId)}
+            {...(props.homeTopicLens === undefined ? {} : { homeTopicLens: props.homeTopicLens })}
+            {...(props.homeTopicAsk === undefined ? {} : { homeTopicAsk: props.homeTopicAsk })}
           />
         )}
       </div>

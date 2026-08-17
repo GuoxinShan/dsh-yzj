@@ -8,7 +8,7 @@ import {
 } from '@dsh-yzj/tool-yzj/src/bound-log.ts'
 import {
   backfillBoundLog, fusedSnapshot, groupSpaceSnapshot, handoffToGroup, parseImSend, parseWhoami, robotSkipOpenIds,
-  sendImAndLog, type HomeIoFace,
+  sendImAndLog, topicLensBubbles, askTopicAssistant, type HomeIoFace,
 } from '../src/bound-io.ts'
 
 function entry(over: Partial<YzjLogEntry> & Pick<YzjLogEntry, 'msgId'>): YzjLogEntry {
@@ -290,5 +290,82 @@ describe('groupSpaceSnapshot', () => {
         topics: [{ sessionId: 'yzj-topic-g-a-m1', title: '整理接口清单', source: 'dsh', lastActivity: 1, status: 'running' }],
       }],
     })
+  })
+})
+
+describe('topic lens / ask', () => {
+  it('merges fromSessionId host ③④ with topic turns and hides plugin injects', () => {
+    const bubbles = topicLensBubbles({
+      dshSessionId: 'yzj-topic-1',
+      yzjConversationId: 'g-a',
+      title: '历史对话',
+      source: 'handoff',
+      createdAt: 1,
+      fromSessionId: 'yzj-home-g-a',
+    }, {
+      get: (id) => {
+        if (id === 'yzj-home-g-a') {
+          return {
+            session: {
+              events: [
+                { type: 'user/message', time: 1, data: { content: '旧问题', source: { kind: 'user' } } },
+                { type: 'assistant/message', time: 2, data: { content: '旧回答' } },
+              ],
+            },
+          }
+        }
+        if (id === 'yzj-topic-1') {
+          return {
+            session: {
+              events: [
+                { type: 'user/message', time: 3, data: { content: '升级摘要', source: { kind: 'plugin', plugin: 'ui-yzj' } } },
+                { type: 'user/message', time: 4, data: { content: '新问', source: { kind: 'user' } } },
+              ],
+            },
+          }
+        }
+        return undefined
+      },
+    })
+    expect(bubbles.map(row => row.text)).toEqual(['旧问题', '旧回答', '新问'])
+    expect(bubbles.map(row => row.role)).toEqual(['user', 'assistant', 'user'])
+  })
+
+  it('followups a user turn on the topic without requiring native focus', async () => {
+    const followups: unknown[] = []
+    const touched: unknown[] = []
+    const home = memoryHomeIo()
+    home.getTopicBySession = (id) => id === 'yzj-topic-1'
+      ? {
+        dshSessionId: 'yzj-topic-1',
+        yzjConversationId: 'g-a',
+        title: '排期',
+        source: 'dsh',
+        createdAt: 1,
+        rootMsgId: 'm1',
+      }
+      : undefined
+    home.ensureTopic = async (input) => {
+      touched.push(input)
+      return { sessionId: 'yzj-topic-1', created: false, record: home.getTopicBySession!('yzj-topic-1')! }
+    }
+    const result = await askTopicAssistant({
+      home,
+      agents: {
+        get: (id) => id === 'yzj-topic-1' ? { followup: (message: unknown) => { followups.push(message) } } : undefined,
+        resume: async () => undefined,
+        create: async () => undefined,
+      },
+      cwd: '/tmp',
+      topicSessionId: 'yzj-topic-1',
+      text: ' 继续刚才的 ',
+    })
+    expect(result).toEqual({ ok: true })
+    expect(followups).toEqual([{
+      role: 'user',
+      content: [{ type: 'text', text: '继续刚才的' }],
+      source: { kind: 'user' },
+    }])
+    expect(touched).toEqual([{ yzjConversationId: 'g-a', source: 'dsh', rootMsgId: 'm1' }])
   })
 })

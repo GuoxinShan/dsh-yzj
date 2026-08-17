@@ -167,6 +167,8 @@ export function apply(ctx: ClientContext): void {
         homeFused: (id) => panelInject.homeFused?.(id) ?? Promise.resolve({ ok: false as const, error: { message: 'homeFused unavailable' } }),
         homeBackfill: (id, opts) => panelInject.homeBackfill?.(id, opts) ?? Promise.resolve({ ok: false as const, error: { message: 'homeBackfill unavailable' } }),
         homeTopicOpen: (input) => panelInject.homeTopicOpen?.(input) ?? Promise.resolve({ ok: false as const, error: { message: 'homeTopicOpen unavailable' } }),
+        homeTopicLens: (id) => panelInject.homeTopicLens?.(id) ?? Promise.resolve({ ok: false as const, error: { message: 'homeTopicLens unavailable' } }),
+        homeTopicAsk: (id, text) => panelInject.homeTopicAsk?.(id, text) ?? Promise.resolve({ ok: false as const, error: { message: 'homeTopicAsk unavailable' } }),
         focusBoundSession: panelInject.focusBoundSession,
         fetchFileData: panelInject.fetchFileData,
         fetchContact: panelInject.fetchContact,

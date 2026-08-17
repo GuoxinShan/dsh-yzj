@@ -15,7 +15,7 @@ import { applyWriteGate, type YzjWriteRecord } from './write-gate.ts'
 import { openBoundHome, openTopicHome, type HomeOpenFace } from './home-open.ts'
 import {
   backfillBoundLog, fusedSnapshot, groupSpaceSnapshot, handoffToGroup, homeIoFrom, parseImSend, roomSnapshot, sendImAndLog,
-  sessionEventsOf,
+  sessionEventsOf, topicLensBubbles, askTopicAssistant,
 } from './bound-io.ts'
 import { digestCandidates } from './handoff-digest.ts'
 import { attachYzjSession, ensureYzjHostWorkspace } from './yzj-cwd.ts'
@@ -191,7 +191,8 @@ export interface YzjWriteGateFace {
  * Build the `/yzj` RPC handler: `workspaces`, `docs`, `events`, `groups`,
  * `messages`, `whoami`, `search`, `doc-get`, `doc-blocks`, `sheet-get`,
  * `workspace-get`, `event-get`, `contact-get`, `write-list`, and
- * `write-decide`, `home-open` / `home-send` / `home-fused` / `home-nav` / `home-handoff`
+ * `write-decide`, `home-open` / `home-send` / `home-fused` / `home-nav` / `home-handoff` /
+ * `home-topic-lens` / `home-topic-ask`
  * endpoints, all backed by the yzj-cli bridge, the write-gate, and `ctx.yzjHome`.
  * Endpoint payloads are validated as lossless JSON before use.
  * @param ctx - Cordis context carrying the bridge service.
@@ -764,6 +765,7 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
             ...(title === undefined ? {} : { title }),
           })
           void attachYzjSession(ctx, value.sessionId)
+          if (value.legacyTopicSessionId !== undefined) void attachYzjSession(ctx, value.legacyTopicSessionId)
           const io = homeIoFrom(home)
           if (io !== undefined) {
             void backfillBoundLog(ctx, io, groupId).catch(() => undefined)
@@ -849,6 +851,31 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
         } catch (error) {
           return internalError(`home-topic-open failed: ${String(error)}`)
         }
+      }
+      case 'home-topic-lens': {
+        const io = homeIoFrom(ctx.get('yzjHome'))
+        if (io === undefined) return internalError('home-topic-lens: yzjHome 服务不可用（tool-yzj 未挂载）')
+        const sessionId = stringField(payload, 'sessionId')
+        if (sessionId === undefined) return internalError('home-topic-lens endpoint requires a sessionId payload')
+        const topic = io.getTopicBySession?.(sessionId)
+        if (topic === undefined) return internalError('home-topic-lens: not a topic session')
+        const bubbles = topicLensBubbles(topic, agentsFace(ctx) ?? { get: () => undefined })
+        return { ok: true, value: { bubbles, topicSessionId: sessionId } }
+      }
+      case 'home-topic-ask': {
+        const io = homeIoFrom(ctx.get('yzjHome'))
+        if (io === undefined) return internalError('home-topic-ask: yzjHome 服务不可用（tool-yzj 未挂载）')
+        const sessionId = stringField(payload, 'sessionId')
+        const text = stringField(payload, 'text')
+        if (sessionId === undefined) return internalError('home-topic-ask endpoint requires a sessionId payload')
+        if (text === undefined) return internalError('home-topic-ask endpoint requires a text payload')
+        const agents = agentsFace(ctx)
+        if (agents === undefined) return internalError('home-topic-ask: agents 服务不可用')
+        const cwd = await ensureYzjHostWorkspace(ctx)
+        const result = await askTopicAssistant({ home: io, agents, cwd, topicSessionId: sessionId, text })
+        if ('error' in result) return internalError(result.error)
+        void attachYzjSession(ctx, sessionId)
+        return { ok: true, value: result }
       }
       case 'home-backfill': {
         const io = homeIoFrom(ctx.get('yzjHome'))

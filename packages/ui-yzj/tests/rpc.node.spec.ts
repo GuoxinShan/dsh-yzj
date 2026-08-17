@@ -199,6 +199,18 @@ describe('createRpcHandler', () => {
     expect(result.ok).toBe(false)
   })
 
+  it('home-topic-lens and home-topic-ask fail closed without a topic session', async () => {
+    const ctx = mountBridge({})
+    const handler = createRpcHandler(ctx, { list: () => [], decide: () => false })
+    expect((await handler('home-topic-lens', {}, undefined as never)).ok).toBe(false)
+    expect((await handler('home-topic-ask', {}, undefined as never)).ok).toBe(false)
+    const noHome = await handler('home-topic-lens', { sessionId: 'yzj-topic-1' }, undefined as never)
+    expect(noHome).toEqual({
+      ok: false,
+      error: { code: 'internal', message: 'home-topic-lens: yzjHome 服务不可用（tool-yzj 未挂载）', details: {} },
+    })
+  })
+
   it('home-send writes ② into the bound log without a user-turn', async () => {
     const { BoundLogStore } = await import('@dsh-yzj/tool-yzj/src/bound-log.ts')
     const store = new BoundLogStore()

@@ -1,7 +1,7 @@
 # 群房间 + 话题会话：v2.0 产品法
 
-> 版本：v1.1（已拍板；v1.1 增补见 §9——云之家工作台三栏导航，改写 R7 尾句 / R12 / 不变量 7 / 验收 11）
-> 日期：2026-08-17（v1.0 上午；v1.1 下午，工作台可交互原型走查通过）
+> 版本：v1.2（已拍板；v1.1 增补见 §9；v1.2 = H9 历史迁话题 + H18 透镜气泡/问助手，见 §6 / §9.6 #7–#8）
+> 日期：2026-08-18（v1.2）；v1.1 2026-08-17 下午；v1.0 2026-08-17 上午
 > 决策人：Guoxin Shan
 > 定位：**v2.0 产品法**，覆盖 [`dsh-home-session.md`](dsh-home-session.md) v1.x 的会话基数与视图模型（D2/D3/D5/D6），以及 [`dsh-home-transcript.md`](dsh-home-transcript.md) 的融合视图与 composer 双意图条款（T2/T10/T11）。存储事实（T1：①② 不进 `Session.append`）与写路径（D9）继续有效。机器人协议仍见 [`robot-channel-plan.md`](robot-channel-plan.md)；其 §3.6 S1 的 per-thread 锚定在本法复活（见 §5）。
 > 缘起：v1.x 融合一条流落地后，用户两次反馈「双发送复杂」「群对话和 agent 对话没打通」；第一性分析定位为模型错误而非交互细节（§1）；「群房间 + N 话题」可交互原型走查通过（2026-08-17）。
@@ -148,7 +148,7 @@ TopicAnchorIndex                           // S1 复活
 | robot-channel §3.6 S1 锚定 | **复活** → R4（加「必须可见」不变量） |
 | robot-channel §9「打开/恢复绑定会话」 | **改写** → 锚定或新建话题（§5） |
 
-迁移：既有 `yzj-home-*` 绑定会话降为群房间宿主 session；其中已发生的 ③④ 历史如何处置（留在宿主 / 迁为首条话题）是实现决策，落地时记 gap §23。融合「群工作」tab、dock「发进群」、双意图 composer、面板快捷 IM 在实现刀中移除。
+迁移（H9，2026-08-18 拍板）：既有 `yzj-home-*` 降为群房间宿主。打开群房间时，若宿主已有真实 ③④（`user/message` / `assistant/message` / `tool/call`），则幂等 `ensureTopic({ source: 'handoff', rootMsgId: 'legacy-host', title: '历史对话', fromSessionId: hostSessionId })`。**不**复制 Session 事件（harness 无跨 session 搬日志 API，且 `KNOWN_SESSION_EVENT_TYPES` 白名单）。透镜合并 `fromSessionId` 上的宿主事件 + 话题自身新事件；新「问助手」打进话题 session。空白宿主（仅 `publishHostSession` 的 `turn/start` + `turn/end` + `session/title`）不迁。单聊不迁（R17）。融合「群工作」tab、dock「发进群」、双意图 composer、面板快捷 IM 在实现刀中移除。
 
 ---
 
@@ -248,6 +248,8 @@ TopicAnchorIndex                           // S1 复活
 | 4 | 记忆入口 | 与云之家域并列 + UI 注明「本地 vault，不出本机」（授权代理决策） |
 | 5 | 群行点击落点 | 永远落时间线（抽屉不自动开） |
 | 6 | 话题默认投影 | 双投影并存：工作台 → 透镜，官方侧栏 → 原生（R19） |
+| 7 | 旧宿主 ③④（H9） | **迁成首条话题「历史对话」**（`rootMsgId=legacy-host`）；不搬事件；空白宿主 / 单聊不迁；二次打开幂等 |
+| 8 | 抽屉透镜体（H18） | 气泡流读话题 session（旧宿主话题合并 `fromSessionId`）；底部「问助手」`followup` 进话题、**不** focus 原生；「原生会话 ↗」仍是唯一跳官方 Chat |
 
 ### 9.7 v1.1 验收增补（替换验收 11）
 
@@ -257,3 +259,5 @@ TopicAnchorIndex                           // S1 复活
 15. 抽屉透镜内锚点条 / 引用卡 / 交付回执三处反跳均在左侧时间线定位高亮、抽屉不关（L6）；抽屉「原生会话」聚焦官方视图（R19）。
 16. 官方侧栏出现「云之家」工作区分组，全部 `yzj-home-*` / `yzj-topic-*` 会话在其下（R20）。
 17. 悬浮球与悬浮窗不存在（P2 后）；工作台待办勾选 = 本人意志直写，不出确认卡。
+18. 抽屉透镜内是气泡流（用户右 / 助手左），不是「只作对照」占位；底部「问助手」提交后气泡出现、官方 Chat 不被 focus。
+19. 打开仍带旧 ③④ 的群房间 → 话题列表出现「历史对话」；再开一次不新建；空白新房间不出现该条。

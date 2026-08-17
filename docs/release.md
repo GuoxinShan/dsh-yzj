@@ -16,7 +16,8 @@
   `scripts/copy-client.mjs` 原样搬运 ui-yzj closure bundle 为 `lib/client.js`；
 - patch 行名用子路径（`@dsh-yzj/bundle/robot-yzj` 等）；
   `./ui-yzj/package.json` 导出满足 client-modules 的 `resolvePkgJson`；
-- 本地开发不变：workspace 六包 + `link:` 照旧；测试直跑源码。
+- 本地开发不变：workspace 六包对 `@deepseek-ai/*` 的 `link:` **必须保留**（兄弟 checkout 是类型/测试事实源）；测试直跑源码。
+- 根包对外依赖已经是 registry `^0.1.0-rc.6`，**不要**把 workspace `link:` 改成 registry——那会拆掉开发态闭环。首个 tag（`v0.1.0` / `v0.1.1`）已打，AGENTS.md 旧「Pre-release 发布前替换 link:」口径作废。
 
 ## 1. 发布步骤（全部本地可完成，无需账号）
 

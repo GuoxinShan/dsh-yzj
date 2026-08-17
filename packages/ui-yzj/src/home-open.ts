@@ -5,6 +5,9 @@
  * @module @dsh-yzj/ui-yzj/home-open
  */
 
+import { LEGACY_HOST_ROOT, LEGACY_HOST_TITLE } from '@dsh-yzj/tool-yzj/src/topics.ts'
+import { composeHandoffDigest, digestCandidates } from './handoff-digest.ts'
+
 /** Binding table face (ctx.yzjHome). */
 export interface HomeOpenFace {
   ensureBound(yzjConversationId: string, yzjKind: 'group' | 'dm'): Promise<{
@@ -27,9 +30,11 @@ export interface HomeOpenFace {
 /** Live agent after create/resume (structural — no dsh-session import). */
 export interface HomeOpenAgent {
   session?: {
-    events?: readonly { type: string; data?: unknown }[]
+    events?: readonly { type: string; time?: number; data?: unknown }[]
     append?: (type: string, data: unknown) => unknown
   }
+  inject?: (message: unknown) => void
+  followup?: (message: unknown) => void
 }
 
 /** Resume-then-create face (ctx.agents). */
@@ -104,11 +109,84 @@ export interface HomeOpenValue {
   readonly created: boolean
   readonly yzjKind: 'group' | 'dm'
   readonly agentCreated: boolean
+  /** H9: minted-or-focused 「历史对话」 topic, when the host had real ③④. */
+  readonly legacyTopicSessionId?: string
+}
+
+/** True when the host log has real assistant work, not just R14 empty turns. */
+export function hostHasLegacyTurns(
+  events: readonly { type: string }[],
+): boolean {
+  return events.some(event => (
+    event.type === 'user/message'
+    || event.type === 'assistant/message'
+    || event.type === 'tool/call'
+  ))
+}
+
+function pluginContextTurn(text: string): {
+  role: 'user'
+  content: { type: 'text'; text: string }[]
+  source: { kind: 'plugin'; plugin: string }
+} {
+  return {
+    role: 'user',
+    content: [{ type: 'text', text }],
+    source: { kind: 'plugin', plugin: 'ui-yzj' },
+  }
+}
+
+/**
+ * Mint-or-focus the H9 「历史对话」 topic. Does not copy Session events;
+ * the lens reads `fromSessionId`. Injects a plugin digest so the model can
+ * continue. No-op for DMs, blank hosts, or a home face without topics.
+ */
+async function maybeMigrateLegacyHost(options: {
+  readonly home: HomeOpenFace
+  readonly agents: HomeOpenAgents
+  readonly yzjConversationId: string
+  readonly cwd: string
+  readonly yzjKind: 'group' | 'dm'
+  readonly hostSessionId: string
+  readonly groupName: string
+}): Promise<string | undefined> {
+  if (options.yzjKind === 'dm' || options.home.ensureTopic === undefined) return undefined
+  const events = sessionOf(options.agents.get(options.hostSessionId))?.events ?? []
+  if (!hostHasLegacyTurns(events)) return undefined
+  const opened = await openTopicHome({
+    home: options.home,
+    agents: options.agents,
+    yzjConversationId: options.yzjConversationId,
+    cwd: options.cwd,
+    source: 'handoff',
+    rootMsgId: LEGACY_HOST_ROOT,
+    title: LEGACY_HOST_TITLE,
+    fromSessionId: options.hostSessionId,
+    groupName: options.groupName,
+  })
+  if (opened.topicCreated) {
+    const digest = composeHandoffDigest(
+      digestCandidates(events.map(event => ({
+        type: event.type,
+        time: event.time ?? 0,
+        data: event.data ?? {},
+      }))),
+      [],
+      true,
+    )
+    if (digest !== '') {
+      options.agents.get(opened.sessionId)?.inject?.(
+        pluginContextTurn(`以下是本群房间升级前的助手对话，请接续。\n${digest}`),
+      )
+    }
+  }
+  return opened.sessionId
 }
 
 /**
  * Ensure the 1:1 binding and bring the bound agent up. Second open is focus
- * (`created: false`) and must not mint a parallel session id.
+ * (`created: false`) and must not mint a parallel session id. Group rooms
+ * with leftover ③④ mint 「历史对话」 (H9).
  */
 export async function openBoundHome(options: {
   readonly home: HomeOpenFace
@@ -120,18 +198,36 @@ export async function openBoundHome(options: {
   const yzjKind = options.yzjConversationId.startsWith('BOT-') ? 'dm' : 'group'
   const bound = await options.home.ensureBound(options.yzjConversationId, yzjKind)
   const title = options.title?.trim() || (yzjKind === 'dm' ? '私聊房间' : '群房间')
+  const finish = async (agentCreated: boolean): Promise<HomeOpenValue> => {
+    const legacyTopicSessionId = await maybeMigrateLegacyHost({
+      home: options.home,
+      agents: options.agents,
+      yzjConversationId: options.yzjConversationId,
+      cwd: options.cwd,
+      yzjKind,
+      hostSessionId: bound.sessionId,
+      groupName: title,
+    })
+    return {
+      sessionId: bound.sessionId,
+      created: bound.created,
+      yzjKind: bound.yzjKind,
+      agentCreated,
+      ...(legacyTopicSessionId === undefined ? {} : { legacyTopicSessionId }),
+    }
+  }
   if (options.agents.get(bound.sessionId) !== undefined) {
     publishHostSession(options.agents.get(bound.sessionId), title)
-    return { sessionId: bound.sessionId, created: bound.created, yzjKind: bound.yzjKind, agentCreated: false }
+    return finish(false)
   }
   try {
     const resumed = await options.agents.resume({ resumeSessionId: bound.sessionId })
     publishHostSession(resumed ?? options.agents.get(bound.sessionId), title)
-    return { sessionId: bound.sessionId, created: bound.created, yzjKind: bound.yzjKind, agentCreated: false }
+    return finish(false)
   } catch {
     const created = await options.agents.create({ sessionId: bound.sessionId, meta: { cwd: options.cwd } })
     publishHostSession(created ?? options.agents.get(bound.sessionId), title)
-    return { sessionId: bound.sessionId, created: bound.created, yzjKind: bound.yzjKind, agentCreated: true }
+    return finish(true)
   }
 }
 
@@ -151,6 +247,8 @@ export async function openTopicHome(options: {
   readonly title?: string
   /** Group display name for the sidebar prefix (R12). */
   readonly groupName?: string
+  /** Handoff / H9: the session whose ③④ the lens still reads. */
+  readonly fromSessionId?: string
 }): Promise<HomeOpenValue & { readonly topicCreated: boolean }> {
   if (options.home.ensureTopic === undefined) {
     const room = await openBoundHome(options)
@@ -165,6 +263,7 @@ export async function openTopicHome(options: {
     ...(options.originWho === undefined ? {} : { originWho: options.originWho }),
     ...(options.originText === undefined ? {} : { originText: options.originText }),
     ...(options.title === undefined ? {} : { title: options.title }),
+    ...(options.fromSessionId === undefined ? {} : { fromSessionId: options.fromSessionId }),
   })
   const groupName = options.groupName?.trim()
     || lastSessionTitle(sessionOf(options.agents.get(bound.sessionId))?.events ?? [])

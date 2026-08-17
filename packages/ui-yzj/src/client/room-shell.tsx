@@ -93,6 +93,8 @@ export function YzjRoomShell(props: YzjRoomShellInjected) {
         homeFused={props.homeFused}
         homeBackfill={props.homeBackfill}
         {...(props.homeTopicOpen === undefined ? {} : { homeTopicOpen: props.homeTopicOpen })}
+        {...(props.homeTopicLens === undefined ? {} : { homeTopicLens: props.homeTopicLens })}
+        {...(props.homeTopicAsk === undefined ? {} : { homeTopicAsk: props.homeTopicAsk })}
         {...(props.focusBoundSession === undefined ? {} : { focusBoundSession: props.focusBoundSession })}
         {...(props.fetchFileData === undefined ? {} : { fetchFileData: props.fetchFileData })}
         {...(props.fetchContact === undefined ? {} : { fetchContact: props.fetchContact })}

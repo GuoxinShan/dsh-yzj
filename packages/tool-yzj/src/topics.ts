@@ -13,6 +13,15 @@ import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 /** How a topic was spawned. */
 export type TopicSource = 'dsh' | 'yzj' | 'handoff'
 
+/**
+ * Synthetic root for pre-v2.0 ③④ left on the group-room host
+ * (docs/spec/group-room-topics.md H9). Stable `topicSessionId` slug.
+ */
+export const LEGACY_HOST_ROOT = 'legacy-host'
+
+/** Sidebar / drawer title for {@link LEGACY_HOST_ROOT}. */
+export const LEGACY_HOST_TITLE = '历史对话'
+
 /** Topic lifecycle (docs/spec/group-room-topics.md P3 / L2). */
 export type TopicStatus = 'running' | 'confirm' | 'done'
 
