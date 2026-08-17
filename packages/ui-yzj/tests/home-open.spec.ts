@@ -127,4 +127,15 @@ describe('publishHostSession', () => {
     expect(events.filter(event => event.type === 'turn/start')).toHaveLength(1)
     expect(events.some(event => event.type === 'session/title')).toBe(true)
   })
+
+  it('upgrades a 群房间 placeholder title when the real group name arrives', async () => {
+    const home = memoryHome()
+    const agents = fakeAgents()
+    await openBoundHome({ home, agents, yzjConversationId: 'g-a', cwd: '/tmp' })
+    expect(agents.live.get('yzj-home-g-a')?.session.events.find(event => event.type === 'session/title')?.data)
+      .toMatchObject({ title: '群房间' })
+    await openBoundHome({ home, agents, yzjConversationId: 'g-a', cwd: '/tmp', title: '测试群' })
+    const titles = agents.live.get('yzj-home-g-a')?.session.events.filter(event => event.type === 'session/title')
+    expect(titles?.at(-1)?.data).toMatchObject({ title: '测试群' })
+  })
 })

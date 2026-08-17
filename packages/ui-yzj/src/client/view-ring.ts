@@ -2,6 +2,9 @@
  * Align the harness conversation tab ring with v2.0 views.
  * Group room occupies the pane (select 「群房间」, hide the ring).
  * Topic / private chats keep official Chat and hide the unused 群房间 tab.
+ *
+ * pitfall-018: harness `.tabs { display:flex }` beats `[hidden]`; hide with
+ * `display:none !important` and re-run when the tablist mounts late.
  */
 
 export type YzjViewKind = 'room' | 'topic' | 'unbound'
@@ -9,6 +12,22 @@ export type YzjViewKind = 'room' | 'topic' | 'unbound'
 function roomTabOf(root: ParentNode): HTMLElement | undefined {
   return [...root.querySelectorAll<HTMLElement>('[role="tab"]')]
     .find(tab => tab.textContent?.trim() === '群房间')
+}
+
+function hideTablist(tablist: HTMLElement | null | undefined): void {
+  if (tablist === undefined || tablist === null) return
+  if (tablist.getAttribute('data-yzj-ring') === 'off' && tablist.style.display === 'none') return
+  tablist.hidden = true
+  tablist.setAttribute('data-yzj-ring', 'off')
+  tablist.style.setProperty('display', 'none', 'important')
+}
+
+function showTablist(tablist: HTMLElement | null | undefined): void {
+  if (tablist === undefined || tablist === null) return
+  if (tablist.getAttribute('data-yzj-ring') !== 'off' && !tablist.hidden) return
+  tablist.hidden = false
+  tablist.removeAttribute('data-yzj-ring')
+  tablist.style.removeProperty('display')
 }
 
 /**
@@ -22,18 +41,32 @@ export function syncYzjViewRing(kind: YzjViewKind): void {
     if (roomTab !== undefined && roomTab.getAttribute('aria-selected') !== 'true') {
       roomTab.click()
     }
-    if (tablist !== undefined && tablist !== null) tablist.hidden = true
+    hideTablist(tablist)
     if (roomTab !== undefined) roomTab.hidden = false
     return
   }
-  if (tablist !== undefined && tablist !== null) tablist.hidden = false
+  showTablist(tablist)
   if (roomTab !== undefined) roomTab.hidden = true
+}
+
+/**
+ * Keep {@link syncYzjViewRing} applied while the header lives: the tablist
+ * often mounts after the first sync (pitfall-018).
+ */
+export function watchYzjViewRing(kind: YzjViewKind): () => void {
+  syncYzjViewRing(kind)
+  const observer = new MutationObserver(() => { syncYzjViewRing(kind) })
+  observer.observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+  })
+  return () => observer.disconnect()
 }
 
 /** Undo {@link syncYzjViewRing} when the session header unmounts. */
 export function restoreYzjViewRing(): void {
   const roomTab = roomTabOf(document)
   const tablist = roomTab?.closest<HTMLElement>('[role="tablist"]')
-  if (tablist !== undefined && tablist !== null) tablist.hidden = false
+  showTablist(tablist)
   if (roomTab !== undefined) roomTab.hidden = false
 }

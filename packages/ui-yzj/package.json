@@ -46,26 +46,27 @@
     "typecheck": "tsc -b"
   },
   "dependencies": {
-    "@dsh-yzj/bridge": "workspace:^",
-    "@dsh-yzj/tool-yzj": "workspace:^",
     "@deepseek-ai/cordis": "link:../../../deepseek-harness/vendor/cordis",
     "@deepseek-ai/dsh-agent": "link:../../../deepseek-harness/packages/core/agent",
     "@deepseek-ai/dsh-client-connection": "link:../../../deepseek-harness/packages/client/connection",
     "@deepseek-ai/dsh-client-runtime": "link:../../../deepseek-harness/packages/client/runtime",
-    "@deepseek-ai/dsh-client-ui-primitives": "link:../../../deepseek-harness/packages/client/ui-primitives",
-    "@deepseek-ai/dsh-client-ui-slots": "link:../../../deepseek-harness/packages/client/ui-slots",
-    "@deepseek-ai/dsh-client-ui-tool": "link:../../../deepseek-harness/packages/client/ui-tool",
-    "@deepseek-ai/dsh-client-ui-sidebar": "link:../../../deepseek-harness/packages/client/ui-sidebar",
-    "@deepseek-ai/dsh-client-ui-layout": "link:../../../deepseek-harness/packages/client/ui-layout",
     "@deepseek-ai/dsh-client-ui-conversation": "link:../../../deepseek-harness/packages/client/ui-conversation",
     "@deepseek-ai/dsh-client-ui-input-trigger": "link:../../../deepseek-harness/packages/client/ui-input-trigger",
+    "@deepseek-ai/dsh-client-ui-layout": "link:../../../deepseek-harness/packages/client/ui-layout",
+    "@deepseek-ai/dsh-client-ui-primitives": "link:../../../deepseek-harness/packages/client/ui-primitives",
     "@deepseek-ai/dsh-client-ui-settings": "link:../../../deepseek-harness/packages/client/ui-settings",
+    "@deepseek-ai/dsh-client-ui-sidebar": "link:../../../deepseek-harness/packages/client/ui-sidebar",
+    "@deepseek-ai/dsh-client-ui-slots": "link:../../../deepseek-harness/packages/client/ui-slots",
+    "@deepseek-ai/dsh-client-ui-tool": "link:../../../deepseek-harness/packages/client/ui-tool",
     "@deepseek-ai/dsh-tools": "link:../../../deepseek-harness/packages/core/tools",
     "@deepseek-ai/dsh-user-approval": "link:../../../deepseek-harness/packages/interaction/user-approval",
-    "react": "^18.2.0",
-    "js-yaml": "^4.2.0"
+    "@dsh-yzj/bridge": "workspace:^",
+    "@dsh-yzj/tool-yzj": "workspace:^",
+    "js-yaml": "^4.2.0",
+    "react": "^18.2.0"
   },
   "devDependencies": {
-    "@types/react": "~18.3.1"
+    "@types/react": "~18.3.1",
+    "@types/react-dom": "~18.3.0"
   }
 }

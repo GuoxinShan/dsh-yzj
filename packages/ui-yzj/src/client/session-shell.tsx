@@ -1,11 +1,11 @@
 /**
  * Session-header action that keeps the tab ring honest for v2.0 views.
- * Always mounted (header.actions), unlike the dock which a composer
- * takeover hides on group rooms.
+ * Always mounted (header.actions). Tab-ring hide uses pitfall-018
+ * (`display:none !important` + observer); dock 发进群 is retired.
  */
 import { useEffect, useState } from 'react'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { restoreYzjViewRing, syncYzjViewRing, type YzjViewKind } from './view-ring.ts'
+import { restoreYzjViewRing, watchYzjViewRing, type YzjViewKind } from './view-ring.ts'
 import css from './home.module.css'
 
 /** Injected binding lookup for the header shell. */
@@ -24,7 +24,11 @@ function asRecord(value: unknown): Record<string, unknown> {
  * still names the view after the tablist is hidden.
  */
 export function YzjSessionShell(props: PropsRuntime<'conversation.session.header.actions'> & YzjSessionShellInjected) {
-  const [kind, setKind] = useState<YzjViewKind>('unbound')
+  const [kind, setKind] = useState<YzjViewKind>(() => (
+    props.sessionId.startsWith('yzj-home-') ? 'room'
+      : props.sessionId.startsWith('yzj-topic-') ? 'topic'
+        : 'unbound'
+  ))
   const [roomSessionId, setRoomSessionId] = useState('')
   const [topicTitle, setTopicTitle] = useState('')
   const [originText, setOriginText] = useState('')
@@ -35,7 +39,11 @@ export function YzjSessionShell(props: PropsRuntime<'conversation.session.header
       const result = await props.homeBinding(props.sessionId)
       if (cancelled) return
       if (!result.ok) {
-        setKind('unbound')
+        setKind(
+          props.sessionId.startsWith('yzj-home-') ? 'room'
+            : props.sessionId.startsWith('yzj-topic-') ? 'topic'
+              : 'unbound',
+        )
         return
       }
       const raw = asRecord(result.value)
@@ -58,9 +66,7 @@ export function YzjSessionShell(props: PropsRuntime<'conversation.session.header
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.sessionId])
 
-  useEffect(() => {
-    syncYzjViewRing(kind)
-  }, [kind, props.sessionId])
+  useEffect(() => watchYzjViewRing(kind), [kind, props.sessionId])
 
   if (kind === 'topic') {
     const summary = originText !== '' ? originText : topicTitle

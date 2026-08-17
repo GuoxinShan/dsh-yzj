@@ -58,7 +58,8 @@ export function publishHostSession(agent: unknown, title: string, replace = fals
   if (trimmed === '') return
   const current = lastSessionTitle(events)
   if (current === trimmed) return
-  if (current !== '' && !replace) return
+  const upgrading = isPlaceholderRoomTitle(current) && !isPlaceholderRoomTitle(trimmed)
+  if (current !== '' && !replace && !upgrading) return
   session.append('session/title', { title: trimmed, messageSeqs: [], source: { kind: 'user' } })
 }
 
@@ -82,6 +83,11 @@ export function lastSessionTitle(events: readonly { type: string; data?: unknown
     }
   }
   return ''
+}
+
+/** Fallback titles used when home-open had no CLI group name. */
+export function isPlaceholderRoomTitle(title: string): boolean {
+  return title === '群房间' || title === '私聊房间'
 }
 
 function sessionOf(agent: unknown): HomeOpenAgent['session'] {

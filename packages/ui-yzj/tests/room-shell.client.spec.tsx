@@ -45,6 +45,7 @@ describe('YzjRoomShell', () => {
     expect(container.querySelector('[data-testid="yzj-room-shell"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="yzj-conv-list"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="yzj-fused-stream"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="yzj-room-composer-host"]')).not.toBeNull()
     expect(container.textContent).toContain('测试群')
     expect(container.textContent).toContain('群里一句')
   })

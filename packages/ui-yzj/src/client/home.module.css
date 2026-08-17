@@ -253,6 +253,22 @@
   font-size: 11px;
 }
 
+.roomComposerSeat {
+  display: none;
+}
+
+.roomTimeline {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.roomComposerHost {
+  flex: none;
+}
+
 .roomComposer {
   display: flex;
   flex-direction: column;
@@ -793,13 +809,14 @@
   min-height: 0;
 }
 
-.roomStage .stream {
+.roomTimeline .stream {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   gap: 0;
 }
 
-.roomStage .stream .streamMore {
+.roomTimeline .stream .streamMore {
   margin-bottom: 8px;
 }
 

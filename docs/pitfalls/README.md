@@ -26,6 +26,7 @@
 | 15 | 发进群 `local-*` 锚了话题后 ack 成真实 msgId，回群房间对不上 | tool-yzj topics / 交给助手幂等 | [pitfall-015-local-id-topic-anchor.md](pitfall-015-local-id-topic-anchor.md) |
 | 16 | 只跑 `pnpm run bundle` 打包的是旧代码——client bundle 入口是 tsc 产物 `lib/types`，改 TS 后须先 `tsc -b`/`pnpm run build` | ui-yzj browser half / 改源→bundle→验收 循环 | [pitfall-016-bundle-needs-tsc-first.md](pitfall-016-bundle-needs-tsc-first.md) |
 | 17 | 悬浮球盖住群房间「发进群」按钮（P2 退役球后此坑应失效） | ui-yzj 群房间 composer / 视口右下布局 | [pitfall-017-float-ball-covers-send.md](pitfall-017-float-ball-covers-send.md) |
+| 18 | harness tablist 的 `display:flex` 盖过 `[hidden]`，群房间藏不住 tab ring | ui-yzj view-ring / 群房间 header | [pitfall-018-tablist-hidden-overridden-by-flex.md](pitfall-018-tablist-hidden-overridden-by-flex.md) |
 
 ## 维护规则
 

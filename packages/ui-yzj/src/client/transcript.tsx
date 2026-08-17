@@ -11,6 +11,7 @@ import { emitRoomReplyRequest } from './reply-bus.ts'
 import type { YzjPanelInject } from './rpc.ts'
 import { YzjTopicDrawer } from './topic-drawer.tsx'
 import { topicListBadge } from './conv-list.tsx'
+import { ROOM_COMPOSER_HOST_ID } from './room-composer.tsx'
 import {
   artifactOf, layoutRoomItems, topicReplyCount,
   type LayoutImEntry,
@@ -24,6 +25,7 @@ export interface FusedViewValue {
   readonly binding?: { yzjConversationId: string; dshSessionId: string; yzjKind: 'group' | 'dm' }
   readonly items: readonly FusedViewItem[]
   readonly topics?: readonly RoomTopic[]
+  readonly groupName?: string
 }
 
 export interface RoomTopic {
@@ -243,6 +245,7 @@ export function YzjFusedView(props: YzjFusedInjected) {
       items,
       topics: parseTopics(raw.topics),
       ...(binding === undefined ? {} : { binding }),
+      ...(typeof raw.groupName === 'string' && raw.groupName !== '' ? { groupName: raw.groupName } : {}),
     })
     const nextPhase: Phase = next.kind === 'unbound' || next.bound !== true ? 'unbound' : 'bound'
     setHeld({ sessionId: props.sessionId, value: next, phase: nextPhase })
@@ -414,6 +417,7 @@ export function YzjFusedView(props: YzjFusedInjected) {
         </div>
       )}
       <div className={css.roomStage}>
+        <div className={css.roomTimeline}>
         <div className={css.stream} data-testid="yzj-fused-stream">
           {more && (
             <button type="button" className={css.streamMore} onClick={() => { void loadOlder() }} disabled={loadingOlder}>
@@ -536,9 +540,15 @@ export function YzjFusedView(props: YzjFusedInjected) {
             )
           })}
         </div>
+        <div
+          id={ROOM_COMPOSER_HOST_ID}
+          className={css.roomComposerHost}
+          data-testid="yzj-room-composer-host"
+        />
+        </div>
         {isGroup && drawerOpen && (
           <YzjTopicDrawer
-            groupName=""
+            groupName={value.groupName ?? ''}
             topics={topics}
             {...(lensId === '' ? {} : { lensSessionId: lensId })}
             onClose={() => {
