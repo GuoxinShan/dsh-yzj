@@ -54,6 +54,8 @@ export interface HomeIoFace extends HomeOpenFace {
   getTopicByOutbound?(msgId: string): TopicRecord | undefined
   listTopics?(yzjConversationId: string): TopicRecord[]
   setTopicStatus?(dshSessionId: string, status: NonNullable<TopicRecord['status']>): Promise<void>
+  /** Register an outbound post so reply chains continue this topic (R4 / R26). */
+  registerTopicOutbound?(msgId: string, dshSessionId: string): Promise<void>
   /** Every group-room binding (workbench session list / L1 merge). */
   listBindings?(): { dshSessionId: string; yzjConversationId: string; yzjKind: 'group' | 'dm' }[]
 }
@@ -69,6 +71,8 @@ export interface ImSendInput {
   readonly replyMsgId?: string
   readonly atOpenIds: readonly string[]
   readonly atAll: boolean
+  /** Stamp the log row so topic reply chips count this post (R26). */
+  readonly topicSessionId?: string
 }
 
 /** Result of one user-direct send (no confirm card, no DSH user-turn). */
@@ -249,6 +253,7 @@ export async function sendImAndLog(ctx: Context, home: HomeIoFace | undefined, i
       isSelf: true,
       status: 'pending',
       ...(input.replyMsgId === undefined ? {} : { replyMsgId: input.replyMsgId }),
+      ...(input.topicSessionId === undefined ? {} : { topicSessionId: input.topicSessionId }),
       ...(sendParam === undefined ? {} : { param: sendParam }),
     }
     try {

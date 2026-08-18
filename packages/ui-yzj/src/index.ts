@@ -19,6 +19,7 @@ import {
 } from './bound-io.ts'
 import { digestCandidates } from './handoff-digest.ts'
 import { attachYzjSession, ensureYzjHostWorkspace } from './yzj-cwd.ts'
+import { applyTopicDeliver } from './topic-deliver.ts'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -1026,4 +1027,5 @@ export function apply(ctx: Context): void {
   const handler = createRpcHandler(ctx, writeGate)
   ctx.connection.rpc.handle('/yzj', handler, { authority: 'loopback' })
   void ensureYzjHostWorkspace(ctx).catch(() => undefined)
+  applyTopicDeliver(ctx, writeGate)
 }

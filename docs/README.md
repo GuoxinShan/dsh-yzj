@@ -10,7 +10,7 @@ docs/
   release.md                           发布流程（GitHub 分享 / npm 全量发布 + 前置检查清单）
   spec/                              ← 设计基线（要做什么、为什么、验收口径）
     integration-master-plan.md         云之家×dsh 集成整体方案（v1.8 指针 → 会话家园；正文仍为 v1.7 人在闭环）
-    group-room-topics.md               v2.0 产品法：1 群 = 1 群房间 + N 话题会话；工作台三栏（canvas 对齐）
+    group-room-topics.md               v2.0 产品法：1 群 = 1 群房间 + N 话题会话；工作台三栏；v1.10 R26 话题 job-done 投递
     dsh-home-session.md                DSH 唯一会话家园（v1.x 历史快照；D2/D3 被 group-room-topics 覆盖，D9 等仍有效）
     dsh-home-transcript.md             绑定会话可见时间线：插件消息日志（v1.x 历史快照；存储/去重/回填/切会话分阶段机制沿用，融合视图条款被覆盖）
     todo-design.md                     待办功能设计（v1.3，tag 理念 + §11.2 决策表；直写原则交叉引用会话家园）

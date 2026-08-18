@@ -107,11 +107,14 @@ export function topicReplyCount(
 }
 
 /**
- * Typed deliverable under an assistant bubble. Only robot-outbound file
- * posts (CLI `msgType=file` or a `param.name`) become a card.
+ * Typed deliverable under an assistant bubble. Robot-outbound file posts
+ * and DSH job-done file posts (CLI `msgType=file` or a `param.name`) become
+ * a card.
  */
 export function artifactOf(entry: LayoutImEntry): ArtifactCard | undefined {
-  if (entry.origin !== 'robot-outbound') return undefined
+  const fromRobot = entry.origin === 'robot-outbound'
+  const fromTopicDeliver = entry.origin === 'dsh-send' && entry.topicSessionId !== undefined
+  if (!fromRobot && !fromTopicDeliver) return undefined
   const param = entry.param ?? {}
   const name = asString(param.name)
   const msgType = entry.msgType ?? ''

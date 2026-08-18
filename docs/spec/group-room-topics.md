@@ -1,7 +1,7 @@
 # 群房间 + 话题会话：v2.0 产品法
 
-> 版本：v1.9（已拍板；v1.8 = R14 空 turn；**v1.9 = T5 召唤窗口必须能挂上话题 session：按 `yzj-topic-*` 查锚、skip 只跳 plugin、注册走 inject-scope mixin**）
-> 日期：2026-08-18（v1.6 / v1.5 / v1.4 / v1.3 / v1.2）；v1.1 2026-08-17 下午；v1.0 2026-08-17 上午
+> 版本：v1.10（已拍板；**v1.10 = R26 话题 job-done 投递**：轮次 idle 后以 CLI 本人身份把总结回帖到锚点，产物随附；不是每条助手气泡都回帖；机器人通道本刀不动）
+> 日期：2026-08-19（v1.10）；2026-08-18（v1.9 / v1.8 / v1.6 / v1.5 / v1.4 / v1.3 / v1.2）；v1.1 2026-08-17 下午；v1.0 2026-08-17 上午
 > 决策人：Guoxin Shan
 > 定位：**v2.0 产品法**，覆盖 [`dsh-home-session.md`](dsh-home-session.md) v1.x 的会话基数与视图模型（D2/D3/D5/D6），以及 [`dsh-home-transcript.md`](dsh-home-transcript.md) 的融合视图与 composer 双意图条款（T2/T10/T11）。存储事实（T1：①② 不进 `Session.append`）与写路径（D9）继续有效。机器人协议仍见 [`robot-channel-plan.md`](robot-channel-plan.md)；其 §3.6 S1 的 per-thread 锚定在本法复活（见 §5）。
 > 缘起：v1.x 融合一条流落地后，用户两次反馈「双发送复杂」「群对话和 agent 对话没打通」；第一性分析定位为模型错误而非交互细节（§1）；「群房间 + N 话题」可交互原型走查通过（2026-08-17）。
@@ -60,6 +60,7 @@ DSH 仍是唯一家园（D1 精神不变）：群房间和话题都住在 DSH �
 | R23 | 拖入引用退役（v1.6） | 工作台不再把条目拖进 composer 成 ☁ chip。悬浮窗「一切皆可拖」随球一起退役：面板/待办无 `draggable`、无全屏 drop overlay、无 drop-bus。引用只走 `@` 候选源（同事 / 会话 / 文档）；草稿里残留的旧 chip 仍可经 codec 回源 | 球已退役后工作台残留拖源是上一时代的面；@ 是官方 InputBar 的原生插入，不是拖入 |
 | R24 | 点群不是开会话（v1.7） | **群聊不是一条 DSH 对话。** 工作台会话列表点一行 = 切 `groupId` 换时间线，**不** `homeOpen`、**不** `sessions.open`。`conversation.view` 仍要挂在一个已打开的 `yzj-home-*` 挂钩座位上（harness 主面是 session 画布），但挂钩最多一条：首次进对话域才 focus/建座位；之后切群零 session 切换。发进群 / 交给助手 / 回填只 `ensureBound`（写绑定表 + 日志，不 create 活 agent、不 publishHostSession）。官方侧栏「未分组」不得每点一个群就多一行 | 旧路径每点一个群就 resume/create 一条 `yzj-home-*` 并 focus：要等 session 列表、官方超长 InputBar 闪一下、publish 后因未 attach「云之家」掉进未分组。那是桥的实现细节漏到脸上，不是产品 |
 | R25 | 话题不写空 turn（v1.7） | 话题只钉 `session/title`。揭开靠第一次真提问。禁止给话题写 `turn/start {turn:1}`。房间同样不写空 turn（R14 v1.8） | 话题是真 agent session：空 turn 1 + 第一次提问再开 turn 1 → 官方 Chat 回放失败（pitfall-025） |
+| R26 | 话题 job-done 投递（v1.10） | **问助手的一轮结束（`agent/status` idle）后，产品把本轮总结以 CLI 本人身份回复到话题锚点**（`--reply-msg-id = rootMsgId`）。只投结论，不把工具过程/中间气泡回帖。本轮 `write`/`edit` 产物经 `file upload` 带上：图片进同一条 richText 回复；其它文件因 CLI `msg-type file` 不支持 `--reply-msg-id`，跟发在群时间线并在总结里点名。无确认卡——这是「问助手」的契约投递面，不是 agent 另起 `yzj_im_message_send`。跳过：plugin 入站（机器人 PushHub 管）、本轮已调 `yzj_im_message_send`、写闸 pending、无真实锚点（`local-*` / `legacy-host`）、无助手正文。**本刀不改机器人通道**（机器人不能发文件） | 对齐 Claude Tag：工作在 session，结果落 thread；云之家回复链 = thread。用户原话「不是所有都要回复进去」「job done 以后回复一个总结性的」「有可能会有产物」 |
 
 ---
 
@@ -117,7 +118,8 @@ TopicAnchorIndex                           // S1 复活
 - 回群入口叠在官方 composer dock 上（`conversation.input.dock`）：与 InputBar 卡同一列宽（`--dsh-composer-card-max-width` + 两侧 clearance），22px 圆角、同一套 input 表面 token，坐在输入卡正上方，不进标题行。文案只写「回群聊」（单聊「回私聊」）；锚摘要作次行省略，不写「群消息锚点 / 点这里」。**这是话题里唯一回群入口**。官方发送 = 问助手。
 - 回复链续进来的群消息：作为日志投影节点插入话题流（标「XX · 从云之家回复链续入」），同时它也出现在群房间时间线（同一日志行，两个容器投影）。
 - composer：唯一动词**问助手**（官方输入条本身，dock 不再挂「下方发送 = 问助手」说明书）。召唤窗口注入沿用 T4/T5（窗口取自 roomLog 近窗，`formatSummonWindow` 同一函数）。**窗口必须带 `groupId`、每行 `msgId`、话题则带锚点 `msgId`**，否则模型无法对群发/回复。T5 查会话必须同时打房间表与话题表（`getBySession` 只认 `yzj-home-*`，话题会落空——pitfall-027）；首轮 assemble 可能还没有 user/message（`none`），不得当成「未召唤」丢掉窗口。
-- agent 要发群：`WRITE_SPECS` 确认卡（标准），放行后投回群房间/回复链，话题内标「已投递」。
+- **job-done 投递（R26）**：本轮 idle 后，host 把最后一条助手正文做成有界总结，以 CLI 本人身份（② `dsh-send`）回复锚点；产物随附。群房间时间线能看见这条回复（及跟发的文件）。这不是「每条助手气泡都回群」。
+- agent **另起**发群：`WRITE_SPECS` 确认卡（标准），放行后投回群房间/回复链，话题内标「已投递」。本轮若已走这条，R26 不再自动投，避免双帖。
 
 ### 4.3 未绑定私聊
 
@@ -166,6 +168,7 @@ TopicAnchorIndex                           // S1 复活
 3. 群房间消息「交给助手」→ 新话题并在抽屉打开（时间线仍在场）；对同一条消息再点 → 抽屉重开已有话题，不新建。
 4. 云之家顶层 @机器人 → 群房间话题列表出现新话题；回复链带 @ 续 → 进同一话题，不新建。
 5. 话题里 agent 提议发群 → 标准确认卡；放行后群房间出现助手帖子，带「来自话题 X」回链；话题内标「已投递」。
+5b. （v1.10 / R26）DSH 话题里问助手、轮次结束后：云之家该条锚点的回复链出现一条总结（本人身份），不是整轮工具过程；有 `write`/`edit` 产物则随附（图在回复里，其它文件跟发在群里）。plugin 入站 / 已调 `yzj_im_message_send` / 无真实锚点不投。
 6. 群侧发起、无人聚焦 DSH → 群内建议卡（@机器人 确认 N）裁决，与 GUI 卡同一 writeId。
 7. `robot_notify` / `robot_continue` 在 `yzj-topic-*` 会话上同样入闸（R10；pitfall-012 回归）。
 8. 未绑定私聊：单一发送；丢进群默认摘要 + 确认卡，着陆群房间。
@@ -263,6 +266,7 @@ TopicAnchorIndex                           // S1 复活
 | 13 | 话题要不要空 turn 揭开（v1.7） | **不要。** 话题靠第一次真提问揭开（R25） |
 | 14 | 房间能不能走「新会话」点走就藏（v1.8） | **不能。** 真机：blank 挂钩 focus 后标题已是群名，但 tab ring 为空、`yzj-room-shell` 不挂。空 turn 换的是主面画布，不是为了占侧栏 |
 | 15 | 话题问助手的近窗从哪来（v1.9） | **T5 `systemPrompt.context` `yzj-bound-window` + 抽屉 inject。** 窗口函数同一份 `formatSummonWindow`。查 id 必须覆盖话题 session；skip 只跳 plugin（机器人已 inject）；`none` 仍给窗。注册必须走 `ctx.inject(['systemPrompt'], scope => scope.systemPrompt.context)`，与 `sandbox:policy` 同层（pitfall-027） |
+| 16 | 话题结果回不回云之家话题（v1.10） | **job done 回一条总结，不是每条气泡。** 投递走 CLI 本人身份（可带文件）；机器人通道本刀不动。对照 Claude Tag：thread 里落结果 + 产物，工作过程留在 session |
 | 5 | 群行点击落点 | 永远落时间线（抽屉不自动开） |
 | 6 | 话题默认投影 | 双投影并存：工作台 → 透镜，官方侧栏 → 原生（R19） |
 | 7 | 旧宿主 ③④（H9） | **迁成首条话题「历史对话」**（`rootMsgId=legacy-host`）；不搬事件；空白宿主 / 单聊不迁；二次打开幂等 |
@@ -288,3 +292,4 @@ TopicAnchorIndex                           // S1 复活
 25. （v1.7 补）抽屉「问助手」的 `followup` 必须带 `message.id`；话题 `create`/`resume` 必须带 `agentOptions` 模型路由。缺 id 则历史装不上；缺模型则 `{{model}}` 装配失败。
 25. （v1.7）群里「交给助手」再问助手：官方 Chat 能回放，不报 `turn-error1 received more than one start Match`。话题日志里只有一轮 `turn/start`。
 26. （v1.9）话题里问助手 / 官方 Chat 发给助手：模型本轮能看见 `［本群最近消息］`、`groupId`、锚点 `msgId`。runtime snapshot 的 context 含 `yzj-bound-window`。空窗但已有 groupId 仍给头块。
+27. （v1.10）DSH 话题问助手一轮结束后，云之家锚点回复链出现总结帖（本人身份）；有产物则文件也进群。不把工具过程回帖。机器人入站话题不走这条（仍由 PushHub）。

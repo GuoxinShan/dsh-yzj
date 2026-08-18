@@ -4,7 +4,7 @@
 
 独立仓库的 bundle 包，通过 `dsh plugin --profile <name> add <package>` 安装，不修改 harness 本体。
 
-**产品法（v2.0 已拍板）**：[群房间 + 话题会话](docs/spec/group-room-topics.md)——1 云之家群 = 1 群房间 + N 话题。群房间发送 = 发进群；话题发送 = 问助手。入站 `@` / 「交给助手」锚出 `yzj-topic-*`。对照 [gap-analysis §23](docs/status/gap-analysis.md)。v1.x 1:1 融合一条流见 [dsh-home-session.md](docs/spec/dsh-home-session.md) 历史快照。
+**产品法（v2.0 已拍板）**：[群房间 + 话题会话](docs/spec/group-room-topics.md)——1 云之家群 = 1 群房间 + N 话题。群房间发送 = 发进群；话题发送 = 问助手。入站 `@` / 「交给助手」锚出 `yzj-topic-*`。**话题 job-done（R26）**：一轮结束后以 CLI 本人身份把总结回帖到云之家锚点，并带上本轮产物。对照 [gap-analysis §23](docs/status/gap-analysis.md)。v1.x 1:1 融合一条流见 [dsh-home-session.md](docs/spec/dsh-home-session.md) 历史快照。
 
 ## 包结构
 
@@ -81,7 +81,7 @@ pnpm --filter @dsh-yzj/ui-yzj bundle   # 仅重建客户端 bundle（改 UI 后�
 - **确认卡状态不落会话日志**：harness 对外部插件的自定义 session 事件类型无注册面，确认卡 pending/approved 瞬态由 host 内存表承载（SPA 刷新存活；host 重启降级为普通工具卡），终态由官方工具事件回放。
 - **面板「我的」tab 已移除**（原设计四 tab）：身份经 `yzj_whoami`、找人经 @ 候选；第四 tab 现为**待办**（是否另恢复通讯录浏览待拍板）。
 - **拖入云之家引用已退役**：悬浮窗时代的全屏 drop overlay / ☁ chip 已卸；@ 候选源保留。
-- **会话家园 v2.0**：群房间 + 话题（`yzj-home-*` / `yzj-topic-*`）；官方 Chat tab 仍并存。官方侧栏「云之家」只收话题（群聊长出的 agent session），群聊本身不进该分组。IM 工作台只服务 `yzj-home-*`：话题/普通会话打开官方 Chat（残留 `view=yzj-home` 会点「对话」拨回）。**点群只切 groupId，不建/不 focus DSH 会话**（R24）；挂钩座位最多一条，未分组不随点群增生。切房间分阶段不闪「私密会话」/上一群。旧宿主 ③④ 打开时迁成「历史对话」话题（不搬事件）。仍开放：确认卡 pending 不进 session 日志、无群搜索（[gap-analysis §22](docs/status/gap-analysis.md) G3/G5）。
+- **会话家园 v2.0**：群房间 + 话题（`yzj-home-*` / `yzj-topic-*`）；官方 Chat tab 仍并存。官方侧栏「云之家」只收话题（群聊长出的 agent session），群聊本身不进该分组。IM 工作台只服务 `yzj-home-*`：话题/普通会话打开官方 Chat（残留 `view=yzj-home` 会点「对话」拨回）。**点群只切 groupId，不建/不 focus DSH 会话**（R24）；挂钩座位最多一条，未分组不随点群增生。切房间分阶段不闪「私密会话」/上一群。旧宿主 ③④ 打开时迁成「历史对话」话题（不搬事件）。**话题问助手一轮结束后，总结回帖到云之家锚点（R26，本人身份，可带产物）**；不是每条助手气泡都回群。仍开放：确认卡 pending 不进 session 日志、无群搜索（[gap-analysis §22](docs/status/gap-analysis.md) G3/G5）。
 - **无群搜索/消息搜索**：沿用 CLI 能力面（最近会话翻页定位）。会话家园的「挑群」依赖可找到群（gap §22 G5）。
 - **`file download` 只回传摘要**：CLI 的 `downloaded N bytes to <path>` 文本输出不携带结构化路径，卡片回退文本模式。
 - **待办为 demo 阶段**：数据存于多维表格「待办任务库」（个人知识库，首用自动开通）；负责人/标签因 CLI 字段写入限制降级为文本形态；原生后端迁移方案见 `docs/migration/todo-backend-migration.md`。
