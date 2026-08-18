@@ -577,3 +577,18 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 ### 23.2 验收指针
 
 按 [`group-room-topics.md`](../spec/group-room-topics.md) §7 + §9.7。H2/H3/H5/H6/H7/H8/H9/H10/H11/H12/H13/H14/H15/H16/H17/H18/H19 有单测。H4 入站话题有 router 单测，`local-*`→真实 msgId 的 `retargetAnchor` 有 topics 单测；真机 `.acceptance/verify-robot-at-topic.mjs`（点 `yzj-dock-home` 开盖层后走抽屉；机器人状态在设置）。真机脚本：`.acceptance/verify-group-room-e2e.mjs`（需运行中 GUI + 已登录 yzj-cli；**禁止杀 3080 / `--profile web` 宿主**——改 host / browser 后请用户手动重启 GUI；改 browser TS 后 bundle 前必须先 `tsc -b`，见 pitfall-016）。**v1.1 P0**：入口块 + 会话列表 + 话题抽屉 + `lastActivity` + `~/.dsh-yzj/workspace`。**P1**：时间线精致度六条。**P2**：四域迁入工作台、`shell.overlay` 摘除、72px 留白删除。**P3**：`TopicRecord.status` + L2 徽标 + write-gate L5 回落。**视觉刀**：pitfall-018 tab ring、composer 列、dock 退役、群名占位。**宿主生命周期**：pitfall-019 总线 + view-ring 收窄到 header + e2e 盒子缺失即失败。**v1.2**：H9 历史对话话题、H18 透镜气泡/问助手、H4 skip 型 e2e、发布口径。**v1.3 布局刀**：`.acceptance/verify-room-layout.mjs`（有界三栏 / 触底 / composer 可见 / 无鬼影行 / 机器人标注 / 长帖折叠 / 抽屉有界）；pitfall-020（overlay 契约 + 跟随门控）；H10 标题改「话题 · 群名」。**v1.4**：R20/H16/H21 云之家分组只进话题；`attachYzjSession` 闸 + cwd/RPC 单测。**v1.5**：R22/H23 话题与普通会话不得挂 IM 壳；view-ring 点「对话」+ `YzjRoomShell` 前缀闸。**v1.6**：R21/H11 记忆入口搁置；R23/H26 拖入引用退役（面板/待办无 drag，`verify-drop.mjs` skip）。**H27**：他人气泡浅色主题可见（pitfall-023）。**v1.7**：R24/H28 点群只切 groupId，不建/不 focus DSH 会话（pitfall-024）。**R25/H29 空 turn**：话题不写空 turn 1（pitfall-025）。**v1.9 / H12**：话题问助手近窗（pitfall-027；`.acceptance/verify-summon-window.mjs`）。**v1.11 / H33**：工作台盖中间栏，开面板不建挂钩（R27 / pitfall-028）。**v1.14 / H36**：日程按天拆查，循环实例不再被整月折叠成第一次（pitfall-032）。**v1.15 / H36**：改成周条带 + 快慢指针，空后缀一次停。**v1.17 / H38**：话题 job-done 投递（`topic-deliver.spec.ts`；dsh-2 真机回帖自跳过若未登录）。**v1.17 / H39**：话题透镜产物卡（`topicLensBubbles` + 抽屉客户端；发群 R29 仍在）。**v1.17 / H40**：侧栏单入口 + 工作台页签（`yzj-dock-home` / `yzj-workbench-tab-*`；dock / room-shell 单测）。
+
+## 24. AI推进第一期｜事元流驱动的推进事项（2026-08-19，设计随提交）
+
+设计基线 [`ai-advance-design.md`](../spec/ai-advance-design.md) v1.0（PRD《AI推进-产品PRD v2.1》+ 灵基原型 lgap17 版引用锚点全文收录于其 §0）。三条硬要求（用户拍板）全部落地：
+
+| 面 | 交付 | 证据 |
+|---|---|---|
+| 数据模型 | `advance.ts`：事项/事元双表（同「待办任务库」dbt，`sheet table create` 自愈开通，SingleSelect 预注册六态与来源/变化类型）；**feed 是唯一变更通道**（无 update/delete 工具），字段级 `原值→新值` diff host 生成；投影（阶段/目标/指标/最新动态）随 feed 折叠回写，读路径以流为准 | `advance.spec.ts` 15 项（fake bridge 有状态存储）：建表、幂等、投影折叠、六态流转、非法跳变拒绝且零事元、**时间线无损**（feed N 条翻页读回全量且有序）、judge 用户事元 |
+| 工具面 | `yzj_advance_list/get/create/feed`（45→49）；guard `WRITE_SPECS` +2（create/feed 标准确认，25→27 写门禁） | guard.spec 绿；确认卡 `advance` 域展示变化类型/摘要/阶段流转/原值→新值/refs chips |
+| 服务/RPC | `ctx.yzjAdvance`（state/get/ensure/create/feed/judge）与 todo 共享 active-library holder（库切换双板跟随）；`/yzj` +5 端点（advance-state/get/create/judge/ensure，25→30） | judge 五动词（确认新条件/确认推进→updated/验收→completed/打回→running/忽略→running）全部落 `操作者=user` 事元——D9 直写无卡 |
+| 独立看板 | **第五页签「推进」**（`WorkbenchDomain` 扩 `advance`，R21/R31 v1.18 修订——推进有真实数据源，与空壳「会议/AI速记」页不同）；`advance-pane.tsx` 按 lgap17 信息架构复刻：左队列三组带徽标（待我决定/待我验收/我关注的推进，空态文案沿原型语气）、主详情（kicker+阶段 pill、成功指标卡行、当前有效目标、阶段化决策区、三色时间旅程+来源跳转+查看全部翻页）、右侧信息来源（状态标：已确认/已读取/未达标/等待中）+已有产物+PRD 底注；发起推进弹窗=面板直写立项。**待办页签与 todo-pane 零改动** | `advance-pane.client.spec.tsx` 8 项 + room-shell 五页签断言；全量 551 绿；真机走查 `.acceptance/verify-advance-board.mjs`（需重启 GUI 后跑，截图进 shots-advance/） |
+
+**分期状态**：①地基本次交付；② 事元接入便捷化、③ AI 主动回路（机制 C–F：AI 触发阶段/最小推进回路/验收辅助/schedule 巡检）、④ 知识沉淀出口（事元流折复盘文档入知识库 + 纪要模板）、⑤ 归集分析——见设计 §8。
+
+**已知偏差**：(a) AGENTS/本档旧文提到的 `bundle/skills/yzj-cli/SKILL.md` 在当前仓库不存在（历史路径）；第一期 agent 教学面由工具 description（立项预填、running 勿打扰、feed 唯一变更通道）与 spec 承载，机器级 skill 的「AI推进」章节待 skill 文件回仓后补。(b) 来源跳转按「可跳则跳」降级：doc 走 web url/知识库域、对话跳对话域、待办跳待办页签，无消息级锚点（CLI 限制，设计 §9-8）。(c) 双写非事务：投影是缓存、流是事实（设计 §9-6，原生后端应服务端折叠）。
