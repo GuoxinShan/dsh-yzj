@@ -7,9 +7,9 @@ import { useEffect, useRef, useState } from 'react'
 import {
   composeHandoffDigest, defaultSelectedIds, type DigestCandidate,
 } from '../handoff-digest.ts'
-import { bindAndFocusGroup } from './home-focus.ts'
 import { peekImSeat, rememberImSeat } from './im-seat.ts'
-import { useWorkbenchDomain } from './workbench-domain.ts'
+import { setWorkbenchDomain, useWorkbenchDomain } from './workbench-domain.ts'
+import { openWorkbench } from './workbench-overlay.ts'
 import { yzjViewKindFromSessionId } from './view-ring.ts'
 import css from './home.module.css'
 
@@ -48,7 +48,6 @@ export function YzjHomeChrome(props: YzjHomeChromeInjected) {
   const [kind, setKind] = useState<'room' | 'topic' | 'unbound'>(() => yzjViewKindFromSessionId(props.sessionId))
   const [error, setError] = useState('')
   const [handoffOpen, setHandoffOpen] = useState(false)
-  const [roomSessionId, setRoomSessionId] = useState('')
   const [roomGroupId, setRoomGroupId] = useState('')
   const [roomKind, setRoomKind] = useState<'group' | 'dm' | ''>('')
   const [summary, setSummary] = useState('')
@@ -58,7 +57,6 @@ export function YzjHomeChrome(props: YzjHomeChromeInjected) {
     const next = yzjViewKindFromSessionId(props.sessionId)
     setKind(next)
     if (next !== 'topic') {
-      setRoomSessionId('')
       setRoomGroupId('')
       setRoomKind('')
       setSummary('')
@@ -72,7 +70,6 @@ export function YzjHomeChrome(props: YzjHomeChromeInjected) {
       const binding = asRecord(raw.binding)
       const host = typeof binding.dshSessionId === 'string' ? binding.dshSessionId : ''
       const groupId = typeof binding.yzjConversationId === 'string' ? binding.yzjConversationId : ''
-      setRoomSessionId(host)
       setRoomGroupId(groupId)
       setRoomKind(binding.yzjKind === 'dm' ? 'dm' : binding.yzjKind === 'group' ? 'group' : '')
       rememberImSeat({ groupId, sessionId: host })
@@ -131,20 +128,10 @@ export function YzjHomeChrome(props: YzjHomeChromeInjected) {
           title={summary === '' ? label : summary}
           aria-label={summary === '' ? label : `${label}：${summary}`}
           onClick={() => {
-            const hanger = peekImSeat()
-            if (hanger !== undefined && hanger.sessionId.startsWith('yzj-home-')) {
-              rememberImSeat({
-                groupId: roomGroupId !== '' ? roomGroupId : hanger.groupId,
-                sessionId: hanger.sessionId,
-              })
-              props.focusBoundSession?.(hanger.sessionId)
-              return
-            }
-            if (props.homeOpen !== undefined && roomGroupId !== '') {
-              void bindAndFocusGroup(props.homeOpen, props.focusBoundSession, roomGroupId)
-              return
-            }
-            if (roomSessionId !== '') props.focusBoundSession?.(roomSessionId)
+            const groupId = roomGroupId !== '' ? roomGroupId : (peekImSeat()?.groupId ?? '')
+            if (groupId !== '') rememberImSeat({ groupId, sessionId: peekImSeat()?.sessionId ?? '' })
+            setWorkbenchDomain('im')
+            openWorkbench()
           }}
         >
           <span className={css.topicDockLabel}>{label}</span>
@@ -231,7 +218,9 @@ function HandoffModal(props: {
     }
     const sessionId = typeof asRecord(result.value).sessionId === 'string'
       ? asRecord(result.value).sessionId as string : ''
-    if (sessionId !== '') props.focusBoundSession?.(sessionId)
+    rememberImSeat({ groupId, sessionId: sessionId === '' ? '' : sessionId })
+    setWorkbenchDomain('im')
+    openWorkbench()
     props.onClose()
   }
 

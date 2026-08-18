@@ -10,8 +10,9 @@ import type { BakedActions } from '@deepseek-ai/dsh-client-ui-slots'
 import type { YzjPanelActions, YzjPanelState } from './stores.ts'
 import type { YzjPanelInject } from './rpc.ts'
 import type { YzjJumpTarget } from './cards.tsx'
-import { bindAndFocusGroup } from './home-focus.ts'
+import { rememberImSeat } from './im-seat.ts'
 import { setWorkbenchDomain } from './workbench-domain.ts'
+import { openWorkbench } from './workbench-overlay.ts'
 
 type PanelActions = BakedActions<YzjPanelState, YzjPanelActions>
 
@@ -52,6 +53,7 @@ export function openPanelTarget(target: YzjJumpTarget, anchorMsgId?: string): vo
   const c = controller
   if (target.kind === 'group') {
     setWorkbenchDomain('im')
+    rememberImSeat({ groupId: target.groupId, sessionId: '' })
   } else if (target.kind === 'todo') {
     setWorkbenchDomain('todo')
   } else if (target.kind === 'doc' || target.kind === 'workspace') {
@@ -59,6 +61,7 @@ export function openPanelTarget(target: YzjJumpTarget, anchorMsgId?: string): vo
   } else {
     setWorkbenchDomain('calendar')
   }
+  openWorkbench()
   if (c === null) return
   const actions = c.actions
   actions.setOpen(true)
@@ -67,7 +70,7 @@ export function openPanelTarget(target: YzjJumpTarget, anchorMsgId?: string): vo
   if (target.kind === 'group') {
     actions.setTab('chat')
     actions.setGroupId(target.groupId)
-    void bindAndFocusGroup(c.inject.homeOpen, c.inject.focusBoundSession, target.groupId)
+    // R27: the cover is already open; do not mint a hanger session.
     void c.inject.fetchMessages(target.groupId, 20).then((result) => {
       if (!result.ok) return
       const list = asArray(asRecord(result.value).list)

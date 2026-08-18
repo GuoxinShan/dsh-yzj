@@ -102,4 +102,21 @@ describe('read-only tools over the real CLI', () => {
     const result = await byName.get('yzj_calendar_event_list')!.execute({ start: today, end: today })
     expect(result.content.length).toBeGreaterThan(0)
   })
+
+  it('yzj_calendar_event_list month window keeps every instance from today', async () => {
+    if (!(await bridge.check(10_000))) return
+    const now = new Date()
+    const pad = (n: number): string => String(n).padStart(2, '0')
+    const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+    const monthStart = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`
+    const monthEnd = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate())}`
+    const day = await byName.get('yzj_calendar_event_list')!.execute({ start: today, end: today })
+    const month = await byName.get('yzj_calendar_event_list')!.execute({ start: monthStart, end: monthEnd })
+    expect(month.content).not.toMatch(/failed/)
+    const dayIds = [...day.content.matchAll(/\(([0-9a-f]{16,})\)/gi)].map(match => match[1] ?? '')
+    for (const id of dayIds) {
+      if (id === '') continue
+      expect(month.content).toContain(id)
+    }
+  })
 })

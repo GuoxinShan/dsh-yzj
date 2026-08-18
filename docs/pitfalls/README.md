@@ -36,6 +36,11 @@
 | 25 | 话题套房间空 turn 1，第一次提问再开 turn 1，官方 Chat 历史加载失败 | ui-yzj openTopicHome / publishHostSession / 官方 conversation 回放 | [pitfall-025-topic-dummy-turn-collides-with-first-ask.md](pitfall-025-topic-dummy-turn-collides-with-first-ask.md) |
 | 26 | 话题 followup 不带 `message.id`，resume 校验失败，历史永久装不上 | ui-yzj askTopicAssistant / followup | [pitfall-026-topic-followup-needs-message-id.md](pitfall-026-topic-followup-needs-message-id.md) |
 | 27 | 话题发给助手没近窗：只查房间表 + skip 过窄 + 注册层不对 | tool-yzj T5 / ui-yzj 问助手 | [pitfall-027-summon-window-topic-assemble.md](pitfall-027-summon-window-topic-assemble.md) |
+| 28 | 工作台盖中间栏必须摸产品 DOM（官方无上方/cover 槽） | ui-yzj overlay / sidebar-entry | [pitfall-028-workbench-dom-overlay.md](pitfall-028-workbench-dom-overlay.md) |
+| 29 | 召唤窗每轮重贴、同轮闪烁、跨日看起来倒序、文件行丢 fileId | tool-yzj T5 / formatSummonWindow / 抽屉问助手 | [pitfall-029-summon-window-once-dated-fileid.md](pitfall-029-summon-window-once-dated-fileid.md) |
+| 30 | 话题 create 不挂默认 preset → 只有 yzj 工具、读不了本地文件 | ui-yzj / robot-yzj 程序化 agent | [pitfall-030-topic-needs-default-preset.md](pitfall-030-topic-needs-default-preset.md) |
+| 31 | 近窗进 snapshot 会和记忆糊成一段；要用独立 plugin inject | T5 召唤窗 / 记忆 | [pitfall-031-summon-window-is-inject.md](pitfall-031-summon-window-is-inject.md) |
+| 32 | `calendar event list` 跨天窗口只留循环日程第一次 | 工作台日程 / `yzj_calendar_event_list` | [pitfall-032-calendar-list-collapses-recurrence.md](pitfall-032-calendar-list-collapses-recurrence.md) |
 
 ## 维护规则
 

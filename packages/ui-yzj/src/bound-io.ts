@@ -15,10 +15,12 @@ import { parseContactUser } from './contact-parse.ts'
 import { digestCandidates, type DigestCandidate } from './handoff-digest.ts'
 import {
   openBoundHome, openTopicHome, lastSessionTitle, isPlaceholderRoomTitle, identifiedUserMessage, topicAgentRoute,
-  type HomeOpenAgents, type HomeOpenFace, type TopicAgentRoute,
+  topicAgentComposition,
+  type HomeOpenAgents, type HomeOpenFace, type TopicAgentRoute, type TopicAgentSetup,
 } from './home-open.ts'
 import type { YzjWriteRecord } from './write-gate.ts'
 import type { TopicEnsureInput, TopicEnsureResult, TopicRecord } from '@dsh-yzj/tool-yzj/src/topics.ts'
+import { sessionHasSummonWindow } from '@dsh-yzj/tool-yzj/src/index.ts'
 
 /** CLI `--limit` cap for `im message list` (measured). */
 export const CLI_LIST_PAGE = 20
@@ -536,8 +538,9 @@ function userTurn(text: string): ReturnType<typeof identifiedUserMessage> {
 
 /**
  * Ask the topic agent without focusing native Chat. Resume-or-create the
- * topic session, inject the summon window (pitfall-027), then `followup`
- * a user turn (H18). Opening the topic does not start a turn.
+ * topic session, plant the summon window once as a plugin inject, then
+ * `followup` a user turn (H18 / pitfall-031). Opening the topic does not
+ * start a turn.
  */
 export async function askTopicAssistant(options: {
   readonly home: HomeIoFace
@@ -548,6 +551,8 @@ export async function askTopicAssistant(options: {
   readonly topicSessionId: string
   readonly text: string
   readonly agentOptions?: TopicAgentRoute
+  readonly agentPreset?: string
+  readonly setup?: TopicAgentSetup
 }): Promise<{ ok: true } | { error: string }> {
   const text = options.text.trim()
   if (text === '') return { error: 'home-topic-ask: text is empty' }
@@ -558,21 +563,32 @@ export async function askTopicAssistant(options: {
       await options.agents.resume({
         resumeSessionId: options.topicSessionId,
         ...(options.agentOptions === undefined ? {} : { agentOptions: options.agentOptions }),
+        ...(options.setup === undefined ? {} : { setup: options.setup }),
       })
     } catch {
       await options.agents.create({
         sessionId: options.topicSessionId,
-        meta: { cwd: options.cwd },
+        meta: {
+          cwd: options.cwd,
+          ...(options.agentPreset === undefined ? {} : { agentPreset: options.agentPreset }),
+        },
         ...(options.agentOptions === undefined ? {} : { agentOptions: options.agentOptions }),
+        ...(options.setup === undefined ? {} : { setup: options.setup }),
       })
     }
   }
   const live = options.agents.get(options.topicSessionId) as
-    | { followup?: (message: unknown) => void; inject?: (message: unknown) => void }
+    | {
+      followup?: (message: unknown) => void
+      inject?: (message: unknown) => void
+      session?: { events?: readonly { type: string; data: unknown }[] }
+    }
     | undefined
   if (live?.followup === undefined) return { error: 'home-topic-ask: agent followup unavailable' }
   const window = options.home.formatSummonWindow(topic.yzjConversationId, undefined, options.topicSessionId)
-  if (window !== '') live.inject?.(pluginTurn(window))
+  if (window !== '' && !sessionHasSummonWindow(live.session?.events ?? [])) {
+    live.inject?.(pluginTurn(window))
+  }
   live.followup(userTurn(text))
   if (topic.rootMsgId !== undefined && topic.rootMsgId !== '' && options.home.ensureTopic !== undefined) {
     await options.home.ensureTopic({
@@ -688,6 +704,7 @@ export async function handoffToGroup(options: {
   let topicSessionId: string | undefined
   try {
     const route = topicAgentRoute(options.ctx)
+    const composition = await topicAgentComposition(options.ctx)
     const topic = await openTopicHome({
       home: options.home,
       agents: options.agents,
@@ -697,6 +714,7 @@ export async function handoffToGroup(options: {
       originText: options.digest,
       title: '丢进群交接',
       ...(route === undefined ? {} : { agentOptions: route }),
+      ...composition,
     })
     topicSessionId = topic.sessionId
     const live = options.agents.get(topic.sessionId)

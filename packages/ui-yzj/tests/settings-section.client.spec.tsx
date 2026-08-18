@@ -63,4 +63,17 @@ describe('YzjSettingsSection', () => {
     expect(text).not.toContain('记忆库')
     expect(face.calls.memoryScope ?? 0).toBe(0)
   })
+
+  it('renders the CLI login card when auth-status reports logged-out', async () => {
+    const face = mountSection({
+      authStatus: async () => ({
+        ok: true,
+        value: { loggedIn: false, name: '', openId: '', reason: 'no app credentials' },
+      }),
+      authLogin: async () => ({ ok: true, value: { started: true, alreadyRunning: false } }),
+    })
+    await flush()
+    expect(face.container.textContent).toContain('云之家未登录')
+    expect(face.container.querySelector('[data-testid="yzj-login-open"]')).not.toBeNull()
+  })
 })

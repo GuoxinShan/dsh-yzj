@@ -1,9 +1,6 @@
 /**
- * Browser half: the sidebar-foot 云之家 dock plus the group-room workbench
- * (conversation.view) and keyed tool-result cards. All data flows through
- * the Connection RPC channel (`/yzj`) registered by this package's node
- * half; components receive every fact and verb through the standard props
- * shares. P2 retired the floating ball (`shell.overlay`).
+ * Browser half: 云之家 dock (injected under New Session) plus the
+ * center-column workbench cover (R27) and keyed tool-result cards.
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
@@ -15,13 +12,13 @@ import type {} from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { YzjToolCard, YZJ_TOOL_NAMES } from './cards.tsx'
 import { YzjComposerDock } from './composer.tsx'
 import type { YzjHomeChromeInjected } from './home-chrome.tsx'
-import { YzjRoomComposer, selectGroupRoomComposer, type YzjRoomComposerInjected } from './room-composer.tsx'
 import { YzjSessionShell, type YzjSessionShellInjected } from './session-shell.tsx'
-import { YzjYunzhijiaDock, type YzjGroupSpaceInjected } from './group-space.tsx'
-import { YzjRoomShell, type YzjRoomShellInjected } from './room-shell.tsx'
+import { type YzjGroupSpaceInjected } from './group-space.tsx'
+import { mountWorkbench } from './workbench-mount.tsx'
+import { mountSidebarEntry } from './sidebar-entry.tsx'
+import { closeWorkbench } from './workbench-overlay.ts'
 import { applyYzjAtSource } from './input-source.ts'
 import { YzjSettingsSection } from './settings-section.tsx'
-import { createYzjStore } from './stores.ts'
 import { createYzjPanelInject } from './rpc.ts'
 import { openPanelTarget } from './panel-controller.ts'
 import { focusBoundSession } from './home-focus.ts'
@@ -86,11 +83,11 @@ function insertDraftText(actx: import('@deepseek-ai/dsh-client-runtime/client').
  */
 export function apply(ctx: ClientContext): void {
   const connection = ctx.get('connection') as ConnectionHandle | undefined
-  const store = createYzjStore()
   const rpcInject = createYzjPanelInject(connection)
   const panelInject = {
     ...rpcInject,
     focusBoundSession: (sessionId: string): void => {
+      closeWorkbench()
       const sessions = ctx.sessions as unknown as Parameters<typeof focusBoundSession>[0] | undefined
       if (sessions === undefined || typeof sessions.open !== 'function') return
       focusBoundSession(sessions, sessionId)
@@ -143,49 +140,6 @@ export function apply(ctx: ClientContext): void {
     YzjComposerDock,
   ))
 
-  // List slot: no per-session select. Rooms occupy this view via
-  // view-ring + YzjRoomShell's yzj-home-* gate (R22 / pitfall-022).
-  ctx.slots.inject('conversation.view', () => ctx.slots.register(
-    {
-      name: 'conversation.view',
-      id: 'yzj-home',
-      order: -50,
-      label: '群聊',
-      store,
-      inject: (sessionId: string): YzjRoomShellInjected => ({
-        sessionId,
-        homeFused: (id, groupId) => panelInject.homeFused?.(id, groupId) ?? Promise.resolve({ ok: false as const, error: { message: 'homeFused unavailable' } }),
-        homeBackfill: (id, opts) => panelInject.homeBackfill?.(id, opts) ?? Promise.resolve({ ok: false as const, error: { message: 'homeBackfill unavailable' } }),
-        homeTopicOpen: (input) => panelInject.homeTopicOpen?.(input) ?? Promise.resolve({ ok: false as const, error: { message: 'homeTopicOpen unavailable' } }),
-        homeTopicLens: (id) => panelInject.homeTopicLens?.(id) ?? Promise.resolve({ ok: false as const, error: { message: 'homeTopicLens unavailable' } }),
-        homeTopicAsk: (id, text) => panelInject.homeTopicAsk?.(id, text) ?? Promise.resolve({ ok: false as const, error: { message: 'homeTopicAsk unavailable' } }),
-        focusBoundSession: panelInject.focusBoundSession,
-        fetchFileData: panelInject.fetchFileData,
-        fetchContact: panelInject.fetchContact,
-        homeNav: () => panelInject.homeNav?.() ?? Promise.resolve({ ok: false as const, error: { message: 'homeNav unavailable' } }),
-        fetchGroups: (limit, page) => panelInject.fetchGroups(limit, page),
-        panel: panelInject,
-        ...(panelInject.homeOpen === undefined ? {} : { homeOpen: panelInject.homeOpen }),
-      }),
-    },
-    YzjRoomShell,
-  ))
-
-  ctx.slots.inject('conversation.composer', () => ctx.slots.register(
-    {
-      name: 'conversation.composer',
-      select: selectGroupRoomComposer,
-      inject: (sessionId: string): YzjRoomComposerInjected => ({
-        sessionId,
-        homeSend: (id, content, opts) => panelInject.homeSend?.(id, content, opts) ?? Promise.resolve({ ok: false as const, error: { message: 'homeSend unavailable' } }),
-        uploadFile: panelInject.uploadFile,
-        homeFused: (id, groupId) => panelInject.homeFused?.(id, groupId) ?? Promise.resolve({ ok: false as const, error: { message: 'homeFused unavailable' } }),
-        fetchContact: panelInject.fetchContact,
-      }),
-    },
-    YzjRoomComposer,
-  ))
-
   ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register(
     {
       name: 'conversation.session.header.actions',
@@ -202,21 +156,21 @@ export function apply(ctx: ClientContext): void {
     YzjSessionShell,
   ))
 
-  ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register(
-    {
-      name: 'sidebar.footer.action',
-      id: 'yzj-group-space',
-      order: -80,
-      inject: (): YzjGroupSpaceInjected => ({
-        homeNav: () => panelInject.homeNav?.() ?? Promise.resolve({ ok: false as const, error: { message: 'homeNav unavailable' } }),
-        focusBoundSession: panelInject.focusBoundSession,
-        fetchGroups: (limit, page) => panelInject.fetchGroups(limit, page),
-        robotStatus: () => panelInject.robotStatus(),
-        ...(panelInject.homeOpen === undefined ? {} : { homeOpen: panelInject.homeOpen }),
-      }),
-    },
-    YzjYunzhijiaDock,
-  ))
+  const dockInject: YzjGroupSpaceInjected = {
+    homeNav: () => panelInject.homeNav?.() ?? Promise.resolve({ ok: false as const, error: { message: 'homeNav unavailable' } }),
+    focusBoundSession: panelInject.focusBoundSession,
+    fetchGroups: (limit, page) => panelInject.fetchGroups(limit, page),
+    robotStatus: () => panelInject.robotStatus(),
+    ...(panelInject.homeOpen === undefined ? {} : { homeOpen: panelInject.homeOpen }),
+  }
+  ctx.effect(() => {
+    const disposeView = mountWorkbench(panelInject)
+    const disposeEntry = mountSidebarEntry(dockInject)
+    return () => {
+      disposeView()
+      disposeEntry()
+    }
+  }, 'ui-yzj: workbench overlay + sidebar entry')
 
   applyYzjAtSource(ctx, panelInject)
 

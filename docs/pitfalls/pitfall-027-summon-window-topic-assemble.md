@@ -24,7 +24,7 @@
 
 - `summonWindowText`：`getBySession` ?? `getTopicBySession`；`latestUserSourceKind === 'plugin'` 才返回 `''`；`none` / `user` 都 `formatSummonWindow(conversationId, undefined, sessionId)`（话题带锚点）。
 - 注册走 inject-scope mixin（上条）。
-- 抽屉 `askTopicAssistant`：非空窗口先 `inject(pluginTurn(window))` 再 `followup(userTurn)`——透镜仍藏 plugin 行；即使 T5 再漏一次，历史里也有近窗。
+- 抽屉 `askTopicAssistant`：**只** `followup(userTurn)`，不再 inject 窗口（v1.12 / pitfall-029：inject + T5 会双份，问句前多一个假气泡）。近窗只走 T5。
 - 开话题（`home-topic-open`）**不** inject、不启轮。窗跟第一次提问走，避免空会话里先堆一块可见气泡。
 
 不要另写一套窗口文案。不要把窗口当用户气泡 chip。
@@ -32,5 +32,5 @@
 ## 回归覆盖
 
 - `packages/tool-yzj/tests/home.spec.ts`：`summonWindowText` 对话题 id 出窗；plugin 跳过；`none` 仍出窗。
-- `packages/ui-yzj/tests/bound-io.spec.ts`：`askTopicAssistant` 先 inject 再 followup，inject 正文含 `本群最近消息` / `groupId`。
-- 真机：`.acceptance/verify-summon-window.mjs`（需运行中 GUI）。新话题问一句，日志含 `本群最近消息` / `groupId`；T5 成功时还有 `yzj-bound-window`。
+- `packages/ui-yzj/tests/bound-io.spec.ts`：`askTopicAssistant` 只 followup，不 inject 窗口。
+- 真机：`.acceptance/verify-summon-window.mjs`（需运行中 GUI）。新话题问一句，日志含 `本群最近消息` / `groupId` / `yzj-bound-window`（在 snapshot，不是 ui-yzj inject）。

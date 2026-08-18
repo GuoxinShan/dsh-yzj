@@ -23,6 +23,8 @@ import css from './home.module.css'
 /** Injected send / upload / speaker path for the room composer. */
 export interface YzjRoomComposerInjected {
   readonly sessionId: string
+  /** R27 overlay: local draft, no official InputBar takeover. */
+  standalone?: boolean
   homeSend: (
     sessionId: string,
     content: string | undefined,
@@ -94,14 +96,24 @@ function useComposerHost(): HTMLElement | null {
  * Placeholder names the group; the send control is an icon (aria 发进群).
  */
 export function YzjRoomComposer(
-  props: PropsRuntime<'conversation.composer'> & YzjRoomComposerInjected & { matched: { room: true } },
+  props: Partial<PropsRuntime<'conversation.composer'>> & YzjRoomComposerInjected & { matched?: { room: true } },
 ) {
-  const draft = props.useInput(s => s.draft)
-  const hangerName = props.useSessions(s => {
-    const row = (s as { byId?: Record<string, SessionRow> }).byId?.[props.sessionId]
-    const title = row?.displayTitle
-    return typeof title === 'string' && title !== '' && title !== '群房间' && title !== '私聊房间' ? title : '群'
-  })
+  const standalone = props.standalone === true
+  const [localDraft, setLocalDraft] = useState('')
+  const draft = standalone || props.useInput === undefined
+    ? localDraft
+    : props.useInput(s => s.draft)
+  const setDraft = (value: string): void => {
+    if (standalone || props.inputActions === undefined) setLocalDraft(value)
+    else props.inputActions.setDraft(value)
+  }
+  const hangerName = props.useSessions === undefined
+    ? '群'
+    : props.useSessions(s => {
+      const row = (s as { byId?: Record<string, SessionRow> }).byId?.[props.sessionId]
+      const title = row?.displayTitle
+      return typeof title === 'string' && title !== '' && title !== '群房间' && title !== '私聊房间' ? title : '群'
+    })
   const [seat, setSeat] = useState(peekImSeat)
   useEffect(() => subscribeImSeat(() => { setSeat(peekImSeat()) }), [])
   const groupId = seat?.groupId ?? ''
@@ -156,7 +168,7 @@ export function YzjRoomComposer(
       setError(result.error.message)
       return
     }
-    props.inputActions.setDraft('')
+    setDraft('')
     setReplyTo(null)
     setEmojiOpen(false)
   }
@@ -226,10 +238,12 @@ export function YzjRoomComposer(
   const host = useComposerHost()
   const domain = useWorkbenchDomain()
   const hide = domain !== 'im'
-  // Stay collapsed for the whole takeover lifetime. Tying collapse to
-  // `host !== null` re-opens the official InputBar for one frame when the
-  // timeline remounts the portal target (pitfall-024 follow-up).
-  useEffect(() => collapseComposerSeat(true), [])
+  // Overlay composer never touches the official seat. Slot takeover still
+  // collapses it for the leftover hanger path.
+  useEffect(() => {
+    if (standalone) return
+    return collapseComposerSeat(true)
+  }, [standalone])
   if (hide) {
     return <span className={css.roomComposerSeat} data-testid="yzj-room-composer-seat" hidden />
   }
@@ -249,7 +263,7 @@ export function YzjRoomComposer(
               type="button"
               className={css.roomEmojiBtn}
               onClick={() => {
-                props.inputActions.setDraft(`${draft}${emoji}`)
+                setDraft(`${draft}${emoji}`)
                 setEmojiOpen(false)
               }}
             >
@@ -265,7 +279,7 @@ export function YzjRoomComposer(
           placeholder={`发到 ${groupName}…`}
           rows={2}
           aria-label={`发到 ${groupName}`}
-          onChange={event => props.inputActions.setDraft(event.target.value)}
+          onChange={event => setDraft(event.target.value)}
           onKeyDown={onKeyDown}
         />
         <div className={css.roomComposerBar}>

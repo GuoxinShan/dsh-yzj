@@ -169,6 +169,11 @@ interface YzjMemoryService {
 - `systemPrompt.context({ name: 'yzj-memory', order: 0, text: provider })`；
   provider 每次组装时读 user scope 投影——无陈旧镜像问题（dream-vault 的
   README.md 生成式合成会被我们改为**注入时现算**，单一事实源是 sections 本身）。
+- **进模型的次数由 harness 快照去重决定，不是本包每轮主动贴。** `yzj-memory`
+  与 `yzj-bound-window` / `sandbox:policy` 拼成**一份** runtime snapshot；
+  `RuntimeContextProjection` 仅在整份文本变化时追加。近窗闪烁或后续轮把窗
+  从快照拿掉，都会逼出新快照，记忆内容没变也重发（pitfall-029）。记忆包
+  不要自己做「只注入一次」——vault 一变必须能再进模型。
 - 空投影（空库）→ 空文本 → 按 harness 契约不贡献任何内容。
 - 截断时尾部标注 `…（已达注入上限 N 字符，完整记忆用 memory_read 查看）`。
 - model-visible ⟺ logged：runtime-context 快照进会话日志，满足 harness 纪律。

@@ -6,6 +6,7 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import { formatListTime } from './im-cache.ts'
+import { YzjLoginBanner } from './login-banner.tsx'
 import css from './home.module.css'
 
 /** One topic under a bound room (from `/yzj home-nav`). */
@@ -42,6 +43,8 @@ export interface YzjConvListInjected {
   focusBoundSession?: (sessionId: string) => void
   /** R24: switch the timeline group without opening a DSH session. */
   onSelectGroup?: (row: ConvRow) => void
+  authStatus?: () => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
+  authLogin?: () => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -276,6 +279,7 @@ export function YzjConvList(props: YzjConvListInjected) {
   const [page, setPage] = useState(() => convListHold?.page ?? 1)
   const [more, setMore] = useState(() => convListHold?.more ?? false)
   const [loading, setLoading] = useState(false)
+  const [groupsTick, setGroupsTick] = useState(0)
   const bodyRef = useRef<HTMLDivElement>(null)
   const pageRef = useRef(page)
   const moreRef = useRef(more)
@@ -314,7 +318,11 @@ export function YzjConvList(props: YzjConvListInjected) {
     let cancelled = false
     void props.fetchGroups(20, 1).then((result) => {
       if (cancelled) return
-      if (!result.ok) return
+      if (!result.ok) {
+        setError(result.error.message)
+        return
+      }
+      setError('')
       const parsed = parseRecentGroups(result.value)
       setRecent(parsed.rooms)
       setMore(parsed.more)
@@ -322,7 +330,7 @@ export function YzjConvList(props: YzjConvListInjected) {
     })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [groupsTick])
 
   const rows = buildConvRows(recent, bound)
 
@@ -367,9 +375,24 @@ export function YzjConvList(props: YzjConvListInjected) {
     maybeLoadMore()
   })
 
+  const login = props.authStatus !== undefined && props.authLogin !== undefined
+    ? (
+      <YzjLoginBanner
+        authStatus={props.authStatus}
+        authLogin={props.authLogin}
+        compact
+        onLoggedIn={() => {
+          setError('')
+          setGroupsTick(tick => tick + 1)
+        }}
+      />
+    )
+    : null
+
   return (
     <nav className={css.convList} data-testid="yzj-conv-list" aria-label="会话">
-      {error !== '' && <p className={css.convListHint}>{error}</p>}
+      {login}
+      {error !== '' && login === null && <p className={css.convListHint}>{error}</p>}
       {rows.length === 0 && error === '' && (
         <p className={css.convListHint}>还没有最近会话。点侧栏脚「云之家 → 对话」打开一个。</p>
       )}

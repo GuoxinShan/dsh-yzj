@@ -9,7 +9,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import {
   runValue, yzjToolOutput,
-  asRecord, asArray, asString, asNumber, clipJson,
+  asRecord, asArray, asString, asNumber, clipJson, fileIdMark,
 } from './shared.ts'
 import type { YzjToolBudget } from './shared.ts'
 
@@ -33,7 +33,8 @@ function messageLine(record: unknown): string {
   parts.push(from === '' ? '(unknown sender)' : from)
   const body = content === '' ? `(${msgType === '' ? 'message' : msgType})` : content
   const replyMark = replySummary === '' ? '' : ` ↳${replySummary}`
-  parts.push(`${body}${replyMark}`)
+  const fileMark = fileIdMark(reply)
+  parts.push(`${body}${fileMark}${replyMark}`)
   const msgId = asString(message.msgId)
   if (msgId !== '') parts.push(`<${msgId}>`)
   return parts.join(' ')

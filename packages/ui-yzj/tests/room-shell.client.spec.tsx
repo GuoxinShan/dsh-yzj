@@ -43,6 +43,7 @@ describe('YzjRoomShell', () => {
       await Promise.resolve()
     })
     expect(container.querySelector('[data-testid="yzj-room-shell"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="yzj-workbench-tabs"]')?.textContent).toContain('日程')
     expect(container.querySelector('[data-testid="yzj-conv-list"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="yzj-fused-stream"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="yzj-room-composer-host"]')).not.toBeNull()
@@ -89,6 +90,45 @@ describe('YzjRoomShell', () => {
       await Promise.resolve()
     })
     expect(container.querySelector('[data-testid="yzj-room-shell"]')).toBeNull()
+    act(() => { root.unmount() })
+  })
+
+  it('paints the workbench in overlay mode without a hanger session', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    act(() => {
+      root.render(
+        <YzjRoomShell
+          overlay
+          sessionId=""
+          homeFused={async () => ({
+            ok: true,
+            value: {
+              bound: true,
+              kind: 'room',
+              binding: { yzjConversationId: 'g-a', dshSessionId: '', yzjKind: 'group' },
+              topics: [],
+              items: [
+                { kind: 'im', time: 1, entry: { msgId: 'm1', sentAt: 1, fromName: '同事', content: '群里一句', origin: 'inbound', isSelf: false, status: 'acked' } },
+              ],
+            },
+          })}
+          homeBackfill={async () => ({ ok: true, value: { appended: 0, skipped: 0 } })}
+          homeNav={async () => ({ ok: true, value: { rooms: [] } })}
+          fetchGroups={async () => ({
+            ok: true,
+            value: { list: [{ groupId: 'g-a', groupName: '金蝶最小DSH交流群' }], more: false },
+          })}
+        />,
+      )
+    })
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(container.querySelector('[data-testid="yzj-room-shell"]')).not.toBeNull()
+    expect(container.textContent).toContain('金蝶最小DSH交流群')
     act(() => { root.unmount() })
   })
 })
