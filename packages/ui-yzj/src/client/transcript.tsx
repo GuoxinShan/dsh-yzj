@@ -182,6 +182,20 @@ function remember(sessionId: string, next: FusedViewValue): FusedViewValue {
   return next
 }
 
+/** Group id last fused for this room session, if the module cache still has it. */
+export function cachedRoomGroupId(sessionId: string): string {
+  const id = fusedCache.get(sessionId)?.binding?.yzjConversationId
+  return id === undefined ? '' : id
+}
+
+/** True when the timeline is following the latest message (within slack px). */
+export function streamAtBottom(
+  el: Pick<HTMLElement, 'scrollHeight' | 'scrollTop' | 'clientHeight'>,
+  slack = 40,
+): boolean {
+  return el.scrollHeight - el.scrollTop - el.clientHeight < slack
+}
+
 function phaseOf(cached: FusedViewValue | undefined): Phase {
   if (cached === undefined) return 'loading'
   if (cached.bound === true && cached.kind !== 'unbound') return 'bound'
@@ -206,21 +220,27 @@ export function YzjFusedView(props: YzjFusedInjected) {
   const [busyId, setBusyId] = useState('')
   const [more, setMore] = useState(true)
   const [loadingOlder, setLoadingOlder] = useState(false)
-  const [names, setNames] = useState<Record<string, string>>({})
+  const [names, setNames] = useState<Record<string, string>>(() => seedNames(cached?.items ?? []))
   const [lightbox, setLightbox] = useState<{ src: string; kind: 'image' | 'pdf' } | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [lensId, setLensId] = useState('')
   const [highlightMsgId, setHighlightMsgId] = useState('')
   const [optimistic, setOptimistic] = useState<RoomTopic[]>([])
   const highlightRef = useRef<HTMLDivElement | null>(null)
+  const streamRef = useRef<HTMLDivElement | null>(null)
+  const followBottomRef = useRef(true)
+  const scrollRestoreRef = useRef<{ height: number; top: number } | null>(null)
 
   useEffect(() => {
     const hit = fusedCache.get(props.sessionId)
+    followBottomRef.current = true
+    scrollRestoreRef.current = null
     setHeld({
       sessionId: props.sessionId,
       value: hit ?? { bound: false, items: [] },
       phase: phaseOf(hit),
     })
+    setNames(seedNames(hit?.items ?? []))
     setDrawerOpen(false)
     setLensId('')
     setHighlightMsgId('')
@@ -230,8 +250,29 @@ export function YzjFusedView(props: YzjFusedInjected) {
 
   useEffect(() => {
     if (highlightMsgId === '') return
+    followBottomRef.current = false
     highlightRef.current?.scrollIntoView({ block: 'center' })
   }, [highlightMsgId, value.items])
+
+  useEffect(() => {
+    const el = streamRef.current
+    if (el === null) return
+    const stick = (): void => {
+      const restore = scrollRestoreRef.current
+      if (restore !== null) {
+        const delta = el.scrollHeight - restore.height
+        if (delta > 0) el.scrollTop = restore.top + delta
+        scrollRestoreRef.current = null
+        return
+      }
+      if (followBottomRef.current) el.scrollTop = el.scrollHeight
+    }
+    stick()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => { stick() })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [value.items, props.sessionId, phase])
 
   const applyFused = (raw: Record<string, unknown>): FusedViewValue => {
     const items = parseItems(raw.items)
@@ -336,6 +377,11 @@ export function YzjFusedView(props: YzjFusedInjected) {
       setMore(false)
       return
     }
+    const el = streamRef.current
+    if (el !== null) {
+      scrollRestoreRef.current = { height: el.scrollHeight, top: el.scrollTop }
+      followBottomRef.current = false
+    }
     setLoadingOlder(true)
     const stats = await props.homeBackfill(props.sessionId, { beforeMsgId, limit: 20 })
     setLoadingOlder(false)
@@ -420,7 +466,16 @@ export function YzjFusedView(props: YzjFusedInjected) {
       )}
       <div className={css.roomStage}>
         <div className={css.roomTimeline}>
-        <div className={css.stream} data-testid="yzj-fused-stream">
+        <div
+          className={css.stream}
+          data-testid="yzj-fused-stream"
+          ref={streamRef}
+          onScroll={() => {
+            const el = streamRef.current
+            if (el === null) return
+            followBottomRef.current = streamAtBottom(el)
+          }}
+        >
           {more && (
             <button type="button" className={css.streamMore} onClick={() => { void loadOlder() }} disabled={loadingOlder}>
               {loadingOlder ? '加载中…' : '加载更早消息'}

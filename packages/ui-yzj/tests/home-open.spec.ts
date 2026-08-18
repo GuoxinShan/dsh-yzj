@@ -100,6 +100,8 @@ describe('openBoundHome', () => {
       rootMsgId: 'legacy-host',
       title: '历史对话',
       fromSessionId: 'yzj-home-g-a',
+      quiet: true,
+      lastActivity: 1,
     })
     expect(agents.created).toContain('yzj-topic-g-a-legacy-host')
     expect(agents.injected).toHaveLength(1)

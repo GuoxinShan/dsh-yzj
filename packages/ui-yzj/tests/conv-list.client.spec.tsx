@@ -4,8 +4,8 @@
  */
 import { act } from 'react-dom/test-utils'
 import { createRoot } from 'react-dom/client'
-import { describe, expect, it } from 'vitest'
-import { buildConvRows, YzjConvList } from '../src/client/conv-list.tsx'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { buildConvRows, clearConvListHold, YzjConvList } from '../src/client/conv-list.tsx'
 
 describe('buildConvRows', () => {
   it('prefixes 话题· when topic activity is newer than the last group message', () => {
@@ -97,6 +97,13 @@ describe('buildConvRows', () => {
 })
 
 describe('YzjConvList', () => {
+  beforeEach(() => {
+    clearConvListHold()
+  })
+  afterEach(() => {
+    clearConvListHold()
+  })
+
   it('lists recent conversations and load-more, click binds', async () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
@@ -131,5 +138,48 @@ describe('YzjConvList', () => {
     const recent = container.querySelector('[data-testid="yzj-conv-row-g-recent"]') as HTMLButtonElement
     await act(async () => { recent.click(); await Promise.resolve() })
     expect(opened).toEqual(['g-recent'])
+  })
+
+  it('keeps recent rows on remount before fetchGroups returns (pitfall-013)', async () => {
+    const groups = {
+      ok: true as const,
+      value: {
+        list: [{ groupId: 'g-hold', groupName: '缓存群', lastMsg: { content: 'hi' }, lastMsgSendTime: '2026-08-17 10:00:00' }],
+        more: false,
+      },
+    }
+    const first = document.createElement('div')
+    document.body.appendChild(first)
+    const root = createRoot(first)
+    act(() => {
+      root.render(
+        <YzjConvList
+          sessionId="yzj-home-g-a"
+          homeNav={async () => ({ ok: true, value: { rooms: [] } })}
+          fetchGroups={async () => groups}
+        />,
+      )
+    })
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    expect(first.textContent).toContain('缓存群')
+    act(() => { root.unmount() })
+
+    let finish: ((value: typeof groups) => void) | undefined
+    const pending = new Promise<typeof groups>(resolve => { finish = resolve })
+    const second = document.createElement('div')
+    document.body.appendChild(second)
+    const root2 = createRoot(second)
+    act(() => {
+      root2.render(
+        <YzjConvList
+          sessionId="yzj-home-g-b"
+          homeNav={async () => ({ ok: true, value: { rooms: [] } })}
+          fetchGroups={async () => pending}
+        />,
+      )
+    })
+    expect(second.textContent).toContain('缓存群')
+    await act(async () => { finish?.(groups); await Promise.resolve() })
+    act(() => { root2.unmount() })
   })
 })

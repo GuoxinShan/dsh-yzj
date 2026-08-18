@@ -38,6 +38,8 @@ jsdom 里如果测试只 `await Promise.resolve()` 一次、且 fused 同步返�
 
 发送人禁止「群消息」占位（空名 → 通讯录 → openId 尾号 →「未知」）。慢请求用 generation / `cancelled` 丢掉，避免 A 的响应写进 B。
 
+**v2.0 工作台增补（2026-08-18）**：`conversation.view` 随 sessionId 重挂时，中栏 `YzjConvList` 也会卸掉——`recent`/`bound` 必须有模块级缓存，否则点任何会话左侧先空再刷。时间线 `.stream` 默认 `scrollTop=0`，人看见的是窗口里**最早**的那页，必须跟面板一样打开滚到底（最新）；「加载更早」才保位置。图走 `file-data` 内存缓存，首帧从 cache 同步出，禁止每次「加载中…」。H9 迁「历史对话」须 `quiet`，禁止 `lastActivity=now` 把群行顶到最上。
+
 ## 回归覆盖
 
 - `packages/ui-yzj/tests/transcript.client.spec.tsx`：延迟 fused 首帧是「加载群消息」不是「私密会话」；切 sessionId 首帧不得残留上一群；`[握手]`→🤝；`displayNameOf` 不用「群消息」。
@@ -45,3 +47,7 @@ jsdom 里如果测试只 `await Promise.resolve()` 一次、且 fused 同步返�
 - `packages/tool-yzj/tests/bound-log.spec.ts`：CLI `param` 写入条目；无 param 的旧行仍可投影。
 - `packages/robot-yzj/tests/router.spec.ts`：入站回复把 `msgParam` 写入 log `param`。
 - `packages/ui-yzj/tests/panel-hooks.client.spec.tsx`：`messagesFetching` / `openGenRef` 插在现有 hooks 块末尾（pitfall-001：不要在函数体中部插入 hook）。
+- `packages/ui-yzj/tests/conv-list.client.spec.tsx`：重挂后 fetch 未返回时左栏仍有 hold 行。
+- `packages/ui-yzj/tests/transcript.client.spec.tsx`：`streamAtBottom` 跟底判定。
+- `packages/ui-yzj/tests/im-cache.client.spec.ts` / `im-render.client.spec.tsx`：`peekFileData` 命中后 `ProxyImage` 首帧出图、无「加载中…」。
+- `packages/tool-yzj/tests/topics.spec.ts`：`quiet` ensure 不 bump `lastActivity`。
