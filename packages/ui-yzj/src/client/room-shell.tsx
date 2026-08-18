@@ -11,6 +11,7 @@ import { cachedRoomGroupId, YzjFusedView, type YzjFusedInjected } from './transc
 import type { YzjPanelInject } from './rpc.ts'
 import type { YzjPanelActions, YzjPanelState } from './stores.ts'
 import { YzjDomainWorkbench } from './workbench-pane.tsx'
+import { YzjAdvancePane } from './advance-pane.tsx'
 import { registerPanelController } from './panel-controller.ts'
 import {
   getWorkbenchDomain, setWorkbenchDomain, subscribeWorkbenchDomain,
@@ -87,19 +88,23 @@ export function YzjRoomShell(props: YzjRoomShellInjected) {
 
   if (!isRoom) return null
 
-  const domainPane = domain !== 'im'
-    && props.panel !== undefined
-    && props.useStore !== undefined
-    && props.actions !== undefined
-    ? (
-      <YzjDomainWorkbench
-        domain={domain}
-        panel={props.panel}
-        useStore={props.useStore}
-        actions={props.actions}
-      />
-    )
-    : null
+  // The advance board owns its own data loop (no panel store); other non-IM
+  // domains embed the panel with a forced tab.
+  const domainPane = domain === 'advance' && props.panel !== undefined
+    ? <YzjAdvancePane inject={props.panel} />
+    : domain !== 'im' && domain !== 'advance'
+      && props.panel !== undefined
+      && props.useStore !== undefined
+      && props.actions !== undefined
+      ? (
+        <YzjDomainWorkbench
+          domain={domain}
+          panel={props.panel}
+          useStore={props.useStore}
+          actions={props.actions}
+        />
+      )
+      : null
 
   return (
     // data-conversation-composer-overlay: opt into the harness bounded-view

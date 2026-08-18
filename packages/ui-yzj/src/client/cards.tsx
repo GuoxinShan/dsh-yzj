@@ -68,6 +68,10 @@ export const YZJ_TOOL_NAMES = [  'yzj_whoami',
   'yzj_todo_create',
   'yzj_todo_update',
   'yzj_todo_complete',
+  'yzj_advance_list',
+  'yzj_advance_get',
+  'yzj_advance_create',
+  'yzj_advance_feed',
   'memory_observe',
   'memory_read',
   'memory_search',
@@ -122,6 +126,10 @@ const FAMILY_TITLES: Record<string, string> = {
   yzj_todo_create: '新建待办',
   yzj_todo_update: '更新待办',
   yzj_todo_complete: '完成待办',
+  yzj_advance_list: '推进队列',
+  yzj_advance_get: '推进详情',
+  yzj_advance_create: '立项推进事项',
+  yzj_advance_feed: '喂入事元',
   memory_observe: '记录观察',
   memory_read: '读取记忆',
   memory_search: '检索记忆',
@@ -137,6 +145,7 @@ export type YzjJumpTarget =
   | { kind: 'doc'; docId: string }
   | { kind: 'workspace'; workspaceId: string }
   | { kind: 'todo' }
+  | { kind: 'advance' }
   | { kind: 'event'; event: { id: string; startDate: number; title: string } }
 
 /** Injected by the registration: jump to a panel view. */
@@ -440,6 +449,74 @@ function TodoBody(meta: UnknownRecord, toolName: string): ReactNode {
   return <div className={css.rows}>{rowsOut}</div>
 }
 
+/** Stage label for advance cards (six-stage machine, ai-advance-design §2). */
+const ADVANCE_STAGE_LABEL: Record<string, string> = {
+  'draft': '草稿', 'running': '推进中', 'decision-needed': '待决定',
+  'updated': '已更新', 'ready-for-review': '待验收', 'completed': '已完成',
+}
+
+/** Advance-domain body: queue rows, one item detail, or one feed summary. */
+function AdvanceBody(meta: UnknownRecord, toolName: string, jump: (target: YzjJumpTarget) => void): ReactNode {
+  const stageOf = (value: unknown): string => ADVANCE_STAGE_LABEL[asString(value)] ?? asString(value)
+  if (toolName === 'yzj_advance_list') {
+    if (meta.ready === false) {
+      return <div className={css.rows}>{row('推进看板未开通', '立项第一个推进事项时会自动开通', 'np')}</div>
+    }
+    const list = asArray(meta.list)
+    if (list.length === 0) return <div className={css.rows}>{row('无匹配事项', '', 'empty')}</div>
+    return (
+      <div className={css.rows}>
+        {list.map((entry, index) => {
+          const item = asRecord(entry)
+          const sub = [
+            stageOf(item.stage),
+            asString(item.targetDate) === '' ? '' : `目标 ${asString(item.targetDate)}`,
+            asString(item.assignee) === '' ? '' : `@${asString(item.assignee)}`,
+            asString(item.latest),
+          ].filter(part => part !== '').join(' · ')
+          return row(asString(item.title) === '' ? '(无标题)' : asString(item.title), sub, `a${index}`)
+        })}
+        {jumpRow('打开推进看板', () => { jump({ kind: 'advance' }) }, 'jump')}
+      </div>
+    )
+  }
+  if (toolName === 'yzj_advance_get') {
+    const item = asRecord(meta.item)
+    const rowsOut: ReactNode[] = [
+      row(asString(item.title), [stageOf(item.stage), asString(item.goal)].filter(part => part !== '').join(' · '), 'head'),
+    ]
+    const entries = asArray(meta.entries)
+    for (let index = 0; index < Math.min(entries.length, 5); index += 1) {
+      const entry = asRecord(entries[index])
+      rowsOut.push(row(`${asString(entry.at)} ${asString(entry.changeType)}`, asString(entry.summary), `e${index}`))
+    }
+    const total = asNumber(meta.entryTotal) ?? entries.length
+    rowsOut.push(row(`事元 ${total} 条`, '', 'total'))
+    rowsOut.push(jumpRow('打开推进看板', () => { jump({ kind: 'advance' }) }, 'jump'))
+    return <div className={css.rows}>{rowsOut}</div>
+  }
+  // create / feed: friendly single-row summary + board link.
+  const rowsOut: ReactNode[] = []
+  if (toolName === 'yzj_advance_create') {
+    const item = asRecord(meta.item)
+    rowsOut.push(row(
+      meta.idempotentHit === true ? `已存在：${asString(item.title)}` : `已立项：${asString(item.title)}`,
+      [stageOf(item.stage), asString(item.goal)].filter(part => part !== '').join(' · '),
+      'c',
+    ))
+  } else {
+    const flow = asString(meta.stageFrom) !== '' && asString(meta.stageFrom) !== asString(meta.stageTo)
+      ? `${stageOf(meta.stageFrom)} → ${stageOf(meta.stageTo)}`
+      : ''
+    rowsOut.push(row(`${asString(meta.changeType)}：${asString(meta.summary)}`, [flow, asString(meta.detail).split('\n').join('；')].filter(part => part !== '').join(' · '), 'f'))
+  }
+  const library = asRecord(meta.library)
+  const link = asString(library.link)
+  if (link !== '') rowsOut.push(linkRow(link, '打开推进库', 'l'))
+  rowsOut.push(jumpRow('打开推进看板', () => { jump({ kind: 'advance' }) }, 'jump'))
+  return <div className={css.rows}>{rowsOut}</div>
+}
+
 /** Memory-vault body: observe confirmation, scope counts, search hits, dream report. */
 function MemoryBody(meta: UnknownRecord, toolName: string): ReactNode {
   const rowsOut: ReactNode[] = []
@@ -554,6 +631,7 @@ function familyIcon(toolName: string): ReactNode {
   if (toolName.startsWith('yzj_contact_') || toolName === 'yzj_whoami') return <IconUserOutline16 />
   if (toolName.startsWith('yzj_sheet_')) return <IconDataOutline16 />
   if (toolName.startsWith('yzj_todo_')) return <IconListPenOutline16 />
+  if (toolName.startsWith('yzj_advance_')) return <IconChecklistOutline14 />
   if (toolName.startsWith('yzj_calendar_')) return <IconChecklistOutline14 />
   if (toolName.startsWith('yzj_file_')) return <IconRefreshOutline14 />
   return <IconFolderOpenOutline16 />
@@ -602,6 +680,7 @@ export function YzjToolCard({ toolName, block, openPanel }: ToolCallViewProps & 
   else if (toolName.startsWith('yzj_sheet_')) body = SheetBody(meta)
   else if (toolName.startsWith('yzj_calendar_')) body = CalendarBody(meta, jump)
   else if (toolName.startsWith('yzj_todo_')) body = TodoBody(meta, toolName)
+  else if (toolName.startsWith('yzj_advance_')) body = AdvanceBody(meta, toolName, jump)
   else if (toolName.startsWith('yzj_im_')) body = ImBody(meta, jump)
   else if (toolName.startsWith('yzj_contact_') || toolName === 'yzj_whoami') body = ContactBody(meta)
   else if (toolName.startsWith('memory_')) body = MemoryBody(meta, toolName)

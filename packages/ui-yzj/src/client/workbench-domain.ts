@@ -6,15 +6,17 @@
 
 import { useEffect, useState } from 'react'
 
-/** Four 云之家 workbench domains. `im` is the group-room timeline. */
-export type WorkbenchDomain = 'im' | 'todo' | 'calendar' | 'docs'
+/** Five 云之家 workbench domains. `im` is the group-room timeline;
+ * `advance` is the AI推进 board (docs/spec/ai-advance-design.md §7). */
+export type WorkbenchDomain = 'im' | 'todo' | 'calendar' | 'docs' | 'advance'
 
-/** Top-bar tabs that switch {@link WorkbenchDomain} (v1.16 / R31). */
+/** Top-bar tabs that switch {@link WorkbenchDomain} (v1.16 / R31; v1.18 +推进). */
 export const WORKBENCH_TABS = [
   { domain: 'im', id: 'chat', label: '对话' },
   { domain: 'todo', id: 'todo', label: '待办' },
   { domain: 'calendar', id: 'calendar', label: '日程' },
   { domain: 'docs', id: 'docs', label: '知识库' },
+  { domain: 'advance', id: 'advance', label: '推进' },
 ] as const
 
 let current: WorkbenchDomain = 'im'
