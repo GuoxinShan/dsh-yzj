@@ -20,6 +20,7 @@ import { applyFileTools } from './file.ts'
 import { applyTodoTools } from './todo.ts'
 import { YzjTodoService } from './todo.ts'
 import type { TodoConfig } from './todo.ts'
+import { applyAdvanceTools, YzjAdvanceService } from './advance.ts'
 import { YzjHomeService } from './home.ts'
 import { applyApprovalGuard } from './guard.ts'
 import type { YzjToolBudget } from './shared.ts'
@@ -86,6 +87,10 @@ export function apply(ctx: Context, config: Config): void {
   // backs the ui-yzj RPC channel. Needs a real Cordis context.
   const todoService = new YzjTodoService(ctx, budget, config.todo ?? {})
   applyTodoTools(ctx, budget, config.todo ?? {}, todoService.holder)
+  // The advance (AI推进) board shares the active-library holder: the panel
+  // switcher moves both the todo tab and the advance board to the same doc.
+  new YzjAdvanceService(ctx, budget, config.todo ?? {}, todoService.holder)
+  applyAdvanceTools(ctx, budget, config.todo ?? {}, todoService.holder)
   // Product-home binding table (dsh-home-session): one Yunzhijia
   // conversation ↔ one DSH session. Shared by robot inbound and UI pick-group.
   const home = new YzjHomeService(ctx, {
