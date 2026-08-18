@@ -16,6 +16,10 @@ describe('digestCandidates', () => {
     ])
     expect(rows.map(row => row.text)).toEqual(['私密结论', '建议发周报'])
     expect(textOfSessionEvent({ type: 'user/message', data: { source: { kind: 'plugin' }, content: 'x' } })).toBe('')
+    expect(textOfSessionEvent({
+      type: 'assistant/message',
+      data: { message: { content: '写好了' } },
+    })).toBe('写好了')
   })
 
   it('defaults to the newest few lines, not the whole transcript', () => {

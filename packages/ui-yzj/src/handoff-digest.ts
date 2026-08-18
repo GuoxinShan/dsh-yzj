@@ -18,10 +18,12 @@ export function textOfSessionEvent(event: { readonly type: string; readonly data
   const data = typeof event.data === 'object' && event.data !== null ? event.data as Record<string, unknown> : {}
   const source = typeof data.source === 'object' && data.source !== null ? data.source as Record<string, unknown> : {}
   if (event.type === 'user/message' && source.kind === 'plugin') return ''
-  if (typeof data.content === 'string') return data.content.trim()
-  if (!Array.isArray(data.content)) return ''
+  const message = typeof data.message === 'object' && data.message !== null ? data.message as Record<string, unknown> : {}
+  const content = message.content ?? data.content
+  if (typeof content === 'string') return content.trim()
+  if (!Array.isArray(content)) return ''
   const parts: string[] = []
-  for (const block of data.content) {
+  for (const block of content) {
     if (typeof block === 'string') {
       if (block.trim() !== '') parts.push(block.trim())
       continue

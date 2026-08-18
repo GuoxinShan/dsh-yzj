@@ -41,7 +41,7 @@ page.on('pageerror', (e) => console.log(`  [pageerror] ${String(e).slice(0, 240)
 
 await page.goto(BASE, { waitUntil: 'domcontentloaded' })
 await page.waitForTimeout(5000)
-await page.getByTestId('yzj-dock-chat').click()
+await page.getByTestId('yzj-dock-home').click()
 await page.waitForTimeout(2500)
 await page.getByTestId('yzj-conv-list').locator('button').filter({ hasText: GROUP_NAME }).first().click()
 await page.waitForTimeout(3000)

@@ -1297,8 +1297,15 @@
   justify-content: flex-start;
 }
 
-.topicLensBubble {
+.topicLensStack {
+  display: flex;
   max-width: 90%;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.topicLensBubble {
+  max-width: 100%;
   padding: 6px 8px;
   font-size: 12px;
   line-height: 18px;
@@ -1338,17 +1345,11 @@
   align-items: center;
 }
 
-.yzjDockHead {
-  padding: 0 12px 4px;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
-  font-weight: 500;
-}
-
 .yzjDockEntries {
   display: flex;
-  flex-direction: column;
-  gap: 1px;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
   padding: 0 8px;
 }
 
@@ -1356,7 +1357,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   border: none;
   border-radius: 10px;
   background: transparent;
@@ -1395,6 +1397,7 @@
 }
 
 .yzjDockNarrow .yzjDockEntry {
+  flex: none;
   width: 32px;
   justify-content: center;
   padding: 6px;
@@ -1411,8 +1414,8 @@
 .yzjDockRobot {
   display: flex;
   align-items: center;
-  margin-top: 2px;
-  padding: 2px 18px 2px;
+  flex: none;
+  padding: 0 4px;
 }
 
 .yzjDockRobotDot {

@@ -80,10 +80,10 @@ await page.waitForTimeout(5000)
 
 const dock = page.getByTestId('yzj-group-space')
 await dock.waitFor({ state: 'visible', timeout: 25000 })
-await page.getByTestId('yzj-dock-chat').click()
+await page.getByTestId('yzj-dock-home').click()
 const list = page.getByTestId('yzj-conv-list')
 const listUp = await list.waitFor({ state: 'visible', timeout: 12000 }).then(() => true).catch(() => false)
-ok('对话 opens the workbench', listUp)
+ok('云之家 opens the workbench', listUp)
 if (!listUp) {
   await page.screenshot({ path: join(OUT, 'fail-no-list.png') })
   await browser.close()

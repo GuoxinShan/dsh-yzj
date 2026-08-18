@@ -71,11 +71,18 @@ try {
     }
   }, label)
 
+  await page.getByTestId('yzj-dock-home').click()
+  await page.waitForTimeout(2000)
+  const tabs = page.getByTestId('yzj-workbench-tabs')
+  await tabs.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {})
+  ok('workbench tabs are visible', await tabs.isVisible().catch(() => false))
+  ok('sidebar-foot has no domain dock buttons', await page.getByTestId('yzj-dock-chat').count().then(n => n === 0))
+
   const domains = [
-    { id: 'yzj-dock-chat', label: '对话' },
-    { id: 'yzj-dock-todo', label: '待办' },
-    { id: 'yzj-dock-calendar', label: '日程' },
-    { id: 'yzj-dock-docs', label: '知识库' },
+    { id: 'yzj-workbench-tab-chat', label: '对话' },
+    { id: 'yzj-workbench-tab-todo', label: '待办' },
+    { id: 'yzj-workbench-tab-calendar', label: '日程' },
+    { id: 'yzj-workbench-tab-docs', label: '知识库' },
   ]
   for (const { id, label } of domains) {
     await page.getByTestId(id).click()
