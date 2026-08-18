@@ -78,6 +78,12 @@ describe('parseImSend / whoami / skip', () => {
     expect(parseImSend({ groupId: 'g1', content: '@张三 你好', atOpenIds: [] })).toContain('atOpenIds')
   })
 
+  it('rejects file messages that try to carry a reply (pitfall-028 / CLI contract)', () => {
+    expect(parseImSend({
+      groupId: 'g1', msgType: 'file', fileId: 'fid-1', replyMsgId: 'root-1',
+    })).toBe('im-send: msg-type file does not support content, reply, or images')
+  })
+
   it('parses whoami envelopes (pitfall-003)', () => {
     expect(parseWhoami([{ openId: 'me', name: '国鑫' }])).toEqual({ openId: 'me', name: '国鑫' })
     expect(parseWhoami({ oId: 'me', name: '国鑫' })).toEqual({ openId: 'me', name: '国鑫' })

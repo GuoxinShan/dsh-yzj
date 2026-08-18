@@ -1,6 +1,6 @@
 # 群房间 + 话题会话：v2.0 产品法
 
-> 版本：v1.10（已拍板；**v1.10 = R26 话题 job-done 投递**：轮次 idle 后以 CLI 本人身份把总结回帖到锚点，产物随附；不是每条助手气泡都回帖；机器人通道本刀不动）
+> 版本：v1.10（已拍板；**v1.10 = R26 话题 job-done 投递**：轮次 idle 后以 CLI 本人身份把总结回帖到锚点，产物随附；图片进回复链，普通文件因 CLI 不支持 file+reply 跟发群时间线，见 pitfall-028；不是每条助手气泡都回帖；机器人通道本刀不动）
 > 日期：2026-08-19（v1.10）；2026-08-18（v1.9 / v1.8 / v1.6 / v1.5 / v1.4 / v1.3 / v1.2）；v1.1 2026-08-17 下午；v1.0 2026-08-17 上午
 > 决策人：Guoxin Shan
 > 定位：**v2.0 产品法**，覆盖 [`dsh-home-session.md`](dsh-home-session.md) v1.x 的会话基数与视图模型（D2/D3/D5/D6），以及 [`dsh-home-transcript.md`](dsh-home-transcript.md) 的融合视图与 composer 双意图条款（T2/T10/T11）。存储事实（T1：①② 不进 `Session.append`）与写路径（D9）继续有效。机器人协议仍见 [`robot-channel-plan.md`](robot-channel-plan.md)；其 §3.6 S1 的 per-thread 锚定在本法复活（见 §5）。
@@ -267,6 +267,7 @@ TopicAnchorIndex                           // S1 复活
 | 14 | 房间能不能走「新会话」点走就藏（v1.8） | **不能。** 真机：blank 挂钩 focus 后标题已是群名，但 tab ring 为空、`yzj-room-shell` 不挂。空 turn 换的是主面画布，不是为了占侧栏 |
 | 15 | 话题问助手的近窗从哪来（v1.9） | **T5 `systemPrompt.context` `yzj-bound-window` + 抽屉 inject。** 窗口函数同一份 `formatSummonWindow`。查 id 必须覆盖话题 session；skip 只跳 plugin（机器人已 inject）；`none` 仍给窗。注册必须走 `ctx.inject(['systemPrompt'], scope => scope.systemPrompt.context)`，与 `sandbox:policy` 同层（pitfall-027） |
 | 16 | 话题结果回不回云之家话题（v1.10） | **job done 回一条总结，不是每条气泡。** 投递走 CLI 本人身份（可带文件）；机器人通道本刀不动。对照 Claude Tag：thread 里落结果 + 产物，工作过程留在 session |
+| 17 | 产物文件能不能进回复链 | **图片能，普通文件不能。** CLI `msg-type file` 不支持 `--reply-msg-id`（pitfall-028）。图走同一条 richText 回复；其它文件跟发群时间线，总结里写明落点。等 CLI 支持再改闸，禁止给 file 硬塞 reply |
 | 5 | 群行点击落点 | 永远落时间线（抽屉不自动开） |
 | 6 | 话题默认投影 | 双投影并存：工作台 → 透镜，官方侧栏 → 原生（R19） |
 | 7 | 旧宿主 ③④（H9） | **迁成首条话题「历史对话」**（`rootMsgId=legacy-host`）；不搬事件；空白宿主 / 单聊不迁；二次打开幂等 |
@@ -292,4 +293,4 @@ TopicAnchorIndex                           // S1 复活
 25. （v1.7 补）抽屉「问助手」的 `followup` 必须带 `message.id`；话题 `create`/`resume` 必须带 `agentOptions` 模型路由。缺 id 则历史装不上；缺模型则 `{{model}}` 装配失败。
 25. （v1.7）群里「交给助手」再问助手：官方 Chat 能回放，不报 `turn-error1 received more than one start Match`。话题日志里只有一轮 `turn/start`。
 26. （v1.9）话题里问助手 / 官方 Chat 发给助手：模型本轮能看见 `［本群最近消息］`、`groupId`、锚点 `msgId`。runtime snapshot 的 context 含 `yzj-bound-window`。空窗但已有 groupId 仍给头块。
-27. （v1.10）DSH 话题问助手一轮结束后，云之家锚点回复链出现总结帖（本人身份）；有产物则文件也进群。不把工具过程回帖。机器人入站话题不走这条（仍由 PushHub）。
+27. （v1.10）DSH 话题问助手一轮结束后，云之家锚点回复链出现总结帖（本人身份）；图片进同一条回复，其它文件跟发群时间线（CLI `file` 不能挂回复链，pitfall-028）。不把工具过程回帖。机器人入站话题不走这条（仍由 PushHub）。

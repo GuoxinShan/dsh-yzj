@@ -32,6 +32,7 @@ The node half posts a topic-turn summary back onto the Yunzhijia reply chain whe
 ## Known Limitations and Deferred Work
 
 - **User-direct writes are un-gated by design** — DSH「发进群」and todo checkboxes act as the user's own hand; only agent-initiated writes pass the confirmation card. Product law D9 / R6. Topic job-done delivery (R26) is the contracted post-back of 「问助手」, also un-gated, CLI identity.
+- **CLI file messages cannot join a reply chain** — `msg-type file` rejects `--reply-msg-id` (pitfall-028). Job-done images ride the richText reply; other files follow on the group timeline. Do not lift the `parseImSend` / `yzj_im_message_send` gate until CLI supports it.
 - **`file download` card is text-only** — the CLI returns no structured path metadata for downloads.
 - **Locale namespace not registered** — cards use Chinese literals; a `locale` namespace can be added when i18n is needed.
 - **`panel.tsx` is a large module** — the floating overlay is gone; the same tabs now embed in the workbench. Split before further panel growth.

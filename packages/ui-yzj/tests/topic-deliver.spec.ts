@@ -85,7 +85,8 @@ describe('compose / answer / artifacts', () => {
     })
     expect(text).toContain('✅ 已完成「整理接口」')
     expect(text).toContain('三处待确认。')
-    expect(text).toContain('📎 产物：纪要.md、图.png')
+    expect(text).toContain('🖼 图片附在本回复：图.png')
+    expect(text).toContain('📎 文件发在群时间线（CLI 文件消息不能挂回复链）：纪要.md')
     expect(text).not.toContain('中间过程')
     const long = '字'.repeat(TOPIC_DELIVER_MAX_CHARS + 40)
     expect(composeTopicDelivery({ title: 'x', answer: long, artifactNames: [] }).length).toBeLessThan(long.length)
@@ -282,7 +283,7 @@ describe('live dsh-2 job-done delivery', () => {
       replyMsgId: rootMsgId,
       summary: composeTopicDelivery({
         title: 'job-done 验收',
-        answer: '本轮完成：总结已回帖到话题锚点，产物见附件。',
+        answer: '本轮完成：总结已回帖到话题锚点；md 文件因 CLI 不能挂回复链，发在群时间线。',
         artifactNames: ['r26-summary.md'],
       }),
       artifactPaths: [artifact],

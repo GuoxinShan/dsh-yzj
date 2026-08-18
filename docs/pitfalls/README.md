@@ -36,6 +36,7 @@
 | 25 | 话题套房间空 turn 1，第一次提问再开 turn 1，官方 Chat 历史加载失败 | ui-yzj openTopicHome / publishHostSession / 官方 conversation 回放 | [pitfall-025-topic-dummy-turn-collides-with-first-ask.md](pitfall-025-topic-dummy-turn-collides-with-first-ask.md) |
 | 26 | 话题 followup 不带 `message.id`，resume 校验失败，历史永久装不上 | ui-yzj askTopicAssistant / followup | [pitfall-026-topic-followup-needs-message-id.md](pitfall-026-topic-followup-needs-message-id.md) |
 | 27 | 话题发给助手没近窗：只查房间表 + skip 过窄 + 注册层不对 | tool-yzj T5 / ui-yzj 问助手 | [pitfall-027-summon-window-topic-assemble.md](pitfall-027-summon-window-topic-assemble.md) |
+| 28 | yzj-cli `msg-type file` 不能带 `--reply-msg-id`，产物文件进不了回复链 | ui-yzj 话题 job-done / `parseImSend` / `yzj_im_message_send` | [pitfall-028-cli-file-cannot-reply.md](pitfall-028-cli-file-cannot-reply.md) |
 
 ## 维护规则
 

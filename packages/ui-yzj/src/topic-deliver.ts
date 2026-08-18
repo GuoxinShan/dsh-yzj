@@ -175,7 +175,14 @@ export function composeTopicDelivery(input: {
   const head = title === '' ? '✅ 已完成' : `✅ 已完成「${clip(title, 40)}」`
   const body = clip(input.answer.trim(), TOPIC_DELIVER_MAX_CHARS)
   const names = input.artifactNames.filter(name => name.trim() !== '')
-  const artifacts = names.length === 0 ? '' : `\n\n📎 产物：${names.join('、')}`
+  const images = names.filter(isImageArtifact)
+  const files = names.filter(name => !isImageArtifact(name))
+  const lines: string[] = []
+  if (images.length > 0) lines.push(`🖼 图片附在本回复：${images.join('、')}`)
+  if (files.length > 0) {
+    lines.push(`📎 文件发在群时间线（CLI 文件消息不能挂回复链）：${files.join('、')}`)
+  }
+  const artifacts = lines.length === 0 ? '' : `\n\n${lines.join('\n')}`
   return `${head}\n\n${body}${artifacts}`
 }
 
