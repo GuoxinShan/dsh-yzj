@@ -13,7 +13,8 @@ docs/
     group-room-topics.md               v2.0 产品法：1 群 = 1 群房间 + N 话题会话；工作台盖层；v1.17 R31 侧栏单入口 + 顶栏页签；R30 透镜产物卡；R29 job-done 投递；R27 盖层；R26 未登录入口
     dsh-home-session.md                DSH 唯一会话家园（v1.x 历史快照；D2/D3 被 group-room-topics 覆盖，D9 等仍有效）
     dsh-home-transcript.md             绑定会话可见时间线：插件消息日志（v1.x 历史快照；存储/去重/回填/切会话分阶段机制沿用，融合视图条款被覆盖）
-    todo-design.md                     待办功能设计（v1.3，tag 理念 + §11.2 决策表；直写原则交叉引用会话家园）
+    todo-design.md                     待办功能设计（v1.4，tag 理念 + §11.2 决策表；看板职责移交 ai-advance-design——待办回归轻量任务/事元角色）
+    ai-advance-design.md               AI推进（v1.0）：事元流驱动的「推进事项」——事项/事元双表、六态状态机、独立「推进」第五页签、AI 参与六机制、PRD/原型引用锚点
     robot-channel-plan.md              机器人通道调研与双向打通方案（v0.2：会话落点改打绑定对象）
     routines-delivery.md               定时任务引擎选型（dsh-routines 参考调研）+ yzj chatnode 投递契约
     memory-vault-design.md             记忆库组件设计（v0.2：vault 模型 + dream 开关/进程内固化/模型链 + 插件默认模型 + 群组留缝）
