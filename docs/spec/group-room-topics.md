@@ -1,7 +1,7 @@
 # 群房间 + 话题会话：v2.0 产品法
 
-> 版本：v1.17（已拍板；**v1.17 = R31 侧栏单入口**：左边只留「云之家」，四域用顶栏页签切。v1.16 = 工作台顶栏页签 + 日程日/周/月/年；v1.13 = 话题挂 standard preset；v1.11 = R27 盖层）
-> 日期：2026-08-19（v1.17 / v1.16）；2026-08-18（v1.6 / v1.5 / v1.4 / v1.3 / v1.2）；v1.1 2026-08-17 下午；v1.0 2026-08-17 上午
+> 版本：v1.18（已拍板；**v1.18 = 第五页签「推进」**：AI推进独立看板进工作台页签，见 [`ai-advance-design.md`](ai-advance-design.md)。v1.17 = R31 侧栏单入口：左边只留「云之家」，域用顶栏页签切。v1.16 = 工作台顶栏页签 + 日程日/周/月/年；v1.13 = 话题挂 standard preset；v1.11 = R27 盖层）
+> 日期：2026-08-19（v1.18 / v1.17 / v1.16）；2026-08-18（v1.6 / v1.5 / v1.4 / v1.3 / v1.2）；v1.1 2026-08-17 下午；v1.0 2026-08-17 上午
 > 决策人：Guoxin Shan
 > 定位：**v2.0 产品法**，覆盖 [`dsh-home-session.md`](dsh-home-session.md) v1.x 的会话基数与视图模型（D2/D3/D5/D6），以及 [`dsh-home-transcript.md`](dsh-home-transcript.md) 的融合视图与 composer 双意图条款（T2/T10/T11）。存储事实（T1：①② 不进 `Session.append`）与写路径（D9）继续有效。机器人协议仍见 [`robot-channel-plan.md`](robot-channel-plan.md)；其 §3.6 S1 的 per-thread 锚定在本法复活（见 §5）。
 > 缘起：v1.x 融合一条流落地后，用户两次反馈「双发送复杂」「群对话和 agent 对话没打通」；第一性分析定位为模型错误而非交互细节（§1）；「群房间 + N 话题」可交互原型走查通过（2026-08-17）。
@@ -55,7 +55,7 @@ DSH 仍是唯一家园（D1 精神不变）：群房间和话题都住在 DSH �
 | R18 | 话题×列表联动（v1.1） | 六条联动规则 L1–L6，见 §9.2 | 会话列表是云之家数据、话题是 DSH 会话，不定联动规则就有「话题在干活、列表无动静」死区 |
 | R19 | 话题双投影（v1.1） | 同一 `yzj-topic-*` 会话两个投影：群内话题抽屉 → **IM 透镜**（气泡流 + 轻交互，抽屉 header「原生会话 ↗」）；官方侧栏 → **原生视图**（完整轨迹 / 工具卡 / 确认卡 / 全量 composer，头部锚点卡沿用）。跳转 = 官方 focus 同一 sessionId | 透镜贴聊天心智、原生保全量能力；双入口各按来路落投影，不强行二选一 |
 | R20 | 云之家 Host Workspace（v1.4 修订） | **官方侧栏「云之家」分组只收话题**（`yzj-topic-*`，群聊/私聊长出的 agent session）。群房间宿主（`yzj-home-*`）**不** `attachSession` 进该 workspace——群聊本身不是一条 AI session。cwd 仍用固定专属目录（房间与话题都建在这里，避免 `process.cwd()` 污染编码工作区），但 **attach 只对话题**。房间导航只在工作台对话域（R15） | 工作区分组 = 官方侧栏分类。把 IM 房间挂进去等于把群聊伪装成 agent 会话，和北极星（房间是桥、话题才是工作发生地）打架。v1.1 曾 attach 全部 yzj 会话，是为防污染编码区矫枉过正 |
-| R21 | 工作台入口清单（v1.1；v1.6 修订；v1.11 修订；v1.17 入口面 R31） | 工作台四域：对话 / 待办 / 日程 / 知识库。**左边只留一个「云之家」入口**（新建会话下）；域切换是工作台顶栏页签。**机器人状态不在入口挂绿点**（设置 → 云之家管理）。**记忆搁置**：dock / 工作台域 / 设置「记忆库」分段先不露；`memory-yzj` 包与 `memory_*` 工具仍在，不删。**不做**：通讯录、多维表格、文件、未读数（理由同前） | 先把群聊工作台做稳；记忆面未拍板前不占入口；四域并排入口与「一个入口」打架 |
+| R21 | 工作台入口清单（v1.1；v1.6 修订；v1.11 修订；v1.17 入口面 R31；v1.18 增「推进」） | 工作台五域：对话 / 待办 / 日程 / 知识库 / **推进**（AI推进独立看板，[`ai-advance-design.md`](ai-advance-design.md)——有自己的事项/事元双表数据源，与当年否掉的空壳「会议/AI速记」页性质不同）。**左边只留一个「云之家」入口**（新建会话下）；域切换是工作台顶栏页签。**机器人状态不在入口挂绿点**（设置 → 云之家管理）。**记忆搁置**：dock / 工作台域 / 设置「记忆库」分段先不露；`memory-yzj` 包与 `memory_*` 工具仍在，不删。**不做**：通讯录、多维表格、文件、未读数（理由同前） | 先把群聊工作台做稳；记忆面未拍板前不占入口；多域并排入口与「一个入口」打架；「无数据源不造假」只挡空壳页，不挡有真实数据源的推进 |
 | R22 | 视图归属（v1.5） | **IM 工作台只服务 `yzj-home-*`**。`conversation.view` id `yzj-home`（「群聊」）无 per-session `select`（harness 该槽是 list，tab 对每个 session 都在）。话题（`yzj-topic-*`）/ 未绑定 / 普通 session 打开时必须点官方「对话」，把该 session 持久化的 `ChatStoreState.view` 写成 `chat`；只把「群聊」tab 设 `hidden` **不够**——残留 `view=yzj-home` 仍会挂 IM 壳。壳组件对非 `yzj-home-*` 直接不画。view-ring 的 kind **只跟 session id 前缀**，binding 不得把普通会话提升成房间 | harness `resolveActiveView` 按持久化 view id 选视图，缺省才回落 `chat`。v1.4 只藏 tab、不拨 view，于是「有些 session 打开是群聊三栏」。composer 已按前缀闸（`selectGroupRoomComposer`）；视图必须同一口径 |
 | R23 | 拖入引用退役（v1.6） | 工作台不再把条目拖进 composer 成 ☁ chip。悬浮窗「一切皆可拖」随球一起退役：面板/待办无 `draggable`、无全屏 drop overlay、无 drop-bus。引用只走 `@` 候选源（同事 / 会话 / 文档）；草稿里残留的旧 chip 仍可经 codec 回源 | 球已退役后工作台残留拖源是上一时代的面；@ 是官方 InputBar 的原生插入，不是拖入 |
 | R24 | 点群不是开会话（v1.7） | **群聊不是一条 DSH 对话。** 工作台会话列表点一行 = 切 `groupId` 换时间线，**不** `homeOpen`、**不** `sessions.open`。`conversation.view` 仍要挂在一个已打开的 `yzj-home-*` 挂钩座位上（harness 主面是 session 画布），但挂钩最多一条：首次进对话域才 focus/建座位；之后切群零 session 切换。发进群 / 交给助手 / 回填只 `ensureBound`（写绑定表 + 日志，不 create 活 agent、不 publishHostSession）。官方侧栏「未分组」不得每点一个群就多一行 | 旧路径每点一个群就 resume/create 一条 `yzj-home-*` 并 focus：要等 session 列表、官方超长 InputBar 闪一下、publish 后因未 attach「云之家」掉进未分组。那是桥的实现细节漏到脸上，不是产品 |
@@ -65,7 +65,7 @@ DSH 仍是唯一家园（D1 精神不变）：群房间和话题都住在 DSH �
 | R28 | 话题用哪套 agent 组装（v1.13） | **官方默认 preset（`agentPresets.defaultId`，出厂是 `standard`）+ host 上的 yzj 工具。** 禁止再造一份「云之家 preset」。create/resume 必须 `meta.agentPreset` + `setup: agentPresets.mount`，与 GUI「新建会话」同一条缝。不挂 梁神/minimal。云之家工具留在 `cordis.patch.yml` host 层，任何 preset 都能看见。 | `agents.create` 不传 preset = 裸作用域：只有 host 注册的 `yzj_*` / `memory_*`，没有 bash / 读文件（pitfall-007 / 030）。话题是标准 agent 工作面，不是阉割 IM 机器人 |
 | R29 | 话题 job-done 投递（v1.17） | **问助手的一轮结束（`agent/status` idle）后，产品把本轮总结以 CLI 本人身份回复到话题锚点**（`--reply-msg-id = rootMsgId`）。只投结论。图片进同一条 richText 回复；其它文件因 CLI `msg-type file` 不支持 `--reply-msg-id`，跟发群时间线。无确认卡。跳过 plugin 入站 / 已调 `yzj_im_message_send` / 写闸 pending / 假锚点 / 无正文。**本刀不改机器人通道** | 对齐 Claude Tag：工作在 session，结果落 thread |
 | R30 | 话题透镜产物卡（v1.17） | **群里照发（R29），话题抽屉也要看见。** IM 透镜把本轮 `write`/`edit` 文件画在助手气泡下（DSH 本地卡）。不是替代发群 | CLI file 不能挂回复链（pitfall-033）只挡住云之家回复气泡，挡不住 DSH 透镜 |
-| R31 | 侧栏单入口（v1.17） | **左边只留「云之家」一个入口。** 点它 = `openWorkbench()` 打开盖层，不切域、不 focus 挂钩。对话 / 待办 / 日程 / 知识库是工作台顶栏页签。已打开再点入口不换域。卡片「查看」仍切对应页签 | 用户原话「对话日程那些有多个入口不太对应该要统一左边一个入口然后用页签」 |
+| R31 | 侧栏单入口（v1.17；v1.18 页签 +1） | **左边只留「云之家」一个入口。** 点它 = `openWorkbench()` 打开盖层，不切域、不 focus 挂钩。对话 / 待办 / 日程 / 知识库 / 推进是工作台顶栏页签（v1.18）。已打开再点入口不换域。卡片「查看」仍切对应页签 | 用户原话「对话日程那些有多个入口不太对应该要统一左边一个入口然后用页签」 |
 
 ---
 
