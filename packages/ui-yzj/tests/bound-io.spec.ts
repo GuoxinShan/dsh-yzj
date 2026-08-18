@@ -340,6 +340,42 @@ describe('topic lens / ask', () => {
     expect(bubbles.map(row => row.role)).toEqual(['user', 'assistant', 'user'])
   })
 
+  it('pins write/edit files onto the assistant bubble for the topic lens', () => {
+    const bubbles = topicLensBubbles({
+      dshSessionId: 'yzj-topic-1',
+      yzjConversationId: 'g-a',
+      title: '整理',
+      source: 'dsh',
+      createdAt: 1,
+    }, {
+      get: (id) => id === 'yzj-topic-1'
+        ? {
+          session: {
+            events: [
+              { type: 'user/message', time: 1, data: { content: '写纪要', source: { kind: 'user' } } },
+              {
+                type: 'tool/call', time: 2,
+                data: { name: 'write', arguments: '{"file_path":"out/纪要.md"}' },
+              },
+              {
+                type: 'tool/call', time: 3,
+                data: { name: 'read', arguments: '{"file_path":"out/纪要.md"}' },
+              },
+              { type: 'assistant/message', time: 4, data: { content: '写好了' } },
+            ],
+          },
+        }
+        : undefined,
+    })
+    expect(bubbles).toHaveLength(2)
+    expect(bubbles[0]?.role).toBe('user')
+    expect(bubbles[1]).toMatchObject({
+      role: 'assistant',
+      text: '写好了',
+      artifacts: [{ type: 'DOC', name: '纪要.md' }],
+    })
+  })
+
   it('followups a user turn on the topic without requiring native focus', async () => {
     const followups: unknown[] = []
     const injected: unknown[] = []

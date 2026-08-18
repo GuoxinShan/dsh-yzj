@@ -19,10 +19,11 @@
 
 ## 解法
 
-产品折中（R26，不要再尝试给 file 加 `replyMsgId`）：
+产品折中（R26 + R27，不要再尝试给 file 加 `replyMsgId`）：
 
 - **图片** → 同一条 `richText` 回复（`--image` + `[图片]`），进回复链。
 - **其它文件** → `file upload` 后 `msg-type file` **不带** `--reply-msg-id`，跟发群时间线；总结正文写明「文件发在群时间线（CLI 文件消息不能挂回复链）」。
+- **话题抽屉** → 同一批 write/edit 文件画在助手气泡下（DSH 本地卡）。发群不停。
 - 等 CLI 支持 file+reply 再把 `parseImSend` / `yzj_im_message_send` 闸打开，并把跟发改成挂锚点。在那之前改闸 = 发出去被 CLI 打回。
 
 ## 回归覆盖

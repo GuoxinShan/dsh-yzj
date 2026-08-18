@@ -12,7 +12,8 @@ import {
   type YzjBoundMessageLog, type YzjLogEntry, type YzjLogMsgType,
 } from '@dsh-yzj/tool-yzj/src/bound-log.ts'
 import { parseContactUser } from './contact-parse.ts'
-import { digestCandidates, type DigestCandidate } from './handoff-digest.ts'
+import { digestCandidates, textOfSessionEvent, type DigestCandidate } from './handoff-digest.ts'
+import { artifactBadgeOf, writeFileNameOf, type ArtifactBadge } from './artifact-badge.ts'
 import {
   openBoundHome, openTopicHome, lastSessionTitle, isPlaceholderRoomTitle, identifiedUserMessage, topicAgentRoute,
   type HomeOpenAgents, type HomeOpenFace, type TopicAgentRoute,
@@ -505,17 +506,94 @@ export function roomSnapshotForGroup(
   }
 }
 
+/** One file card under a topic-lens assistant bubble (DSH-local, not IM). */
+export type TopicLensArtifact = ArtifactBadge
+
 /** One bubble in the topic-drawer IM lens (plugin followups omitted). */
 export interface TopicLensBubble {
   readonly id: string
   readonly role: 'user' | 'assistant'
   readonly text: string
   readonly time: number
+  readonly artifacts?: readonly TopicLensArtifact[]
+}
+
+const LENS_MAX_ARTIFACTS = 8
+
+function uniqueWriteNames(names: readonly string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const name of names) {
+    if (seen.has(name)) continue
+    seen.add(name)
+    out.push(name)
+    if (out.length >= LENS_MAX_ARTIFACTS) break
+  }
+  return out
+}
+
+function badgesOf(names: readonly string[]): TopicLensArtifact[] {
+  return uniqueWriteNames(names).map(name => artifactBadgeOf(name))
+}
+
+/**
+ * Walk one session's events into lens bubbles. `write`/`edit` files ride
+ * the next assistant bubble (leftover names attach to the last assistant).
+ */
+function lensBubblesFromEvents(
+  events: readonly FusedSessionEvent[],
+  idPrefix: string,
+): TopicLensBubble[] {
+  const out: TopicLensBubble[] = []
+  let pending: string[] = []
+  const flushWrites = (bubble: TopicLensBubble): TopicLensBubble => {
+    if (pending.length === 0) return bubble
+    const extras = badgesOf(pending)
+    pending = []
+    const prior = bubble.artifacts ?? []
+    return { ...bubble, artifacts: [...prior, ...extras] }
+  }
+  for (const event of events) {
+    if (event.type === 'tool/call') {
+      const name = writeFileNameOf(event.data)
+      if (name !== undefined) pending.push(name)
+      continue
+    }
+    const text = textOfSessionEvent(event)
+    if (text === '') continue
+    const role: 'user' | 'assistant' = event.type === 'assistant/message' ? 'assistant' : 'user'
+    let bubble: TopicLensBubble = {
+      id: `${idPrefix}${out.length}`,
+      role,
+      text,
+      time: event.time,
+    }
+    if (role === 'assistant') bubble = flushWrites(bubble)
+    out.push(bubble)
+  }
+  if (pending.length === 0) return out
+  for (let index = out.length - 1; index >= 0; index -= 1) {
+    const row = out[index]
+    if (row?.role !== 'assistant') continue
+    out[index] = flushWrites(row)
+    return out
+  }
+  out.push({
+    id: `${idPrefix}${out.length}`,
+    role: 'assistant',
+    text: '产物',
+    time: events[events.length - 1]?.time ?? 0,
+    artifacts: badgesOf(pending),
+  })
+  return out
 }
 
 /**
  * Lens stream: topic session events, plus leftover host ③④ when this is
  * the H9 「历史对话」 topic (`fromSessionId`). Plugin injects stay hidden.
+ * Write/edit files appear on the assistant bubble (R27) as DSH-local
+ * cards. Job-done (R26) still uploads and posts the same files to the
+ * group; the lens does not replace that send.
  */
 export function topicLensBubbles(
   topic: TopicRecord,
@@ -523,14 +601,8 @@ export function topicLensBubbles(
 ): TopicLensBubble[] {
   const fromHost = topic.fromSessionId === undefined || topic.fromSessionId === ''
     ? []
-    : digestCandidates(sessionEventsOf(agents.get(topic.fromSessionId))).map((row, index) => ({
-      ...row,
-      id: `h${index}`,
-    }))
-  const fromTopic = digestCandidates(sessionEventsOf(agents.get(topic.dshSessionId))).map((row, index) => ({
-    ...row,
-    id: `t${index}`,
-  }))
+    : lensBubblesFromEvents(sessionEventsOf(agents.get(topic.fromSessionId)), 'h')
+  const fromTopic = lensBubblesFromEvents(sessionEventsOf(agents.get(topic.dshSessionId)), 't')
   return [...fromHost, ...fromTopic].sort((a, b) => a.time - b.time)
 }
 

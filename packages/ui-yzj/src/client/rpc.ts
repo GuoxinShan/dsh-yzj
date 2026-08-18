@@ -131,7 +131,7 @@ export interface YzjPanelInject {
     title?: string
     groupName?: string
   }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Topic-drawer lens bubbles (user/assistant; plugin followups omitted). */
+  /** Topic-drawer lens bubbles (user/assistant + write/edit file cards). */
   homeTopicLens?: (sessionId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Ask the topic agent from the drawer; does not focus native Chat. */
   homeTopicAsk?: (sessionId: string, text: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>

@@ -10,7 +10,7 @@ docs/
   release.md                           发布流程（GitHub 分享 / npm 全量发布 + 前置检查清单）
   spec/                              ← 设计基线（要做什么、为什么、验收口径）
     integration-master-plan.md         云之家×dsh 集成整体方案（v1.8 指针 → 会话家园；正文仍为 v1.7 人在闭环）
-    group-room-topics.md               v2.0 产品法：1 群 = 1 群房间 + N 话题会话；工作台三栏；v1.10 R26 话题 job-done 投递
+    group-room-topics.md               v2.0 产品法：1 群 = 1 群房间 + N 话题会话；工作台三栏；v1.10 R26 job-done 投递；v1.11 R27 话题透镜产物卡
     dsh-home-session.md                DSH 唯一会话家园（v1.x 历史快照；D2/D3 被 group-room-topics 覆盖，D9 等仍有效）
     dsh-home-transcript.md             绑定会话可见时间线：插件消息日志（v1.x 历史快照；存储/去重/回填/切会话分阶段机制沿用，融合视图条款被覆盖）
     todo-design.md                     待办功能设计（v1.3，tag 理念 + §11.2 决策表；直写原则交叉引用会话家园）
@@ -29,7 +29,7 @@ docs/
 
 1. **`README.md`（仓库根）**——三分钟了解包结构与能力面。
 2. **`spec/integration-master-plan.md`**——系统全貌：目标、用户旅程、人在闭环验收基准（会话模型见下一份）。
-3. **`spec/group-room-topics.md`**——**当前产品法（v2.0 / v1.1 工作台）**：1 群 = 1 群房间 + N 话题会话；两视图各一个发送动词；导航 = 侧栏脚「云之家」入口块 + 工作台会话列表 + 右侧话题抽屉。对照 `status/gap-analysis.md` §23。
+3. **`spec/group-room-topics.md`**——**当前产品法（v2.0 / v1.11 工作台）**：1 群 = 1 群房间 + N 话题会话；两视图各一个发送动词；导航 = 侧栏脚「云之家」入口块 + 工作台会话列表 + 右侧话题抽屉。对照 `status/gap-analysis.md` §23。
 4. **`spec/dsh-home-session.md`** / **`spec/dsh-home-transcript.md`**——v1.x 历史快照：会话对象、写路径 D9、消息日志存储/去重/回填/召唤窗口（机制沿用）；1:1 绑定与融合一条流已被 v2.0 覆盖（保留/作废对照见 group-room-topics §6）。
 5. **`status/gap-analysis.md`**——当前实现状态与已验收证据（§15–§21 为既有面；§22 为 v1.8 实现快照；**§23 为 v2.0 目标 vs 现状**）。
 6. **`pitfalls/README.md` 索引**——动手前必查；命中相关条目先读再写代码。话题「发给助手」没近窗先读 pitfall-027；想把文件挂进回复链先读 pitfall-028（CLI `file` 不支持 `--reply-msg-id`）。
