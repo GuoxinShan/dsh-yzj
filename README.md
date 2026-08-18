@@ -12,7 +12,7 @@
 |---|---|---|
 | [`packages/bridge`](packages/bridge/README.md) | `@dsh-yzj/bridge` → `ctx.yzjBridge` | 有界子进程通道：argv 数组直启 `yzj-cli`，无 shell 插值；复用机器上 `yzj-cli auth login` 的登录态与 keychain 凭据，harness 全程不接触 appSecret/accessToken |
 | [`packages/tool-yzj`](packages/tool-yzj/README.md) | `@dsh-yzj/tool-yzj`（注册到 `ctx.tools`） | 45 个模型面工具：doc（16）/ sheet（10）/ calendar（7）/ contact（3）/ im（3）/ file（2）/ **todo（4）**；每个工具输出有界 digest，并把裁剪后的结构化载荷经 `output.presentationMeta` 投影给 UI；todo 核心同时以 `ctx.yzjTodo` 服务暴露给浏览器面；**`ctx.yzjHome`** 绑定表 + **绑定消息日志**（`yzj_home_logs`，①② 不是 Session.append） |
-| [`packages/ui-yzj`](packages/ui-yzj/README.md) | `@dsh-yzj/ui-yzj`（`dsh.client` 双面包） | node half：`/yzj` Connection RPC 通道（含 `home-open` / `home-topic-open` / `home-send` / `home-fused` / `home-handoff`）；browser half：侧栏脚「云之家」入口块 + `conversation.view` 工作台（会话列表 \| 群房间时间线 + 话题抽屉；待办/日程/知识库迁入中栏；记忆入口搁置）+ composer takeover「发进群」+ 话题锚点卡 / 未绑定「丢进群」+ **设置 → 云之家**（机器人管理） |
+| [`packages/ui-yzj`](packages/ui-yzj/README.md) | `@dsh-yzj/ui-yzj`（`dsh.client` 双面包） | node half：`/yzj` Connection RPC 通道（含 `home-open` / `home-topic-open` / `home-send` / `home-fused` / `home-handoff`）；browser half：侧栏脚一个「云之家」入口 + `conversation.view` 工作台（顶栏页签切对话 / 待办 / 日程 / 知识库；对话域 = 会话列表 \| 群房间时间线 + 话题抽屉；记忆入口搁置）+ composer takeover「发进群」+ 话题锚点卡 / 未绑定「丢进群」+ **设置 → 云之家**（机器人管理） |
 | [`packages/robot-yzj`](packages/robot-yzj/README.md) | `@dsh-yzj/robot-yzj` → `ctx.yzjRobot` | 机器人双向通道（R2.x host 面，设计见 [docs/spec/robot-channel-plan.md](docs/spec/robot-channel-plan.md)）：实测协议 WS 入站 + sendMsgUrl 出站；入站 `followup()` 打该云之家会话的**绑定 DSH 家园**（`yzj-home-*`，不是隐藏 `yzj-robot-*`）；ack-then-push；bang 命令族含 `!fork`（打开/恢复目标群绑定会话，不开新根）+ `!feedback`；**DSH→机器人双向控制**：`robot_status` / `robot_notify` / `robot_continue` / `robot_fork`（resume 绑定会话）/ `robot_share_*`；**chatnode 桥**见 [routines-delivery.md](docs/spec/routines-delivery.md) §3.1 |
 | [`packages/memory-yzj`](packages/memory-yzj/README.md) | `@dsh-yzj/memory-yzj` → `ctx.yzjMemory` | 记忆库组件（设计见 [docs/spec/memory-vault-design.md](docs/spec/memory-vault-design.md)）：明文 Markdown vault（sections/entities/observations + log/index，默认 `$DSH_HOME/yzj-memory`，按 `user`/`group:<id>` scope 分仓）；5 个 `memory_*` 工具（observe/read/search/dream_load/dream_apply）；`systemPrompt.context` 有界注入（每 scope `inject_char_cap`，默认 6000）；**dream 固化默认关闭**——`dream.json` 运行时开关（面板可翻）+ 每日 `dailyAt` 进程内定时 + 「立即固化」，模型链＝dream 配置 > 插件默认 > harness 默认，rev 乐观锁保护人工编辑；`group:<id>` scope 留缝群组记忆 |
 | [`packages/model-yzj`](packages/model-yzj/README.md) | `@dsh-yzj/model-yzj` → `ctx.yzjModels` | 插件级默认模型（`~/.dsh/yzj-model.json`，明文热生效）：robot 模型解析链尾部（会话覆盖 > 机器人配置 > 通道默认 > **插件默认** > harness 默认）与 dream 执行器共用；`catalog()` 提供活跃路由的 provider/model 目录（面板选择器数据源） |
@@ -28,7 +28,7 @@ pnpm dsh plugin --profile web add -w link:<本仓库路径>
 dsh plugin --profile web add github:GuoxinShan/dsh-yzj#v0.1.0
 ```
 
-安装后重启 GUI（源码启动时重启 `node --import tsx/esm apps/cli/src/bin.ts web`），侧栏脚出现「云之家」入口块（对话 / 待办 / 日程 / 知识库 / 记忆）。
+安装后重启 GUI（源码启动时重启 `node --import tsx/esm apps/cli/src/bin.ts web`），侧栏脚出现一个「云之家」入口；点开工作台后用顶栏页签切对话 / 待办 / 日程 / 知识库（记忆入口搁置）。
 
 > 本地开发用 `link:` 依赖指向 harness checkout；对外安装走 monobundle + git tag
 > （根包依赖已全部指向 registry 的 `@deepseek-ai` rc.6 系列，见 docs/release.md）。
@@ -62,7 +62,7 @@ bundle 交付**改造版 skill**（`packages/bundle/skills/yzj-cli/SKILL.md`）�
 ### UI 设计
 
 - **工具结果富卡片**：`tool.call.toolview` keyed 注册全部 45 个工具名。pending 态从参数渲染标题；settled 态优先渲染结构化 `meta`（文档详情/列表、数据表 schema、记录表、日程时间线、消息气泡、联系人卡片、待办列表/动作摘要），无结构时回退到 digest 文本。失败态显示错误摘要。
-- **云之家工作台**：侧栏脚「云之家」入口块 → 工作台三栏。对话域 = 会话列表 + 群房间时间线 + 话题抽屉；待办 / 日程 / 知识库 / 记忆迁入中栏（记忆是本地 vault，不出本机）。悬浮球已退役。群房间与话题见 [group-room-topics.md](docs/spec/group-room-topics.md)，对照 gap §23。
+- **云之家工作台**：侧栏脚一个「云之家」入口 → 工作台。四域用顶栏页签切（对话 / 待办 / 日程 / 知识库）。对话页签 = 会话列表 + 群房间时间线 + 话题抽屉；待办 / 日程 / 知识库 embed 原面板（记忆入口搁置，vault 仍是本地不出本机）。悬浮球已退役。群房间与话题见 [group-room-topics.md](docs/spec/group-room-topics.md)，对照 gap §23。
 
 ## 开发
 

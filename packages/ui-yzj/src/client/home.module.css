@@ -865,10 +865,62 @@
 
 .roomShell {
   display: flex;
+  flex-direction: column;
   flex: 1;
   min-width: 0;
   min-height: 0;
   height: 100%;
+}
+
+.workbenchTabs {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  padding: 6px 12px 0;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.workbenchTab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 52px;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.workbenchTab:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.workbenchTabActive,
+.workbenchTabActive:hover {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+  background: transparent;
+  box-shadow: inset 0 -2px 0 var(--dsw-static-deepseek-500);
+}
+
+.roomShellBody {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.roomDomainPane {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
 }
 
 .roomMain {
@@ -1301,17 +1353,11 @@
   align-items: center;
 }
 
-.yzjDockHead {
-  padding: 0 12px 4px;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
-  font-weight: 500;
-}
-
 .yzjDockEntries {
   display: flex;
-  flex-direction: column;
-  gap: 1px;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
   padding: 0 8px;
 }
 
@@ -1319,7 +1365,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   border: none;
   border-radius: 10px;
   background: transparent;
@@ -1358,6 +1405,7 @@
 }
 
 .yzjDockNarrow .yzjDockEntry {
+  flex: none;
   width: 32px;
   justify-content: center;
   padding: 6px;
@@ -1374,8 +1422,8 @@
 .yzjDockRobot {
   display: flex;
   align-items: center;
-  margin-top: 2px;
-  padding: 2px 18px 2px;
+  flex: none;
+  padding: 0 4px;
 }
 
 .yzjDockRobotDot {

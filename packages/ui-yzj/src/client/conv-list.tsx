@@ -371,7 +371,7 @@ export function YzjConvList(props: YzjConvListInjected) {
     <nav className={css.convList} data-testid="yzj-conv-list" aria-label="会话">
       {error !== '' && <p className={css.convListHint}>{error}</p>}
       {rows.length === 0 && error === '' && (
-        <p className={css.convListHint}>还没有最近会话。点侧栏脚「云之家 → 对话」打开一个。</p>
+        <p className={css.convListHint}>还没有最近会话。点侧栏脚「云之家」打开一个。</p>
       )}
       <div className={css.convListBody} ref={bodyRef} data-testid="yzj-conv-list-body" onScroll={maybeLoadMore}>
         {rows.map((row) => {

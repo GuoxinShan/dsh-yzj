@@ -1,8 +1,7 @@
 /**
- * Sidebar-foot 云之家 entry dock (docs/spec/group-room-topics.md R15).
- * Five domain entries + robot status. 对话 focuses a bound room (or binds
- * the first recent conversation); other domains switch the workbench pane
- * (P2) after focusing a room so conversation.view is mounted.
+ * Sidebar-foot 云之家 entry (docs/spec/group-room-topics.md R15 / R28).
+ * One 「云之家」button opens the workbench (focus last room seat, never
+ * blocks on RPC). Domain switching lives on the workbench tablist, not here.
  */
 import { useEffect, useState } from 'react'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -10,12 +9,11 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import { bindAndFocusGroup } from './home-focus.ts'
 import { parseNavRooms, parseRecentGroups, peekConvListHold, topicNavLabel } from './conv-list.tsx'
 import { peekImSeat, rememberImSeat } from './im-seat.ts'
-import { getWorkbenchDomain, setWorkbenchDomain, subscribeWorkbenchDomain, type WorkbenchDomain } from './workbench-domain.ts'
 import css from './home.module.css'
 
 export { topicNavLabel }
 
-/** Injected RPC + focus + panel jump for the dock. */
+/** Injected RPC + focus for the dock. */
 export interface YzjGroupSpaceInjected {
   homeNav: () => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   focusBoundSession?: (sessionId: string) => void
@@ -23,15 +21,6 @@ export interface YzjGroupSpaceInjected {
   homeOpen?: (groupId: string, title?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   robotStatus?: () => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
 }
-
-type DockId = 'chat' | 'todo' | 'calendar' | 'docs'
-
-const DOCK: readonly { id: DockId; label: string; mark: string; hint?: string }[] = [
-  { id: 'chat', label: '对话', mark: '对' },
-  { id: 'todo', label: '待办', mark: '办' },
-  { id: 'calendar', label: '日程', mark: '日' },
-  { id: 'docs', label: '知识库', mark: '库' },
-]
 
 function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null ? value as Record<string, unknown> : {}
@@ -65,18 +54,16 @@ function currentSessionId(props: { useSessions?: (select: (state: { current?: st
 }
 
 /**
- * In-flow 云之家 dock in the sidebar foot. Compact glyphs on the collapsed
- * rail so 对话 is still reachable.
+ * In-flow 云之家 dock in the sidebar foot. Compact glyph on the collapsed
+ * rail so the workbench is still reachable.
  */
 export function YzjYunzhijiaDock(
   props: PropsRuntime<'sidebar.footer.action'> & YzjGroupSpaceInjected,
 ) {
   const [robot, setRobot] = useState('…')
   const [hint, setHint] = useState('')
-  const [domain, setDomain] = useState<WorkbenchDomain>(getWorkbenchDomain)
   const currentId = currentSessionId(props)
-
-  useEffect(() => subscribeWorkbenchDomain(() => { setDomain(getWorkbenchDomain()) }), [])
+  const seated = currentId.startsWith('yzj-home-')
 
   useEffect(() => {
     if (props.robotStatus === undefined) {
@@ -154,7 +141,7 @@ export function YzjYunzhijiaDock(
       }
     }
     if (props.fetchGroups === undefined || props.homeOpen === undefined) {
-      setHint('还没有群聊。从侧栏脚「对话」或会话列表挑一个。')
+      setHint('还没有群聊。点侧栏脚「云之家」打开一个。')
       return
     }
     const recent = await props.fetchGroups(20, 1)
@@ -170,9 +157,7 @@ export function YzjYunzhijiaDock(
     void bindAndFocusGroup(props.homeOpen, props.focusBoundSession, first.groupId, first.groupName)
   }
 
-  const onEntry = (id: DockId): void => {
-    const domain: WorkbenchDomain = id === 'chat' ? 'im' : id
-    setWorkbenchDomain(domain)
+  const onHome = (): void => {
     setHint('')
     void openChat()
   }
@@ -184,34 +169,25 @@ export function YzjYunzhijiaDock(
       data-testid="yzj-group-space"
       aria-label="云之家"
     >
-      {props.wide && <div className={css.yzjDockHead}>云之家</div>}
       <div className={css.yzjDockEntries}>
-        {DOCK.map((entry) => {
-          const active = domain === (entry.id === 'chat' ? 'im' : entry.id)
-          return (
-            <button
-              key={entry.id}
-              type="button"
-              className={`${css.yzjDockEntry} ${active ? css.yzjDockEntryActive : ''}`}
-              title={entry.hint ?? entry.label}
-              aria-pressed={active}
-              data-testid={`yzj-dock-${entry.id}`}
-              onClick={() => onEntry(entry.id)}
-            >
-              {!props.wide && <span className={css.yzjDockMark} aria-hidden="true">{entry.mark}</span>}
-              {props.wide && <span className={css.yzjDockLabel}>{entry.label}</span>}
-            </button>
-          )
-        })}
-      </div>
-      {props.wide && (
+        <button
+          type="button"
+          className={`${css.yzjDockEntry} ${seated ? css.yzjDockEntryActive : ''}`}
+          title="云之家"
+          aria-pressed={seated}
+          data-testid="yzj-dock-home"
+          onClick={onHome}
+        >
+          {!props.wide && <span className={css.yzjDockMark} aria-hidden="true">云</span>}
+          {props.wide && <span className={css.yzjDockLabel}>云之家</span>}
+        </button>
         <div className={css.yzjDockRobot} data-testid="yzj-dock-robot" title={`机器人 ${robot}`}>
           <span
             className={`${css.yzjDockRobotDot} ${tone === 'ok' ? css.yzjDockRobotDotOk : tone === 'warn' ? css.yzjDockRobotDotWarn : ''}`}
             aria-hidden="true"
           />
         </div>
-      )}
+      </div>
       {props.wide && hint !== '' && <p className={css.yzjDockHint}>{hint}</p>}
     </nav>
   )

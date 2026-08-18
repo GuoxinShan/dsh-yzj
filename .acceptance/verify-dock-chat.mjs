@@ -1,6 +1,6 @@
 /**
- * Dock 「对话」 end-to-end against the live GUI (:3080).
- * Catches the archived-hanger dead end (pitfall-021): click 对话 must
+ * Dock 「云之家」 end-to-end against the live GUI (:3080).
+ * Catches the archived-hanger dead end (pitfall-021): click 云之家 must
  * mount the workbench list + room composer, then switch groups without
  * flashing the official InputBar.
  */
@@ -38,11 +38,11 @@ const dock = page.getByTestId('yzj-group-space')
 await dock.waitFor({ state: 'visible', timeout: 25000 })
 ok('云之家 dock is visible', await dock.isVisible())
 
-await page.getByTestId('yzj-dock-chat').click()
+await page.getByTestId('yzj-dock-home').click()
 const list = page.getByTestId('yzj-conv-list')
 const listUp = await list.waitFor({ state: 'visible', timeout: 12000 }).then(() => true).catch(() => false)
 await page.screenshot({ path: join(OUT, 'after-dock.png') })
-ok('对话 opens the workbench conversation list', listUp)
+ok('云之家 opens the workbench conversation list', listUp)
 ok('room shell mounted', await page.getByTestId('yzj-room-shell').count().then(n => n > 0))
 
 if (listUp) {

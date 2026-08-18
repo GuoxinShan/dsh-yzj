@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Sidebar-foot 云之家 dock: five domain entries, no group tree.
+ * Sidebar-foot 云之家 dock: one entry, no domain buttons, no group tree (R28).
  */
 import { act } from 'react-dom/test-utils'
 import { createRoot } from 'react-dom/client'
@@ -52,7 +52,7 @@ describe('YzjYunzhijiaDock', () => {
     setWorkbenchDomain('im')
   })
 
-  it('renders the 云之家 entries and robot status, not a group tree', async () => {
+  it('renders one 云之家 entry and robot status, not a group tree or domain buttons', async () => {
     const { container } = mount({
       ok: true,
       value: {
@@ -68,10 +68,14 @@ describe('YzjYunzhijiaDock', () => {
     await act(async () => { await Promise.resolve() })
     const text = container.textContent ?? ''
     expect(text).toContain('云之家')
-    expect(text).toContain('对话')
-    expect(text).toContain('待办')
-    expect(text).toContain('日程')
-    expect(text).toContain('知识库')
+    expect(container.querySelector('[data-testid="yzj-dock-home"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="yzj-dock-chat"]')).toBeNull()
+    expect(container.querySelector('[data-testid="yzj-dock-todo"]')).toBeNull()
+    expect(container.querySelector('[data-testid="yzj-dock-calendar"]')).toBeNull()
+    expect(container.querySelector('[data-testid="yzj-dock-docs"]')).toBeNull()
+    expect(text).not.toContain('待办')
+    expect(text).not.toContain('日程')
+    expect(text).not.toContain('知识库')
     expect(text).not.toContain('记忆')
     expect(container.querySelector('[data-testid="yzj-dock-robot"]')?.getAttribute('title')).toContain('已连接')
     expect(text).not.toContain('💬')
@@ -82,8 +86,7 @@ describe('YzjYunzhijiaDock', () => {
     expect(container.querySelector('[data-testid="yzj-group-space"]')?.tagName).toBe('NAV')
   })
 
-  it('marks the current workbench domain as active and tones the robot dot', async () => {
-    setWorkbenchDomain('im')
+  it('marks the entry active when already on a room host and tones the robot dot', async () => {
     const { container } = mount({
       ok: true,
       value: {
@@ -95,21 +98,17 @@ describe('YzjYunzhijiaDock', () => {
           topics: [],
         }],
       },
-    })
+    }, { current: 'yzj-home-g-a' })
     await act(async () => { await Promise.resolve() })
-    const chat = container.querySelector('[data-testid="yzj-dock-chat"]') as HTMLButtonElement
-    expect(chat.className).toMatch(/yzjDockEntryActive/)
-    expect(chat.getAttribute('aria-pressed')).toBe('true')
+    const home = container.querySelector('[data-testid="yzj-dock-home"]') as HTMLButtonElement
+    expect(home.className).toMatch(/yzjDockEntryActive/)
+    expect(home.getAttribute('aria-pressed')).toBe('true')
     const dot = container.querySelector('[data-testid="yzj-dock-robot"] span')
     expect(dot?.className).toMatch(/DotOk/)
-    const todo = container.querySelector('[data-testid="yzj-dock-todo"]') as HTMLButtonElement
-    await act(async () => { todo.click(); await Promise.resolve() })
-    expect(todo.className).toMatch(/yzjDockEntryActive/)
-    expect(chat.className).not.toMatch(/yzjDockEntryActive/)
-    setWorkbenchDomain('im')
   })
 
-  it('对话 focuses the first bound room', async () => {
+  it('云之家 focuses the first bound room without switching the workbench domain', async () => {
+    setWorkbenchDomain('todo')
     const { container, focused } = mount({
       ok: true,
       value: {
@@ -123,30 +122,10 @@ describe('YzjYunzhijiaDock', () => {
       },
     })
     await act(async () => { await Promise.resolve() })
-    const chat = container.querySelector('[data-testid="yzj-dock-chat"]') as HTMLButtonElement
-    await act(async () => { chat.click(); await Promise.resolve() })
+    const home = container.querySelector('[data-testid="yzj-dock-home"]') as HTMLButtonElement
+    await act(async () => { home.click(); await Promise.resolve() })
     expect(focused).toEqual(['yzj-home-g-a'])
-  })
-
-  it('待办 switches the workbench to the todo domain and focuses a room', async () => {
-    setWorkbenchDomain('im')
-    const { container, focused } = mount({
-      ok: true,
-      value: {
-        rooms: [{
-          groupId: 'g-a',
-          groupName: '群房间',
-          sessionId: 'yzj-home-g-a',
-          yzjKind: 'group',
-          topics: [],
-        }],
-      },
-    })
-    await act(async () => { await Promise.resolve() })
-    const todo = container.querySelector('[data-testid="yzj-dock-todo"]') as HTMLButtonElement
-    await act(async () => { todo.click(); await Promise.resolve() })
     expect(getWorkbenchDomain()).toBe('todo')
-    expect(focused).toEqual(['yzj-home-g-a'])
   })
 
   it('does not expose a 记忆 dock entry', async () => {
@@ -156,7 +135,8 @@ describe('YzjYunzhijiaDock', () => {
     expect(container.textContent).not.toContain('记忆')
   })
 
-  it('skips homeNav when already on a room host', async () => {
+  it('skips homeNav when already on a room host and does not change domain', async () => {
+    setWorkbenchDomain('calendar')
     let navCalls = 0
     const { container, focused } = mount({ ok: true, value: { rooms: [] } }, {
       current: 'yzj-home-g-a',
@@ -167,10 +147,11 @@ describe('YzjYunzhijiaDock', () => {
     })
     await act(async () => { await Promise.resolve() })
     const afterMount = navCalls
-    const chat = container.querySelector('[data-testid="yzj-dock-chat"]') as HTMLButtonElement
-    await act(async () => { chat.click(); await Promise.resolve() })
+    const home = container.querySelector('[data-testid="yzj-dock-home"]') as HTMLButtonElement
+    await act(async () => { home.click(); await Promise.resolve() })
     expect(navCalls).toBe(afterMount)
     expect(focused).toEqual([])
+    expect(getWorkbenchDomain()).toBe('calendar')
   })
 
   it('focuses the cached seat without waiting for homeNav', async () => {
@@ -179,16 +160,18 @@ describe('YzjYunzhijiaDock', () => {
     const { container, focused } = mount({ ok: true, value: { rooms: [] } }, {
       homeNav: () => new Promise<Rpc>(resolve => { resolveNav = resolve }),
     })
-    const chat = container.querySelector('[data-testid="yzj-dock-chat"]') as HTMLButtonElement
-    await act(async () => { chat.click() })
+    const home = container.querySelector('[data-testid="yzj-dock-home"]') as HTMLButtonElement
+    await act(async () => { home.click() })
     expect(focused).toEqual(['yzj-home-cached'])
     resolveNav?.({ ok: true, value: { rooms: [] } })
   })
 
-  it('still renders compact glyphs on the collapsed rail', () => {
+  it('still renders a compact glyph on the collapsed rail', () => {
     const { container } = mount({ ok: true, value: { rooms: [] } }, { wide: false })
     expect(container.querySelector('[data-testid="yzj-group-space"]')).not.toBeNull()
-    expect(container.querySelector('[data-testid="yzj-dock-chat"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="yzj-dock-home"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="yzj-dock-chat"]')).toBeNull()
     expect(container.textContent).not.toContain('云之家')
+    expect(container.querySelector('[data-testid="yzj-dock-home"]')?.textContent).toContain('云')
   })
 })

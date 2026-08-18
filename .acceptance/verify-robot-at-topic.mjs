@@ -57,7 +57,7 @@ try {
 
   ok('robot dock is connected', /已连接|连接/.test(label) || !label.includes('未'), label)
 
-  await page.getByTestId('yzj-dock-chat').click()
+  await page.getByTestId('yzj-dock-home').click()
   await page.waitForTimeout(2500)
   const groupRow = page.getByTestId('yzj-conv-list').locator('button').filter({ hasText: GROUP_NAME }).first()
   const groupFound = await groupRow.count().then(n => n > 0).catch(() => false)
