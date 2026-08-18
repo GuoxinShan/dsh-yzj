@@ -56,6 +56,8 @@ export function openPanelTarget(target: YzjJumpTarget, anchorMsgId?: string): vo
     rememberImSeat({ groupId: target.groupId, sessionId: '' })
   } else if (target.kind === 'todo') {
     setWorkbenchDomain('todo')
+  } else if (target.kind === 'advance') {
+    setWorkbenchDomain('advance')
   } else if (target.kind === 'doc' || target.kind === 'workspace') {
     setWorkbenchDomain('docs')
   } else {
@@ -87,6 +89,8 @@ export function openPanelTarget(target: YzjJumpTarget, anchorMsgId?: string): vo
     void c.inject.fetchDocs(target.workspaceId).then((result) => {
       if (result.ok) actions.setDocs(asArray(result.value))
     })
+  } else if (target.kind === 'advance') {
+    // Domain switch is enough — the advance pane owns its own data loop.
   } else if (target.kind === 'todo') {
     actions.setTab('todo')
     void c.inject.todoState().then((result) => {

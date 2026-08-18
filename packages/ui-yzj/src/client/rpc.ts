@@ -60,6 +60,16 @@ export interface YzjPanelInject {
   selectTodoLibrary: (docId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Adopt-or-provision a team library in one enterprise workspace. */
   ensureTeamTodo: (workspace: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** AI推进 board snapshot (items + library) over the yzjAdvance core. */
+  advanceState: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** One advancement item: projection + 事元 stream window + sources. */
+  advanceGet: (advanceId: string, entryOffset?: number, entryLimit?: number) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Start-modal direct write: create one advancement item (user's own will). */
+  advanceCreate: (input: { title: string; goal?: string; background?: string; metrics?: string; assignee?: string; targetDate?: string; tags?: string[] }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Panel judge verbs (user-direct; each lands as one user 事元). */
+  advanceJudge: (advanceId: string, action: 'confirm_condition' | 'confirm_advance' | 'accept' | 'reject' | 'ignore', note?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** One-click provision of the 事项/事元 tables (empty-state action). */
+  advanceEnsure: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** One write-confirmation record for a tool call (undefined when not gated). */
   fetchWrite: (sessionId: string, callId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Settle one pending write-confirmation decision. */
@@ -205,6 +215,27 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
     todoLibraries: () => call('todo-libraries', {}),
     selectTodoLibrary: (docId) => call('todo-select', { docId }),
     ensureTeamTodo: (workspace) => call('todo-ensure-team', { workspace }),
+    advanceState: () => call('advance-state', {}),
+    advanceGet: (advanceId, entryOffset, entryLimit) => call('advance-get', {
+      advanceId,
+      ...(entryOffset === undefined ? {} : { entryOffset }),
+      ...(entryLimit === undefined ? {} : { entryLimit }),
+    }),
+    advanceCreate: (input) => call('advance-create', {
+      title: input.title,
+      ...(input.goal === undefined || input.goal === '' ? {} : { goal: input.goal }),
+      ...(input.background === undefined || input.background === '' ? {} : { background: input.background }),
+      ...(input.metrics === undefined || input.metrics === '' ? {} : { metrics: input.metrics }),
+      ...(input.assignee === undefined || input.assignee === '' ? {} : { assignee: input.assignee }),
+      ...(input.targetDate === undefined || input.targetDate === '' ? {} : { targetDate: input.targetDate }),
+      ...(input.tags === undefined || input.tags.length === 0 ? {} : { tags: input.tags }),
+    }),
+    advanceJudge: (advanceId, action, note) => call('advance-judge', {
+      advanceId,
+      action,
+      ...(note === undefined || note === '' ? {} : { note }),
+    }),
+    advanceEnsure: () => call('advance-ensure', {}),
     fetchWrite: (sessionId, callId) => call('write-list', { sessionId, callId }),
     decideWrite: (writeId, outcome) => call('write-decide', { writeId, outcome }),
     robotStatus: () => call('robot-status', {}),

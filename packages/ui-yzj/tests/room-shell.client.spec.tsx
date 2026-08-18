@@ -54,6 +54,9 @@ describe('YzjRoomShell', () => {
     expect(container.querySelector('[data-testid="yzj-workbench-tab-todo"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="yzj-workbench-tab-calendar"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="yzj-workbench-tab-docs"]')).not.toBeNull()
+    // v1.18: the AI推进 board is the fifth tab (ai-advance-design §7).
+    expect(container.querySelector('[data-testid="yzj-workbench-tab-advance"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="yzj-workbench-tabs"]')?.textContent).toContain('推进')
     expect(container.querySelector('[data-testid="yzj-conv-list"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="yzj-fused-stream"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="yzj-room-composer-host"]')).not.toBeNull()

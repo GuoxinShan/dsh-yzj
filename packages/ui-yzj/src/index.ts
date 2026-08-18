@@ -574,6 +574,80 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
           return internalError(`todo-toggle failed: ${String(error)}`)
         }
       }
+      case 'advance-state': {
+        // AI推进 board snapshot over the shared yzjAdvance core (tool-yzj).
+        const advance = ctx.get('yzjAdvance')
+        if (advance === undefined) return internalError('advance-state: yzjAdvance 服务不可用（tool-yzj 未挂载）')
+        try {
+          return { ok: true, value: await advance.state() }
+        } catch (error) {
+          return internalError(`advance-state failed: ${String(error)}`)
+        }
+      }
+      case 'advance-get': {
+        const advance = ctx.get('yzjAdvance')
+        if (advance === undefined) return internalError('advance-get: yzjAdvance 服务不可用（tool-yzj 未挂载）')
+        const advanceId = stringField(payload, 'advanceId')
+        if (advanceId === undefined) return internalError('advance-get endpoint requires an advanceId payload')
+        try {
+          return { ok: true, value: await advance.get(advanceId, numberField(payload, 'entryOffset'), numberField(payload, 'entryLimit')) }
+        } catch (error) {
+          return internalError(`advance-get failed: ${String(error)}`)
+        }
+      }
+      case 'advance-create': {
+        // Start-modal direct write = the user's own will (D9): no confirm card.
+        const advance = ctx.get('yzjAdvance')
+        if (advance === undefined) return internalError('advance-create: yzjAdvance 服务不可用（tool-yzj 未挂载）')
+        const title = stringField(payload, 'title')
+        if (title === undefined) return internalError('advance-create endpoint requires a title payload')
+        const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
+        const rawTags = record.tags
+        const tags = Array.isArray(rawTags)
+          ? rawTags.filter((item): item is string => typeof item === 'string')
+          : []
+        try {
+          return {
+            ok: true,
+            value: await advance.create({
+              title,
+              goal: stringField(payload, 'goal'),
+              background: stringField(payload, 'background'),
+              metrics: stringField(payload, 'metrics'),
+              assignee: stringField(payload, 'assignee'),
+              targetDate: stringField(payload, 'targetDate'),
+              tags,
+            }),
+          }
+        } catch (error) {
+          return internalError(`advance-create failed: ${String(error)}`)
+        }
+      }
+      case 'advance-judge': {
+        // Panel judge verbs = user-direct writes landing as user 事元 (D9).
+        const advance = ctx.get('yzjAdvance')
+        if (advance === undefined) return internalError('advance-judge: yzjAdvance 服务不可用（tool-yzj 未挂载）')
+        const advanceId = stringField(payload, 'advanceId')
+        const action = stringField(payload, 'action')
+        if (advanceId === undefined || action === undefined) return internalError('advance-judge endpoint requires advanceId and action payloads')
+        if (!['confirm_condition', 'confirm_advance', 'accept', 'reject', 'ignore'].includes(action)) {
+          return internalError(`advance-judge: unknown action ${action}`)
+        }
+        try {
+          return { ok: true, value: await advance.judge(advanceId, action as Parameters<typeof advance.judge>[1], stringField(payload, 'note')) }
+        } catch (error) {
+          return internalError(`advance-judge failed: ${String(error)}`)
+        }
+      }
+      case 'advance-ensure': {
+        const advance = ctx.get('yzjAdvance')
+        if (advance === undefined) return internalError('advance-ensure: yzjAdvance 服务不可用（tool-yzj 未挂载）')
+        try {
+          return { ok: true, value: await advance.ensure() }
+        } catch (error) {
+          return internalError(`advance-ensure failed: ${String(error)}`)
+        }
+      }
       case 'write-list': {
         const sessionId = stringField(payload, 'sessionId')
         if (sessionId === undefined) return internalError('write-list endpoint requires a sessionId payload')
