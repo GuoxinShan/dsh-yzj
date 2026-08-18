@@ -4,9 +4,10 @@
  */
 import { act } from 'react-dom/test-utils'
 import { createRoot } from 'react-dom/client'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { YzjYunzhijiaDock } from '../src/client/group-space.tsx'
 import { topicNavLabel } from '../src/client/conv-list.tsx'
+import { clearImSeat, rememberImSeat } from '../src/client/im-seat.ts'
 import { getWorkbenchDomain, setWorkbenchDomain } from '../src/client/workbench-domain.ts'
 
 type Rpc = { ok: true; value: unknown } | { ok: false; error: { message: string } }
@@ -14,7 +15,9 @@ type Rpc = { ok: true; value: unknown } | { ok: false; error: { message: string 
 function mount(nav: Rpc, extra: {
   wide?: boolean
   focused?: string[]
+  current?: string
   robotStatus?: () => Promise<Rpc>
+  homeNav?: () => Promise<Rpc>
 } = {}) {
   const focused = extra.focused ?? []
   const container = document.createElement('div')
@@ -24,8 +27,8 @@ function mount(nav: Rpc, extra: {
     root.render(
       <YzjYunzhijiaDock
         wide={extra.wide !== false}
-        useSessions={select => select({ current: '', byId: {} } as never)}
-        homeNav={async () => nav}
+        useSessions={select => select({ current: extra.current ?? '', byId: {} } as never)}
+        homeNav={extra.homeNav ?? (async () => nav)}
         focusBoundSession={id => { focused.push(id) }}
         robotStatus={extra.robotStatus ?? (async () => ({ ok: true, value: { channels: [{ connected: true }] } }))}
       />,
@@ -35,13 +38,20 @@ function mount(nav: Rpc, extra: {
 }
 
 describe('topicNavLabel', () => {
-  it('strips the official-list prefix once', () => {
+  it('strips the official-list affix once (legacy prefix and current suffix)', () => {
     expect(topicNavLabel('金蝶最小DSH交流群', '金蝶最小DSH交流群 · 整理接口清单')).toBe('整理接口清单')
+    expect(topicNavLabel('金蝶最小DSH交流群', '整理接口清单 · 金蝶最小DSH交流群')).toBe('整理接口清单')
     expect(topicNavLabel('金蝶最小DSH交流群', '整理接口清单')).toBe('整理接口清单')
+    expect(topicNavLabel('', '整理接口清单')).toBe('整理接口清单')
   })
 })
 
 describe('YzjYunzhijiaDock', () => {
+  afterEach(() => {
+    clearImSeat()
+    setWorkbenchDomain('im')
+  })
+
   it('renders the 云之家 entries and robot status, not a group tree', async () => {
     const { container } = mount({
       ok: true,
@@ -62,12 +72,41 @@ describe('YzjYunzhijiaDock', () => {
     expect(text).toContain('待办')
     expect(text).toContain('日程')
     expect(text).toContain('知识库')
-    expect(text).toContain('记忆')
-    expect(text).toContain('机器人通道 · 已连接')
+    expect(text).not.toContain('记忆')
+    expect(container.querySelector('[data-testid="yzj-dock-robot"]')?.getAttribute('title')).toContain('已连接')
+    expect(text).not.toContain('💬')
+    expect(text).not.toContain('机器人通道')
     expect(text).not.toContain('群空间')
     expect(text).not.toContain('已打开')
     expect(text).not.toContain('整理接口清单')
     expect(container.querySelector('[data-testid="yzj-group-space"]')?.tagName).toBe('NAV')
+  })
+
+  it('marks the current workbench domain as active and tones the robot dot', async () => {
+    setWorkbenchDomain('im')
+    const { container } = mount({
+      ok: true,
+      value: {
+        rooms: [{
+          groupId: 'g-a',
+          groupName: '金蝶最小DSH交流群',
+          sessionId: 'yzj-home-g-a',
+          yzjKind: 'group',
+          topics: [],
+        }],
+      },
+    })
+    await act(async () => { await Promise.resolve() })
+    const chat = container.querySelector('[data-testid="yzj-dock-chat"]') as HTMLButtonElement
+    expect(chat.className).toMatch(/yzjDockEntryActive/)
+    expect(chat.getAttribute('aria-pressed')).toBe('true')
+    const dot = container.querySelector('[data-testid="yzj-dock-robot"] span')
+    expect(dot?.className).toMatch(/DotOk/)
+    const todo = container.querySelector('[data-testid="yzj-dock-todo"]') as HTMLButtonElement
+    await act(async () => { todo.click(); await Promise.resolve() })
+    expect(todo.className).toMatch(/yzjDockEntryActive/)
+    expect(chat.className).not.toMatch(/yzjDockEntryActive/)
+    setWorkbenchDomain('im')
   })
 
   it('对话 focuses the first bound room', async () => {
@@ -110,26 +149,40 @@ describe('YzjYunzhijiaDock', () => {
     expect(focused).toEqual(['yzj-home-g-a'])
   })
 
-  it('记忆 notes the local vault and switches the memory domain', async () => {
-    setWorkbenchDomain('im')
-    const { container, focused } = mount({
-      ok: true,
-      value: {
-        rooms: [{
-          groupId: 'g-a',
-          groupName: '群房间',
-          sessionId: 'yzj-home-g-a',
-          yzjKind: 'group',
-          topics: [],
-        }],
+  it('does not expose a 记忆 dock entry', async () => {
+    const { container } = mount({ ok: true, value: { rooms: [] } })
+    await act(async () => { await Promise.resolve() })
+    expect(container.querySelector('[data-testid="yzj-dock-memory"]')).toBeNull()
+    expect(container.textContent).not.toContain('记忆')
+  })
+
+  it('skips homeNav when already on a room host', async () => {
+    let navCalls = 0
+    const { container, focused } = mount({ ok: true, value: { rooms: [] } }, {
+      current: 'yzj-home-g-a',
+      homeNav: async () => {
+        navCalls += 1
+        return { ok: true, value: { rooms: [] } }
       },
     })
     await act(async () => { await Promise.resolve() })
-    const memory = container.querySelector('[data-testid="yzj-dock-memory"]') as HTMLButtonElement
-    await act(async () => { memory.click(); await Promise.resolve() })
-    expect(getWorkbenchDomain()).toBe('memory')
-    expect(focused).toEqual(['yzj-home-g-a'])
-    expect(container.textContent).toContain('本地 vault')
+    const afterMount = navCalls
+    const chat = container.querySelector('[data-testid="yzj-dock-chat"]') as HTMLButtonElement
+    await act(async () => { chat.click(); await Promise.resolve() })
+    expect(navCalls).toBe(afterMount)
+    expect(focused).toEqual([])
+  })
+
+  it('focuses the cached seat without waiting for homeNav', async () => {
+    rememberImSeat({ groupId: 'g-cached', sessionId: 'yzj-home-cached', groupName: '缓存群' })
+    let resolveNav: ((value: Rpc) => void) | undefined
+    const { container, focused } = mount({ ok: true, value: { rooms: [] } }, {
+      homeNav: () => new Promise<Rpc>(resolve => { resolveNav = resolve }),
+    })
+    const chat = container.querySelector('[data-testid="yzj-dock-chat"]') as HTMLButtonElement
+    await act(async () => { chat.click() })
+    expect(focused).toEqual(['yzj-home-cached'])
+    resolveNav?.({ ok: true, value: { rooms: [] } })
   })
 
   it('still renders compact glyphs on the collapsed rail', () => {

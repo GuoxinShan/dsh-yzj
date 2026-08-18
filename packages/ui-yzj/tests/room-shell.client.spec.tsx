@@ -49,4 +49,46 @@ describe('YzjRoomShell', () => {
     expect(container.textContent).toContain('金蝶最小DSH交流群')
     expect(container.textContent).toContain('群里一句')
   })
+
+  it('does not mount the IM workbench on a topic or ordinary session', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const fused = {
+      ok: true as const,
+      value: {
+        bound: true,
+        kind: 'topic',
+        binding: { yzjConversationId: 'g-a', dshSessionId: 'yzj-home-g-a', yzjKind: 'group' },
+        topics: [],
+        items: [
+          { kind: 'im', time: 1, entry: { msgId: 'm1', sentAt: 1, fromName: '同事', content: '群里一句', origin: 'inbound', isSelf: false, status: 'acked' } },
+        ],
+      },
+    }
+    const empty = {
+      homeFused: async () => fused,
+      homeBackfill: async () => ({ ok: true as const, value: { appended: 0, skipped: 0 } }),
+      homeNav: async () => ({ ok: true as const, value: { rooms: [] } }),
+    }
+    act(() => {
+      root.render(<YzjRoomShell sessionId="yzj-topic-g-a-root" {...empty} />)
+    })
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(container.querySelector('[data-testid="yzj-room-shell"]')).toBeNull()
+    expect(container.querySelector('[data-testid="yzj-conv-list"]')).toBeNull()
+    expect(container.textContent).not.toContain('群里一句')
+
+    act(() => {
+      root.render(<YzjRoomShell sessionId="sess-coding" {...empty} />)
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(container.querySelector('[data-testid="yzj-room-shell"]')).toBeNull()
+    act(() => { root.unmount() })
+  })
 })

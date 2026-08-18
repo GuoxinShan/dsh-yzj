@@ -12,9 +12,9 @@ import type { ConnectionRpcHandler } from '@deepseek-ai/dsh-client-connection'
 import type {} from '@dsh-yzj/bridge'
 import type {} from '@dsh-yzj/tool-yzj'
 import { applyWriteGate, type YzjWriteRecord } from './write-gate.ts'
-import { openBoundHome, openTopicHome, type HomeOpenFace } from './home-open.ts'
+import { openBoundHome, openTopicHome, isPlaceholderRoomTitle, topicAgentRoute, type HomeOpenFace } from './home-open.ts'
 import {
-  backfillBoundLog, fusedSnapshot, groupSpaceSnapshot, handoffToGroup, homeIoFrom, parseImSend, roomSnapshot, sendImAndLog,
+  backfillBoundLog, fusedSnapshot, groupSpaceSnapshot, handoffToGroup, homeIoFrom, parseImSend, roomSnapshot, roomSnapshotForGroup, sendImAndLog,
   sessionEventsOf, topicLensBubbles, askTopicAssistant,
 } from './bound-io.ts'
 import { digestCandidates } from './handoff-digest.ts'
@@ -60,6 +60,49 @@ function stringField(payload: unknown, key: string): string | undefined {
   return typeof value === 'string' && value !== '' ? value : undefined
 }
 
+/** Cached groupId → name map from `im group recent` (60s TTL; the client polls home-nav every 2s). */
+let recentNamesCache: { at: number; map: Map<string, string> } | undefined
+
+/** Test helper: drop the recent-names cache so specs start cold. */
+export function clearRecentNamesCache(): void {
+  recentNamesCache = undefined
+}
+
+/**
+ * Page `im group recent` (CLI caps --limit at 20) into a name map. Robot-bound
+ * rooms created outside this profile never pinned a `session/title` here, so
+ * the workbench list fell back to identical 「群聊」 ghost rows — this fills
+ * their real names. Best-effort: bridge failures keep the stale cache.
+ */
+async function recentGroupNames(ctx: Context): Promise<Map<string, string>> {
+  if (recentNamesCache !== undefined && Date.now() - recentNamesCache.at < 60_000) return recentNamesCache.map
+  const map = new Map(recentNamesCache?.map ?? [])
+  for (let page = 1; page <= 5; page += 1) {
+    let result
+    try {
+      result = await ctx.yzjBridge.run(['im', 'group', 'recent', '--limit', '20', '--page', String(page)])
+    } catch {
+      break
+    }
+    if (!result.ok) break
+    const json = result.json
+    const rows = Array.isArray(json) ? json : (() => {
+      const rec = typeof json === 'object' && json !== null ? json as Record<string, unknown> : {}
+      const inner = typeof rec.data === 'object' && rec.data !== null ? rec.data as Record<string, unknown> : {}
+      return [rec.list, rec.data, inner.list].find(Array.isArray) ?? []
+    })()
+    for (const row of rows) {
+      const rec = typeof row === 'object' && row !== null ? row as Record<string, unknown> : {}
+      const id = typeof rec.groupId === 'string' ? rec.groupId : ''
+      const name = typeof rec.groupName === 'string' ? rec.groupName.trim() : ''
+      if (id !== '' && name !== '') map.set(id, name)
+    }
+    if (rows.length < 20) break
+  }
+  recentNamesCache = { at: Date.now(), map }
+  return map
+}
+
 /** Validate a non-negative integer field of an RPC payload. */
 function numberField(payload: unknown, key: string): number | undefined {
   const value = typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>)[key] : undefined
@@ -82,21 +125,25 @@ function agentsFace(ctx: Context): {
     inject?: (message: unknown) => void
     followup?: (message: unknown) => void
   } | undefined
-  resume: (opts: { resumeSessionId: string }) => Promise<unknown>
-  create: (opts: { sessionId: string; meta?: { cwd: string } }) => Promise<unknown>
+  resume: (opts: { resumeSessionId: string; agentOptions?: { provider: string; model: string } }) => Promise<unknown>
+  create: (opts: { sessionId: string; meta?: { cwd: string }; agentOptions?: { provider: string; model: string } }) => Promise<unknown>
 } | undefined {
   const agentsRaw = ctx.get('agents') as {
     get: (id: never) => unknown
-    resume: (opts: { resumeSessionId: never }) => Promise<unknown>
-    create: (opts: { sessionId: never; meta?: { cwd: string } }) => Promise<unknown>
+    resume: (opts: { resumeSessionId: never; agentOptions?: { provider: string; model: string } }) => Promise<unknown>
+    create: (opts: { sessionId: never; meta?: { cwd: string }; agentOptions?: { provider: string; model: string } }) => Promise<unknown>
   } | undefined
   if (agentsRaw === undefined) return undefined
   return {
     get: id => agentsRaw.get(id as never) as ReturnType<NonNullable<ReturnType<typeof agentsFace>>['get']>,
-    resume: opts => agentsRaw.resume({ resumeSessionId: opts.resumeSessionId as never }),
+    resume: opts => agentsRaw.resume({
+      resumeSessionId: opts.resumeSessionId as never,
+      ...(opts.agentOptions === undefined ? {} : { agentOptions: opts.agentOptions }),
+    }),
     create: opts => agentsRaw.create({
       sessionId: opts.sessionId as never,
       ...(opts.meta === undefined ? {} : { meta: opts.meta }),
+      ...(opts.agentOptions === undefined ? {} : { agentOptions: opts.agentOptions }),
     }),
   }
 }
@@ -755,17 +802,21 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
         const agents = agentsFace(ctx)
         if (agents === undefined) return internalError('home-open: agents 服务不可用')
         try {
-          const title = stringField(payload, 'title')
+          // Title fallback: resolve the real group name so a re-materialized
+          // room never pins the 群房间 placeholder (pitfall-021 cleanup path).
+          const title = stringField(payload, 'title') ?? (await recentGroupNames(ctx)).get(groupId)
           const cwd = await ensureYzjHostWorkspace(ctx)
+          const route = topicAgentRoute(ctx)
           const value = await openBoundHome({
             home,
             agents,
             yzjConversationId: groupId,
             cwd,
             ...(title === undefined ? {} : { title }),
+            ...(route === undefined ? {} : { agentOptions: route }),
           })
-          void attachYzjSession(ctx, value.sessionId)
-          if (value.legacyTopicSessionId !== undefined) void attachYzjSession(ctx, value.legacyTopicSessionId)
+          await attachYzjSession(ctx, value.sessionId)
+          if (value.legacyTopicSessionId !== undefined) await attachYzjSession(ctx, value.legacyTopicSessionId)
           const io = homeIoFrom(home)
           if (io !== undefined) {
             void backfillBoundLog(ctx, io, groupId).catch(() => undefined)
@@ -807,8 +858,12 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
       case 'home-fused': {
         const io = homeIoFrom(ctx.get('yzjHome'))
         if (io === undefined) return internalError('home-fused: yzjHome 服务不可用（tool-yzj 未挂载）')
+        const groupId = stringField(payload, 'groupId')
+        if (groupId !== undefined) {
+          return { ok: true, value: { ...roomSnapshotForGroup(io, groupId), candidates: [] } }
+        }
         const sessionId = stringField(payload, 'sessionId')
-        if (sessionId === undefined) return internalError('home-fused endpoint requires a sessionId payload')
+        if (sessionId === undefined) return internalError('home-fused endpoint requires a groupId or sessionId payload')
         const agents = agentsFace(ctx)
         const writes = writeGate.list(sessionId)
         return { ok: true, value: { ...fusedSnapshot(io, sessionId, agents?.get(sessionId), writes), ...roomSnapshot(io, sessionId) } }
@@ -816,7 +871,15 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
       case 'home-nav': {
         const io = homeIoFrom(ctx.get('yzjHome'))
         if (io === undefined) return internalError('home-nav: yzjHome 服务不可用（tool-yzj 未挂载）')
-        return { ok: true, value: groupSpaceSnapshot(io, agentsFace(ctx)) }
+        const snap = groupSpaceSnapshot(io, agentsFace(ctx))
+        const names = await recentGroupNames(ctx)
+        const rooms = snap.rooms.map((room) => {
+          const resolved = names.get(room.groupId)
+          return resolved !== undefined && isPlaceholderRoomTitle(room.groupName)
+            ? { ...room, groupName: resolved }
+            : room
+        })
+        return { ok: true, value: { rooms } }
       }
       case 'home-topic-open': {
         const home = ctx.get('yzjHome') as HomeOpenFace | undefined
@@ -832,6 +895,7 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
           const title = stringField(payload, 'title')
           const groupName = stringField(payload, 'groupName')
           const cwd = await ensureYzjHostWorkspace(ctx)
+          const route = topicAgentRoute(ctx)
           const value = await openTopicHome({
             home,
             agents,
@@ -843,8 +907,9 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
             ...(originText === undefined ? {} : { originText }),
             ...(title === undefined ? {} : { title }),
             ...(groupName === undefined ? {} : { groupName }),
+            ...(route === undefined ? {} : { agentOptions: route }),
           })
-          void attachYzjSession(ctx, value.sessionId)
+          await attachYzjSession(ctx, value.sessionId)
           const io = homeIoFrom(home)
           if (io !== undefined) void backfillBoundLog(ctx, io, groupId).catch(() => undefined)
           return { ok: true, value }
@@ -872,9 +937,17 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
         const agents = agentsFace(ctx)
         if (agents === undefined) return internalError('home-topic-ask: agents 服务不可用')
         const cwd = await ensureYzjHostWorkspace(ctx)
-        const result = await askTopicAssistant({ home: io, agents, cwd, topicSessionId: sessionId, text })
+        const route = topicAgentRoute(ctx)
+        const result = await askTopicAssistant({
+          home: io,
+          agents,
+          cwd,
+          topicSessionId: sessionId,
+          text,
+          ...(route === undefined ? {} : { agentOptions: route }),
+        })
         if ('error' in result) return internalError(result.error)
-        void attachYzjSession(ctx, sessionId)
+        await attachYzjSession(ctx, sessionId)
         return { ok: true, value: result }
       }
       case 'home-backfill': {
@@ -932,9 +1005,9 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
         const cwd = await ensureYzjHostWorkspace(ctx)
         const result = await handoffToGroup({ ctx, home: io, agents, groupId, digest, cwd })
         if ('error' in result) return internalError(result.error)
-        if ('sessionId' in result) void attachYzjSession(ctx, result.sessionId)
+        if ('sessionId' in result) await attachYzjSession(ctx, result.sessionId)
         const topicId = 'topicSessionId' in result ? result.topicSessionId : undefined
-        if (typeof topicId === 'string' && topicId !== '') void attachYzjSession(ctx, topicId)
+        if (typeof topicId === 'string' && topicId !== '') await attachYzjSession(ctx, topicId)
         void backfillBoundLog(ctx, io, groupId).catch(() => undefined)
         return { ok: true, value: result }
       }

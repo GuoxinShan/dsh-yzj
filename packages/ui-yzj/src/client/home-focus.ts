@@ -5,6 +5,8 @@
  * @module @dsh-yzj/ui-yzj/client/home-focus
  */
 
+import { rememberImSeat } from './im-seat.ts'
+
 /** Structural session-list face (browser `ctx.sessions`). */
 export interface FocusSessionsFace {
   open(id: string): void
@@ -71,6 +73,13 @@ export function bindAndFocusGroup(
       ? result.value as Record<string, unknown>
       : {}
     const sessionId = typeof value.sessionId === 'string' ? value.sessionId : ''
-    if (sessionId !== '' && focus !== undefined) focus(sessionId)
+    if (sessionId !== '') {
+      rememberImSeat({
+        groupId,
+        sessionId,
+        ...(title === undefined || title === '' ? {} : { groupName: title }),
+      })
+      if (focus !== undefined) focus(sessionId)
+    }
   })
 }

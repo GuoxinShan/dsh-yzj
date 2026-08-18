@@ -13,7 +13,10 @@ import {
 } from '@dsh-yzj/tool-yzj/src/bound-log.ts'
 import { parseContactUser } from './contact-parse.ts'
 import { digestCandidates, type DigestCandidate } from './handoff-digest.ts'
-import { openBoundHome, openTopicHome, lastSessionTitle, isPlaceholderRoomTitle, type HomeOpenAgents, type HomeOpenFace } from './home-open.ts'
+import {
+  openBoundHome, openTopicHome, lastSessionTitle, isPlaceholderRoomTitle, identifiedUserMessage, topicAgentRoute,
+  type HomeOpenAgents, type HomeOpenFace, type TopicAgentRoute,
+} from './home-open.ts'
 import type { YzjWriteRecord } from './write-gate.ts'
 import type { TopicEnsureInput, TopicEnsureResult, TopicRecord } from '@dsh-yzj/tool-yzj/src/topics.ts'
 
@@ -465,6 +468,38 @@ export function roomSnapshot(
   }
 }
 
+/**
+ * IM snapshot keyed by Yunzhijia group id (R24). Does not need a live
+ * agent — the plugin log is the timeline. Missing binding still returns a
+ * room row so the workbench can paint before ensureBound.
+ */
+export function roomSnapshotForGroup(
+  home: HomeIoFace,
+  groupId: string,
+): {
+  bound: boolean
+  kind: 'room'
+  binding: { dshSessionId: string; yzjConversationId: string; yzjKind: 'group' | 'dm' }
+  topics: TopicRecord[]
+  items: FusedItem[]
+} {
+  const binding = home.getByConversation(groupId)
+  const log = home.getLog(groupId)
+  const items: FusedItem[] = (log?.entries ?? []).map(entry => ({
+    kind: 'im' as const,
+    time: entry.sentAt,
+    entry,
+  }))
+  const yzjKind = groupId.startsWith('BOT-') ? 'dm' : 'group'
+  return {
+    bound: true,
+    kind: 'room',
+    binding: binding ?? { dshSessionId: '', yzjConversationId: groupId, yzjKind },
+    topics: home.listTopics?.(groupId) ?? [],
+    items,
+  }
+}
+
 /** One bubble in the topic-drawer IM lens (plugin followups omitted). */
 export interface TopicLensBubble {
   readonly id: string
@@ -494,22 +529,15 @@ export function topicLensBubbles(
   return [...fromHost, ...fromTopic].sort((a, b) => a.time - b.time)
 }
 
-/** User-authored followup (drawer 「问助手」). Visible in the lens. */
-function userTurn(text: string): {
-  role: 'user'
-  content: { type: 'text'; text: string }[]
-  source: { kind: 'user' }
-} {
-  return {
-    role: 'user',
-    content: [{ type: 'text', text }],
-    source: { kind: 'user' },
-  }
+/** User-authored followup (drawer 「问助手」). Visible in the lens. Must carry `id`. */
+function userTurn(text: string): ReturnType<typeof identifiedUserMessage> {
+  return identifiedUserMessage(text, { kind: 'user' })
 }
 
 /**
  * Ask the topic agent without focusing native Chat. Resume-or-create the
- * topic session, then `followup` a user turn (H18).
+ * topic session, inject the summon window (pitfall-027), then `followup`
+ * a user turn (H18). Opening the topic does not start a turn.
  */
 export async function askTopicAssistant(options: {
   readonly home: HomeIoFace
@@ -519,6 +547,7 @@ export async function askTopicAssistant(options: {
   readonly cwd: string
   readonly topicSessionId: string
   readonly text: string
+  readonly agentOptions?: TopicAgentRoute
 }): Promise<{ ok: true } | { error: string }> {
   const text = options.text.trim()
   if (text === '') return { error: 'home-topic-ask: text is empty' }
@@ -526,13 +555,24 @@ export async function askTopicAssistant(options: {
   if (topic === undefined) return { error: 'home-topic-ask: not a topic session' }
   if (options.agents.get(options.topicSessionId) === undefined) {
     try {
-      await options.agents.resume({ resumeSessionId: options.topicSessionId })
+      await options.agents.resume({
+        resumeSessionId: options.topicSessionId,
+        ...(options.agentOptions === undefined ? {} : { agentOptions: options.agentOptions }),
+      })
     } catch {
-      await options.agents.create({ sessionId: options.topicSessionId, meta: { cwd: options.cwd } })
+      await options.agents.create({
+        sessionId: options.topicSessionId,
+        meta: { cwd: options.cwd },
+        ...(options.agentOptions === undefined ? {} : { agentOptions: options.agentOptions }),
+      })
     }
   }
-  const live = options.agents.get(options.topicSessionId)
+  const live = options.agents.get(options.topicSessionId) as
+    | { followup?: (message: unknown) => void; inject?: (message: unknown) => void }
+    | undefined
   if (live?.followup === undefined) return { error: 'home-topic-ask: agent followup unavailable' }
+  const window = options.home.formatSummonWindow(topic.yzjConversationId, undefined, options.topicSessionId)
+  if (window !== '') live.inject?.(pluginTurn(window))
   live.followup(userTurn(text))
   if (topic.rootMsgId !== undefined && topic.rootMsgId !== '' && options.home.ensureTopic !== undefined) {
     await options.home.ensureTopic({
@@ -601,13 +641,9 @@ export function groupSpaceSnapshot(
   return { rooms }
 }
 
-/** Structural plugin user-turn (ui-yzj must not import dsh-llm — dual-face tsconfig). */
-function pluginTurn(text: string): { role: 'user'; content: { type: 'text'; text: string }[]; source: { kind: 'plugin'; plugin: string } } {
-  return {
-    role: 'user',
-    content: [{ type: 'text', text }],
-    source: { kind: 'plugin', plugin: 'ui-yzj' },
-  }
+/** Structural plugin user-turn (no dsh-llm import — dual-face tsconfig). */
+function pluginTurn(text: string): ReturnType<typeof identifiedUserMessage> {
+  return identifiedUserMessage(text, { kind: 'plugin', plugin: 'ui-yzj' })
 }
 
 /**
@@ -651,6 +687,7 @@ export async function handoffToGroup(options: {
   if (!sent.ok) return { error: sent.error }
   let topicSessionId: string | undefined
   try {
+    const route = topicAgentRoute(options.ctx)
     const topic = await openTopicHome({
       home: options.home,
       agents: options.agents,
@@ -659,6 +696,7 @@ export async function handoffToGroup(options: {
       source: 'handoff',
       originText: options.digest,
       title: '丢进群交接',
+      ...(route === undefined ? {} : { agentOptions: route }),
     })
     topicSessionId = topic.sessionId
     const live = options.agents.get(topic.sessionId)

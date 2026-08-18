@@ -232,7 +232,7 @@ export function YzjTopicDrawer(props: YzjTopicDrawerProps) {
         <button type="button" className={css.topicDrawerNav} onClick={props.onClose} aria-label="关闭话题抽屉">×</button>
       </div>
       <div className={css.topicDrawerBody}>
-        {ordered.length === 0 && <p className={css.topicDrawerHint}>还没有话题。把一条群消息「交给助手」就会出现在这里。</p>}
+        {ordered.length === 0 && <p className={css.topicDrawerHint}>还没有话题</p>}
         {ordered.map((topic) => (
           <button
             key={topic.dshSessionId}

@@ -86,6 +86,8 @@ node .acceptance/verify-real-data.mjs   # 需运行中的 GUI + 已登录 yzj-cl
 - **有界输出**：每个工具产出有界 digest 并把裁剪后的结构化载荷经 `output.presentationMeta` 投影给 UI；上限（timeoutMs / maxRenderChars / maxMetaChars）是 schema 校验的 Config 字段，不是常量。
 - **RPC 通道只过无损 JSON**：`/yzj` 通道两向都不携带 harness 活对象；先取所需叶子字段，再构造自有数据对象，绝不整体序列化 Context/Session/Service。
 - **新工具清单**：域模块实现 → guard 风险表（若写）→ `cards.tsx` keyed 卡片视图 → 包 README 工具清单同步 → 测试。
+- **工具 execute 契约**（harness `docs/cookbook/adding-a-tool.md`）：`execute(args, exec)` 返回一个规范 JSON 值；抛错或非法返回 → `isError`；领域结果留在 value 里（含非零 CLI 退出）；尊重 `exec.signal`；注册后不要改 definition。策略走 `tools/pre-execute`（本仓即 `WRITE_SPECS`），不要写进 `execute`。复用 `yzjToolOutput`，schema 保持字面量结构（pitfall-009）。UI 卡是 keyed `tool.call.toolview`，不用 cookbook 的 `presentCall` / `presentResult`，也不用 `ConversationNodeDefinition`。
+- **设置座不要抄 cookbook**：`adding-a-settings-card.md` 的 `settings.plugin.item` + `installSettingsSection` 是 Plugins 页。本仓是 `settings.section`（设置 → 云之家，id `yzj`），持久化走 `/yzj` RPC。
 - **todo 为 demo 阶段**：后端是多维表格「待办任务库」（首用自动开通）；工具核、`ctx.yzjTodo` 服务与面板任务库切换器共享 active-library holder，agent 写入跟随当前激活库。迁移方案见 [docs/migration/todo-backend-migration.md](docs/migration/todo-backend-migration.md)。
 - **测试自跳过而非失败**：依赖真实登录 / CLI 的测试在缺失时 skip（`tools.spec.ts` 范式）；平台差异在测试内显式分支（bridge 的 fake CLI 在 Windows 经 `node` 路由）。
 - **踩坑记录制度**：[docs/pitfalls/](docs/pitfalls/README.md) 是实现级坑库，agent 必须维护它：(a) **动手前查索引**，命中相关条目先读再写代码；(b) **解决新坑必须回写**——排查中出现「现象与文档/预期不符」「超过一次构建-验证循环才定位」「jsdom/单测绿但真实环境异常」任一情形，修复后**同一提交**内新增 `pitfall-NNN-<english-slug>.md`（复现条件/根因/解法/回归覆盖四段）并更新 README 索引表；(c) 触发既有坑的解法变更时更新原条目而非另开新条。jsdom 测试通过不等于浏览器没问题（pitfall-001 的核心教训）。

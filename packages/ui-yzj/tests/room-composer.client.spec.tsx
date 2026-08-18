@@ -7,6 +7,7 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 import { registerRoomComposerHost } from '../src/client/composer-host.ts'
 import { YzjRoomComposer } from '../src/client/room-composer.tsx'
+import { setWorkbenchDomain } from '../src/client/workbench-domain.ts'
 
 function mountComposer(): HTMLDivElement {
   const container = document.createElement('div')
@@ -32,7 +33,10 @@ function mountComposer(): HTMLDivElement {
 }
 
 describe('YzjRoomComposer host portal', () => {
-  afterEach(() => { registerRoomComposerHost(null) })
+  afterEach(() => {
+    registerRoomComposerHost(null)
+    setWorkbenchDomain('im')
+  })
 
   it('moves 发进群 onto a new host after the previous node unmounts', () => {
     const seat = mountComposer()
@@ -54,5 +58,16 @@ describe('YzjRoomComposer host portal', () => {
     expect(second.querySelector('[data-testid="yzj-room-composer"]')).not.toBeNull()
     expect(first.querySelector('[data-testid="yzj-room-composer"]')).toBeNull()
     expect(seat.querySelector('[data-testid="yzj-room-composer"]')).toBeNull()
+  })
+
+  it('does not paint 发进群 when the workbench is not 对话', () => {
+    setWorkbenchDomain('todo')
+    const seat = mountComposer()
+    expect(seat.querySelector('[data-testid="yzj-room-composer"]')).toBeNull()
+    const host = document.createElement('div')
+    document.body.append(host)
+    act(() => { registerRoomComposerHost(host) })
+    expect(host.querySelector('[data-testid="yzj-room-composer"]')).toBeNull()
+    host.remove()
   })
 })

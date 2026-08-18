@@ -7,7 +7,7 @@ import {
   HomeBindingStore, conversationKindOf, homeSessionId,
   type HomeBindingRecord,
 } from '../src/home.ts'
-import { sessionIdFromAssemble } from '../src/index.ts'
+import { sessionIdFromAssemble, summonWindowText } from '../src/index.ts'
 import { latestUserSourceKind } from '../src/bound-log.ts'
 
 function memoryFacility(): {
@@ -124,5 +124,24 @@ describe('sessionIdFromAssemble (T5 systemPrompt.context)', () => {
     expect(latestUserSourceKind(gui)).toBe('user')
     expect(latestUserSourceKind(plugin)).toBe('plugin')
     expect(latestUserSourceKind([])).toBe('none')
+  })
+
+  it('attaches the window for a topic session (none and user; skip plugin)', () => {
+    const home = {
+      getBySession: () => undefined,
+      getTopicBySession: (id: string) => id === 'yzj-topic-g-a-m1'
+        ? { yzjConversationId: 'g-a' }
+        : undefined,
+      formatSummonWindow: (conversationId: string, _exclude?: string, sessionId?: string) => (
+        `［本群最近消息］\ngroupId: ${conversationId}\n锚点 msgId: ${sessionId ?? ''}`
+      ),
+    }
+    const agent = { session: { id: 'yzj-topic-g-a-m1', events: [] as { type: string; data: unknown }[] } }
+    expect(summonWindowText(home, { agent, scope: agent })).toContain('groupId: g-a')
+    agent.session.events = [{ type: 'user/message', data: { source: { kind: 'user' } } }]
+    expect(summonWindowText(home, { agent })).toContain('锚点 msgId: yzj-topic-g-a-m1')
+    agent.session.events = [{ type: 'user/message', data: { source: { kind: 'plugin', plugin: 'robot-yzj' } } }]
+    expect(summonWindowText(home, { agent })).toBe('')
+    expect(summonWindowText(home, { agent: { session: { id: 'yzj-home-other', events: [] } } })).toBe('')
   })
 })

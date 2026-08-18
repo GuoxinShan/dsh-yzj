@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { bindAndFocusGroup, focusBoundSession } from '../src/client/home-focus.ts'
+import { clearImSeat, peekImSeat } from '../src/client/im-seat.ts'
 
 describe('focusBoundSession', () => {
   it('opens immediately when the list is ready and the row exists', () => {
@@ -38,6 +39,8 @@ describe('focusBoundSession', () => {
 })
 
 describe('bindAndFocusGroup', () => {
+  afterEach(() => { clearImSeat() })
+
   it('focuses the sessionId from a successful homeOpen', async () => {
     const focused: string[] = []
     await bindAndFocusGroup(
@@ -46,6 +49,7 @@ describe('bindAndFocusGroup', () => {
       'g-a',
     )
     expect(focused).toEqual(['yzj-home-g-a'])
+    expect(peekImSeat()).toEqual({ groupId: 'g-a', sessionId: 'yzj-home-g-a' })
   })
 
   it('is a no-op without homeOpen', () => {

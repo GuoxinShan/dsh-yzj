@@ -1,7 +1,8 @@
 /**
- * Dedicated cwd for yzj-home-* / yzj-topic-* so they land in a Host
- * Workspace titled 云之家 (docs/spec/group-room-topics.md R20).
- * Path is an implementation decision; recorded in gap-analysis §23 H16.
+ * Dedicated cwd for yzj-home-* / yzj-topic-* (docs/spec/group-room-topics.md
+ * R20 v1.4). Both kinds share `~/.dsh-yzj/workspace` so they never inherit
+ * `process.cwd()`. Only topic sessions attach to Host Workspace 「云之家」;
+ * room hosts stay off that official sidebar group.
  * @module @dsh-yzj/ui-yzj/yzj-cwd
  */
 
@@ -9,10 +10,17 @@ import { mkdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
+/** One workspace record: membership list plus attach/detach (no dsh-workspace import). */
+interface WorkspaceMember {
+  readonly sessionIds?: readonly string[]
+  attachSession(sessionId: string): Promise<void>
+  detachSession?(sessionId: string): Promise<void>
+}
+
 /** Structural workspace registry (do not import dsh-workspace — dual-face tsconfig). */
 interface WorkspaceFace {
-  create(path: string, title?: string): Promise<{ attachSession(sessionId: string): Promise<void> }>
-  resolveByPath(path: string): Promise<{ attachSession(sessionId: string): Promise<void> } | undefined>
+  create(path: string, title?: string): Promise<WorkspaceMember>
+  resolveByPath(path: string): Promise<WorkspaceMember | undefined>
 }
 
 /** Cordis-like getter used by the node half. */
@@ -39,6 +47,7 @@ export async function ensureYzjWorkspaceDir(): Promise<string> {
 /**
  * Ensure the directory exists and register (or reuse) the 云之家 workspace.
  * Registry is optional — missing service still yields the dedicated cwd.
+ * After create, leftover room hosts from v1.1 attach are detached (R20 v1.4).
  */
 export async function ensureYzjHostWorkspace(ctx: CwdContext): Promise<string> {
   const path = await ensureYzjWorkspaceDir()
@@ -49,14 +58,48 @@ export async function ensureYzjHostWorkspace(ctx: CwdContext): Promise<string> {
   } catch {
     // Path race or registry not ready: sessions still use the dedicated cwd.
   }
+  await detachYzjRoomHosts(ctx)
   return path
 }
 
+/** Topic / agent sessions grown from a group or DM. Room hosts are not this. */
+export function isYzjTopicSessionId(sessionId: string): boolean {
+  return sessionId.startsWith('yzj-topic-')
+}
+
+/** Group/DM room hosts. These must not sit in the official 云之家 group. */
+export function isYzjRoomSessionId(sessionId: string): boolean {
+  return sessionId.startsWith('yzj-home-')
+}
+
 /**
- * Attach one session to 云之家. Swallows mismatch (legacy process.cwd()
- * headers) so open never fails closed.
+ * Drop leftover `yzj-home-*` membership from 云之家. Does not archive,
+ * delete, or touch topic sessions. Idempotent; swallows registry faults.
+ */
+export async function detachYzjRoomHosts(ctx: CwdContext): Promise<void> {
+  const registry = ctx.get('workspaceRegistry') as WorkspaceFace | undefined
+  if (registry === undefined) return
+  const path = yzjWorkspacePath()
+  try {
+    const workspace = await registry.resolveByPath(path)
+    if (workspace?.detachSession === undefined) return
+    for (const sessionId of workspace.sessionIds ?? []) {
+      if (!isYzjRoomSessionId(String(sessionId))) continue
+      await workspace.detachSession(sessionId)
+    }
+  } catch {
+    // Registry not ready or detach rejected: next ensure retries.
+  }
+}
+
+/**
+ * Attach one topic session to 云之家. Room hosts (`yzj-home-*`) and any
+ * other id are skipped — they must not appear in that official sidebar
+ * group (R20 v1.4). Swallows mismatch (legacy process.cwd() headers) so
+ * open never fails closed.
  */
 export async function attachYzjSession(ctx: CwdContext, sessionId: string): Promise<void> {
+  if (!isYzjTopicSessionId(sessionId)) return
   const registry = ctx.get('workspaceRegistry') as WorkspaceFace | undefined
   if (registry === undefined) return
   const path = yzjWorkspacePath()

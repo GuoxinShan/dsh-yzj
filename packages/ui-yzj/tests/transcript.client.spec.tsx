@@ -5,7 +5,7 @@
 import { act } from 'react-dom/test-utils'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it } from 'vitest'
-import { streamAtBottom, YzjFusedView } from '../src/client/transcript.tsx'
+import { agentClampOf, displayNameOf, streamAtBottom, YzjFusedView } from '../src/client/transcript.tsx'
 import { subscribeRoomComposerHost } from '../src/client/composer-host.ts'
 
 type Rpc = { ok: true; value: unknown } | { ok: false; error: { message: string } }
@@ -69,6 +69,8 @@ describe('YzjFusedView', () => {
     expect(text).toContain('回复')
     expect(container.querySelector('[data-testid="yzj-room-row-m2"]')?.className).toMatch(/roomRowSelf/)
     expect(container.querySelector('[data-testid="yzj-room-row-m1"]')?.className).toMatch(/roomRowOther/)
+    expect(container.querySelector('[data-testid="yzj-room-row-m2"] [class*="roomBubbleSelf"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="yzj-room-row-m1"] [class*="roomBubbleOther"]')).not.toBeNull()
     expect(text).not.toContain('发给助手')
     expect(text).not.toContain('助手回答一句')
     expect(text).not.toContain('本群话题')
@@ -116,11 +118,68 @@ describe('YzjFusedView', () => {
     expect(handoff).toBe(false)
   })
 
-  it('shows the private-session hint when unbound', async () => {
+  it('labels BOT- senders 机器人, never the raw openId tail', async () => {
+    const fused: Rpc = {
+      ok: true,
+      value: {
+        bound: true,
+        kind: 'room',
+        binding: { yzjConversationId: 'g-a', dshSessionId: 'yzj-home-g-a', yzjKind: 'group' },
+        topics: [],
+        items: [
+          { kind: 'im', time: 1, entry: { msgId: 'b1', sentAt: 1, fromName: '', fromOpenId: 'BOT-6a80d097e4b0a35e3e543b4d', content: '@我 收到', origin: 'backfill', isSelf: false, status: 'acked' } },
+        ],
+      },
+    }
+    const container = renderView(fused)
+    await flush()
+    expect(container.textContent).toContain('机器人')
+    expect(container.textContent).not.toContain('543b4d')
+  })
+
+  it('clamps long robot posts behind 展开全文 and expands on click', async () => {
+    const long = '很长的助手回复'.repeat(40)
+    const fused: Rpc = {
+      ok: true,
+      value: {
+        bound: true,
+        kind: 'room',
+        binding: { yzjConversationId: 'g-a', dshSessionId: 'yzj-home-g-a', yzjKind: 'group' },
+        topics: [],
+        items: [
+          { kind: 'im', time: 1, entry: { msgId: 'b1', sentAt: 1, fromName: '', fromOpenId: 'BOT-x1', content: long, origin: 'backfill', isSelf: false, status: 'acked' } },
+        ],
+      },
+    }
+    const container = renderView(fused)
+    await flush()
+    const toggle = [...container.querySelectorAll('button')].find(node => node.textContent === '展开全文')
+    expect(toggle).not.toBeUndefined()
+    expect(container.querySelector('span[class*="roomClamp"]')).not.toBeNull()
+    act(() => { toggle?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await flush()
+    expect(container.querySelector('span[class*="roomClamp"]')).toBeNull()
+    expect([...container.querySelectorAll('button')].some(node => node.textContent === '收起')).toBe(true)
+  })
+
+  it('keeps short robot posts and human walls unclamped', () => {
+    const robotShort = { msgId: 'a', sentAt: 1, fromName: '', fromOpenId: 'BOT-x', content: '收到', origin: 'backfill', isSelf: false, status: 'acked' }
+    const humanLong = { msgId: 'b', sentAt: 1, fromName: '同事', fromOpenId: 'u-1', content: '长'.repeat(400), origin: 'backfill', isSelf: false, status: 'acked' }
+    expect(agentClampOf(robotShort)).toBe(false)
+    expect(agentClampOf(humanLong)).toBe(false)
+    expect(agentClampOf({ ...robotShort, content: '长'.repeat(400) })).toBe(true)
+    expect(agentClampOf({ ...robotShort, content: '长'.repeat(400), msgType: 'richText' })).toBe(false)
+    expect(displayNameOf(robotShort)).toBe('机器人')
+    expect(displayNameOf({ ...robotShort, origin: 'robot-outbound' })).toBe('助手')
+    expect(displayNameOf(humanLong)).toBe('同事')
+  })
+
+  it('shows a quiet empty state when unbound', async () => {
     const container = renderView({ ok: true, value: { bound: false, items: [] } })
     await flush()
-    expect(container.textContent).toContain('私密会话')
-    expect(container.textContent).toContain('只给助手')
+    expect(container.textContent).toContain('还没有对话')
+    expect(container.querySelector('[data-testid="yzj-room-composer-host"]')).not.toBeNull()
+    expect(container.textContent).not.toContain('只给助手')
     expect(container.textContent).not.toContain('群房间：这里发送')
   })
 
@@ -263,12 +322,13 @@ describe('YzjFusedView', () => {
     })
     expect(container.textContent).toContain('加载群消息')
     expect(container.textContent).not.toContain('私密会话')
+    expect(container.querySelector('[data-testid="yzj-room-composer-host"]')).not.toBeNull()
     await act(async () => {
       resolveFused?.({ ok: true, value: { bound: false, kind: 'unbound', items: [] } })
       await Promise.resolve()
       await Promise.resolve()
     })
-    expect(container.textContent).toContain('私密会话')
+    expect(container.textContent).toContain('还没有对话')
   })
 
   it('shows an accent count on 话题 N when a topic is 待确认', async () => {
@@ -343,6 +403,96 @@ describe('YzjFusedView', () => {
     expect(seen.at(-1)).toBe(second)
     stop()
     act(() => { root2.unmount() })
+  })
+
+  it('keeps the composer host mounted across a cache-miss group switch', async () => {
+    const fusedA: Rpc = {
+      ok: true,
+      value: {
+        bound: true,
+        kind: 'room',
+        binding: { yzjConversationId: 'g-a', dshSessionId: 'yzj-home-hanger', yzjKind: 'group' },
+        topics: [],
+        items: [
+          { kind: 'im', time: 1, entry: { msgId: 'm1', sentAt: 1, fromName: '同事', content: '甲群一句', origin: 'inbound', isSelf: false, status: 'acked' } },
+        ],
+      },
+    }
+    let resolveB: ((value: Rpc) => void) | undefined
+    const pendingB = new Promise<Rpc>((resolve) => { resolveB = resolve })
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const paint = (groupId: string, fused: () => Promise<Rpc>): void => {
+      root.render(
+        <YzjFusedView
+          sessionId="yzj-home-hanger"
+          groupId={groupId}
+          homeFused={async () => fused()}
+          homeBackfill={async () => ({ ok: true, value: { appended: 0, skipped: 0 } })}
+        />,
+      )
+    }
+    act(() => { paint('g-a', async () => fusedA) })
+    await flush()
+    expect(container.textContent).toContain('甲群一句')
+    const host = container.querySelector('[data-testid="yzj-room-composer-host"]')
+    expect(host).not.toBeNull()
+    act(() => { paint('g-b', async () => pendingB) })
+    expect(container.textContent).toContain('加载群消息')
+    expect(container.textContent).not.toContain('甲群一句')
+    expect(container.querySelector('[data-testid="yzj-room-composer-host"]')).toBe(host)
+    await act(async () => {
+      resolveB?.({
+        ok: true,
+        value: {
+          bound: true,
+          kind: 'room',
+          binding: { yzjConversationId: 'g-b', dshSessionId: 'yzj-home-hanger', yzjKind: 'group' },
+          topics: [],
+          items: [
+            { kind: 'im', time: 1, entry: { msgId: 'm2', sentAt: 1, fromName: '同事', content: '乙群一句', origin: 'inbound', isSelf: false, status: 'acked' } },
+          ],
+        },
+      })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(container.textContent).toContain('乙群一句')
+    expect(container.querySelector('[data-testid="yzj-room-composer-host"]')).toBe(host)
+    act(() => { root.unmount() })
+  })
+
+  it('does not paint the IM timeline for a topic snapshot', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    act(() => {
+      root.render(
+        <YzjFusedView
+          sessionId="yzj-topic-g-a-root"
+          homeFused={async () => ({
+            ok: true,
+            value: {
+              bound: true,
+              kind: 'topic',
+              binding: { yzjConversationId: 'g-a', dshSessionId: 'yzj-home-g-a', yzjKind: 'group' },
+              topics: [],
+              items: [
+                { kind: 'im', time: 1, entry: { msgId: 'm1', sentAt: 1, fromName: '同事', content: '群里一句', origin: 'inbound', isSelf: false, status: 'acked' } },
+              ],
+            },
+          })}
+          homeBackfill={async () => ({ ok: true, value: { appended: 0, skipped: 0 } })}
+        />,
+      )
+    })
+    await flush()
+    expect(container.textContent).not.toContain('群里一句')
+    expect(container.textContent).not.toContain('交给助手')
+    expect(container.querySelector('[data-testid="yzj-fused-stream"]')).toBeNull()
+    expect(container.querySelector('[data-testid="yzj-room-composer-host"]')).toBeNull()
+    act(() => { root.unmount() })
   })
 })
 

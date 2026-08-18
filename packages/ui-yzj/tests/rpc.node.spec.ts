@@ -7,7 +7,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
 import { applyWriteGate } from '../src/write-gate.ts'
-import { createRpcHandler, type YzjWriteGateFace } from '../src/index.ts'
+import { clearRecentNamesCache, createRpcHandler, type YzjWriteGateFace } from '../src/index.ts'
 import type { ConnectionRpcHandler } from '@deepseek-ai/dsh-client-connection'
 
 interface RunResult { ok: boolean; exitCode: number | null; stdout: string; stderr: string; json?: unknown }
@@ -192,6 +192,166 @@ describe('createRpcHandler', () => {
     expect(created).toEqual(['yzj-home-g-a'])
   })
 
+  function recordingRegistry() {
+    const attached: string[] = []
+    const workspace = {
+      attachSession: async (sessionId: string) => { attached.push(String(sessionId)) },
+    }
+    return {
+      attached,
+      registry: {
+        create: async () => workspace,
+        resolveByPath: async () => workspace,
+      },
+    }
+  }
+
+  function liveAgents() {
+    const live = new Map<string, {
+      session: { events: { type: string; data?: unknown }[]; append: (type: string, data: unknown) => void }
+      followup?: (message: unknown) => void
+    }>()
+    return {
+      live,
+      get: (id: string) => live.get(String(id)),
+      resume: async () => { throw new Error('no log') },
+      create: async (opts: { sessionId: string }) => {
+        const events: { type: string; data?: unknown }[] = []
+        const agent = {
+          session: {
+            events,
+            append: (type: string, data: unknown) => { events.push({ type, data }) },
+          },
+          followup: () => undefined,
+        }
+        live.set(String(opts.sessionId), agent)
+        return agent
+      },
+    }
+  }
+
+  function topicHome() {
+    const rooms = new Map<string, { sessionId: string; yzjKind: 'group' | 'dm' }>()
+    const topics = new Map<string, { sessionId: string; rootMsgId?: string }>()
+    return {
+      ensureBound: async (id: string, kind: 'group' | 'dm') => {
+        const existing = rooms.get(id)
+        if (existing !== undefined) return { sessionId: existing.sessionId, created: false, yzjKind: existing.yzjKind }
+        const row = { sessionId: `yzj-home-${id}`, yzjKind: kind }
+        rooms.set(id, row)
+        return { ...row, created: true }
+      },
+      ensureTopic: async (input: { yzjConversationId: string; rootMsgId?: string }) => {
+        if (input.rootMsgId !== undefined) {
+          for (const row of topics.values()) {
+            if (row.rootMsgId === input.rootMsgId) return { sessionId: row.sessionId, created: false }
+          }
+        }
+        const sessionId = `yzj-topic-${input.yzjConversationId}-${input.rootMsgId ?? 'new'}`
+        topics.set(sessionId, { sessionId, ...(input.rootMsgId === undefined ? {} : { rootMsgId: input.rootMsgId }) })
+        return { sessionId, created: true }
+      },
+    }
+  }
+
+  it('home-open does not attach the room host to 云之家', async () => {
+    const ctx = mountBridge({})
+    const { attached, registry } = recordingRegistry()
+    ctx.provide('workspaceRegistry', registry)
+    ctx.provide('yzjHome', topicHome())
+    ctx.provide('agents', liveAgents())
+    const handler = createRpcHandler(ctx, { list: () => [], decide: () => false })
+    const opened = await handler('home-open', { groupId: 'g-a' }, undefined as never)
+    expect(opened.ok && opened.value).toMatchObject({ sessionId: 'yzj-home-g-a' })
+    expect(attached).toEqual([])
+  })
+
+  it('home-topic-open attaches only the topic session', async () => {
+    const ctx = mountBridge({})
+    const { attached, registry } = recordingRegistry()
+    ctx.provide('workspaceRegistry', registry)
+    ctx.provide('yzjHome', topicHome())
+    ctx.provide('agents', liveAgents())
+    const handler = createRpcHandler(ctx, { list: () => [], decide: () => false })
+    const opened = await handler('home-topic-open', {
+      groupId: 'g-a', rootMsgId: 'm1', originText: '帮我整理',
+    }, undefined as never)
+    expect(opened.ok && opened.value).toMatchObject({ sessionId: 'yzj-topic-g-a-m1' })
+    expect(attached).toEqual(['yzj-topic-g-a-m1'])
+  })
+
+  it('home-open with leftover ③④ attaches only the 历史对话 topic', async () => {
+    const ctx = mountBridge({})
+    const { attached, registry } = recordingRegistry()
+    ctx.provide('workspaceRegistry', registry)
+    ctx.provide('yzjHome', topicHome())
+    const agents = liveAgents()
+    await agents.create({ sessionId: 'yzj-home-g-a' })
+    agents.live.get('yzj-home-g-a')?.session.append('user/message', { content: '旧问题' })
+    ctx.provide('agents', agents)
+    const handler = createRpcHandler(ctx, { list: () => [], decide: () => false })
+    const opened = await handler('home-open', { groupId: 'g-a' }, undefined as never)
+    expect(opened.ok && opened.value).toMatchObject({
+      sessionId: 'yzj-home-g-a',
+      legacyTopicSessionId: 'yzj-topic-g-a-legacy-host',
+    })
+    expect(attached).toEqual(['yzj-topic-g-a-legacy-host'])
+  })
+
+  it('home-handoff attaches only the minted topic, not the room host', async () => {
+    const { BoundLogStore } = await import('@dsh-yzj/tool-yzj/src/bound-log.ts')
+    const store = new BoundLogStore()
+    const ctx = new Context()
+    const { attached, registry } = recordingRegistry()
+    ctx.provide('workspaceRegistry', registry)
+    const rows = new Map<string, { dshSessionId: string; yzjConversationId: string; yzjKind: 'group' | 'dm' }>()
+    const topics = new Map<string, { sessionId: string }>()
+    ctx.provide('yzjHome', {
+      ensureBound: async (id: string, kind: 'group' | 'dm') => {
+        const existing = rows.get(id)
+        if (existing !== undefined) return { sessionId: existing.dshSessionId, created: false, yzjKind: existing.yzjKind }
+        const row = { dshSessionId: `yzj-home-${id}`, yzjConversationId: id, yzjKind: kind }
+        rows.set(id, row)
+        await store.ensureHeader(id, row.dshSessionId, kind)
+        return { sessionId: row.dshSessionId, created: true, yzjKind: kind }
+      },
+      ensureTopic: async (input: { yzjConversationId: string }) => {
+        const sessionId = `yzj-topic-${input.yzjConversationId}-handoff`
+        const existing = topics.get(sessionId)
+        if (existing !== undefined) return { sessionId, created: false }
+        topics.set(sessionId, { sessionId })
+        return { sessionId, created: true }
+      },
+      getByConversation: (id: string) => rows.get(id),
+      getBySession: (id: string) => [...rows.values()].find(row => row.dshSessionId === id),
+      appendLog: (id: string, incoming: never, options?: never) => {
+        const row = rows.get(id)
+        if (row === undefined) return Promise.resolve({ accepted: false, reason: 'unbound' })
+        return store.append(id, row.dshSessionId, row.yzjKind, incoming, options)
+      },
+      getLog: (id: string) => store.get(id),
+      getLogBySession: (id: string) => {
+        const row = [...rows.values()].find(item => item.dshSessionId === id)
+        return row === undefined ? undefined : store.get(row.yzjConversationId)
+      },
+      ackLocal: (id: string, local: string, real: string) => store.ackLocal(id, local, real),
+      failLocal: (id: string, local: string) => store.failLocal(id, local),
+      formatSummonWindow: () => '',
+      logs: store,
+    })
+    ctx.provide('agents', liveAgents())
+    ;(ctx as unknown as { yzjBridge: { run: (command: readonly string[]) => Promise<RunResult> } }).yzjBridge = {
+      run: async (command) => command[0] === 'contact' ? runOf([{ openId: 'me', name: '国鑫' }]) : runOf({ msgId: 'm-digest' }),
+    }
+    const handler = createRpcHandler(ctx, { list: () => [], decide: () => false })
+    const result = await handler('home-handoff', { groupId: 'g-a', digest: '［摘要］结论' }, undefined as never)
+    expect(result.ok && result.value).toMatchObject({
+      sessionId: 'yzj-home-g-a',
+      topicSessionId: 'yzj-topic-g-a-handoff',
+    })
+    expect(attached).toEqual(['yzj-topic-g-a-handoff'])
+  })
+
   it('home-open fails closed without yzjHome', async () => {
     const ctx = mountBridge({})
     const handler = createRpcHandler(ctx, { list: () => [], decide: () => false })
@@ -258,6 +418,9 @@ describe('createRpcHandler', () => {
     const fused = await handler('home-fused', { sessionId: 'yzj-home-g-a' }, undefined as never)
     expect(fused.ok && (fused.value as { bound: boolean }).bound).toBe(true)
     expect((fused.value as { items: { kind: string }[] }).items.some(item => item.kind === 'im')).toBe(true)
+    const byGroup = await handler('home-fused', { groupId: 'g-a' }, undefined as never)
+    expect(byGroup.ok && (byGroup.value as { kind: string }).kind).toBe('room')
+    expect((byGroup.value as { binding: { yzjConversationId: string } }).binding.yzjConversationId).toBe('g-a')
   })
 
   it('home-nav nests topics under the group room', async () => {
@@ -305,6 +468,50 @@ describe('createRpcHandler', () => {
         topics: [{ sessionId: 'yzj-topic-g-a-m1', title: '整理接口清单' }],
       }],
     })
+  })
+
+  it('home-nav backfills placeholder room names from CLI recent pages', async () => {
+    clearRecentNamesCache()
+    const { BoundLogStore } = await import('@dsh-yzj/tool-yzj/src/bound-log.ts')
+    const store = new BoundLogStore()
+    const ctx = new Context()
+    const rows = new Map<string, { dshSessionId: string; yzjConversationId: string; yzjKind: 'group' | 'dm' }>()
+    ctx.provide('yzjHome', {
+      ensureBound: async (id: string, kind: 'group' | 'dm') => {
+        const sessionId = `yzj-home-${id}`
+        rows.set(id, { dshSessionId: sessionId, yzjConversationId: id, yzjKind: kind })
+        return { sessionId, created: true, yzjKind: kind }
+      },
+      getByConversation: (id: string) => rows.get(id),
+      getBySession: (id: string) => [...rows.values()].find(row => row.dshSessionId === id),
+      appendLog: (id: string, incoming: never, options?: never) => {
+        const row = rows.get(id)
+        if (row === undefined) return Promise.resolve({ accepted: false, reason: 'unbound' })
+        return store.append(id, row.dshSessionId, row.yzjKind, incoming, options)
+      },
+      getLog: (id: string) => store.get(id),
+      getLogBySession: () => undefined,
+      ackLocal: (id: string, local: string, real: string) => store.ackLocal(id, local, real),
+      failLocal: (id: string, local: string) => store.failLocal(id, local),
+      listBindings: () => [...rows.values()],
+      listTopics: () => [],
+      formatSummonWindow: () => '',
+      logs: store,
+    })
+    // No pinned session/title anywhere → the snapshot name is the 群房间 placeholder.
+    ctx.provide('agents', { get: () => ({ session: { events: [] } }) })
+    ;(ctx as unknown as { yzjBridge: { run: (command: readonly string[]) => Promise<RunResult> } }).yzjBridge = {
+      run: async (command) => command.join(' ') === 'im group recent --limit 20 --page 1'
+        ? runOf({ list: [{ groupId: 'g-b', groupName: '金蝶最大AI交流群' }] })
+        : runOf({}),
+    }
+    const handler = createRpcHandler(ctx, { list: () => [], decide: () => false })
+    await handler('home-open', { groupId: 'g-b' }, undefined as never)
+    const nav = await handler('home-nav', {}, undefined as never)
+    expect(nav.ok && nav.value).toMatchObject({
+      rooms: [{ groupId: 'g-b', groupName: '金蝶最大AI交流群' }],
+    })
+    clearRecentNamesCache()
   })
 
   it('unknown endpoints fail closed', async () => {

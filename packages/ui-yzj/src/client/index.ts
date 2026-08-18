@@ -13,7 +13,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { YzjToolCard, YZJ_TOOL_NAMES } from './cards.tsx'
-import { YzjComposerDock, dragInsertRequest, type YzjDropInjected } from './composer.tsx'
+import { YzjComposerDock } from './composer.tsx'
 import type { YzjHomeChromeInjected } from './home-chrome.tsx'
 import { YzjRoomComposer, selectGroupRoomComposer, type YzjRoomComposerInjected } from './room-composer.tsx'
 import { YzjSessionShell, type YzjSessionShellInjected } from './session-shell.tsx'
@@ -98,27 +98,23 @@ export function apply(ctx: ClientContext): void {
   }
   const openWriteContextFor = (record: YzjWriteRecord): void => openWriteContext(record)
 
-  // 云之家 settings section (设置 → 云之家): the management home for the
-  // robot channels and the memory vault — NOT workspace-panel tabs (user
-  // decision). `slots.inject` defers until the settings shell declares the
-  // seat, so compositions without the settings UI simply skip it.
+  // 云之家 settings section (设置 → 云之家): robot-channel management.
+  // Memory vault UI is deferred (R21 v1.6). `slots.inject` defers until the
+  // settings shell declares the seat.
   ctx.slots.inject('settings.section', () => ctx.slots.register(
     { name: 'settings.section', id: 'yzj', order: 25, label: '云之家', inject: () => panelInject },
     YzjSettingsSection,
   ))
 
-  // Drop band: registered in `conversation.input.dock` (its own row above the
-  // composer card) because `conversation.composer.dock` only renders in the
-  // non-hero phase — a brand-new session would have no drop target at all.
-  // The band itself stays hidden until a yzj drag crosses the window
-  // (see composer.tsx). P2 retired the floating ball; domains live in the
-  // workbench.
+  // Topic 回群聊 / unbound 丢进群. Drag-to-chip retired with the floating
+  // panel (R21 v1.6). `conversation.composer.dock` only renders in the
+  // non-hero phase, so this seat stays on `conversation.input.dock`.
   ctx.slots.inject('conversation.input.dock', () => ctx.slots.register(
     {
       name: 'conversation.input.dock',
-      id: 'yzj-drop-band',
+      id: 'yzj-home-chrome',
       order: 100,
-      inject: (sessionId: string): YzjDropInjected & YzjHomeChromeInjected => {
+      inject: (sessionId: string): YzjHomeChromeInjected => {
         const actx = scopeOf(ctx, sessionId)
         const draftFace = (): { draft: string; draftRev: number } => {
           const conversation = actx?.get('conversation') as
@@ -128,15 +124,6 @@ export function apply(ctx: ClientContext): void {
         }
         return {
           sessionId,
-          insertReference: (ref) => {
-            if (actx === undefined) return
-            const attempt = (): boolean => {
-              const state = draftFace()
-              const length = state.draft.length
-              return actx.bail(actx, 'slash/input-insert-reference', dragInsertRequest(ref, { start: length, end: length, draftRev: state.draftRev })) === true
-            }
-            if (!attempt()) setTimeout(() => { attempt() }, 80)
-          },
           readDraft: () => draftFace().draft,
           clearDraft: () => {
             if (actx === undefined) return
@@ -147,6 +134,7 @@ export function apply(ctx: ClientContext): void {
           homeSend: (id, content) => panelInject.homeSend?.(id, content) ?? Promise.resolve({ ok: false as const, error: { message: 'homeSend unavailable' } }),
           homeDigest: (id) => panelInject.homeDigest?.(id) ?? Promise.resolve({ ok: false as const, error: { message: 'homeDigest unavailable' } }),
           homeHandoff: (groupId, digest) => panelInject.homeHandoff?.(groupId, digest) ?? Promise.resolve({ ok: false as const, error: { message: 'homeHandoff unavailable' } }),
+          ...(panelInject.homeOpen === undefined ? {} : { homeOpen: panelInject.homeOpen }),
           fetchGroups: (limit, page) => panelInject.fetchGroups(limit, page),
           focusBoundSession: panelInject.focusBoundSession,
         }
@@ -155,16 +143,18 @@ export function apply(ctx: ClientContext): void {
     YzjComposerDock,
   ))
 
+  // List slot: no per-session select. Rooms occupy this view via
+  // view-ring + YzjRoomShell's yzj-home-* gate (R22 / pitfall-022).
   ctx.slots.inject('conversation.view', () => ctx.slots.register(
     {
       name: 'conversation.view',
       id: 'yzj-home',
       order: -50,
-      label: '群房间',
+      label: '群聊',
       store,
       inject: (sessionId: string): YzjRoomShellInjected => ({
         sessionId,
-        homeFused: (id) => panelInject.homeFused?.(id) ?? Promise.resolve({ ok: false as const, error: { message: 'homeFused unavailable' } }),
+        homeFused: (id, groupId) => panelInject.homeFused?.(id, groupId) ?? Promise.resolve({ ok: false as const, error: { message: 'homeFused unavailable' } }),
         homeBackfill: (id, opts) => panelInject.homeBackfill?.(id, opts) ?? Promise.resolve({ ok: false as const, error: { message: 'homeBackfill unavailable' } }),
         homeTopicOpen: (input) => panelInject.homeTopicOpen?.(input) ?? Promise.resolve({ ok: false as const, error: { message: 'homeTopicOpen unavailable' } }),
         homeTopicLens: (id) => panelInject.homeTopicLens?.(id) ?? Promise.resolve({ ok: false as const, error: { message: 'homeTopicLens unavailable' } }),
@@ -189,7 +179,7 @@ export function apply(ctx: ClientContext): void {
         sessionId,
         homeSend: (id, content, opts) => panelInject.homeSend?.(id, content, opts) ?? Promise.resolve({ ok: false as const, error: { message: 'homeSend unavailable' } }),
         uploadFile: panelInject.uploadFile,
-        homeFused: (id) => panelInject.homeFused?.(id) ?? Promise.resolve({ ok: false as const, error: { message: 'homeFused unavailable' } }),
+        homeFused: (id, groupId) => panelInject.homeFused?.(id, groupId) ?? Promise.resolve({ ok: false as const, error: { message: 'homeFused unavailable' } }),
         fetchContact: panelInject.fetchContact,
       }),
     },
@@ -201,10 +191,11 @@ export function apply(ctx: ClientContext): void {
       name: 'conversation.session.header.actions',
       id: 'yzj-session-shell',
       order: -80,
-      label: '群房间',
+      label: '群聊',
       inject: (sessionId: string): YzjSessionShellInjected => ({
         sessionId,
         homeBinding: (id) => panelInject.homeBinding?.(id) ?? Promise.resolve({ ok: false as const, error: { message: 'homeBinding unavailable' } }),
+        homeOpen: (groupId, title) => panelInject.homeOpen?.(groupId, title) ?? Promise.resolve({ ok: false as const, error: { message: 'homeOpen unavailable' } }),
         focusBoundSession: panelInject.focusBoundSession,
       }),
     },

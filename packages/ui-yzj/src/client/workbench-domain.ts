@@ -4,8 +4,10 @@
  * dock (sidebar.footer) and conversation.view do not share a React tree.
  */
 
+import { useEffect, useState } from 'react'
+
 /** Five 云之家 workbench domains. `im` is the group-room timeline. */
-export type WorkbenchDomain = 'im' | 'todo' | 'calendar' | 'docs' | 'memory'
+export type WorkbenchDomain = 'im' | 'todo' | 'calendar' | 'docs'
 
 let current: WorkbenchDomain = 'im'
 const listeners = new Set<() => void>()
@@ -26,4 +28,14 @@ export function setWorkbenchDomain(next: WorkbenchDomain): void {
 export function subscribeWorkbenchDomain(listener: () => void): () => void {
   listeners.add(listener)
   return () => { listeners.delete(listener) }
+}
+
+/**
+ * React face for {@link getWorkbenchDomain}. Lives here so composer / dock /
+ * shell share one subscription instead of each wiring useState+effect.
+ */
+export function useWorkbenchDomain(): WorkbenchDomain {
+  const [domain, setDomain] = useState<WorkbenchDomain>(getWorkbenchDomain)
+  useEffect(() => subscribeWorkbenchDomain(() => { setDomain(getWorkbenchDomain()) }), [])
+  return domain
 }

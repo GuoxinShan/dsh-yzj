@@ -3,7 +3,7 @@
  * View-ring sync: group rooms occupy the pane; other sessions hide 群房间.
  */
 import { afterEach, describe, expect, it } from 'vitest'
-import { restoreYzjViewRing, syncYzjViewRing, watchYzjViewRing } from '../src/client/view-ring.ts'
+import { restoreYzjViewRing, syncYzjViewRing, watchYzjViewRing, yzjViewKindFromSessionId } from '../src/client/view-ring.ts'
 
 function mountTabs(): { header: HTMLElement; tablist: HTMLDivElement; room: HTMLButtonElement; chat: HTMLButtonElement } {
   const header = document.createElement('header')
@@ -17,10 +17,14 @@ function mountTabs(): { header: HTMLElement; tablist: HTMLDivElement; room: HTML
   const room = document.createElement('button')
   room.setAttribute('role', 'tab')
   room.setAttribute('aria-selected', 'false')
-  room.textContent = '群房间'
+  room.textContent = '群聊'
   room.addEventListener('click', () => {
     room.setAttribute('aria-selected', 'true')
     chat.setAttribute('aria-selected', 'false')
+  })
+  chat.addEventListener('click', () => {
+    chat.setAttribute('aria-selected', 'true')
+    room.setAttribute('aria-selected', 'false')
   })
   tablist.append(chat, room)
   header.append(tablist)
@@ -53,6 +57,28 @@ describe('syncYzjViewRing', () => {
     expect(tablist.hidden).toBe(false)
     expect(room.hidden).toBe(false)
     expect(tablist.style.display).not.toBe('none')
+  })
+
+  it('clicks 对话 when a leftover 群聊 view is selected (pitfall-022)', () => {
+    const { room, chat } = mountTabs()
+    room.click()
+    expect(room.getAttribute('aria-selected')).toBe('true')
+    syncYzjViewRing('topic')
+    expect(chat.getAttribute('aria-selected')).toBe('true')
+    expect(room.getAttribute('aria-selected')).toBe('false')
+    expect(room.hidden).toBe(true)
+    room.hidden = false
+    room.click()
+    syncYzjViewRing('unbound')
+    expect(chat.getAttribute('aria-selected')).toBe('true')
+    expect(room.getAttribute('aria-selected')).toBe('false')
+  })
+
+  it('classifies view kind from the session-id prefix only', () => {
+    expect(yzjViewKindFromSessionId('yzj-home-g-a')).toBe('room')
+    expect(yzjViewKindFromSessionId('yzj-topic-g-a-root')).toBe('topic')
+    expect(yzjViewKindFromSessionId('sess-coding')).toBe('unbound')
+    expect(yzjViewKindFromSessionId('private-1')).toBe('unbound')
   })
 
   it('hides a tablist that mounts after the first sync', async () => {
