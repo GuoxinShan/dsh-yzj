@@ -18,6 +18,10 @@ export interface YzjPanelInject {
   fetchGroups: (limit?: number, page?: number) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   fetchMessages: (groupId: string, limit?: number, page?: { type: 'newest' | 'old' | 'new'; msgId?: string }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   fetchWhoami: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Probe `yzj-cli` login: `{ loggedIn, name, openId, reason }` (always ok). */
+  authStatus: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Spawn `yzj-cli auth login` (opens the system browser). User-direct. */
+  authLogin: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   fetchSearch: (keyword: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   fetchDoc: (id: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   fetchDocBlocks: (id: string, blockId?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
@@ -168,6 +172,8 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
       ...(page === undefined ? { type: 'newest' } : page),
     }),
     fetchWhoami: () => call('whoami', {}),
+    authStatus: () => call('auth-status', {}),
+    authLogin: () => call('auth-login', {}),
     fetchSearch: (keyword) => call('search', { keyword }),
     fetchDoc: (id) => call('doc-get', { id }),
     fetchDocBlocks: (id, blockId) => call('doc-blocks', blockId === undefined ? { id } : { id, blockId }),

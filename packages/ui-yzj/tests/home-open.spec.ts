@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   openBoundHome, openTopicHome, publishHostSession, topicSidebarTitle,
-  topicAgentRoute, identifiedUserMessage,
+  topicAgentRoute, topicAgentComposition, identifiedUserMessage,
 } from '../src/home-open.ts'
 import type { HomeOpenFace } from '../src/home-open.ts'
 
@@ -47,7 +47,12 @@ function fakeAgents() {
     live,
     get: (id: string) => live.get(id),
     resume: async () => { throw new Error('no log') },
-    create: async (options: { sessionId: string; agentOptions?: { provider: string; model: string } }) => {
+    create: async (options: {
+      sessionId: string
+      meta?: { cwd: string; agentPreset?: string }
+      agentOptions?: { provider: string; model: string }
+      setup?: (agentCtx: unknown) => void | Promise<void>
+    }) => {
       created.push(options.sessionId)
       createdWith.push(options)
       const events: { type: string; data?: unknown }[] = []
@@ -72,24 +77,23 @@ describe('openBoundHome', () => {
     expect(first.created).toBe(true)
     expect(first.sessionId).toBe('yzj-home-g-a')
     expect(first.yzjKind).toBe('group')
-    expect(agents.created).toEqual(['yzj-home-g-a'])
+    expect(first.agentCreated).toBe(false)
+    expect(agents.created).toEqual([])
     const second = await openBoundHome({ home, agents, yzjConversationId: 'g-a', cwd: '/tmp' })
     expect(second.created).toBe(false)
     expect(second.sessionId).toBe(first.sessionId)
     expect(second.agentCreated).toBe(false)
-    expect(agents.created).toEqual(['yzj-home-g-a'])
-    const types = agents.live.get('yzj-home-g-a')?.session.events.map(event => event.type)
-    expect(types).toEqual(['turn/start', 'turn/end', 'session/title'])
+    expect(agents.created).toEqual([])
     expect(home.topicInputs).toEqual([])
     expect(first.legacyTopicSessionId).toBeUndefined()
   })
 
-  it('pins the supplied group name as session/title', async () => {
+  it('does not mint a room agent just to bind (R27)', async () => {
     const home = memoryHome()
     const agents = fakeAgents()
     await openBoundHome({ home, agents, yzjConversationId: 'g-a', cwd: '/tmp', title: '金蝶最小DSH交流群' })
-    const title = agents.live.get('yzj-home-g-a')?.session.events.find(event => event.type === 'session/title')
-    expect(title?.data).toMatchObject({ title: '金蝶最小DSH交流群', source: { kind: 'user' } })
+    expect(agents.created).toEqual([])
+    expect(agents.live.get('yzj-home-g-a')).toBeUndefined()
   })
 
   it('mints 历史对话 when the host already has ③④; second open is focus', async () => {
@@ -153,9 +157,9 @@ describe('openTopicHome', () => {
   it('pins sidebar title as 话题 · 群名 so narrow sidebars keep the distinguishing part', async () => {
     const home = memoryHome()
     const agents = fakeAgents()
-    await openBoundHome({ home, agents, yzjConversationId: 'g-a', cwd: '/tmp', title: '金蝶最小DSH交流群' })
     await openTopicHome({
-      home, agents, yzjConversationId: 'g-a', cwd: '/tmp', source: 'dsh', rootMsgId: 'm1', originText: '帮我整理接口清单',
+      home, agents, yzjConversationId: 'g-a', cwd: '/tmp', source: 'dsh', rootMsgId: 'm1',
+      originText: '帮我整理接口清单', groupName: '金蝶最小DSH交流群',
     })
     const title = agents.live.get('yzj-topic-g-a-m1')?.session.events.findLast(event => event.type === 'session/title')
     expect(title?.data).toMatchObject({ title: '帮我整理接口清单 · 金蝶最小DSH交流群' })
@@ -183,6 +187,47 @@ describe('openTopicHome', () => {
       sessionId: 'yzj-topic-g-a-m1',
       agentOptions: { provider: 'deepseek-official', model: 'deepseek-chat' },
     })
+  })
+
+  it('mounts the default agent preset so topics get standard tools (R28)', async () => {
+    const home = memoryHome()
+    const agents = fakeAgents()
+    const mounted: string[] = []
+    await openTopicHome({
+      home, agents, yzjConversationId: 'g-a', cwd: '/tmp', source: 'dsh', rootMsgId: 'm1',
+      agentPreset: 'standard',
+      setup: (scope) => { mounted.push(String(scope ?? 'ok')) },
+    })
+    expect(agents.createdWith[0]).toMatchObject({
+      sessionId: 'yzj-topic-g-a-m1',
+      meta: { cwd: '/tmp', agentPreset: 'standard' },
+    })
+    expect(typeof (agents.createdWith[0] as { setup?: unknown }).setup).toBe('function')
+    await ((agents.createdWith[0] as { setup: (ctx: unknown) => Promise<void> }).setup)('agent-ctx')
+    expect(mounted).toEqual(['agent-ctx'])
+  })
+})
+
+describe('topicAgentComposition', () => {
+  it('resolves the roster default and returns a mount setup', async () => {
+    const mounted: string[] = []
+    const composition = await topicAgentComposition({
+      get(name: string): unknown {
+        if (name !== 'agentPresets') return undefined
+        return {
+          defaultId: 'standard',
+          resolve: async (id?: string) => ({ id: id ?? 'standard' }),
+          mount: async (_ctx: unknown, id: string) => { mounted.push(id) },
+        }
+      },
+    })
+    expect(composition.agentPreset).toBe('standard')
+    await composition.setup?.('scope')
+    expect(mounted).toEqual(['standard'])
+  })
+
+  it('is a no-op when the roster is absent', async () => {
+    expect(await topicAgentComposition({ get: () => undefined })).toEqual({})
   })
 })
 
@@ -249,14 +294,14 @@ describe('publishHostSession', () => {
     expect(events.some(event => event.type === 'session/title')).toBe(true)
   })
 
-  it('upgrades a 群房间 placeholder title when the real group name arrives', async () => {
-    const home = memoryHome()
-    const agents = fakeAgents()
-    await openBoundHome({ home, agents, yzjConversationId: 'g-a', cwd: '/tmp' })
-    expect(agents.live.get('yzj-home-g-a')?.session.events.find(event => event.type === 'session/title')?.data)
-      .toMatchObject({ title: '群房间' })
-    await openBoundHome({ home, agents, yzjConversationId: 'g-a', cwd: '/tmp', title: '金蝶最小DSH交流群' })
-    const titles = agents.live.get('yzj-home-g-a')?.session.events.filter(event => event.type === 'session/title')
-    expect(titles?.at(-1)?.data).toMatchObject({ title: '金蝶最小DSH交流群' })
+  it('upgrades a 群房间 placeholder title when the real group name arrives', () => {
+    const events: { type: string; data?: unknown }[] = []
+    const agent = {
+      session: { events, append: (type: string, data: unknown) => { events.push({ type, data }) } },
+    }
+    publishHostSession(agent, '群房间')
+    publishHostSession(agent, '金蝶最小DSH交流群')
+    const titles = events.filter(event => event.type === 'session/title')
+    expect(titles.at(-1)?.data).toMatchObject({ title: '金蝶最小DSH交流群' })
   })
 })

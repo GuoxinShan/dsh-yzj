@@ -6,6 +6,7 @@ import { act } from 'react-dom/test-utils'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it } from 'vitest'
 import { YzjHomeChrome } from '../src/client/home-chrome.tsx'
+import { isWorkbenchOpen, resetWorkbenchOverlay } from '../src/client/workbench-overlay.ts'
 
 function mount(bound: boolean) {
   const sent: string[] = []
@@ -129,7 +130,9 @@ describe('YzjHomeChrome', () => {
     expect(container.textContent).not.toContain('发进群')
     act(() => { (chip as HTMLButtonElement).click() })
     await act(async () => { await Promise.resolve() })
-    expect(focused).toEqual(['yzj-home-g-a'])
+    expect(focused).toEqual([])
+    expect(isWorkbenchOpen()).toBe(true)
+    resetWorkbenchOverlay()
     act(() => { root.unmount() })
   })
 })

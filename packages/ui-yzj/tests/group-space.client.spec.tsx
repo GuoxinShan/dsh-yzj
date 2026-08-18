@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 /**
- * Sidebar-foot 云之家 dock: one entry, no domain buttons, no group tree (R28).
+ * Sidebar 云之家 dock: one entry, no domain buttons, no group tree (R31).
+ * Click opens the center-column cover without focusing a hanger session.
  */
 import { act } from 'react-dom/test-utils'
 import { createRoot } from 'react-dom/client'
@@ -9,14 +10,13 @@ import { YzjYunzhijiaDock } from '../src/client/group-space.tsx'
 import { topicNavLabel } from '../src/client/conv-list.tsx'
 import { clearImSeat, rememberImSeat } from '../src/client/im-seat.ts'
 import { getWorkbenchDomain, setWorkbenchDomain } from '../src/client/workbench-domain.ts'
+import { isWorkbenchOpen, resetWorkbenchOverlay } from '../src/client/workbench-overlay.ts'
 
 type Rpc = { ok: true; value: unknown } | { ok: false; error: { message: string } }
 
 function mount(nav: Rpc, extra: {
   wide?: boolean
   focused?: string[]
-  current?: string
-  robotStatus?: () => Promise<Rpc>
   homeNav?: () => Promise<Rpc>
 } = {}) {
   const focused = extra.focused ?? []
@@ -27,10 +27,8 @@ function mount(nav: Rpc, extra: {
     root.render(
       <YzjYunzhijiaDock
         wide={extra.wide !== false}
-        useSessions={select => select({ current: extra.current ?? '', byId: {} } as never)}
         homeNav={extra.homeNav ?? (async () => nav)}
         focusBoundSession={id => { focused.push(id) }}
-        robotStatus={extra.robotStatus ?? (async () => ({ ok: true, value: { channels: [{ connected: true }] } }))}
       />,
     )
   })
@@ -50,9 +48,10 @@ describe('YzjYunzhijiaDock', () => {
   afterEach(() => {
     clearImSeat()
     setWorkbenchDomain('im')
+    resetWorkbenchOverlay()
   })
 
-  it('renders one 云之家 entry and robot status, not a group tree or domain buttons', async () => {
+  it('renders one 云之家 entry, not a group tree or domain buttons', async () => {
     const { container } = mount({
       ok: true,
       value: {
@@ -73,41 +72,28 @@ describe('YzjYunzhijiaDock', () => {
     expect(container.querySelector('[data-testid="yzj-dock-todo"]')).toBeNull()
     expect(container.querySelector('[data-testid="yzj-dock-calendar"]')).toBeNull()
     expect(container.querySelector('[data-testid="yzj-dock-docs"]')).toBeNull()
+    expect(container.querySelector('[data-testid="yzj-dock-robot"]')).toBeNull()
     expect(text).not.toContain('待办')
     expect(text).not.toContain('日程')
     expect(text).not.toContain('知识库')
     expect(text).not.toContain('记忆')
-    expect(container.querySelector('[data-testid="yzj-dock-robot"]')?.getAttribute('title')).toContain('已连接')
-    expect(text).not.toContain('💬')
-    expect(text).not.toContain('机器人通道')
     expect(text).not.toContain('群空间')
-    expect(text).not.toContain('已打开')
     expect(text).not.toContain('整理接口清单')
     expect(container.querySelector('[data-testid="yzj-group-space"]')?.tagName).toBe('NAV')
   })
 
-  it('marks the entry active when already on a room host and tones the robot dot', async () => {
-    const { container } = mount({
-      ok: true,
-      value: {
-        rooms: [{
-          groupId: 'g-a',
-          groupName: '金蝶最小DSH交流群',
-          sessionId: 'yzj-home-g-a',
-          yzjKind: 'group',
-          topics: [],
-        }],
-      },
-    }, { current: 'yzj-home-g-a' })
+  it('marks the entry active after opening the cover', async () => {
+    const { container } = mount({ ok: true, value: { rooms: [] } })
     await act(async () => { await Promise.resolve() })
     const home = container.querySelector('[data-testid="yzj-dock-home"]') as HTMLButtonElement
+    expect(home.getAttribute('aria-pressed')).toBe('false')
+    await act(async () => { home.click(); await Promise.resolve() })
     expect(home.className).toMatch(/yzjDockEntryActive/)
     expect(home.getAttribute('aria-pressed')).toBe('true')
-    const dot = container.querySelector('[data-testid="yzj-dock-robot"] span')
-    expect(dot?.className).toMatch(/DotOk/)
+    expect(isWorkbenchOpen()).toBe(true)
   })
 
-  it('云之家 focuses the first bound room without switching the workbench domain', async () => {
+  it('云之家 opens the cover without focusing a hanger or switching domain', async () => {
     setWorkbenchDomain('todo')
     const { container, focused } = mount({
       ok: true,
@@ -124,7 +110,8 @@ describe('YzjYunzhijiaDock', () => {
     await act(async () => { await Promise.resolve() })
     const home = container.querySelector('[data-testid="yzj-dock-home"]') as HTMLButtonElement
     await act(async () => { home.click(); await Promise.resolve() })
-    expect(focused).toEqual(['yzj-home-g-a'])
+    expect(focused).toEqual([])
+    expect(isWorkbenchOpen()).toBe(true)
     expect(getWorkbenchDomain()).toBe('todo')
   })
 
@@ -135,26 +122,7 @@ describe('YzjYunzhijiaDock', () => {
     expect(container.textContent).not.toContain('记忆')
   })
 
-  it('skips homeNav when already on a room host and does not change domain', async () => {
-    setWorkbenchDomain('calendar')
-    let navCalls = 0
-    const { container, focused } = mount({ ok: true, value: { rooms: [] } }, {
-      current: 'yzj-home-g-a',
-      homeNav: async () => {
-        navCalls += 1
-        return { ok: true, value: { rooms: [] } }
-      },
-    })
-    await act(async () => { await Promise.resolve() })
-    const afterMount = navCalls
-    const home = container.querySelector('[data-testid="yzj-dock-home"]') as HTMLButtonElement
-    await act(async () => { home.click(); await Promise.resolve() })
-    expect(navCalls).toBe(afterMount)
-    expect(focused).toEqual([])
-    expect(getWorkbenchDomain()).toBe('calendar')
-  })
-
-  it('focuses the cached seat without waiting for homeNav', async () => {
+  it('does not wait for homeNav before opening the cover', async () => {
     rememberImSeat({ groupId: 'g-cached', sessionId: 'yzj-home-cached', groupName: '缓存群' })
     let resolveNav: ((value: Rpc) => void) | undefined
     const { container, focused } = mount({ ok: true, value: { rooms: [] } }, {
@@ -162,7 +130,8 @@ describe('YzjYunzhijiaDock', () => {
     })
     const home = container.querySelector('[data-testid="yzj-dock-home"]') as HTMLButtonElement
     await act(async () => { home.click() })
-    expect(focused).toEqual(['yzj-home-cached'])
+    expect(focused).toEqual([])
+    expect(isWorkbenchOpen()).toBe(true)
     resolveNav?.({ ok: true, value: { rooms: [] } })
   })
 

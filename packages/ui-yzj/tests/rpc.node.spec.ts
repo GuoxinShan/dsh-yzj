@@ -45,6 +45,28 @@ describe('createRpcHandler', () => {
     expect(result.ok && result.value).toEqual([{ id: 'kb1', name: '我的' }])
   })
 
+  it('events two-pointer-scans a range so recurring instances survive (pitfall-032)', async () => {
+    const calls: string[] = []
+    const ctx = new Context()
+    ;(ctx as unknown as { yzjBridge: { run: (command: readonly string[]) => Promise<RunResult> } }).yzjBridge = {
+      run: async (command) => {
+        calls.push(command.join(' '))
+        const start = command[command.indexOf('--start') + 1] ?? ''
+        return runOf([{ id: start, startDate: Date.parse(`${start}T10:00:00`), title: start }])
+      },
+    }
+    const handler = createRpcHandler(ctx, { list: () => [], decide: () => false })
+    const result = await handler('events', { start: '2026-08-17', end: '2026-08-18' }, undefined as never)
+    expect(calls).toEqual([
+      'calendar event list --start 2026-08-17 --end 2026-08-18',
+      'calendar event list --start 2026-08-18 --end 2026-08-18',
+    ])
+    expect(result.ok && result.value).toEqual([
+      { id: '2026-08-17', startDate: Date.parse('2026-08-17T10:00:00'), title: '2026-08-17' },
+      { id: '2026-08-18', startDate: Date.parse('2026-08-18T10:00:00'), title: '2026-08-18' },
+    ])
+  })
+
   it('validates required payloads', async () => {
     const ctx = mountBridge({})
     const gate: YzjWriteGateFace = { list: () => [], decide: () => false }
@@ -189,7 +211,7 @@ describe('createRpcHandler', () => {
     expect(first.ok && first.value).toMatchObject({ sessionId: 'yzj-home-g-a', created: true, yzjKind: 'group' })
     const second = await handler('home-open', { groupId: 'g-a' }, undefined as never)
     expect(second.ok && second.value).toMatchObject({ sessionId: 'yzj-home-g-a', created: false })
-    expect(created).toEqual(['yzj-home-g-a'])
+    expect(created).toEqual([])
   })
 
   function recordingRegistry() {
@@ -560,6 +582,43 @@ describe('createRpcHandler', () => {
       groupId: 'g1', msgType: 'text', content: '周四发布', atAll: true,
     }, undefined as never)
     expect(allNoFragment.ok).toBe(false)
+  })
+
+  it('auth-status projects a logged-in whoami as loggedIn', async () => {
+    const ctx = mountBridge({
+      'contact user get': runOf({ name: '单国鑫', openId: 'oid-1' }),
+    })
+    const handler = createRpcHandler(ctx, { list: () => [], decide: () => false })
+    const result = await handler('auth-status', {}, undefined as never)
+    expect(result.ok && result.value).toEqual({
+      loggedIn: true, name: '单国鑫', openId: 'oid-1', reason: '',
+    })
+  })
+
+  it('auth-status treats a CLI auth failure as logged-out, not an RPC error', async () => {
+    const ctx = mountBridge({
+      'contact user get': { ok: false, exitCode: 1, stdout: '', stderr: 'error: no app credentials configured -- run \'yzj-cli auth login\' first' },
+    })
+    const handler = createRpcHandler(ctx, { list: () => [], decide: () => false })
+    const result = await handler('auth-status', {}, undefined as never)
+    expect(result.ok).toBe(true)
+    expect(result.ok && (result.value as { loggedIn: boolean; reason: string }).loggedIn).toBe(false)
+    expect(result.ok && (result.value as { reason: string }).reason).toContain('no app credentials')
+  })
+
+  it('auth-login starts yzj-cli auth login and does not wait for the browser', async () => {
+    const started: string[][] = []
+    const ctx = new Context()
+    ;(ctx as unknown as { yzjBridge: { start: (command: readonly string[]) => Promise<{ alreadyRunning: boolean }> } }).yzjBridge = {
+      start: async (command) => {
+        started.push([...command])
+        return { alreadyRunning: false }
+      },
+    }
+    const handler = createRpcHandler(ctx, { list: () => [], decide: () => false })
+    const result = await handler('auth-login', {}, undefined as never)
+    expect(result).toEqual({ ok: true, value: { started: true, alreadyRunning: false } })
+    expect(started).toEqual([['auth', 'login']])
   })
 
   it('write-gate + handler integrate end to end', async () => {

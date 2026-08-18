@@ -1,5 +1,5 @@
 /**
- * Topic job-done delivery (R26): summary-only reply, skip matrix, artifacts.
+ * Topic job-done delivery (R29): summary-only reply, skip matrix, artifacts.
  */
 import { Context } from '@deepseek-ai/cordis'
 import { mkdtemp, writeFile } from 'node:fs/promises'
@@ -112,7 +112,7 @@ describe('compose / answer / artifacts', () => {
 
 describe('TopicDeliverHub', () => {
   it('flushes the concluding answer on idle and skips a second idle', async () => {
-    const delivered: { summary: string; replyMsgId: string; artifactPaths: readonly string[] }[] = []
+    const delivered: { answer: string; replyMsgId: string; artifactPaths: readonly string[] }[] = []
     const hub = new TopicDeliverHub({
       getTopic: () => topic(),
       writesPending: () => false,
@@ -132,8 +132,8 @@ describe('TopicDeliverHub', () => {
     await Promise.resolve()
     expect(delivered).toHaveLength(1)
     expect(delivered[0]?.replyMsgId).toBe('root-1')
-    expect(delivered[0]?.summary).toContain('定稿结论')
-    expect(delivered[0]?.summary).not.toContain('草稿')
+    expect(delivered[0]?.answer).toContain('定稿结论')
+    expect(delivered[0]?.answer).not.toContain('草稿')
     hub.noteIdle('yzj-topic-g-root1', 'user')
     await Promise.resolve()
     expect(delivered).toHaveLength(1)
@@ -186,6 +186,35 @@ describe('TopicDeliverHub', () => {
     await Promise.resolve()
     expect(delivered[0]?.artifactPaths).toEqual([join('/ws', 'notes.md')])
   })
+
+  it('retries after a failed deliver instead of watermarking first', async () => {
+    let fails = 1
+    const delivered: string[] = []
+    const hub = new TopicDeliverHub({
+      getTopic: () => topic(),
+      writesPending: () => false,
+      workspaceCwd: () => '/ws',
+      deliver: async (input) => {
+        if (fails > 0) {
+          fails -= 1
+          throw new Error('network')
+        }
+        delivered.push(input.answer)
+      },
+    })
+    hub.noteEvent('yzj-topic-g-root1', {
+      type: 'assistant/message', seq: 2,
+      data: { message: { content: [{ type: 'text', text: '定稿结论' }] } },
+    })
+    hub.noteIdle('yzj-topic-g-root1', 'user')
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(delivered).toHaveLength(0)
+    hub.noteIdle('yzj-topic-g-root1', 'user')
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(delivered).toEqual(['定稿结论'])
+  })
 })
 
 describe('deliverTopicResult', () => {
@@ -203,7 +232,8 @@ describe('deliverTopicResult', () => {
       } as never,
       topic: topic(),
       replyMsgId: 'root-1',
-      summary: '✅ 已完成\n\n写好了',
+      title: '整理接口',
+      answer: '写好了',
       artifactPaths: [png, md],
       send: async (input) => {
         sends.push(input)
@@ -219,6 +249,35 @@ describe('deliverTopicResult', () => {
     expect(sends[1]?.msgType).toBe('file')
     expect(sends[1]?.fileId).toBe('fid-notes.md')
     expect(sends[1]?.replyMsgId).toBeUndefined()
+    expect(sends[0]?.content).toContain('notes.md')
+    expect(sends[0]?.content).toContain('shot.png')
+  })
+
+  it('omits artifact names that did not upload from the reply', async () => {
+    const sends: ImSendInput[] = []
+    const dir = await mkdtemp(join(tmpdir(), 'yzj-deliver-miss-'))
+    const md = join(dir, 'notes.md')
+    await writeFile(md, 'hello')
+    const sent = await deliverTopicResult({
+      ctx: {} as never,
+      home: {
+        registerTopicOutbound: async () => undefined,
+      } as never,
+      topic: topic(),
+      replyMsgId: 'root-1',
+      title: '整理接口',
+      answer: '写好了',
+      artifactPaths: [md],
+      send: async (input) => {
+        sends.push(input)
+        return { ok: true, value: { msgId: `m-${sends.length}` } } satisfies ImSendResult
+      },
+      upload: async () => undefined,
+    })
+    expect(sent.ok).toBe(true)
+    expect(sends[0]?.content).toContain('写好了')
+    expect(sends[0]?.content).not.toContain('notes.md')
+    expect(sends).toHaveLength(1)
   })
 })
 
@@ -263,7 +322,7 @@ describe('live dsh-2 job-done delivery', () => {
     const anchor = await sendImAndLog(ctx, undefined, {
       groupId,
       msgType: 'text',
-      content: '【验收】话题 job-done 锚点（R26）',
+      content: '【验收】话题 job-done 锚点（R29）',
       images: [],
       atOpenIds: [],
       atAll: false,
@@ -274,18 +333,15 @@ describe('live dsh-2 job-done delivery', () => {
     expect(rootMsgId).toBeDefined()
     if (rootMsgId === undefined) return
     const dir = await mkdtemp(join(tmpdir(), 'yzj-dsh2-'))
-    const artifact = join(dir, 'r26-summary.md')
-    await writeFile(artifact, '# R26\n\n话题 job-done 产物验收。\n')
+    const artifact = join(dir, 'r29-summary.md')
+    await writeFile(artifact, '# R29\n\n话题 job-done 产物验收。\n')
     const posted = await deliverTopicResult({
       ctx,
       home: undefined,
       topic: topic({ yzjConversationId: groupId, rootMsgId, title: 'job-done 验收' }),
       replyMsgId: rootMsgId,
-      summary: composeTopicDelivery({
-        title: 'job-done 验收',
-        answer: '本轮完成：总结已回帖到话题锚点；md 文件因 CLI 不能挂回复链，发在群时间线。',
-        artifactNames: ['r26-summary.md'],
-      }),
+      title: 'job-done 验收',
+      answer: '本轮完成：总结已回帖到话题锚点；md 文件因 CLI 不能挂回复链，发在群时间线。',
       artifactPaths: [artifact],
     })
     expect(posted.ok).toBe(true)

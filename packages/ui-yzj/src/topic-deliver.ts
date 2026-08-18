@@ -1,5 +1,5 @@
 /**
- * Topic job-done delivery (docs/spec/group-room-topics.md R26): when a
+ * Topic job-done delivery (docs/spec/group-room-topics.md R29): when a
  * DSH topic turn goes idle, post a bounded summary back onto the Yunzhijia
  * reply chain as the logged-in user (CLI `im message send`), and attach
  * files written this turn. Not every assistant bubble — only the concluding
@@ -255,7 +255,8 @@ export async function deliverTopicResult(options: {
   readonly home: HomeIoFace | undefined
   readonly topic: TopicRecord
   readonly replyMsgId: string
-  readonly summary: string
+  readonly title: string
+  readonly answer: string
   readonly artifactPaths: readonly string[]
   readonly send?: (input: ImSendInput) => Promise<ImSendResult>
   readonly upload?: (localPath: string, name: string) => Promise<string | undefined>
@@ -283,10 +284,15 @@ export async function deliverTopicResult(options: {
   }
   const images = uploaded.filter(item => item.image)
   const files = uploaded.filter(item => !item.image)
+  const summary = composeTopicDelivery({
+    title: options.title,
+    answer: options.answer,
+    artifactNames: uploaded.map(item => item.name),
+  })
   const placeholders = images.map(() => '[图片]').join('')
   const content = images.length === 0
-    ? options.summary
-    : `${options.summary}${placeholders === '' ? '' : `\n${placeholders}`}`
+    ? summary
+    : `${summary}${placeholders === '' ? '' : `\n${placeholders}`}`
   const reply: ImSendInput = {
     groupId: options.topic.yzjConversationId,
     msgType: images.length > 0 ? 'richText' : 'text',
@@ -344,7 +350,8 @@ export class TopicDeliverHub {
       readonly deliver: (input: {
         topic: TopicRecord
         replyMsgId: string
-        summary: string
+        title: string
+        answer: string
         artifactPaths: readonly string[]
       }) => Promise<unknown>
     },
@@ -387,7 +394,6 @@ export class TopicDeliverHub {
     const stash = this.stashes.get(sessionId)
     if (stash === undefined) return
     this.stashes.delete(sessionId)
-    if (stash.topSeq >= 0) this.watermarks.set(sessionId, stash.topSeq)
     const answer = concludingAnswer(stash.parts)
     const topic = this.deps.getTopic(sessionId)
     const decision = decideTopicDelivery({
@@ -398,24 +404,33 @@ export class TopicDeliverHub {
       sentIm: stash.sentIm,
       answer,
     })
-    if (!decision.ok || topic === undefined) return
+    if (!decision.ok || topic === undefined) {
+      if (stash.topSeq >= 0) this.watermarks.set(sessionId, stash.topSeq)
+      return
+    }
     const root = cwd !== undefined && cwd !== '' ? cwd : this.deps.workspaceCwd()
     const artifactPaths = uniquePaths(
       stash.writePaths
         .map(path => resolveWorkspaceFile(root, path))
         .filter((path): path is string => path !== undefined),
     ).slice(0, TOPIC_DELIVER_MAX_FILES)
-    const summary = composeTopicDelivery({
-      title: decision.title,
-      answer,
-      artifactNames: artifactPaths.map(path => basename(path)),
-    })
     this.inflight.add(sessionId)
     void this.deps.deliver({
       topic,
       replyMsgId: decision.replyMsgId,
-      summary,
+      title: decision.title,
+      answer,
       artifactPaths,
+    }).then((result) => {
+      const failed = typeof result === 'object' && result !== null
+        && 'ok' in result && (result as { ok: unknown }).ok === false
+      if (failed) {
+        this.stashes.set(sessionId, stash)
+        return
+      }
+      if (stash.topSeq >= 0) this.watermarks.set(sessionId, stash.topSeq)
+    }, () => {
+      this.stashes.set(sessionId, stash)
     }).finally(() => {
       this.inflight.delete(sessionId)
     })
@@ -456,7 +471,8 @@ export function applyTopicDeliver(ctx: Context, writeGate: TopicDeliverWriteGate
         home,
         topic: input.topic,
         replyMsgId: input.replyMsgId,
-        summary: input.summary,
+        title: input.title,
+        answer: input.answer,
         artifactPaths: input.artifactPaths,
       })
     },

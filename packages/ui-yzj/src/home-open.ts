@@ -45,11 +45,53 @@ export interface TopicAgentRoute {
   readonly model: string
 }
 
+/** Creation-time preset mount (same seam as GUI 新建会话). */
+export type TopicAgentSetup = (agentCtx: unknown) => void | Promise<void>
+
 /** Resume-then-create face (ctx.agents). */
 export interface HomeOpenAgents {
   get(sessionId: string): HomeOpenAgent | undefined
-  resume(options: { resumeSessionId: string; agentOptions?: TopicAgentRoute }): Promise<unknown>
-  create(options: { sessionId: string; meta?: { cwd: string }; agentOptions?: TopicAgentRoute }): Promise<unknown>
+  resume(options: {
+    resumeSessionId: string
+    agentOptions?: TopicAgentRoute
+    setup?: TopicAgentSetup
+  }): Promise<unknown>
+  create(options: {
+    sessionId: string
+    meta?: { cwd: string; agentPreset?: string }
+    agentOptions?: TopicAgentRoute
+    setup?: TopicAgentSetup
+  }): Promise<unknown>
+}
+
+/** Host `ctx.agentPresets` (structural — do not import dsh-agent-presets). */
+interface AgentPresetsFace {
+  readonly defaultId?: string
+  resolve(id?: string): Promise<{ id: string }>
+  mount(agentCtx: unknown, id: string): Promise<unknown>
+}
+
+/**
+ * Default preset + setup for a programmatic topic/robot agent.
+ * Out of the box this is `standard` (bash / files / jobs) so yzj host
+ * tools sit on top — we do not ship a Yunzhijia preset (R28 / pitfall-030).
+ */
+export async function topicAgentComposition(ctx: { get(name: string): unknown }): Promise<{
+  readonly agentPreset?: string
+  readonly setup?: TopicAgentSetup
+}> {
+  const presets = ctx.get('agentPresets') as AgentPresetsFace | undefined
+  if (presets === undefined) return {}
+  try {
+    const id = (await presets.resolve(presets.defaultId)).id
+    if (id === '') return {}
+    return {
+      agentPreset: id,
+      setup: async (agentCtx) => { await presets.mount(agentCtx, id) },
+    }
+  } catch {
+    return {}
+  }
 }
 
 /**
@@ -196,6 +238,8 @@ async function maybeMigrateLegacyHost(options: {
   readonly hostSessionId: string
   readonly groupName: string
   readonly agentOptions?: TopicAgentRoute
+  readonly agentPreset?: string
+  readonly setup?: TopicAgentSetup
 }): Promise<string | undefined> {
   if (options.yzjKind === 'dm' || options.home.ensureTopic === undefined) return undefined
   const events = sessionOf(options.agents.get(options.hostSessionId))?.events ?? []
@@ -218,6 +262,8 @@ async function maybeMigrateLegacyHost(options: {
     quiet: true,
     lastActivity: lastActivity > 0 ? lastActivity : 1,
     ...(options.agentOptions === undefined ? {} : { agentOptions: options.agentOptions }),
+    ...(options.agentPreset === undefined ? {} : { agentPreset: options.agentPreset }),
+    ...(options.setup === undefined ? {} : { setup: options.setup }),
   })
   if (opened.topicCreated) {
     const digest = composeHandoffDigest(
@@ -239,9 +285,9 @@ async function maybeMigrateLegacyHost(options: {
 }
 
 /**
- * Ensure the 1:1 binding and bring the bound agent up. Second open is focus
- * (`created: false`) and must not mint a parallel session id. Group rooms
- * with leftover ③④ mint 「历史对话」 (H9).
+ * Ensure the 1:1 binding only (R27). Does not resume/create/publish a
+ * `yzj-home-*` agent — that would land a group row in 未分组. Leftover
+ * hosts already in memory still run H9 「历史对话」 migration.
  */
 export async function openBoundHome(options: {
   readonly home: HomeOpenFace
@@ -250,12 +296,16 @@ export async function openBoundHome(options: {
   readonly cwd: string
   readonly title?: string
   readonly agentOptions?: TopicAgentRoute
+  readonly agentPreset?: string
+  readonly setup?: TopicAgentSetup
 }): Promise<HomeOpenValue> {
   const yzjKind = options.yzjConversationId.startsWith('BOT-') ? 'dm' : 'group'
   const bound = await options.home.ensureBound(options.yzjConversationId, yzjKind)
   const title = options.title?.trim() || (yzjKind === 'dm' ? '私聊房间' : '群房间')
-  const finish = async (agentCreated: boolean): Promise<HomeOpenValue> => {
-    const legacyTopicSessionId = await maybeMigrateLegacyHost({
+  const existing = options.agents.get(bound.sessionId)
+  const legacyTopicSessionId = existing === undefined
+    ? undefined
+    : await maybeMigrateLegacyHost({
       home: options.home,
       agents: options.agents,
       yzjConversationId: options.yzjConversationId,
@@ -264,27 +314,15 @@ export async function openBoundHome(options: {
       hostSessionId: bound.sessionId,
       groupName: title,
       ...(options.agentOptions === undefined ? {} : { agentOptions: options.agentOptions }),
+      ...(options.agentPreset === undefined ? {} : { agentPreset: options.agentPreset }),
+      ...(options.setup === undefined ? {} : { setup: options.setup }),
     })
-    return {
-      sessionId: bound.sessionId,
-      created: bound.created,
-      yzjKind: bound.yzjKind,
-      agentCreated,
-      ...(legacyTopicSessionId === undefined ? {} : { legacyTopicSessionId }),
-    }
-  }
-  if (options.agents.get(bound.sessionId) !== undefined) {
-    publishHostSession(options.agents.get(bound.sessionId), title)
-    return finish(false)
-  }
-  try {
-    const resumed = await options.agents.resume({ resumeSessionId: bound.sessionId })
-    publishHostSession(resumed ?? options.agents.get(bound.sessionId), title)
-    return finish(false)
-  } catch {
-    const created = await options.agents.create({ sessionId: bound.sessionId, meta: { cwd: options.cwd } })
-    publishHostSession(created ?? options.agents.get(bound.sessionId), title)
-    return finish(true)
+  return {
+    sessionId: bound.sessionId,
+    created: bound.created,
+    yzjKind: bound.yzjKind,
+    agentCreated: false,
+    ...(legacyTopicSessionId === undefined ? {} : { legacyTopicSessionId }),
   }
 }
 
@@ -312,6 +350,10 @@ export async function openTopicHome(options: {
   readonly lastActivity?: number
   /** Required for a first model turn — persona interpolates `{{model}}`. */
   readonly agentOptions?: TopicAgentRoute
+  /** Default agent preset id (R28). */
+  readonly agentPreset?: string
+  /** Mount that preset under the new/resumed scope (pitfall-030). */
+  readonly setup?: TopicAgentSetup
 }): Promise<HomeOpenValue & { readonly topicCreated: boolean }> {
   if (options.home.ensureTopic === undefined) {
     const room = await openBoundHome(options)
@@ -349,6 +391,7 @@ export async function openTopicHome(options: {
     const resumed = await options.agents.resume({
       resumeSessionId: topic.sessionId,
       ...(options.agentOptions === undefined ? {} : { agentOptions: options.agentOptions }),
+      ...(options.setup === undefined ? {} : { setup: options.setup }),
     })
     publish(resumed ?? options.agents.get(topic.sessionId))
     return {
@@ -361,8 +404,12 @@ export async function openTopicHome(options: {
   } catch {
     const created = await options.agents.create({
       sessionId: topic.sessionId,
-      meta: { cwd: options.cwd },
+      meta: {
+        cwd: options.cwd,
+        ...(options.agentPreset === undefined ? {} : { agentPreset: options.agentPreset }),
+      },
       ...(options.agentOptions === undefined ? {} : { agentOptions: options.agentOptions }),
+      ...(options.setup === undefined ? {} : { setup: options.setup }),
     })
     publish(created ?? options.agents.get(topic.sessionId))
     return {

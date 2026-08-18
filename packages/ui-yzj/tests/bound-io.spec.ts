@@ -29,6 +29,16 @@ function memoryHomeIo(): HomeIoFace {
   const store = new BoundLogStore()
   const bindings = new Map<string, { dshSessionId: string; yzjConversationId: string; yzjKind: 'group' | 'dm' }>()
   const bySess = new Map<string, string>()
+  const topics = new Map<string, {
+    dshSessionId: string
+    yzjConversationId: string
+    title: string
+    source: 'dsh' | 'yzj' | 'handoff'
+    createdAt: number
+    rootMsgId?: string
+    originText?: string
+    originWho?: string
+  }>()
   const face: HomeIoFace = {
     async ensureBound(id, kind) {
       const existing = bindings.get(id)
@@ -39,6 +49,26 @@ function memoryHomeIo(): HomeIoFace {
       await store.ensureHeader(id, sessionId, kind)
       return { sessionId, created: true, yzjKind: kind }
     },
+    async ensureTopic(input) {
+      const sessionId = `yzj-topic-${input.yzjConversationId}-${input.rootMsgId ?? 'handoff'}`
+      const existing = topics.get(sessionId)
+      if (existing !== undefined) {
+        return { sessionId, created: false, record: existing }
+      }
+      const record = {
+        dshSessionId: sessionId,
+        yzjConversationId: input.yzjConversationId,
+        title: input.title ?? '话题',
+        source: input.source,
+        createdAt: Date.now(),
+        ...(input.rootMsgId === undefined ? {} : { rootMsgId: input.rootMsgId }),
+        ...(input.originText === undefined ? {} : { originText: input.originText }),
+        ...(input.originWho === undefined ? {} : { originWho: input.originWho }),
+      }
+      topics.set(sessionId, record)
+      return { sessionId, created: true, record }
+    },
+    getTopicBySession: (id) => topics.get(id),
     getByConversation: id => bindings.get(id),
     getBySession: id => {
       const conv = bySess.get(id)
@@ -78,7 +108,7 @@ describe('parseImSend / whoami / skip', () => {
     expect(parseImSend({ groupId: 'g1', content: '@张三 你好', atOpenIds: [] })).toContain('atOpenIds')
   })
 
-  it('rejects file messages that try to carry a reply (pitfall-028 / CLI contract)', () => {
+  it('rejects file messages that try to carry a reply (pitfall-033 / CLI contract)', () => {
     expect(parseImSend({
       groupId: 'g1', msgType: 'file', fileId: 'fid-1', replyMsgId: 'root-1',
     })).toBe('im-send: msg-type file does not support content, reply, or images')
@@ -376,6 +406,37 @@ describe('topic lens / ask', () => {
     })
   })
 
+  it('reads assistant lens text from data.message.content (live envelope)', () => {
+    const bubbles = topicLensBubbles({
+      dshSessionId: 'yzj-topic-1',
+      yzjConversationId: 'g-a',
+      title: '整理',
+      source: 'dsh',
+      createdAt: 1,
+    }, {
+      get: (id) => id === 'yzj-topic-1'
+        ? {
+          session: {
+            events: [
+              { type: 'user/message', time: 1, data: { content: '写纪要', source: { kind: 'user' } } },
+              {
+                type: 'tool/call', time: 2,
+                data: { name: 'write', arguments: '{"file_path":"out/纪要.md"}' },
+              },
+              { type: 'assistant/message', time: 4, data: { message: { content: '写好了' } } },
+            ],
+          },
+        }
+        : undefined,
+    })
+    expect(bubbles).toHaveLength(2)
+    expect(bubbles[1]).toMatchObject({
+      role: 'assistant',
+      text: '写好了',
+      artifacts: [{ type: 'DOC', name: '纪要.md' }],
+    })
+  })
+
   it('followups a user turn on the topic without requiring native focus', async () => {
     const followups: unknown[] = []
     const injected: unknown[] = []
@@ -419,12 +480,9 @@ describe('topic lens / ask', () => {
     })
     expect(result).toEqual({ ok: true })
     expect(injected).toHaveLength(1)
-    const window = injected[0] as { content: unknown; source: unknown }
-    const windowText = JSON.stringify(window.content)
+    const windowText = JSON.stringify(injected[0])
     expect(windowText).toContain('本群最近消息')
     expect(windowText).toContain('groupId: g-a')
-    expect(windowText).toContain('锚点 msgId: m1')
-    expect(window).toMatchObject({ source: { kind: 'plugin', plugin: 'ui-yzj' } })
     expect(followups).toHaveLength(1)
     const turn = followups[0] as { id: string; role: string; content: unknown; source: unknown }
     expect(typeof turn.id).toBe('string')

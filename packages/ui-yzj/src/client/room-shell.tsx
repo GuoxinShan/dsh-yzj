@@ -1,12 +1,12 @@
 /**
- * Group-room workbench shell (docs/spec/group-room-topics.md §9):
- * conversation list | timeline + topic drawer, or a non-IM domain pane.
- * Top-bar tabs switch domains (R28). The official conversation.view seat
- * stays one slot; this splits internally.
+ * Group-room workbench shell (docs/spec/group-room-topics.md §9 / v1.16):
+ * page tabs + conversation list | timeline, or a non-IM domain pane.
+ * The official conversation.view seat stays one slot; this splits internally.
  */
 import { useEffect, useState } from 'react'
 import type { BakedActions } from '@deepseek-ai/dsh-client-ui-slots'
 import { YzjConvList, type YzjConvListInjected } from './conv-list.tsx'
+import { YzjLoginBanner } from './login-banner.tsx'
 import { cachedRoomGroupId, YzjFusedView, type YzjFusedInjected } from './transcript.tsx'
 import type { YzjPanelInject } from './rpc.ts'
 import type { YzjPanelActions, YzjPanelState } from './stores.ts'
@@ -22,6 +22,8 @@ import css from './home.module.css'
 /** Injected verbs: fused view plus the session list. */
 export interface YzjRoomShellInjected extends YzjFusedInjected, Omit<YzjConvListInjected, 'sessionId' | 'activeGroupId'> {
   readonly sessionId: string
+  /** R27 cover: paint without a `yzj-home-*` hanger session. */
+  overlay?: boolean
   panel?: YzjPanelInject
   useStore?: <R>(selector: (state: YzjPanelState) => R) => R
   actions?: BakedActions<YzjPanelState, YzjPanelActions>
@@ -32,13 +34,12 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 /**
- * Two-column group-room canvas with a top-bar domain tablist (R28).
- * Clicking a list row switches groupId (R24) — it does not open a DSH
- * session. The drawer is owned by the timeline (never auto-opens from
- * the list). Non-room sessions must not paint this shell (R22 / pitfall-022).
+ * Two-column group-room canvas. Clicking a list row switches groupId
+ * (R24) — it does not open a DSH session. Overlay mode (R27) paints
+ * without a hanger session. Slot mode still refuses non-`yzj-home-*`.
  */
 export function YzjRoomShell(props: YzjRoomShellInjected) {
-  const isRoom = props.sessionId.startsWith('yzj-home-')
+  const isRoom = props.overlay === true || props.sessionId.startsWith('yzj-home-')
   const [domain, setDomain] = useState<WorkbenchDomain>(getWorkbenchDomain)
   const [activeGroupId, setActiveGroupId] = useState(() => peekImSeat()?.groupId || cachedRoomGroupId(props.sessionId))
 
@@ -111,56 +112,53 @@ export function YzjRoomShell(props: YzjRoomShellInjected) {
       data-workbench-domain={domain}
       data-conversation-composer-overlay=""
     >
-      <div
-        className={css.workbenchTabs}
-        role="tablist"
-        aria-label="云之家"
-        data-testid="yzj-workbench-tabs"
-      >
-        {WORKBENCH_TABS.map((tab) => {
-          const selected = domain === tab.domain
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              role="tab"
-              aria-selected={selected}
-              className={`${css.workbenchTab} ${selected ? css.workbenchTabActive : ''}`}
-              data-testid={`yzj-workbench-tab-${tab.id}`}
-              onClick={() => { setWorkbenchDomain(tab.domain) }}
-            >
-              {tab.label}
-            </button>
-          )
-        })}
+      <div className={css.pageTabs} role="tablist" aria-label="云之家" data-testid="yzj-workbench-tabs">
+        {WORKBENCH_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={domain === tab.domain}
+            className={domain === tab.domain ? `${css.pageTab} ${css.pageTabOn}` : css.pageTab}
+            data-testid={`yzj-workbench-tab-${tab.id}`}
+            onClick={() => { setWorkbenchDomain(tab.domain) }}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
-      <div className={css.roomShellBody}>
-        {domainPane !== null ? (
-          <div className={css.roomDomainPane}>{domainPane}</div>
-        ) : (
-          <>
-            <YzjConvList
-              sessionId={props.sessionId}
-              {...(activeGroupId === '' ? {} : { activeGroupId })}
-              homeNav={props.homeNav}
-              {...(props.fetchGroups === undefined ? {} : { fetchGroups: props.fetchGroups })}
-              onSelectGroup={(row) => { selectGroup(row.groupId, row.groupName) }}
-            />
-            <YzjFusedView
-              sessionId={props.sessionId}
-              {...(activeGroupId === '' ? {} : { groupId: activeGroupId })}
-              homeFused={props.homeFused}
-              homeBackfill={props.homeBackfill}
-              {...(props.homeTopicOpen === undefined ? {} : { homeTopicOpen: props.homeTopicOpen })}
-              {...(props.homeTopicLens === undefined ? {} : { homeTopicLens: props.homeTopicLens })}
-              {...(props.homeTopicAsk === undefined ? {} : { homeTopicAsk: props.homeTopicAsk })}
-              {...(props.focusBoundSession === undefined ? {} : { focusBoundSession: props.focusBoundSession })}
-              {...(props.fetchFileData === undefined ? {} : { fetchFileData: props.fetchFileData })}
-              {...(props.fetchContact === undefined ? {} : { fetchContact: props.fetchContact })}
-            />
-          </>
-        )}
-      </div>
+      {domainPane !== null ? (
+        <div className={css.roomMain}>
+          {props.authStatus !== undefined && props.authLogin !== undefined && (
+            <YzjLoginBanner authStatus={props.authStatus} authLogin={props.authLogin} compact />
+          )}
+          {domainPane}
+        </div>
+      ) : (
+        <div className={css.pageBody}>
+          <YzjConvList
+            sessionId={props.sessionId}
+            {...(activeGroupId === '' ? {} : { activeGroupId })}
+            homeNav={props.homeNav}
+            {...(props.fetchGroups === undefined ? {} : { fetchGroups: props.fetchGroups })}
+            {...(props.authStatus === undefined ? {} : { authStatus: props.authStatus })}
+            {...(props.authLogin === undefined ? {} : { authLogin: props.authLogin })}
+            onSelectGroup={(row) => { selectGroup(row.groupId, row.groupName) }}
+          />
+          <YzjFusedView
+            sessionId={props.sessionId}
+            {...(activeGroupId === '' ? {} : { groupId: activeGroupId })}
+            homeFused={props.homeFused}
+            homeBackfill={props.homeBackfill}
+            {...(props.homeTopicOpen === undefined ? {} : { homeTopicOpen: props.homeTopicOpen })}
+            {...(props.homeTopicLens === undefined ? {} : { homeTopicLens: props.homeTopicLens })}
+            {...(props.homeTopicAsk === undefined ? {} : { homeTopicAsk: props.homeTopicAsk })}
+            {...(props.focusBoundSession === undefined ? {} : { focusBoundSession: props.focusBoundSession })}
+            {...(props.fetchFileData === undefined ? {} : { fetchFileData: props.fetchFileData })}
+            {...(props.fetchContact === undefined ? {} : { fetchContact: props.fetchContact })}
+          />
+        </div>
+      )}
     </div>
   )
 }

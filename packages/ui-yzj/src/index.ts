@@ -12,7 +12,7 @@ import type { ConnectionRpcHandler } from '@deepseek-ai/dsh-client-connection'
 import type {} from '@dsh-yzj/bridge'
 import type {} from '@dsh-yzj/tool-yzj'
 import { applyWriteGate, type YzjWriteRecord } from './write-gate.ts'
-import { openBoundHome, openTopicHome, isPlaceholderRoomTitle, topicAgentRoute, type HomeOpenFace } from './home-open.ts'
+import { openBoundHome, openTopicHome, isPlaceholderRoomTitle, topicAgentRoute, topicAgentComposition, type HomeOpenFace } from './home-open.ts'
 import {
   backfillBoundLog, fusedSnapshot, groupSpaceSnapshot, handoffToGroup, homeIoFrom, parseImSend, roomSnapshot, roomSnapshotForGroup, sendImAndLog,
   sessionEventsOf, topicLensBubbles, askTopicAssistant,
@@ -20,6 +20,8 @@ import {
 import { digestCandidates } from './handoff-digest.ts'
 import { attachYzjSession, ensureYzjHostWorkspace } from './yzj-cwd.ts'
 import { applyTopicDeliver } from './topic-deliver.ts'
+import { parseContactUser } from './contact-parse.ts'
+import { collectCalendarEvents } from '@dsh-yzj/tool-yzj/src/calendar-range.ts'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -118,6 +120,8 @@ function clampLimit(value: unknown): number | undefined {
 
 /** Hard CLI cap for im `--limit` (verified against yzj-cli 0.x). */
 const CLI_LIMIT_MAX = 20
+/** Keep `yzj-cli auth login` alive long enough for the browser OAuth. */
+const AUTH_LOGIN_TIMEOUT_MS = 600_000
 
 /** Structural agents face for home-open / handoff (never import dsh-session). */
 function agentsFace(ctx: Context): {
@@ -126,13 +130,31 @@ function agentsFace(ctx: Context): {
     inject?: (message: unknown) => void
     followup?: (message: unknown) => void
   } | undefined
-  resume: (opts: { resumeSessionId: string; agentOptions?: { provider: string; model: string } }) => Promise<unknown>
-  create: (opts: { sessionId: string; meta?: { cwd: string }; agentOptions?: { provider: string; model: string } }) => Promise<unknown>
+  resume: (opts: {
+    resumeSessionId: string
+    agentOptions?: { provider: string; model: string }
+    setup?: (agentCtx: unknown) => void | Promise<void>
+  }) => Promise<unknown>
+  create: (opts: {
+    sessionId: string
+    meta?: { cwd: string; agentPreset?: string }
+    agentOptions?: { provider: string; model: string }
+    setup?: (agentCtx: unknown) => void | Promise<void>
+  }) => Promise<unknown>
 } | undefined {
   const agentsRaw = ctx.get('agents') as {
     get: (id: never) => unknown
-    resume: (opts: { resumeSessionId: never; agentOptions?: { provider: string; model: string } }) => Promise<unknown>
-    create: (opts: { sessionId: never; meta?: { cwd: string }; agentOptions?: { provider: string; model: string } }) => Promise<unknown>
+    resume: (opts: {
+      resumeSessionId: never
+      agentOptions?: { provider: string; model: string }
+      setup?: (agentCtx: unknown) => void | Promise<void>
+    }) => Promise<unknown>
+    create: (opts: {
+      sessionId: never
+      meta?: { cwd: string; agentPreset?: string }
+      agentOptions?: { provider: string; model: string }
+      setup?: (agentCtx: unknown) => void | Promise<void>
+    }) => Promise<unknown>
   } | undefined
   if (agentsRaw === undefined) return undefined
   return {
@@ -140,11 +162,13 @@ function agentsFace(ctx: Context): {
     resume: opts => agentsRaw.resume({
       resumeSessionId: opts.resumeSessionId as never,
       ...(opts.agentOptions === undefined ? {} : { agentOptions: opts.agentOptions }),
+      ...(opts.setup === undefined ? {} : { setup: opts.setup }),
     }),
     create: opts => agentsRaw.create({
       sessionId: opts.sessionId as never,
       ...(opts.meta === undefined ? {} : { meta: opts.meta }),
       ...(opts.agentOptions === undefined ? {} : { agentOptions: opts.agentOptions }),
+      ...(opts.setup === undefined ? {} : { setup: opts.setup }),
     }),
   }
 }
@@ -237,7 +261,7 @@ export interface YzjWriteGateFace {
 
 /**
  * Build the `/yzj` RPC handler: `workspaces`, `docs`, `events`, `groups`,
- * `messages`, `whoami`, `search`, `doc-get`, `doc-blocks`, `sheet-get`,
+ * `messages`, `whoami`, `auth-status`, `auth-login`, `search`, `doc-get`, `doc-blocks`, `sheet-get`,
  * `workspace-get`, `event-get`, `contact-get`, `write-list`, and
  * `write-decide`, `home-open` / `home-send` / `home-fused` / `home-nav` / `home-handoff` /
  * `home-topic-lens` / `home-topic-ask`
@@ -267,7 +291,26 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
         const start = stringField(payload, 'start')
         const end = stringField(payload, 'end')
         if (start === undefined || end === undefined) return internalError('events endpoint requires start and end payloads')
-        return bridgeResult(ctx, 'calendar event list', ['calendar', 'event', 'list', '--start', start, '--end', end])
+        const collected = await collectCalendarEvents(start, end, async (from, to) => {
+          let result
+          try {
+            result = await ctx.yzjBridge.run(['calendar', 'event', 'list', '--start', from, '--end', to])
+          } catch (error) {
+            return {
+              ok: false,
+              errorText: `calendar event list failed: ${String(error)}；请确认已安装 yzj-cli 并完成 \`yzj-cli auth login\``,
+            }
+          }
+          if (!result.ok) {
+            const detail = result.stderr.trim() === ''
+              ? `calendar event list failed (exit ${result.exitCode})`
+              : result.stderr.trim()
+            return { ok: false, errorText: detail }
+          }
+          return result.json === undefined ? { ok: true } : { ok: true, json: result.json }
+        })
+        if (!collected.ok) return internalError(collected.errorText)
+        return { ok: true, value: collected.events }
       }
       case 'groups': {
         const command = ['im', 'group', 'recent']
@@ -295,6 +338,40 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
       }
       case 'whoami': {
         return bridgeResult(ctx, 'contact user get', ['contact', 'user', 'get'])
+      }
+      case 'auth-status': {
+        // Always 200: logged-out is a state, not an RPC failure. The workbench
+        // banner keys off `loggedIn` rather than matching stderr strings.
+        let result
+        try {
+          result = await ctx.yzjBridge.run(['contact', 'user', 'get'], { timeoutMs: 10_000 })
+        } catch (error) {
+          return {
+            ok: true,
+            value: { loggedIn: false, name: '', openId: '', reason: String(error) },
+          }
+        }
+        if (!result.ok) {
+          const reason = result.stderr.trim() === ''
+            ? `contact user get failed (exit ${result.exitCode})`
+            : result.stderr.trim()
+          return { ok: true, value: { loggedIn: false, name: '', openId: '', reason } }
+        }
+        const user = parseContactUser(result.json)
+        return { ok: true, value: { loggedIn: true, name: user.name, openId: user.openId, reason: '' } }
+      }
+      case 'auth-login': {
+        // User-clicked: spawn `yzj-cli auth login` and return immediately so
+        // the CLI can open the system browser. Tokens stay in the OS keychain.
+        if (typeof ctx.yzjBridge.start !== 'function') {
+          return internalError('auth-login: yzjBridge.start 不可用')
+        }
+        try {
+          const handle = await ctx.yzjBridge.start(['auth', 'login'], { timeoutMs: AUTH_LOGIN_TIMEOUT_MS })
+          return { ok: true, value: { started: true, alreadyRunning: handle.alreadyRunning } }
+        } catch (error) {
+          return internalError(`打开 yzj-cli 登录失败: ${String(error)}；请确认已安装 yzj-cli`)
+        }
       }
       case 'doc-get': {
         const id = stringField(payload, 'id')
@@ -808,6 +885,7 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
           const title = stringField(payload, 'title') ?? (await recentGroupNames(ctx)).get(groupId)
           const cwd = await ensureYzjHostWorkspace(ctx)
           const route = topicAgentRoute(ctx)
+          const composition = await topicAgentComposition(ctx)
           const value = await openBoundHome({
             home,
             agents,
@@ -815,6 +893,7 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
             cwd,
             ...(title === undefined ? {} : { title }),
             ...(route === undefined ? {} : { agentOptions: route }),
+            ...composition,
           })
           await attachYzjSession(ctx, value.sessionId)
           if (value.legacyTopicSessionId !== undefined) await attachYzjSession(ctx, value.legacyTopicSessionId)
@@ -897,6 +976,7 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
           const groupName = stringField(payload, 'groupName')
           const cwd = await ensureYzjHostWorkspace(ctx)
           const route = topicAgentRoute(ctx)
+          const composition = await topicAgentComposition(ctx)
           const value = await openTopicHome({
             home,
             agents,
@@ -909,6 +989,7 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
             ...(title === undefined ? {} : { title }),
             ...(groupName === undefined ? {} : { groupName }),
             ...(route === undefined ? {} : { agentOptions: route }),
+            ...composition,
           })
           await attachYzjSession(ctx, value.sessionId)
           const io = homeIoFrom(home)
@@ -939,6 +1020,7 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
         if (agents === undefined) return internalError('home-topic-ask: agents 服务不可用')
         const cwd = await ensureYzjHostWorkspace(ctx)
         const route = topicAgentRoute(ctx)
+        const composition = await topicAgentComposition(ctx)
         const result = await askTopicAssistant({
           home: io,
           agents,
@@ -946,6 +1028,7 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
           topicSessionId: sessionId,
           text,
           ...(route === undefined ? {} : { agentOptions: route }),
+          ...composition,
         })
         if ('error' in result) return internalError(result.error)
         await attachYzjSession(ctx, sessionId)

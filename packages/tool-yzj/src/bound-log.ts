@@ -8,6 +8,7 @@
 import { z } from 'zod'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
+import { fileIdMark } from './shared.ts'
 import type { YzjConversationKind } from './home.ts'
 
 /** Product origin of one log row (T1/T7; R9 adds robot-outbound). */
@@ -440,9 +441,41 @@ export function failLocalEntry(existing: readonly YzjLogEntry[], localId: string
 }
 
 /**
+ * Reply-chain around a topic anchor: walk parents via replyMsgId, then
+ * descendants that reply into that set. Empty when the root is not in the log.
+ */
+export function threadEntries(
+  entries: readonly YzjLogEntry[],
+  rootMsgId: string,
+): YzjLogEntry[] {
+  const byId = new Map(entries.map(entry => [entry.msgId, entry]))
+  if (!byId.has(rootMsgId)) return []
+  const keep = new Set<string>()
+  let cursor: string | undefined = rootMsgId
+  while (cursor !== undefined && !keep.has(cursor)) {
+    keep.add(cursor)
+    cursor = byId.get(cursor)?.replyMsgId
+  }
+  let grew = true
+  while (grew) {
+    grew = false
+    for (const entry of entries) {
+      const reply = entry.replyMsgId
+      if (reply !== undefined && keep.has(reply) && !keep.has(entry.msgId)) {
+        keep.add(entry.msgId)
+        grew = true
+      }
+    }
+  }
+  return entries.filter(entry => keep.has(entry.msgId))
+}
+
+/**
  * Summon-window digest (spec §5.2). Both summon paths MUST call this.
  * Empty log with no groupId → '' (do not inject an empty block).
  * groupId / per-line msgId are required so the model can send or reply.
+ * Topics with a root prefer the reply chain; missing root falls back to the
+ * group near-window.
  */
 export function formatSummonWindow(
   log: YzjBoundMessageLog | undefined,
@@ -460,7 +493,10 @@ export function formatSummonWindow(
   },
 ): string {
   const groupId = options.groupId ?? log?.yzjConversationId ?? ''
-  const acked = (log?.entries ?? []).filter(entry => {
+  const root = options.topic?.rootMsgId?.trim() ?? ''
+  const thread = root === '' ? [] : threadEntries(log?.entries ?? [], root)
+  const pool = thread.length > 0 ? thread : (log?.entries ?? [])
+  const acked = pool.filter(entry => {
     if (entry.status !== 'acked') return false
     if (options.excludeMsgId !== undefined && entry.msgId === options.excludeMsgId) return false
     return true
@@ -478,7 +514,7 @@ export function formatSummonWindow(
     const reply = replyId === undefined
       ? ''
       : ` 回复 msgId=${replyId}${replyDigest === '' ? '' : ` ${replyDigest}`}`
-    const line = `[${when}] ${who} msgId=${entry.msgId}: ${entry.content}${reply}`
+    const line = `[${when}] ${who} msgId=${entry.msgId}: ${entry.content}${fileIdMark(entry.param)}${reply}`
     if (chars + line.length + 1 > options.maxChars && lines.length > 0) break
     lines.unshift(line)
     chars += line.length + 1
@@ -497,7 +533,8 @@ export function formatSummonWindow(
     const excerpt = (topic.originText ?? '').replace(/\s+/g, ' ').trim().slice(0, 80)
     if (excerpt !== '') {
       const who = (topic.originWho ?? '').trim()
-      meta.push(`锚：${who === '' ? '' : `${who}：`}${excerpt}`)
+      const rootEntry = root === '' ? undefined : log?.entries.find(entry => entry.msgId === root)
+      meta.push(`锚：${who === '' ? '' : `${who}：`}${excerpt}${fileIdMark(rootEntry?.param)}`)
     }
   }
   if (lines.length === 0 && groupId === '' && topic === undefined) return ''
@@ -508,7 +545,7 @@ export function formatSummonWindow(
 function formatWindowTime(sentAt: number): string {
   const date = new Date(sentAt)
   const pad = (n: number): string => String(n).padStart(2, '0')
-  return `${pad(date.getHours())}:${pad(date.getMinutes())}`
+  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
 function shortReply(log: YzjBoundMessageLog | undefined, replyMsgId: string): string {
