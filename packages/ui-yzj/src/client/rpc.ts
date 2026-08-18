@@ -21,7 +21,7 @@ export interface YzjPanelInject {
   fetchSearch: (keyword: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   fetchDoc: (id: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   fetchDocBlocks: (id: string, blockId?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** 多维表格 schema (tables and fields) — used for dbt drag previews. */
+  /** 多维表格 schema (tables and fields) — used for dbt @-ref previews. */
   fetchSheet: (id: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   fetchWorkspace: (id: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   fetchEvent: (id: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
@@ -118,8 +118,8 @@ export interface YzjPanelInject {
   focusBoundSession?: (sessionId: string) => void
   /** Binding row for one DSH session (or unbound). */
   homeBinding?: (sessionId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Fused / room VIEW snapshot (IM log + topic list). */
-  homeFused?: (sessionId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Fused / room VIEW snapshot (IM log + topic list). Prefer groupId (R24). */
+  homeFused?: (sessionId: string, groupId?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Workbench session list: bound rooms plus their topics (L1). */
   homeNav?: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Mint or focus a topic session under a group (交给助手). */
@@ -136,9 +136,9 @@ export interface YzjPanelInject {
   /** Ask the topic agent from the drawer; does not focus native Chat. */
   homeTopicAsk?: (sessionId: string, text: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Backfill recent Yunzhijia messages into the bound log. */
-  homeBackfill?: (sessionId: string, opts?: { beforeMsgId?: string; limit?: number }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  homeBackfill?: (sessionId: string, opts?: { beforeMsgId?: string; limit?: number; groupId?: string }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** DSH「发进群」: optimistic ② + CLI send, no user-turn. */
-  homeSend?: (sessionId: string, content: string | undefined, opts?: YzjPanelInject['sendMessageOpts']) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  homeSend?: (sessionId: string, content: string | undefined, opts?: YzjPanelInject['sendMessageOpts'] & { groupId?: string }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Private-transcript digest candidates for 丢进群. */
   homeDigest?: (sessionId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Confirmed D8 handoff into a bound group session. */
@@ -271,18 +271,22 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
       ...(title === undefined || title === '' ? {} : { title }),
     }),
     homeBinding: (sessionId) => call('home-binding', { sessionId }),
-    homeFused: (sessionId) => call('home-fused', { sessionId }),
+    homeFused: (sessionId, groupId) => call('home-fused', groupId !== undefined && groupId !== ''
+      ? { groupId }
+      : { sessionId }),
     homeNav: () => call('home-nav', {}),
     homeTopicOpen: (input) => call('home-topic-open', input),
     homeTopicLens: (sessionId) => call('home-topic-lens', { sessionId }),
     homeTopicAsk: (sessionId, text) => call('home-topic-ask', { sessionId, text }),
     homeBackfill: (sessionId, opts) => call('home-backfill', {
       sessionId,
+      ...(opts?.groupId === undefined || opts.groupId === '' ? {} : { groupId: opts.groupId }),
       ...(opts?.beforeMsgId === undefined ? {} : { beforeMsgId: opts.beforeMsgId }),
       ...(opts?.limit === undefined ? {} : { limit: opts.limit }),
     }),
     homeSend: (sessionId, content, opts) => call('home-send', {
       sessionId,
+      ...(opts?.groupId === undefined || opts.groupId === '' ? {} : { groupId: opts.groupId }),
       ...(content === undefined ? {} : { content }),
       ...(opts?.msgType === undefined ? {} : { msgType: opts.msgType }),
       ...(opts?.fileId === undefined ? {} : { fileId: opts.fileId }),

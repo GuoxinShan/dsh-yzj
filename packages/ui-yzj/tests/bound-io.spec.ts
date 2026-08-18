@@ -56,9 +56,12 @@ function memoryHomeIo(): HomeIoFace {
     },
     ackLocal: (id, local, real) => store.ackLocal(id, local, real),
     failLocal: (id, local) => store.failLocal(id, local),
-    formatSummonWindow: (id, exclude) => formatSummonWindow(store.get(id), {
+    formatSummonWindow: (id, exclude, sessionId) => formatSummonWindow(store.get(id), {
       maxMessages: 20, maxChars: 4000, groupId: id,
       ...(exclude === undefined ? {} : { excludeMsgId: exclude }),
+      ...(sessionId === undefined ? {} : {
+        topic: { title: '排期', rootMsgId: 'm1', originText: '帮我整理' },
+      }),
     }),
     logs: store,
     listTopics: () => [],
@@ -333,8 +336,13 @@ describe('topic lens / ask', () => {
 
   it('followups a user turn on the topic without requiring native focus', async () => {
     const followups: unknown[] = []
+    const injected: unknown[] = []
     const touched: unknown[] = []
     const home = memoryHomeIo()
+    await home.ensureBound('g-a', 'group')
+    await home.appendLog('g-a', entry({
+      msgId: 'm1', content: '帮我整理接口清单', fromName: '老黎', sentAt: 2_000,
+    }))
     home.getTopicBySession = (id) => id === 'yzj-topic-1'
       ? {
         dshSessionId: 'yzj-topic-1',
@@ -343,6 +351,8 @@ describe('topic lens / ask', () => {
         source: 'dsh',
         createdAt: 1,
         rootMsgId: 'm1',
+        originText: '帮我整理接口清单',
+        originWho: '老黎',
       }
       : undefined
     home.ensureTopic = async (input) => {
@@ -352,7 +362,12 @@ describe('topic lens / ask', () => {
     const result = await askTopicAssistant({
       home,
       agents: {
-        get: (id) => id === 'yzj-topic-1' ? { followup: (message: unknown) => { followups.push(message) } } : undefined,
+        get: (id) => id === 'yzj-topic-1'
+          ? {
+            inject: (message: unknown) => { injected.push(message) },
+            followup: (message: unknown) => { followups.push(message) },
+          }
+          : undefined,
         resume: async () => undefined,
         create: async () => undefined,
       },
@@ -361,11 +376,22 @@ describe('topic lens / ask', () => {
       text: ' 继续刚才的 ',
     })
     expect(result).toEqual({ ok: true })
-    expect(followups).toEqual([{
+    expect(injected).toHaveLength(1)
+    const window = injected[0] as { content: unknown; source: unknown }
+    const windowText = JSON.stringify(window.content)
+    expect(windowText).toContain('本群最近消息')
+    expect(windowText).toContain('groupId: g-a')
+    expect(windowText).toContain('锚点 msgId: m1')
+    expect(window).toMatchObject({ source: { kind: 'plugin', plugin: 'ui-yzj' } })
+    expect(followups).toHaveLength(1)
+    const turn = followups[0] as { id: string; role: string; content: unknown; source: unknown }
+    expect(typeof turn.id).toBe('string')
+    expect(turn.id.length).toBeGreaterThan(0)
+    expect(turn).toMatchObject({
       role: 'user',
       content: [{ type: 'text', text: '继续刚才的' }],
       source: { kind: 'user' },
-    }])
+    })
     expect(touched).toEqual([{ yzjConversationId: 'g-a', source: 'dsh', rootMsgId: 'm1' }])
   })
 })

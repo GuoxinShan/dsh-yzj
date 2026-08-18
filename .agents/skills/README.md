@@ -1,21 +1,17 @@
 # Agent skills (plugin development)
 
-Copied or distilled from sibling `../deepseek-harness` at **`99f6f02fec`**
-(`dsh-v0.1.0-rc.7`, pulled 2026-08-18). Refresh by pulling harness and
-re-copying the two `cordis-*` files; keep the `dsh-*` overlays in this repo.
+Standing rules: [AGENTS.md](../../AGENTS.md) and `docs/`. Skills only hold
+harness contracts those files do not spell out. Do not add a third copy.
 
-| Skill | Source | Use when |
+| Skill | What it is | Use when |
 |---|---|---|
-| [dsh-yzj-plugin](dsh-yzj-plugin/SKILL.md) | this repo | any change in this bundle |
-| [cordis-plugin-development](cordis-plugin-development/SKILL.md) | harness cordis preset | Host/Client, slots, inject, RPC, effects |
-| [editing-cordis-compositions](editing-cordis-compositions/SKILL.md) | harness cordis preset | composition rows, host vs preset, realms |
-| [dsh-plugin-tools](dsh-plugin-tools/SKILL.md) | harness cookbook + WRITE_SPECS | new or changed model tools |
-| [dsh-plugin-settings](dsh-plugin-settings/SKILL.md) | harness cookbook | 设置 → 云之家 |
+| [cordis-plugin-development](cordis-plugin-development/SKILL.md) | Distilled for this bundle: Host/Client, slots, inject, RPC, cookbook **seats**. Drops the 创造模式 `inspect`/`define`/`run` loop. | adding or changing a package, slot, tool card, or `/yzj` RPC |
+| [editing-cordis-compositions](editing-cordis-compositions/SKILL.md) | Verbatim harness 创造模式 skill + preamble. Host vs preset, isolate realms. | diagnosing a `cordis.patch.yml` row; deciding whether something belongs on the host plane |
 
-Not copied (read in harness if needed):
+Harness `docs/cookbook/` stays next door. Seat map lives in
+`cordis-plugin-development` and the two AGENTS.md bullets（工具 execute /
+设置座）. Do not mint one skill per cookbook page.
 
-- `docs/cordis-tutorial/` (01–07) — first-plugin walkthrough
-- `docs/cookbook/adding-a-package.md` — harness monorepo package checklist
-- `docs/cookbook/adding-a-conversation-node.md` — custom chat nodes
-- `.agents/skills/dsh-*` process skills (review, docs, CI) — harness-only
-- `.agents/notes/` — harness Agent Notes (RFC + format gates). This repo uses `docs/spec` / `gap-analysis` / `pitfalls` instead; see [../README.md](../README.md).
+Not copied: `docs/cordis-tutorial/`, `adding-a-package.md` as a workflow,
+harness process skills, `.agents/notes/`（本仓用 `docs/spec` / gap / pitfalls；
+见 [../README.md](../README.md)）。

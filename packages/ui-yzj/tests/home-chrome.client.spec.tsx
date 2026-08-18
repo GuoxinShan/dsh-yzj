@@ -42,11 +42,11 @@ describe('YzjHomeChrome', () => {
     expect(container.querySelector('[data-testid="yzj-home-chrome"]')).toBeNull()
   })
 
-  it('unbound sessions expose 丢进群 and a single-send hint', async () => {
+  it('unbound sessions expose 丢进群 without a send-semantics lecture', async () => {
     const { container } = mount(false)
     await act(async () => { await Promise.resolve() })
     expect(container.textContent).toContain('丢进群')
-    expect(container.textContent).toContain('只给助手')
+    expect(container.textContent).not.toContain('只给助手')
     expect(container.textContent).not.toContain('发进群')
   })
 
@@ -82,7 +82,7 @@ describe('YzjHomeChrome', () => {
     expect(draft).toBe('')
   })
 
-  it('topic sessions show the origin card and 回群房间', async () => {
+  it('topic sessions sit 回群聊 on the official composer dock', async () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
     const root = createRoot(container)
@@ -98,26 +98,38 @@ describe('YzjHomeChrome', () => {
             value: {
               bound: true,
               kind: 'topic',
-              binding: { dshSessionId: 'yzj-home-g-a' },
+              binding: {
+                dshSessionId: 'yzj-home-g-a',
+                yzjConversationId: 'g-a',
+                yzjKind: 'group',
+              },
               topic: { originWho: '老黎', originText: '接口清单整理一版' },
             },
           })}
           homeSend={async () => ({ ok: true, value: {} })}
           homeDigest={async () => ({ ok: true, value: { candidates: [] } })}
           homeHandoff={async () => ({ ok: true, value: { sessionId: 'yzj-home-g-a' } })}
+          homeOpen={async () => ({ ok: true, value: { sessionId: 'yzj-home-g-a' } })}
           fetchGroups={async () => ({ ok: true, value: { list: [] } })}
           focusBoundSession={(id) => { focused.push(id) }}
         />,
       )
     })
-    await act(async () => { await Promise.resolve() })
-    // The anchor card lives in the session header (session-shell); the chrome
-    // exposes only the lightweight 回群房间 jump.
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    const chip = container.querySelector('[data-testid="yzj-topic-anchor"]')
+    expect(container.querySelector('[data-testid="yzj-home-chrome"]')).not.toBeNull()
+    expect(chip?.textContent).toContain('回群聊')
+    expect(chip?.textContent).toContain('接口清单整理一版')
     expect(container.textContent).not.toContain('群消息锚点')
-    expect(container.textContent).toContain('回群房间')
+    expect(container.textContent).not.toContain('点这里回群聊')
+    expect(container.textContent).not.toContain('问助手')
     expect(container.textContent).not.toContain('发进群')
-    const jump = [...container.querySelectorAll('button')].find(node => node.textContent?.includes('回群房间'))
-    await act(async () => { jump?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    act(() => { (chip as HTMLButtonElement).click() })
+    await act(async () => { await Promise.resolve() })
     expect(focused).toEqual(['yzj-home-g-a'])
+    act(() => { root.unmount() })
   })
 })

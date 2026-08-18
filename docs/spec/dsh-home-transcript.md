@@ -1,6 +1,7 @@
 # DSH 绑定会话的可见时间线：插件消息日志
 
 > **v2.0 覆盖（2026-08-17，Guoxin Shan）**：[`group-room-topics.md`](group-room-topics.md) 取代融合视图与 composer 条款——T2（融合一条流）、T10/T11（composer 双意图）作废，T12 改写（出站帖子进群房间时间线）；T1/T3–T9/T13 的存储、去重、回填、召唤窗口、切会话分阶段与 write-gate 机制**沿用**（消息日志改按群索引，服务群房间视图）。对照见该文 §6。本文正文不改写，作历史快照。
+> **T5 实现订正（v1.9 / 2026-08-18）**：正文 §5.3「仅 `latestUserSourceKind === 'user'`」过窄——首轮 assemble 可能是 `none`，仍应给窗；话题 session 必须走 `getTopicBySession`，只查房间表会空窗。注册层与 skip 规则以 group-room-topics 决策 #15 / pitfall-027 为准。
 > 版本：v1.1（已拍板）+ **v1.2 文案**（2026-08-16）+ **v1.3 UI**（2026-08-17）：①② 复用面板 IM 渲染器；切会话分阶段，禁止闪「私密会话」/上一群残留。
 > 日期：2026-08-17
 > 决策人：Guoxin Shan

@@ -14,6 +14,7 @@ import { registerPanelController } from './panel-controller.ts'
 import {
   getWorkbenchDomain, subscribeWorkbenchDomain, type WorkbenchDomain,
 } from './workbench-domain.ts'
+import { peekImSeat, rememberImSeat } from './im-seat.ts'
 import css from './home.module.css'
 
 /** Injected verbs: fused view plus the session list. */
@@ -29,39 +30,59 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 /**
- * Two-column group-room canvas. Clicking a list row focuses that room;
- * the drawer is owned by the timeline (never auto-opens from the list).
+ * Two-column group-room canvas. Clicking a list row switches groupId
+ * (R24) — it does not open a DSH session. The drawer is owned by the
+ * timeline (never auto-opens from the list). Non-room sessions must not
+ * paint this shell (R22 / pitfall-022).
  */
 export function YzjRoomShell(props: YzjRoomShellInjected) {
+  const isRoom = props.sessionId.startsWith('yzj-home-')
   const [domain, setDomain] = useState<WorkbenchDomain>(getWorkbenchDomain)
-  const [activeGroupId, setActiveGroupId] = useState(() => cachedRoomGroupId(props.sessionId))
+  const [activeGroupId, setActiveGroupId] = useState(() => peekImSeat()?.groupId || cachedRoomGroupId(props.sessionId))
 
   useEffect(() => subscribeWorkbenchDomain(() => { setDomain(getWorkbenchDomain()) }), [])
 
   useEffect(() => {
-    if (props.actions === undefined || props.panel === undefined) return
+    if (!isRoom || props.actions === undefined || props.panel === undefined) return
     return registerPanelController(props.actions, props.panel)
-  }, [props.actions, props.panel])
+  }, [isRoom, props.actions, props.panel])
 
   useEffect(() => {
-    setActiveGroupId(cachedRoomGroupId(props.sessionId))
+    if (!isRoom) return
+    const seated = peekImSeat()?.groupId ?? ''
+    if (seated !== '') {
+      setActiveGroupId(seated)
+      return
+    }
+    const cached = cachedRoomGroupId(props.sessionId)
+    if (cached !== '') setActiveGroupId(cached)
     let cancelled = false
     const load = async (): Promise<void> => {
+      if (peekImSeat()?.groupId) return
       const result = await props.homeFused(props.sessionId)
       if (cancelled || !result.ok) return
       const binding = asRecord(asRecord(result.value).binding)
       const groupId = typeof binding.yzjConversationId === 'string' ? binding.yzjConversationId : ''
+      if (groupId === '' || peekImSeat()?.groupId) return
       setActiveGroupId(groupId)
+      rememberImSeat({ groupId, sessionId: props.sessionId })
     }
     void load()
-    const timer = window.setInterval(() => { void load() }, 1500)
-    return () => {
-      cancelled = true
-      window.clearInterval(timer)
-    }
+    return () => { cancelled = true }
     // homeFused is a stable RPC closure.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.sessionId])
+  }, [isRoom, props.sessionId])
+
+  const selectGroup = (groupId: string, groupName?: string): void => {
+    setActiveGroupId(groupId)
+    rememberImSeat({
+      groupId,
+      sessionId: props.sessionId,
+      ...(groupName === undefined || groupName === '' ? {} : { groupName }),
+    })
+  }
+
+  if (!isRoom) return null
 
   const domainPane = domain !== 'im'
     && props.panel !== undefined
@@ -78,7 +99,11 @@ export function YzjRoomShell(props: YzjRoomShellInjected) {
     : null
 
   return (
-    <div className={css.roomShell} data-testid="yzj-room-shell">
+    // data-conversation-composer-overlay: opt into the harness bounded-view
+    // contract (ConversationRoot viewArea flex 1 1 0 / overflow hidden) so the
+    // columns scroll internally; without it the view grows with content and
+    // the composer lands thousands of px below the fold (pitfall-020).
+    <div className={css.roomShell} data-testid="yzj-room-shell" data-conversation-composer-overlay="">
       {domainPane !== null ? domainPane : (
         <>
       <YzjConvList
@@ -86,11 +111,11 @@ export function YzjRoomShell(props: YzjRoomShellInjected) {
         {...(activeGroupId === '' ? {} : { activeGroupId })}
         homeNav={props.homeNav}
         {...(props.fetchGroups === undefined ? {} : { fetchGroups: props.fetchGroups })}
-        {...(props.homeOpen === undefined ? {} : { homeOpen: props.homeOpen })}
-        {...(props.focusBoundSession === undefined ? {} : { focusBoundSession: props.focusBoundSession })}
+        onSelectGroup={(row) => { selectGroup(row.groupId, row.groupName) }}
       />
       <YzjFusedView
         sessionId={props.sessionId}
+        {...(activeGroupId === '' ? {} : { groupId: activeGroupId })}
         homeFused={props.homeFused}
         homeBackfill={props.homeBackfill}
         {...(props.homeTopicOpen === undefined ? {} : { homeTopicOpen: props.homeTopicOpen })}

@@ -1,11 +1,10 @@
 /**
- * The 云之家 '@' trigger sources (design v1.6 §5.2, journey 5): three menu
- * groups — 同事 (directory search, order 0), 会话 (recent sessions, order 1),
- * 文档 (knowledge-base docs, order 2) — plus the '云之家' carrier source whose
- * codec serves drag-and-drop chips. A pick inserts a reference chip; on send
- * the codec's serialize() emits the fetched context block so the agent
- * receives real substance (excerpts, times, recent messages) — not just a
- * title.
+ * The 云之家 '@' trigger sources: three menu groups — 同事 (directory
+ * search, order 0), 会话 (recent sessions, order 1), 文档 (knowledge-base
+ * docs, order 2) — plus a hidden '云之家' carrier source so leftover chips
+ * in a draft still serialize. Drag-to-chip is retired (R23). A pick inserts
+ * a reference chip; on send the codec's serialize() emits the fetched
+ * context block so the agent receives real substance — not just a title.
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type { InputTriggerServiceContract } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
@@ -274,8 +273,8 @@ export function createYzjSources(inject: YzjPanelInject): InputTriggerSource[] {
       codec,
     },
     {
-      // Carrier source: empty candidate set (the menu hides it), exists so
-      // drag-and-drop chips keep a registered codec under SOURCE_NAME.
+      // Carrier source: empty candidate set (the menu hides it). Keeps a
+      // codec under SOURCE_NAME so leftover chips in a draft still serialize.
       trigger: '@',
       name: SOURCE_NAME,
       order: 9,

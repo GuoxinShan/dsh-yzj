@@ -21,7 +21,7 @@ import {
   getMessageWindow, markAllRead, markGroupRead, putGroupWindow, putMessageWindow, resolveSenders,
   senderNameOf,
 } from './im-cache.ts'
-import { emitYzjDropRequest } from './drop-bus.ts'
+
 import { registerPanelController } from './panel-controller.ts'
 import { TodoPane } from './todo-pane.tsx'
 import { bindAndFocusGroup } from './home-focus.ts'
@@ -54,7 +54,7 @@ function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : []
 }
 
-/** One draggable reference payload shared by drag sources and the drop dock. */
+/** Pointer payload for @-mention / codec refs (drag-to-chip is retired). */
 export interface YzjDragRef {
   kind: 'workspace' | 'doc' | 'group' | 'event' | 'contact' | 'message' | 'todo'
   id: string
@@ -63,27 +63,6 @@ export interface YzjDragRef {
   sub?: string
   /** Owning session id for message refs (required for re-fetching the body). */
   group?: string
-}
-
-/** MIME type carrying the structured drag payload. */
-export const YZJ_DRAG_MIME = 'application/x-dsh-yzj-ref'
-
-/** Human-readable citation text for a drag ref (what lands in the draft). */
-export function yzjRefText(ref: YzjDragRef): string {
-  const kindLabel: Record<YzjDragRef['kind'], string> = {
-    workspace: '知识库', doc: '文档', group: '会话', event: '日程', contact: '联系人', message: '消息', todo: '待办',
-  }
-  const head = `【云之家·${kindLabel[ref.kind]}】${ref.title}`
-  const sub = ref.sub === undefined || ref.sub === '' ? '' : `（${ref.sub}）`
-  const url = ref.url === undefined || ref.url === '' ? '' : `\n${ref.url}`
-  return `${head}${sub}${url}`
-}
-
-/** Wire one draggable item's data transfer. */
-function startDragTransfer(event: React.DragEvent, ref: YzjDragRef): void {
-  event.dataTransfer.effectAllowed = 'copy'
-  event.dataTransfer.setData(YZJ_DRAG_MIME, JSON.stringify(ref))
-  event.dataTransfer.setData('text/plain', yzjRefText(ref))
 }
 
 /** Outline cloud mark for the Yunzhijia brand, DSH icon-line style. */
@@ -107,7 +86,7 @@ export function YzjCloudIcon({ size = 16 }: { size?: number }) {
   )
 }
 
-/** One-line preview of a message for the group list / drag payload. */
+/** One-line preview of a message for the group list / reply chip. */
 function messagePreview(message: Record<string, unknown>): string {
   const content = asString(message.content)
   const msgType = asString(message.msgType)
@@ -126,7 +105,7 @@ function messagePreview(message: Record<string, unknown>): string {
   return content.replace(/\s+/g, ' ').slice(0, 60)
 }
 
-/** Drag-chip title for a message (file names and media get real labels). */
+/** Reply-chip title for a message (file names and media get real labels). */
 function dragTitleOf(message: Record<string, unknown>): string {
   const msgType = asString(message.msgType)
   const param = asRecord(message.param)
@@ -464,16 +443,12 @@ export function YzjPanel(props: YzjPanelProps) {
   const [replyTo, setReplyTo] = useState<{ msgId: string; summary: string } | null>(null)
   const [emojiOpen, setEmojiOpen] = useState(false)
   const [myProfile, setMyProfile] = useState<{ openId: string; name: string }>({ openId: '', name: '' })
-  const [dropToast, setDropToast] = useState('')
-  const [dropArmed, setDropArmed] = useState(false)
-  const dropDepth = useRef(0)
   const [docPreview, setDocPreview] = useState<{ title: string; meta: string; lines: string[] } | null>(null)
   /** Folder drill-down trail inside the selected workspace (root = workspace). */
   const [docCrumbs, setDocCrumbs] = useState<{ id: string; title: string }[]>([])
   const [eventDetail, setEventDetail] = useState<{ title: string; time: string; person: string; place: string; content: string } | null>(null)
   const [messagesFetching, setMessagesFetching] = useState(false)
   const openGenRef = useRef(0)
-  const dropToastTimer = useRef<number | null>(null)
   const listRef = useRef<HTMLDivElement | null>(null)
   const imageInputRef = useRef<HTMLInputElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -600,80 +575,6 @@ export function YzjPanel(props: YzjPanelProps) {
     if (event !== undefined) pickEvent(event)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.calEventId, state.calEvents])
-
-  // Transient confirmation that a panel drop reached the composer.
-  const showDropToast = (title: string): void => {
-    setDropToast(`已插入「${title.length > 14 ? `${title.slice(0, 14)}…` : title}」到输入框`)
-    if (dropToastTimer.current !== null) window.clearTimeout(dropToastTimer.current)
-    dropToastTimer.current = window.setTimeout(() => setDropToast(''), 2600)
-  }
-
-  // Drop intake follows the OFFICIAL image-drag implementation: document-level
-  // listeners with a depth counter, dropEffect 'copy' while the yzj drag is
-  // over the page, and a pointer-inert decorative overlay. The drop lands on
-  // whatever is under the cursor (the chat panel, the composer, the panel
-  // itself) — nothing is blocked, no full-screen trap.
-  useEffect(() => {
-    const hasYzj = (event: DragEvent): boolean =>
-      event.dataTransfer?.types.includes(YZJ_DRAG_MIME) ?? false
-    const reset = (): void => {
-      dropDepth.current = 0
-      setDropArmed(false)
-    }
-    const onEnter = (event: DragEvent): void => {
-      if (!hasYzj(event)) return
-      event.preventDefault()
-      dropDepth.current += 1
-      setDropArmed(true)
-    }
-    const onOver = (event: DragEvent): void => {
-      if (!hasYzj(event) || event.dataTransfer === null) return
-      event.preventDefault()
-      event.dataTransfer.dropEffect = 'copy'
-    }
-    const onLeave = (event: DragEvent): void => {
-      if (!hasYzj(event)) return
-      dropDepth.current = Math.max(0, dropDepth.current - 1)
-      if (dropDepth.current === 0) setDropArmed(false)
-      const leavingViewport = event.clientX <= 0 || event.clientY <= 0
-        || event.clientX >= window.innerWidth || event.clientY >= window.innerHeight
-      if ((event.target === document.documentElement || event.target === document.body) && leavingViewport) reset()
-    }
-    const onDrop = (event: DragEvent): void => {
-      if (!hasYzj(event)) return
-      event.preventDefault()
-      reset()
-      dropRef(event.dataTransfer?.getData(YZJ_DRAG_MIME) ?? '')
-    }
-    document.addEventListener('dragenter', onEnter)
-    document.addEventListener('dragover', onOver)
-    document.addEventListener('dragleave', onLeave)
-    document.addEventListener('drop', onDrop)
-    window.addEventListener('dragend', reset)
-    return () => {
-      document.removeEventListener('dragenter', onEnter)
-      document.removeEventListener('dragover', onOver)
-      document.removeEventListener('dragleave', onLeave)
-      document.removeEventListener('drop', onDrop)
-      window.removeEventListener('dragend', reset)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  const dropRef = (raw: string): boolean => {
-    if (raw === '') return false
-    let ref: YzjDragRef | undefined
-    try {
-      const parsed = JSON.parse(raw) as YzjDragRef
-      if (typeof parsed.kind === 'string' && typeof parsed.title === 'string') ref = parsed
-    } catch {
-      ref = undefined
-    }
-    if (ref === undefined) return false
-    emitYzjDropRequest(ref)
-    showDropToast(ref.title)
-    return true
-  }
 
   // Keep the newest messages in view: bottom on group open and after sends,
   // unless an anchor jump is active.
@@ -1381,10 +1282,6 @@ export function YzjPanel(props: YzjPanelProps) {
                       type="button"
                       className={active ? `${css.item} ${css.itemActive}` : css.item}
                       onClick={() => { openWorkspace(id) }}
-                      draggable
-                      onDragStart={(event) => {
-                        startDragTransfer(event, { kind: 'workspace', id, title: name, sub: `文档 ${count} · 成员 ${members}` })
-                      }}
                     >
                       <span className={css.itemTitle}>
                         <IconFolderOpenOutline16 />
@@ -1451,7 +1348,6 @@ export function YzjPanel(props: YzjPanelProps) {
                     const suffix = asString(node.fileSuffix)
                     const title = asString(node.title)
                     const id = asString(node.id)
-                    const url = asString(node.openWebUrl)
                     const hasChildren = node.hasChildren === true
                       || (typeof node.childrenCount === 'number' && node.childrenCount > 0)
                     return (
@@ -1460,13 +1356,6 @@ export function YzjPanel(props: YzjPanelProps) {
                           type="button"
                           className={css.item}
                           onClick={() => { openDoc(id) }}
-                          draggable
-                          onDragStart={(event) => {
-                            startDragTransfer(event, {
-                              kind: 'doc', id, title, url,
-                              sub: `${suffix === 'dbt' ? '多维表格' : '在线文档'} · ${asString(node.updateTime).slice(0, 10)}`,
-                            })
-                          }}
                         >
                           <span className={css.itemTitle}>
                             <span className={css.docGlyph}>{suffix === 'dbt' ? '表' : '文'}</span>
@@ -1596,13 +1485,6 @@ export function YzjPanel(props: YzjPanelProps) {
                           type="button"
                           className={active ? `${css.item} ${css.itemActive}` : css.item}
                           onClick={() => pickEvent(event)}
-                          draggable
-                          onDragStart={(event) => {
-                            startDragTransfer(event, {
-                              kind: 'event', id, title,
-                              sub: [timeText, person].filter(part => part !== '').join(' · '),
-                            })
-                          }}
                         >
                           <span className={css.eventTime}>{timeText === '' ? '全天' : timeText}</span>
                           <span className={css.itemTitleText}>{title}</span>
@@ -1667,13 +1549,6 @@ export function YzjPanel(props: YzjPanelProps) {
                     type="button"
                     className={active ? `${css.item} ${css.itemActive}` : css.item}
                     onClick={() => { openGroup(asString(group.groupId)) }}
-                    draggable
-                    onDragStart={(event) => {
-                      startDragTransfer(event, {
-                        kind: 'group', id: asString(group.groupId), title: name,
-                        sub: preview.replace(/\s+/g, ' ').slice(0, 40),
-                      })
-                    }}
                   >
                     <span className={css.itemTitle}>
                       <GroupAvatar url={asString(group.headerUrl)} name={name} />
@@ -1701,7 +1576,7 @@ export function YzjPanel(props: YzjPanelProps) {
                 <GroupHead groups={state.groups} groupId={state.groupId} />
               </div>
               <div className={css.panelBanner} role="note">
-                点群打开 DSH 群房间。悬浮窗不再发消息。
+                点群打开 DSH 群聊。悬浮窗不再发消息。
               </div>
               {anchorActive && (
                 <div className={css.anchorHint} role="status">
@@ -1742,23 +1617,7 @@ export function YzjPanel(props: YzjPanelProps) {
                         isSystem ? css.msgRowSystem : '',
                         anchored ? css.itemAnchored : '',
                       ].filter(Boolean).join(' ')}
-                      draggable
-                      onDragStart={(event) => {
-                        startDragTransfer(event, {
-                          kind: 'message', id: msgId,
-                          title: dragTitleOf(message),
-                          sub: sendTime,
-                          group: state.groupId,
-                        })
-                      }}
                     >
-                      <span className={css.grip} aria-hidden="true">
-                        <svg viewBox="0 0 10 16" fill="currentColor" width="10" height="16">
-                          <circle cx="3" cy="3" r="1.4" /><circle cx="7" cy="3" r="1.4" />
-                          <circle cx="3" cy="8" r="1.4" /><circle cx="7" cy="8" r="1.4" />
-                          <circle cx="3" cy="13" r="1.4" /><circle cx="7" cy="13" r="1.4" />
-                        </svg>
-                      </span>
                       {!isSystem && (
                         <SenderAvatar openId={fromOpenId} fallback={sender === '' ? typeLabelOf(msgType) : sender} />
                       )}
@@ -1810,7 +1669,7 @@ export function YzjPanel(props: YzjPanelProps) {
                     void bindAndFocusGroup(props.homeOpen, props.focusBoundSession, state.groupId, groupNameOf(state.groups, state.groupId))
                   }}
                 >
-                  打开群房间
+                  打开群聊
                 </button>
               </div>
             </>
@@ -1842,16 +1701,6 @@ export function YzjPanel(props: YzjPanelProps) {
         />
       )}
 
-      {dropToast !== '' && (
-        <div className={css.dropToast} role="status">{dropToast}</div>
-      )}
-      {dropArmed && (
-        <div className={css.dropOverlay}>
-          <span className={css.dropOverlayHint}>
-            <YzjCloudIcon size={16} /> 松开以插入云之家引用
-          </span>
-        </div>
-      )}
       {lightbox !== null && (
         <ImLightbox src={lightbox.src} kind={lightbox.kind} onClose={() => setLightbox(null)} />
       )}

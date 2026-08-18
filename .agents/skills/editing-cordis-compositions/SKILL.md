@@ -5,9 +5,11 @@ description: Use when creating, changing, or validating a Cordis composition for
 
 > Upstream copy from `deepseek-harness` `99f6f02fec` (`dsh-v0.1.0-rc.7`):
 > `apps/cli/config/agent-presets/cordis/skills/editing-cordis-compositions/SKILL.md`.
-> This repo is installed as a **profile patch** (`cordis.patch.yml`,
-> `dsh plugin --profile web add -w link:<path>`), not a shipped preset. Do not
-> edit harness `agent-presets/`. Row names use `@dsh-yzj/bundle/<row>`.
+> **This repo:** profile patch `cordis.patch.yml`, rows `@dsh-yzj/bundle/<row>`,
+> install with `dsh plugin --profile web add -w link:<path>`. Do not author a
+> preset to ship yzj. Do not edit harness `agent-presets/`. Do not follow
+> cookbook `adding-a-package.md` (harness monorepo checklist). Use this skill
+> to decide host vs preset plane and to diagnose a row that mounted empty.
 
 # Editing Cordis compositions
 

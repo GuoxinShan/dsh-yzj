@@ -7,6 +7,10 @@ import { useEffect, useRef, useState } from 'react'
 import {
   composeHandoffDigest, defaultSelectedIds, type DigestCandidate,
 } from '../handoff-digest.ts'
+import { bindAndFocusGroup } from './home-focus.ts'
+import { peekImSeat, rememberImSeat } from './im-seat.ts'
+import { useWorkbenchDomain } from './workbench-domain.ts'
+import { yzjViewKindFromSessionId } from './view-ring.ts'
 import css from './home.module.css'
 
 /** Injected verbs for the dock chrome. */
@@ -18,6 +22,7 @@ export interface YzjHomeChromeInjected {
   homeSend: (sessionId: string, content: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   homeDigest: (sessionId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   homeHandoff: (groupId: string, digest: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
+  homeOpen?: (groupId: string, title?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   fetchGroups: (limit?: number, page?: number) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   focusBoundSession?: (sessionId: string) => void
   /** Native composer submit; intercepted on group rooms so 发送 = 发进群. */
@@ -34,40 +39,47 @@ function asArray(value: unknown): unknown[] {
 
 /**
  * Room chrome: native send is intercepted to 发进群 (safety net if the
- * official bar is still up). Topic/private keep the official submit as 问助手.
- * The room dock UI itself is retired — 发进群 lives in the timeline column.
+ * official bar is still up). Topic paints 「回群聊」 on this dock, matching
+ * the official InputBar column. Unbound keeps 「丢进群」. Room dock 发进群
+ * is retired — the timeline column owns it.
  */
 export function YzjHomeChrome(props: YzjHomeChromeInjected) {
-  const [kind, setKind] = useState<'room' | 'topic' | 'unbound'>(() => (
-    props.sessionId.startsWith('yzj-home-') ? 'room'
-      : props.sessionId.startsWith('yzj-topic-') ? 'topic'
-        : 'unbound'
-  ))
-  const [roomSessionId, setRoomSessionId] = useState('')
+  const domain = useWorkbenchDomain()
+  const [kind, setKind] = useState<'room' | 'topic' | 'unbound'>(() => yzjViewKindFromSessionId(props.sessionId))
   const [error, setError] = useState('')
   const [handoffOpen, setHandoffOpen] = useState(false)
+  const [roomSessionId, setRoomSessionId] = useState('')
+  const [roomGroupId, setRoomGroupId] = useState('')
+  const [roomKind, setRoomKind] = useState<'group' | 'dm' | ''>('')
+  const [summary, setSummary] = useState('')
   const sendRef = useRef<() => Promise<void>>(async () => {})
 
   useEffect(() => {
+    const next = yzjViewKindFromSessionId(props.sessionId)
+    setKind(next)
+    if (next !== 'topic') {
+      setRoomSessionId('')
+      setRoomGroupId('')
+      setRoomKind('')
+      setSummary('')
+      return
+    }
     let cancelled = false
-    const fromId = props.sessionId.startsWith('yzj-home-') ? 'room'
-      : props.sessionId.startsWith('yzj-topic-') ? 'topic'
-        : 'unbound' as const
-    setKind(fromId)
-    setRoomSessionId('')
     const tick = async (): Promise<void> => {
       const result = await props.homeBinding(props.sessionId)
-      if (cancelled) return
-      if (!result.ok) {
-        setKind(fromId)
-        return
-      }
+      if (cancelled || !result.ok) return
       const raw = asRecord(result.value)
-      const next = raw.kind === 'room' || raw.kind === 'topic' ? raw.kind
-        : raw.bound === true ? 'room' : fromId === 'unbound' ? 'unbound' : fromId
-      setKind(next)
       const binding = asRecord(raw.binding)
-      setRoomSessionId(typeof binding.dshSessionId === 'string' ? binding.dshSessionId : '')
+      const host = typeof binding.dshSessionId === 'string' ? binding.dshSessionId : ''
+      const groupId = typeof binding.yzjConversationId === 'string' ? binding.yzjConversationId : ''
+      setRoomSessionId(host)
+      setRoomGroupId(groupId)
+      setRoomKind(binding.yzjKind === 'dm' ? 'dm' : binding.yzjKind === 'group' ? 'group' : '')
+      rememberImSeat({ groupId, sessionId: host })
+      const topic = asRecord(raw.topic)
+      const origin = typeof topic.originText === 'string' ? topic.originText : ''
+      const title = typeof topic.title === 'string' ? topic.title : ''
+      setSummary(origin !== '' ? origin : title)
     }
     void tick()
     const timer = window.setInterval(() => { void tick() }, 1500)
@@ -106,27 +118,45 @@ export function YzjHomeChrome(props: YzjHomeChromeInjected) {
     }
   }, [kind, props.inputActions])
 
-  if (kind === 'room') return null
+  if (kind === 'room' || domain !== 'im') return null
+
+  if (kind === 'topic') {
+    const label = roomKind === 'dm' ? '回私聊' : '回群聊'
+    return (
+      <div className={css.topicDock} data-testid="yzj-home-chrome">
+        <button
+          type="button"
+          className={css.topicDockBtn}
+          data-testid="yzj-topic-anchor"
+          title={summary === '' ? label : summary}
+          aria-label={summary === '' ? label : `${label}：${summary}`}
+          onClick={() => {
+            const hanger = peekImSeat()
+            if (hanger !== undefined && hanger.sessionId.startsWith('yzj-home-')) {
+              rememberImSeat({
+                groupId: roomGroupId !== '' ? roomGroupId : hanger.groupId,
+                sessionId: hanger.sessionId,
+              })
+              props.focusBoundSession?.(hanger.sessionId)
+              return
+            }
+            if (props.homeOpen !== undefined && roomGroupId !== '') {
+              void bindAndFocusGroup(props.homeOpen, props.focusBoundSession, roomGroupId)
+              return
+            }
+            if (roomSessionId !== '') props.focusBoundSession?.(roomSessionId)
+          }}
+        >
+          <span className={css.topicDockLabel}>{label}</span>
+          {summary !== '' && <span className={css.topicDockSummary}>{summary}</span>}
+        </button>
+      </div>
+    )
+  }
 
   return (
-    <div className={css.chrome} data-testid="yzj-home-chrome">
-      {kind === 'topic' ? (
-        <>
-          <span>话题 · 下方发送 = 问助手。助手要发群会出确认卡。</span>
-          {/* The anchor card itself lives in the session header (session-shell);
-              the chrome keeps only a lightweight jump back to the room. */}
-          {roomSessionId !== '' && (
-            <button type="button" className={css.chromeBtn} onClick={() => props.focusBoundSession?.(roomSessionId)}>
-              回群房间
-            </button>
-          )}
-        </>
-      ) : (
-        <>
-          <span>私密会话 · 下方发送只给助手</span>
-          <button type="button" className={css.chromeBtn} onClick={() => setHandoffOpen(true)}>丢进群</button>
-        </>
-      )}
+    <div className={css.chromeQuiet} data-testid="yzj-home-chrome">
+      <button type="button" className={css.chromeLink} onClick={() => setHandoffOpen(true)}>丢进群</button>
       {error !== '' && <span role="alert">{error}</span>}
       {handoffOpen && (
         <HandoffModal

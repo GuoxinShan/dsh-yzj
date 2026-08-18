@@ -13,7 +13,7 @@
 | 3 | CLI 输出的三重形态：裸数组 / data 信封 / fields JSON 字符串 | bridge / 任何解析 CLI 输出的代码 | [pitfall-003-cli-output-shapes.md](pitfall-003-cli-output-shapes.md) |
 | 4 | 大载荷被默认输出上限截断成不可解析 JSON | bridge maxOutputChars / doc-blocks 类端点 | [pitfall-004-output-cap-truncation.md](pitfall-004-output-cap-truncation.md) |
 | 5 | 函数插件模块必须模块级 `export const inject`——Service 类的 `static inject` 不被 loader 读取 | 任何 host 包经 dsh profile 加载 | [pitfall-005-module-inject-for-loader-entries.md](pitfall-005-module-inject-for-loader-entries.md) |
-| 6 | agent 轮次静默无回答的两大来源：session id 碰撞须 resume 不能 create；`_no-cwd` session 过不了 persona 模板 | robot-yzj router / 任何程序化创建 DSH agent 的通道 | [pitfall-006-programmatic-agent-sessions.md](pitfall-006-programmatic-agent-sessions.md) |
+| 6 | 程序化 agent：resume 不能 create；缺 `meta.cwd` → `{{cwd}}`；缺 `agentOptions.model` → `{{model}}` | robot-yzj / ui-yzj 话题 create | [pitfall-006-programmatic-agent-sessions.md](pitfall-006-programmatic-agent-sessions.md) |
 | 7 | 程序化创建的 agent 是裸作用域：harness 工具族（schedule）不会自动挂载，需复刻 schedule 插件的注册路径 | robot-yzj routines / 任何给自建 agent 加 harness 工具的场景 | [pitfall-007-bare-agent-tool-families.md](pitfall-007-bare-agent-tool-families.md) |
 | 8 | packed zstd 会话日志骗过一次性解压：只解出首帧 → "只有 header" → 误判持久化失效 | 任何直接读 `session.jsonl.zstd` 的脚本 / 诊断 | [pitfall-008-packed-zstd-session-logs.md](pitfall-008-packed-zstd-session-logs.md) |
 | 9 | defineTool 的 output.schema 宽化成 `object` 报误导性执行体类型错；数组 of object 参数不存在——走 JSON 字符串（todo `records` 先例） | 任何新增 dsh-tools 工具包 | [pitfall-009-definetool-schema-literals-and-json-array-params.md](pitfall-009-definetool-schema-literals-and-json-array-params.md) |
@@ -22,12 +22,20 @@
 | 11 | `systemPrompt.context` 的 assemble.scope 是 Agent 对象，不是 session id 字符串 | tool-yzj 召唤窗口 / 任何仓外 `systemPrompt.context` 按会话分流 | [pitfall-011-assemble-context-scope-is-agent.md](pitfall-011-assemble-context-scope-is-agent.md) |
 | 12 | `yzj-robot-*` 前缀闸在家园 id 改打后不再覆盖绑定会话 | robot_notify / robot_continue / 任何按旧前缀分流的写闸 | [pitfall-012-home-prefix-gate-misses-yzj-home.md](pitfall-012-home-prefix-gate-misses-yzj-home.md) |
 | 13 | 切群/切会话闪「私密会话」或上一群消息 | 群房间时间线 / 面板会话 tab | [pitfall-013-session-switch-flash.md](pitfall-013-session-switch-flash.md) |
-| 14 | 群房间宿主无 `turn/start`：侧栏藏成「新会话」，可被新建会话复用 | ui-yzj home-open / 任何不跑模型回合的程序化 session | [pitfall-014-blank-host-sessions-hidden.md](pitfall-014-blank-host-sessions-hidden.md) |
+| 14 | 房间若保持 blank（官方「新会话」），侧栏会藏，但工作台挂不上 | ui-yzj home-open / conversation.view | [pitfall-014-blank-host-sessions-hidden.md](pitfall-014-blank-host-sessions-hidden.md) |
 | 15 | 发进群 `local-*` 锚了话题后 ack 成真实 msgId，回群房间对不上 | tool-yzj topics / 交给助手幂等 | [pitfall-015-local-id-topic-anchor.md](pitfall-015-local-id-topic-anchor.md) |
 | 16 | 只跑 `pnpm run bundle` 打包的是旧代码——client bundle 入口是 tsc 产物 `lib/types`，改 TS 后须先 `tsc -b`/`pnpm run build` | ui-yzj browser half / 改源→bundle→验收 循环 | [pitfall-016-bundle-needs-tsc-first.md](pitfall-016-bundle-needs-tsc-first.md) |
 | 17 | 悬浮球盖住群房间「发进群」按钮（P2 退役球后此坑应失效） | ui-yzj 群房间 composer / 视口右下布局 | [pitfall-017-float-ball-covers-send.md](pitfall-017-float-ball-covers-send.md) |
 | 18 | harness tablist 的 `display:flex` 盖过 `[hidden]`，群房间藏不住 tab ring | ui-yzj view-ring / 群房间 header | [pitfall-018-tablist-hidden-overridden-by-flex.md](pitfall-018-tablist-hidden-overridden-by-flex.md) |
 | 19 | 发进群 portal 钉在已卸载的时间线宿主上（切工作台域再切回） | ui-yzj room composer / transcript | [pitfall-019-composer-portal-stale-host.md](pitfall-019-composer-portal-stale-host.md) |
+| 20 | 自管滚动的 conversation.view 没 opt-in `data-conversation-composer-overlay` → 整页万像素、composer 失踪；触底跟随被程序化 scrollIntoView 骗停 | ui-yzj 群房间三栏 / 任何自定义 view 想列内滚动 | [pitfall-020-room-view-composer-overlay-contract.md](pitfall-020-room-view-composer-overlay-contract.md) |
+| 21 | harness 归档单向（无 unarchive，归档会话客户端打不开）；开着旧 bundle 的 tab 会幽灵回写宿主状态文件 | 想用归档藏会话的插件 / 改 client 后的验收纪律 | [pitfall-021-archive-is-one-way-ghost-tabs-rewrite.md](pitfall-021-archive-is-one-way-ghost-tabs-rewrite.md) |
+| 22 | 话题/普通会话残留 `view=yzj-home`，只藏 tab 仍整页错画成 IM | ui-yzj view-ring / room-shell / 任何挂在 conversation.view list 槽上的自定义视图 | [pitfall-022-stale-group-view-on-non-room.md](pitfall-022-stale-group-view-on-non-room.md) |
+| 23 | 浅色主题 `bg-layer-*` 与画布同色，他人气泡看起来像没画 | ui-yzj 群房间气泡 / 任何浅色主题 chip 底 | [pitfall-023-other-bubble-vanishes-on-light-canvas.md](pitfall-023-other-bubble-vanishes-on-light-canvas.md) |
+| 24 | 工作台点群走 homeOpen+focus，卡、未分组增生、官方 composer 闪 | ui-yzj conv-list / home-open / 官方侧栏 | [pitfall-024-click-group-must-not-open-session.md](pitfall-024-click-group-must-not-open-session.md) |
+| 25 | 话题套房间空 turn 1，第一次提问再开 turn 1，官方 Chat 历史加载失败 | ui-yzj openTopicHome / publishHostSession / 官方 conversation 回放 | [pitfall-025-topic-dummy-turn-collides-with-first-ask.md](pitfall-025-topic-dummy-turn-collides-with-first-ask.md) |
+| 26 | 话题 followup 不带 `message.id`，resume 校验失败，历史永久装不上 | ui-yzj askTopicAssistant / followup | [pitfall-026-topic-followup-needs-message-id.md](pitfall-026-topic-followup-needs-message-id.md) |
+| 27 | 话题发给助手没近窗：只查房间表 + skip 过窄 + 注册层不对 | tool-yzj T5 / ui-yzj 问助手 | [pitfall-027-summon-window-topic-assemble.md](pitfall-027-summon-window-topic-assemble.md) |
 
 ## 维护规则
 

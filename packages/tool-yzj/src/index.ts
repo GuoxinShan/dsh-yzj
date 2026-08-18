@@ -100,38 +100,53 @@ export function apply(ctx: Context, config: Config): void {
   })
   // systemPrompt is a harness core service; wait for it so ops-less profiles
   // skip injection and web/gui profiles do not miss the provider.
-  ctx.inject(['systemPrompt'], () => {
-    applySummonWindow(ctx, home)
+  ctx.inject(['systemPrompt'], (scope) => {
+    applySummonWindow(scope, home)
   })
   applyApprovalGuard(ctx)
 }
 
+/** Room + topic lookup used by T5 (pitfall-027). */
+export interface SummonHomeFace {
+  getBySession(sessionId: string): { yzjConversationId: string } | undefined
+  getTopicBySession(sessionId: string): { yzjConversationId: string } | undefined
+  formatSummonWindow(yzjConversationId: string, excludeMsgId?: string, sessionId?: string): string
+}
+
+/**
+ * Bound-log window for one prompt assembly. Empty when the session is not a
+ * yzj room/topic, or when the latest user turn is already a plugin inject.
+ * `none` (first-turn assemble before user/message lands) still returns the
+ * window — skip-only-plugin, not user-only.
+ */
+export function summonWindowText(home: SummonHomeFace, assemble: AssembleFace | undefined): string {
+  const sessionId = sessionIdFromAssemble(assemble)
+  if (sessionId === undefined) return ''
+  const conversationId = home.getBySession(sessionId)?.yzjConversationId
+    ?? home.getTopicBySession(sessionId)?.yzjConversationId
+  if (conversationId === undefined) return ''
+  if (latestUserSourceKind(eventsFromAssemble(assemble)) === 'plugin') return ''
+  return home.formatSummonWindow(conversationId, undefined, sessionId)
+}
+
 /**
  * DSH「发给助手」summon window (T5): opportunistic systemPrompt.context.
- * Returns the bound log window only when this assembly's latest user message
- * is a real GUI turn (not a plugin followup — those inject via agent.inject).
+ * Register on the inject-scope mixin (same as sandbox:policy) so
+ * `assemble(scope=agent)` can see the provider.
  */
 function applySummonWindow(ctx: Context, home: YzjHomeService): void {
-  const systemPrompt = ctx.get('systemPrompt') as {
-    context(entry: { name: string; order: number; text: (assemble?: AssembleFace) => string }): () => void
-  } | undefined
-  if (systemPrompt === undefined) return
-  ctx.effect(() => systemPrompt.context({
+  const prompt = (ctx as Context & {
+    systemPrompt?: { context: (spec: {
+      name: string
+      order: number
+      text: (assemble: AssembleFace) => string
+    }) => void }
+  }).systemPrompt
+  prompt?.context({
     name: 'yzj-bound-window',
     order: 40,
-    text: (assemble) => {
-      const sessionId = sessionIdFromAssemble(assemble)
-      if (sessionId === undefined) return ''
-      const conversationId = home.getBySession(sessionId)?.yzjConversationId
-        ?? home.getTopicBySession(sessionId)?.yzjConversationId
-      if (conversationId === undefined) return ''
-      const events = eventsFromAssemble(assemble)
-      // Only GUI「发给助手」turns. Plugin followups already agent.inject()
-      // the same digest. Empty logs still return the groupId header.
-      if (latestUserSourceKind(events) !== 'user') return ''
-      return home.formatSummonWindow(conversationId, undefined, sessionId)
-    },
-  }))
+    text: (assemble) => summonWindowText(home, assemble),
+  })
 }
 
 /** Structural AssembleContext (harness `assembleContextFor` sets agent + scope = Agent). */

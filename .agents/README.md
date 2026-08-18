@@ -4,7 +4,7 @@ Agent-facing extras for this plugin repo. Not a second product spec — `docs/` 
 
 ## `skills/`
 
-Plugin-development skills copied or distilled from sibling `deepseek-harness`. Index: [skills/README.md](skills/README.md).
+Two plugin-dev skills: one distilled for this bundle, one verbatim composition manual. Standing repo rules stay in `AGENTS.md` / `docs/`. Index: [skills/README.md](skills/README.md).
 
 ## Why there is no `notes/` tree
 

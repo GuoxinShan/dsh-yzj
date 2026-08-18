@@ -39,25 +39,72 @@ export interface HomeOpenAgent {
   followup?: (message: unknown) => void
 }
 
+/** Provider + model for a programmatic topic agent (persona `{{model}}`). */
+export interface TopicAgentRoute {
+  readonly provider: string
+  readonly model: string
+}
+
 /** Resume-then-create face (ctx.agents). */
 export interface HomeOpenAgents {
   get(sessionId: string): HomeOpenAgent | undefined
-  resume(options: { resumeSessionId: string }): Promise<unknown>
-  create(options: { sessionId: string; meta?: { cwd: string } }): Promise<unknown>
+  resume(options: { resumeSessionId: string; agentOptions?: TopicAgentRoute }): Promise<unknown>
+  create(options: { sessionId: string; meta?: { cwd: string }; agentOptions?: TopicAgentRoute }): Promise<unknown>
 }
 
 /**
- * Harness hides sessions with no `turn/start` as blank New Session rows
- * (list-hidden, reusable). Group-room hosts never run a model turn (①② stay
- * in the plugin log), so we close an empty turn and pin `session/title` —
- * no LLM, no IM.
- * @param replace - write even when a title already exists (topic retitle to 「群名 · 话题」).
+ * Route for a host-created topic agent. Web GUI sessions get `{{model}}` from
+ * apiproxy's picker; `ctx.agents.create` from this plugin does not. Prefer the
+ * plugin default, then the harness default-model service (pitfall-006 / 026).
  */
-export function publishHostSession(agent: unknown, title: string, replace = false): void {
+export function topicAgentRoute(ctx: { get(name: string): unknown }): TopicAgentRoute | undefined {
+  const yzj = ctx.get('yzjModels') as { get?: () => { provider?: string; model?: string } | undefined } | undefined
+  const fromYzj = yzj?.get?.()
+  if (fromYzj !== undefined && fromYzj.provider !== undefined && fromYzj.provider !== ''
+    && fromYzj.model !== undefined && fromYzj.model !== '') {
+    return { provider: fromYzj.provider, model: fromYzj.model }
+  }
+  const def = ctx.get('agentDefaultModel') as { currentSelection?: () => { provider?: string; model?: string } } | undefined
+  const sel = def?.currentSelection?.()
+  if (sel !== undefined && sel.provider !== undefined && sel.provider !== ''
+    && sel.model !== undefined && sel.model !== '') {
+    return { provider: sel.provider, model: sel.model }
+  }
+  return undefined
+}
+
+/** Identified user-role payload. Session replay requires `message.id` (pitfall-026). */
+export function identifiedUserMessage(
+  text: string,
+  source: { kind: 'user' } | { kind: 'plugin'; plugin: string },
+): {
+  id: string
+  role: 'user'
+  content: { type: 'text'; text: string }[]
+  source: { kind: 'user' } | { kind: 'plugin'; plugin: string }
+} {
+  return {
+    id: crypto.randomUUID(),
+    role: 'user',
+    content: [{ type: 'text', text }],
+    source,
+  }
+}
+
+/**
+ * Pin a host title. Rooms seed a closed empty turn 1 so harness treats them
+ * as a real conversation canvas (`conversation.view` / tab ring). Blank
+ * 「新会话」rows vanish when not current — but they also have no tab ring,
+ * so the IM workbench cannot mount (R14). Topics must not seed that turn
+ * (pitfall-025 / R25).
+ * @param replace - write even when a title already exists (topic retitle).
+ * @param seedEmptyTurn - write the closed empty turn 1. Rooms yes; topics no.
+ */
+export function publishHostSession(agent: unknown, title: string, replace = false, seedEmptyTurn = true): void {
   const session = sessionOf(agent)
   if (session?.append === undefined) return
   const events = session.events ?? []
-  if (!events.some(event => event.type === 'turn/start')) {
+  if (seedEmptyTurn && !events.some(event => event.type === 'turn/start')) {
     session.append('turn/start', { turn: 1 })
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
   }
@@ -70,12 +117,17 @@ export function publishHostSession(agent: unknown, title: string, replace = fals
   session.append('session/title', { title: trimmed, messageSeqs: [], source: { kind: 'user' } })
 }
 
-/** Sidebar label for a topic: group name first, so a flat list is still scannable (R12). */
+/**
+ * Sidebar label for a topic: topic title first, group as suffix. The former
+ * group-first order truncated to identical 「群名·【…」 rows in the narrow
+ * sidebar — the distinguishing part must lead (R12 修订, gap-analysis).
+ */
 export function topicSidebarTitle(groupName: string, topicTitle: string): string {
   const topic = topicTitle.trim() || '话题'
   const group = groupName.trim()
-  if (group === '' || topic === group || topic.startsWith(`${group} · `)) return topic.slice(0, 80)
-  return `${group} · ${topic}`.slice(0, 80)
+  if (group === '' || topic === group) return topic.slice(0, 80)
+  if (topic.startsWith(`${group} · `) || topic.endsWith(` · ${group}`)) return topic.slice(0, 80)
+  return `${topic} · ${group}`.slice(0, 80)
 }
 
 /** Last `session/title` in a host event log (sidebar / workbench labels). */
@@ -126,16 +178,8 @@ export function hostHasLegacyTurns(
   ))
 }
 
-function pluginContextTurn(text: string): {
-  role: 'user'
-  content: { type: 'text'; text: string }[]
-  source: { kind: 'plugin'; plugin: string }
-} {
-  return {
-    role: 'user',
-    content: [{ type: 'text', text }],
-    source: { kind: 'plugin', plugin: 'ui-yzj' },
-  }
+function pluginContextTurn(text: string): ReturnType<typeof identifiedUserMessage> {
+  return identifiedUserMessage(text, { kind: 'plugin', plugin: 'ui-yzj' })
 }
 
 /**
@@ -151,6 +195,7 @@ async function maybeMigrateLegacyHost(options: {
   readonly yzjKind: 'group' | 'dm'
   readonly hostSessionId: string
   readonly groupName: string
+  readonly agentOptions?: TopicAgentRoute
 }): Promise<string | undefined> {
   if (options.yzjKind === 'dm' || options.home.ensureTopic === undefined) return undefined
   const events = sessionOf(options.agents.get(options.hostSessionId))?.events ?? []
@@ -172,6 +217,7 @@ async function maybeMigrateLegacyHost(options: {
     groupName: options.groupName,
     quiet: true,
     lastActivity: lastActivity > 0 ? lastActivity : 1,
+    ...(options.agentOptions === undefined ? {} : { agentOptions: options.agentOptions }),
   })
   if (opened.topicCreated) {
     const digest = composeHandoffDigest(
@@ -203,6 +249,7 @@ export async function openBoundHome(options: {
   readonly yzjConversationId: string
   readonly cwd: string
   readonly title?: string
+  readonly agentOptions?: TopicAgentRoute
 }): Promise<HomeOpenValue> {
   const yzjKind = options.yzjConversationId.startsWith('BOT-') ? 'dm' : 'group'
   const bound = await options.home.ensureBound(options.yzjConversationId, yzjKind)
@@ -216,6 +263,7 @@ export async function openBoundHome(options: {
       yzjKind,
       hostSessionId: bound.sessionId,
       groupName: title,
+      ...(options.agentOptions === undefined ? {} : { agentOptions: options.agentOptions }),
     })
     return {
       sessionId: bound.sessionId,
@@ -262,6 +310,8 @@ export async function openTopicHome(options: {
   readonly quiet?: boolean
   /** H9: stamp create-time activity from the host log, not "now". */
   readonly lastActivity?: number
+  /** Required for a first model turn — persona interpolates `{{model}}`. */
+  readonly agentOptions?: TopicAgentRoute
 }): Promise<HomeOpenValue & { readonly topicCreated: boolean }> {
   if (options.home.ensureTopic === undefined) {
     const room = await openBoundHome(options)
@@ -284,7 +334,7 @@ export async function openTopicHome(options: {
     || lastSessionTitle(sessionOf(options.agents.get(bound.sessionId))?.events ?? [])
   const topicPart = options.title?.trim() || options.originText?.trim().slice(0, 40) || '话题'
   const title = topicSidebarTitle(groupName, topicPart)
-  const publish = (agent: unknown): void => { publishHostSession(agent, title, true) }
+  const publish = (agent: unknown): void => { publishHostSession(agent, title, true, false) }
   if (options.agents.get(topic.sessionId) !== undefined) {
     publish(options.agents.get(topic.sessionId))
     return {
@@ -296,7 +346,10 @@ export async function openTopicHome(options: {
     }
   }
   try {
-    const resumed = await options.agents.resume({ resumeSessionId: topic.sessionId })
+    const resumed = await options.agents.resume({
+      resumeSessionId: topic.sessionId,
+      ...(options.agentOptions === undefined ? {} : { agentOptions: options.agentOptions }),
+    })
     publish(resumed ?? options.agents.get(topic.sessionId))
     return {
       sessionId: topic.sessionId,
@@ -306,7 +359,11 @@ export async function openTopicHome(options: {
       topicCreated: topic.created,
     }
   } catch {
-    const created = await options.agents.create({ sessionId: topic.sessionId, meta: { cwd: options.cwd } })
+    const created = await options.agents.create({
+      sessionId: topic.sessionId,
+      meta: { cwd: options.cwd },
+      ...(options.agentOptions === undefined ? {} : { agentOptions: options.agentOptions }),
+    })
     publish(created ?? options.agents.get(topic.sessionId))
     return {
       sessionId: topic.sessionId,
