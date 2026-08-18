@@ -2,8 +2,8 @@
  * H4: @机器人 inbound → group-room topic. Live @ requires the Yunzhijia
  * push; this script does not spawn yzj-cli writes (AGENTS.md).
  *
- * Skip (exit 0) when the dock says 未配置 / 未连接.
- * When connected: assert the dock + a group room can open the topic drawer.
+ * Opens the 云之家 cover (`yzj-dock-home`) and asserts a group room can
+ * open the topic drawer. Robot channel status lives in 设置 → 云之家.
  */
 import { chromium } from 'playwright'
 import { existsSync, mkdirSync } from 'node:fs'
@@ -43,21 +43,9 @@ try {
 
   const dock = page.getByTestId('yzj-group-space')
   await dock.waitFor({ state: 'visible', timeout: 25000 })
-  const robot = page.getByTestId('yzj-dock-robot')
-  const robotText = await robot.textContent().catch(() => '')
-  const label = (robotText ?? '').trim()
-  console.log(`  dock robot: ${label}`)
+  console.log('  dock visible; robot status lives in 设置 → 云之家')
 
-  if (label.includes('未配置') || label.includes('未连接') || label === '') {
-    console.log('SKIP  robot channel not configured/connected — inbound @ e2e needs a live WS')
-    await page.screenshot({ path: shot('skip-unconnected.png') })
-    await browser.close()
-    process.exit(0)
-  }
-
-  ok('robot dock is connected', /已连接|连接/.test(label) || !label.includes('未'), label)
-
-  await page.getByTestId('yzj-dock-chat').click()
+  await page.getByTestId('yzj-dock-home').click()
   await page.waitForTimeout(2500)
   const groupRow = page.getByTestId('yzj-conv-list').locator('button').filter({ hasText: GROUP_NAME }).first()
   const groupFound = await groupRow.count().then(n => n > 0).catch(() => false)

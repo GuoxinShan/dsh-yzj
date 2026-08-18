@@ -41,6 +41,7 @@
 | 30 | 话题 create 不挂默认 preset → 只有 yzj 工具、读不了本地文件 | ui-yzj / robot-yzj 程序化 agent | [pitfall-030-topic-needs-default-preset.md](pitfall-030-topic-needs-default-preset.md) |
 | 31 | 近窗进 snapshot 会和记忆糊成一段；要用独立 plugin inject | T5 召唤窗 / 记忆 | [pitfall-031-summon-window-is-inject.md](pitfall-031-summon-window-is-inject.md) |
 | 32 | `calendar event list` 跨天窗口只留循环日程第一次 | 工作台日程 / `yzj_calendar_event_list` | [pitfall-032-calendar-list-collapses-recurrence.md](pitfall-032-calendar-list-collapses-recurrence.md) |
+| 33 | yzj-cli `msg-type file` 不能带 `--reply-msg-id`，产物文件进不了回复链 | ui-yzj 话题 job-done / `parseImSend` / `yzj_im_message_send` | [pitfall-033-cli-file-cannot-reply.md](pitfall-033-cli-file-cannot-reply.md) |
 
 ## 维护规则
 

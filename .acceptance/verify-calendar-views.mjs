@@ -36,7 +36,7 @@ const dock = page.getByTestId('yzj-group-space')
 await dock.waitFor({ state: 'visible', timeout: 25000 })
 ok('dock visible', await dock.isVisible())
 
-await page.getByTestId('yzj-dock-chat').click()
+await page.getByTestId('yzj-dock-home').click()
 await page.waitForTimeout(2000)
 
 const tabs = page.getByTestId('yzj-workbench-tabs')
