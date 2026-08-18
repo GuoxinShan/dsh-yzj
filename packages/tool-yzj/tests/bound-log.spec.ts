@@ -3,7 +3,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
-  BoundLogStore, applyAppend, ackLocalEntry, failLocalEntry, formatSummonWindow,
+  BoundLogStore, applyAppend, ackLocalEntry, failLocalEntry, formatSummonWindow, threadEntries,
   mergeFused, cliMessageToEntry, cliMessageList, extractSendMsgId, localMsgId,
   isPluginFollowup, latestUserSourceKind, parseSendTime,
   type YzjBoundMessageLog, type YzjLogEntry,
@@ -265,6 +265,61 @@ describe('formatSummonWindow', () => {
     const text = formatSummonWindow(undefined, { maxMessages: 20, maxChars: 4000, groupId: 'g-empty' })
     expect(text).toContain('groupId: g-empty')
     expect(text).toContain('yzj_im_message_send')
+  })
+
+  it('prints MM-DD HH:mm so a cross-day window stays chronological', () => {
+    const earlier = new Date(2026, 7, 17, 16, 55).getTime()
+    const later = new Date(2026, 7, 18, 10, 50).getTime()
+    const text = formatSummonWindow(logOf([
+      entry({ msgId: 'm-old', content: '昨晚', sentAt: earlier }),
+      entry({ msgId: 'm-new', content: '今早', sentAt: later }),
+    ]), { maxMessages: 20, maxChars: 4000 })
+    const oldAt = text.indexOf('昨晚')
+    const newAt = text.indexOf('今早')
+    expect(oldAt).toBeGreaterThan(-1)
+    expect(newAt).toBeGreaterThan(oldAt)
+    expect(text).toMatch(/\[08-17 \d{2}:\d{2}\] 张三 msgId=m-old: 昨晚/)
+    expect(text).toMatch(/\[08-18 \d{2}:\d{2}\] 张三 msgId=m-new: 今早/)
+  })
+
+  it('for a topic root, keeps the reply chain and drops unrelated group rows', () => {
+    const entries = [
+      entry({ msgId: 'noise', content: '你好', sentAt: 1 }),
+      entry({ msgId: 'proto', content: '[文件]:原型.html', sentAt: 2 }),
+      entry({ msgId: 'prd', content: 'PRD供参考', replyMsgId: 'proto', sentAt: 3 }),
+      entry({ msgId: 'review', content: '明天评审一下', replyMsgId: 'prd', sentAt: 4 }),
+      entry({ msgId: 'other', content: '竞争力报告', sentAt: 5 }),
+    ]
+    expect(threadEntries(entries, 'review').map(row => row.msgId)).toEqual(['proto', 'prd', 'review'])
+    const text = formatSummonWindow(logOf(entries), {
+      maxMessages: 20,
+      maxChars: 4000,
+      topic: { title: '明天评审一下', rootMsgId: 'review', originWho: '同事乙', originText: '明天评审一下' },
+    })
+    expect(text).toContain('明天评审一下')
+    expect(text).toContain('PRD供参考')
+    expect(text).not.toContain('你好')
+    expect(text).not.toContain('竞争力报告')
+  })
+
+  it('prints fileId= from param.file_id on file rows and the topic anchor', () => {
+    const text = formatSummonWindow(logOf([
+      entry({
+        msgId: 'm-file',
+        content: '[文件]:报告.md',
+        msgType: 'file',
+        fromName: '代少兵',
+        param: { file_id: 'fid-abc', name: '报告.md', size: 34047 },
+        sentAt: 2,
+      }),
+    ]), {
+      maxMessages: 20,
+      maxChars: 4000,
+      topic: { title: '看报告', rootMsgId: 'm-file', originWho: '代少兵', originText: '[文件]:报告.md' },
+    })
+    expect(text).toContain('msgId=m-file: [文件]:报告.md fileId=fid-abc size=34047')
+    expect(text).toContain('锚：代少兵：[文件]:报告.md fileId=fid-abc size=34047')
+    expect(text).not.toMatch(/fileId=m-file/)
   })
 })
 

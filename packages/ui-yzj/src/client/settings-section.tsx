@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react'
 import type { YzjPanelInject } from './rpc.ts'
 import { RobotPane } from './robot-pane.tsx'
+import { YzjLoginBanner } from './login-banner.tsx'
 import css from './settings-section.module.css'
 
 type Rpc = { ok: true; value: unknown } | { ok: false; error: { message: string } }
@@ -85,6 +86,13 @@ export function YzjSettingsSection(props: YzjSettingsSectionProps): React.ReactN
 
   return (
     <div className={css.section}>
+      {face.authStatus !== undefined && face.authLogin !== undefined && (
+        <YzjLoginBanner
+          authStatus={face.authStatus}
+          authLogin={face.authLogin}
+          onLoggedIn={() => { void fetchRobot() }}
+        />
+      )}
       <div className={css.content}>
         <RobotPane
           channels={robotChannels}

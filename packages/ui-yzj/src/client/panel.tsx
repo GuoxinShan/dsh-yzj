@@ -24,10 +24,13 @@ import {
 
 import { registerPanelController } from './panel-controller.ts'
 import { TodoPane } from './todo-pane.tsx'
-import { bindAndFocusGroup } from './home-focus.ts'
+import { rememberImSeat } from './im-seat.ts'
+import { setWorkbenchDomain } from './workbench-domain.ts'
+import { openWorkbench } from './workbench-overlay.ts'
 import {
   GroupAvatar, ImLightbox, MessageBody, SenderAvatar, typeLabelOf,
 } from './im-render.tsx'
+import { CalendarPane } from './calendar-pane.tsx'
 import css from './panel.module.css'
 
 /** The props shares the panel reads. */
@@ -836,76 +839,6 @@ export function YzjPanel(props: YzjPanelProps) {
     loadDocPreview(id)
   }
 
-  /** Move the calendar cursor and fetch the new month. Landing on the
-   *  current month reselects today; other months clear the selection. */
-  const moveMonth = (delta: number): void => {
-    const next = new Date(state.calYear, state.calMonth - 1 + delta, 1)
-    const year = next.getFullYear()
-    const month = next.getMonth() + 1
-    const now = new Date()
-    const pad = (n: number): string => String(n).padStart(2, '0')
-    props.actions.setCalCursor(year, month)
-    props.actions.setCalDay(year === now.getFullYear() && month === now.getMonth() + 1
-      ? `${year}-${pad(month)}-${pad(now.getDate())}`
-      : '')
-    props.actions.setCalEventId('')
-    setEventDetail(null)
-    const start = `${year}-${pad(month)}-01`
-    const end = `${year}-${pad(month)}-${pad(new Date(year, month, 0).getDate())}`
-    props.actions.setLoading(true)
-    props.actions.setError('')
-    void props.fetchEvents(start, end).then((result) => {
-      if (result.ok) {
-        props.actions.setCalEvents(asArray(result.value))
-      } else {
-        props.actions.setError(result.error.message)
-      }
-      props.actions.setLoading(false)
-    })
-  }
-
-  /** Human day heading for the calendar right pane: 今天 · 周六 / 8月20日 · 周四. */
-  const dayHeadLabel = (day: string): string => {
-    if (day === '') return ''
-    const pad = (n: number): string => String(n).padStart(2, '0')
-    const now = new Date()
-    const todayKey = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
-    const weekdays = ['日', '一', '二', '三', '四', '五', '六']
-    const date = new Date(`${day}T00:00:00`)
-    const weekday = weekdays[date.getDay()] ?? ''
-    const base = day === todayKey ? '今天' : `${Number(day.slice(5, 7))}月${Number(day.slice(8, 10))}日`
-    return weekday === '' ? base : `${base} · 周${weekday}`
-  }
-
-  /** Jump the calendar back to today and select it. */
-  const jumpToToday = (): void => {
-    const now = new Date()
-    const year = now.getFullYear()
-    const month = now.getMonth() + 1
-    const pad = (n: number): string => String(n).padStart(2, '0')
-    props.actions.setCalCursor(year, month)
-    props.actions.setCalDay(`${year}-${pad(month)}-${pad(now.getDate())}`)
-    props.actions.setCalEventId('')
-    setEventDetail(null)
-    props.actions.setLoading(true)
-    props.actions.setError('')
-    void props.fetchEvents(`${year}-${pad(month)}-01`, `${year}-${pad(month)}-${pad(new Date(year, month, 0).getDate())}`).then((result) => {
-      if (result.ok) {
-        props.actions.setCalEvents(asArray(result.value))
-      } else {
-        props.actions.setError(result.error.message)
-      }
-      props.actions.setLoading(false)
-    })
-  }
-
-  /** Select a calendar day; the right pane lists its events. */
-  const pickDay = (day: string): void => {
-    props.actions.setCalDay(day)
-    props.actions.setCalEventId('')
-    setEventDetail(null)
-  }
-
   /** Select an event; enrich with the full detail when needed. */
   const pickEvent = (event: Record<string, unknown>): void => {
     const id = asString(event.id)
@@ -955,7 +888,13 @@ export function YzjPanel(props: YzjPanelProps) {
     props.actions.setAnchorMsgId('')
     setDraft('')
     setReplyTo(null)
-    void bindAndFocusGroup(props.homeOpen, props.focusBoundSession, id, groupNameOf(state.groups, id))
+    rememberImSeat({
+      groupId: id,
+      sessionId: '',
+      ...(groupNameOf(state.groups, id) === '' ? {} : { groupName: groupNameOf(state.groups, id) }),
+    })
+    setWorkbenchDomain('im')
+    openWorkbench()
     // Stage 1: header swaps immediately. Stage 2: cached window paints
     // instantly. Stage 3: cache miss clears previous rows so they never
     // flash under the new name, then fetches into the right pane only.
@@ -1391,123 +1330,32 @@ export function YzjPanel(props: YzjPanelProps) {
 
       {activeTab === 'calendar' && (
         <div className={css.body}>
-          <div className={css.twoPane}>
-            <div className={css.paneLeft}>
-              <div className={css.calHead}>
-                <button type="button" className={css.calNav} aria-label="上个月" onClick={() => moveMonth(-1)}>‹</button>
-                <span className={css.calTitle}>{state.calYear}年{state.calMonth}月</span>
-                <button type="button" className={css.calNav} aria-label="下个月" onClick={() => moveMonth(1)}>›</button>
-                <button type="button" className={css.calToday} onClick={jumpToToday} title="回到今天">今天</button>
-              </div>
-              <div className={css.calGrid}>
-                {['一', '二', '三', '四', '五', '六', '日'].map(day => (
-                  <div key={day} className={css.calDow}>{day}</div>
-                ))}
-                {(() => {
-                  const firstDow = (new Date(state.calYear, state.calMonth - 1, 1).getDay() + 6) % 7
-                  const daysInMonth = new Date(state.calYear, state.calMonth, 0).getDate()
-                  const pad = (n: number): string => String(n).padStart(2, '0')
-                  const todayKey = `${new Date().getFullYear()}-${pad(new Date().getMonth() + 1)}-${pad(new Date().getDate())}`
-                  const eventsByDay = new Map<string, number>()
-                  for (const item of state.calEvents) {
-                    const event = asRecord(item)
-                    if (typeof event.startDate !== 'number') continue
-                    const date = new Date(event.startDate)
-                    const key = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
-                    eventsByDay.set(key, (eventsByDay.get(key) ?? 0) + 1)
-                  }
-                  const cells = []
-                  for (let i = 0; i < firstDow; i++) cells.push(<div key={`b${i}`} className={css.calBlank} />)
-                  for (let day = 1; day <= daysInMonth; day++) {
-                    const key = `${state.calYear}-${pad(state.calMonth)}-${pad(day)}`
-                    const count = eventsByDay.get(key) ?? 0
-                    const classes = [
-                      css.calCell,
-                      key === todayKey ? css.calCellToday : '',
-                      key === state.calDay ? css.calCellSelected : '',
-                      count > 0 ? css.calCellHas : '',
-                    ].filter(Boolean).join(' ')
-                    cells.push(
-                      <button
-                        key={key}
-                        type="button"
-                        className={classes}
-                        aria-label={key}
-                        onClick={() => pickDay(key)}
-                      >
-                        <span className={css.calDayNum}>{day}</span>
-                        {count > 0 && <span className={css.calDot} title={`${count} 个日程`} />}
-                      </button>,
-                    )
-                  }
-                  return cells
-                })()}
-              </div>
-            </div>
-            <div className={css.paneRight}>
-              {state.calDay === '' ? (
-                <div className={css.paneEmpty}><IconChecklistOutline14 /><span>选择左侧日期查看日程</span></div>
-              ) : (
-                <div className={css.paneList}>
-                  <div className={css.paneHead}>
-                    <span className={css.paneTitle}>{dayHeadLabel(state.calDay)}</span>
-                  </div>
-                  {(() => {
-                    const pad = (n: number): string => String(n).padStart(2, '0')
-                    const dayEvents = state.calEvents.filter((item) => {
-                      const event = asRecord(item)
-                      if (typeof event.startDate !== 'number') return false
-                      const date = new Date(event.startDate)
-                      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` === state.calDay
-                    })
-                    if (dayEvents.length === 0) {
-                      return <div className={css.empty}>当天暂无日程</div>
-                    }
-                    return dayEvents.map((item, index) => {
-                      const event = asRecord(item)
-                      const clock = (ms: unknown): string => {
-                        if (typeof ms !== 'number') return ''
-                        const date = new Date(ms)
-                        const p = (n: number): string => String(n).padStart(2, '0')
-                        return `${p(date.getHours())}:${p(date.getMinutes())}`
-                      }
-                      const start = clock(event.startDate)
-                      const end = clock(event.endDate)
-                      const timeText = start === '' ? '' : `${start}${end === '' ? '' : ` → ${end}`}`
-                      const title = asString(event.title)
-                      const person = asString(event.personName)
-                      const place = asString(event.meetingPlace)
-                      const id = asString(event.id)
-                      const active = id === state.calEventId
-                      return (
-                        <button
-                          key={`e${index}`}
-                          type="button"
-                          className={active ? `${css.item} ${css.itemActive}` : css.item}
-                          onClick={() => pickEvent(event)}
-                        >
-                          <span className={css.eventTime}>{timeText === '' ? '全天' : timeText}</span>
-                          <span className={css.itemTitleText}>{title}</span>
-                          <span className={css.itemSub}>
-                            {[person, place].filter(part => part !== '').join(' · ')}
-                          </span>
-                        </button>
-                      )
-                    })
-                  })()}
-                  {eventDetail !== null && state.calEventId !== '' && (
-                    <div className={css.eventDetail}>
-                      <div className={css.eventDetailTitle}>{eventDetail.title}</div>
-                      {eventDetail.time !== '' && <div className={css.eventDetailRow}>🕐 {eventDetail.time}</div>}
-                      {eventDetail.person !== '' && <div className={css.eventDetailRow}>👤 {eventDetail.person}</div>}
-                      {eventDetail.place !== '' && <div className={css.eventDetailRow}>📍 {eventDetail.place}</div>}
-                      {eventDetail.content !== '' && <div className={css.eventDetailContent}>{eventDetail.content}</div>}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
+          <CalendarPane
+            year={state.calYear}
+            month={state.calMonth}
+            day={state.calDay}
+            events={state.calEvents}
+            eventId={state.calEventId}
+            eventDetail={eventDetail}
+            onNavigate={(year, month, day) => {
+              props.actions.setCalCursor(year, month)
+              props.actions.setCalDay(day)
+              props.actions.setCalEventId('')
+              setEventDetail(null)
+              if (year === state.calYear && month === state.calMonth) return
+              const pad = (n: number): string => String(n).padStart(2, '0')
+              const start = `${year}-${pad(month)}-01`
+              const end = `${year}-${pad(month)}-${pad(new Date(year, month, 0).getDate())}`
+              props.actions.setLoading(true)
+              props.actions.setError('')
+              void props.fetchEvents(start, end).then((result) => {
+                if (result.ok) props.actions.setCalEvents(asArray(result.value))
+                else props.actions.setError(result.error.message)
+                props.actions.setLoading(false)
+              })
+            }}
+            onSelectEvent={pickEvent}
+          />
         </div>
       )}
 
@@ -1666,7 +1514,13 @@ export function YzjPanel(props: YzjPanelProps) {
                   className={css.composerSend}
                   data-testid="yzj-open-group-room"
                   onClick={() => {
-                    void bindAndFocusGroup(props.homeOpen, props.focusBoundSession, state.groupId, groupNameOf(state.groups, state.groupId))
+                    rememberImSeat({
+                      groupId: state.groupId,
+                      sessionId: '',
+                      ...(groupNameOf(state.groups, state.groupId) === '' ? {} : { groupName: groupNameOf(state.groups, state.groupId) }),
+                    })
+                    setWorkbenchDomain('im')
+                    openWorkbench()
                   }}
                 >
                   打开群聊

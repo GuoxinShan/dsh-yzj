@@ -2,6 +2,7 @@
 
 > **v2.0 覆盖（2026-08-17，Guoxin Shan）**：[`group-room-topics.md`](group-room-topics.md) 取代融合视图与 composer 条款——T2（融合一条流）、T10/T11（composer 双意图）作废，T12 改写（出站帖子进群房间时间线）；T1/T3–T9/T13 的存储、去重、回填、召唤窗口、切会话分阶段与 write-gate 机制**沿用**（消息日志改按群索引，服务群房间视图）。对照见该文 §6。本文正文不改写，作历史快照。
 > **T5 实现订正（v1.9 / 2026-08-18）**：正文 §5.3「仅 `latestUserSourceKind === 'user'`」过窄——首轮 assemble 可能是 `none`，仍应给窗；话题 session 必须走 `getTopicBySession`，只查房间表会空窗。注册层与 skip 规则以 group-room-topics 决策 #15 / pitfall-027 为准。
+> **T5 再订正（v1.11 / 2026-08-18）**：近窗与记忆拆缝。记忆仍走 `systemPrompt.context`（snapshot，可覆盖）。近窗改走一次 plugin `inject` / `agent/pre-step` 预置（`plugin: yzj-summon-window`），**不再**进 `yzj-bound-window` snapshot。话题窗取锚点回复链，不是整群最近 20 条。行时间戳 `MM-DD HH:mm`；文件行 `fileId=`。
 > 版本：v1.1（已拍板）+ **v1.2 文案**（2026-08-16）+ **v1.3 UI**（2026-08-17）：①② 复用面板 IM 渲染器；切会话分阶段，禁止闪「私密会话」/上一群残留。
 > 日期：2026-08-17
 > 决策人：Guoxin Shan
@@ -196,7 +197,7 @@ DSH「发给助手」的 ③ 是用户真的对助手说的话，**要渲染**�
 - 输入：该绑定 log 的 `acked` 行（`pending`/`failed` ② 不进模型），按 `sentAt` 升序。可选 `groupId`（缺省用 log.yzjConversationId）、话题锚点。
 - 切窗口：从末尾取至多 `summonWindowMessages` 条，再从最旧向前截到 `summonWindowChars`（超限丢更旧，保留较新）。
 - **不含本轮问句对应的那条 ①**：@机器人 时去掉与 inbound `msgId` 相同的行（问句走 followup 正文）；DSH「发给助手」时日志里本无这条 ③，窗口即当前 ①② 近窗。
-- 行格式（模型可见，中文标签）：`[时间] 显示名 msgId=<id>: digest`；`isSelf` 标「我」；有 `replyMsgId` 则附「回复 msgId=<id> <短摘要>」。
+- 行格式（模型可见，中文标签）：`[MM-DD HH:mm] 显示名 msgId=<id>: digest`（必须带日期，只出 `HH:mm` 时跨日近窗会看起来像倒序）；`isSelf` 标「我」；有 `replyMsgId` 则附「回复 msgId=<id> <短摘要>」。`msgType=file` 且 `param.file_id` 有值时追加 `fileId=<id>`（可附 `size=`）；话题锚同一字段。**fileId 不是 msgId**。
 - 头块固定：第一行 `［本群最近消息（仅本轮上下文，非完整群档）］`；第二行 `groupId: <yzjConversationId>`；第三行用法一句（发群用 `yzj_im_message_send` 的 groupId，回复某条把 `replyMsgId` 设成该行 msgId）。话题会话再附 `话题:` / `锚点 msgId:` / `锚：谁：摘要`。空窗口但已有 groupId 时**仍注入头块**（模型要发群必须有 id）；log 与 id 都没有才不注入。
 
 两条召唤入口**必须调用同一函数**，禁止 robot 与 DSH composer 各拼一套。
@@ -210,12 +211,11 @@ DSH「发给助手」的 ③ 是用户真的对助手说的话，**要渲染**�
   → agent.followup(createUserMessage({ content: 入站正文, source: plugin }))
   既有 memory / 群共享工作区 inject 仍按 robot-yzj 原顺序，窗口块另加，不替换它们
 
-DSH「发给助手」
-  官方 ③ = composer 正文（可含用户 chip；chip 仍 codec.serialize）
-  → systemPrompt.context({ name: 'yzj-bound-window', text: (assemble) => 本轮是 GUI 召唤则窗口否则 '' })
-  读 `assemble.agent.session.id`（harness `assembleContextFor`：`scope` 是 Agent 对象，不是 session id 字符串——pitfall-011）
-  仅 `latestUserSourceKind === 'user'` 时返回窗口；plugin followup 已走 `agent.inject`
-  无 systemPrompt 的 profile（ops daemon）不注入；`ctx.inject(['systemPrompt'])` 等待该服务
+DSH「发给助手」（抽屉问助手 / 官方 Chat）
+  官方 ③ = composer 正文
+  → 第一次问助手：`inject` 或 `agent/pre-step` 预置一条 plugin 消息（`yzj-summon-window`），正文 = formatSummonWindow
+  → 记忆仍在 runtime snapshot（`yzj-memory`），与近窗分两条 plugin 消息
+  已有窗口行则不再贴。话题优先回复链（threadEntries），无锚才退回群近窗。
 ```
 
 `agent/request` **不**用来塞窗口（改不了正文）。**不**把窗口写成用户气泡里的隐藏 chip。

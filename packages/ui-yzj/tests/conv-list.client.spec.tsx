@@ -198,4 +198,34 @@ describe('YzjConvList', () => {
     await act(async () => { finish?.(groups); await Promise.resolve() })
     act(() => { root2.unmount() })
   })
+
+  it('shows the CLI login card when auth-status reports logged-out', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const logins: string[] = []
+    act(() => {
+      root.render(
+        <YzjConvList
+          sessionId="yzj-home-g-a"
+          homeNav={async () => ({ ok: true, value: { rooms: [] } })}
+          fetchGroups={async () => ({ ok: false, error: { message: 'no app credentials configured' } })}
+          authStatus={async () => ({
+            ok: true,
+            value: { loggedIn: false, name: '', openId: '', reason: 'no app credentials configured' },
+          })}
+          authLogin={async () => {
+            logins.push('go')
+            return { ok: true, value: { started: true, alreadyRunning: false } }
+          }}
+        />,
+      )
+    })
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    expect(container.textContent).toContain('云之家未登录')
+    const open = container.querySelector('[data-testid="yzj-login-open"]') as HTMLButtonElement
+    await act(async () => { open.click(); await Promise.resolve() })
+    expect(logins).toEqual(['go'])
+    act(() => { root.unmount() })
+  })
 })
