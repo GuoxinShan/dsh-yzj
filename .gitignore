@@ -29,3 +29,6 @@ spike/robot/bin/
 spike/robot/logs/
 spike/robot/test-model.patch.yml
 
+
+# Grok/Cursor skill dirty markers (local only)
+.agents/skills/**/.is-changed
