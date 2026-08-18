@@ -519,7 +519,7 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 
 ### 22.4 切会话 UI（2026-08-17）
 
-点任意群/单聊会闪一下：融合视图把初始 `bound: false` 当成未绑定（回填期间闪「私密会话」）；面板 cache miss 在新标题下残留上一群消息并打全局「加载中…」。已对齐面板分阶段路径：header 立刻换、缓存同步上屏、miss 清空后只在消息窗 loading、人名/媒体后补。v2.0 群房间时间线沿用同一套分阶段（pitfall-013）。验收：`packages/ui-yzj/tests/transcript.client.spec.tsx`、`packages/ui-yzj/tests/panel-switch.client.spec.tsx`。
+点任意群/单聊会闪一下：融合视图把初始 `bound: false` 当成未绑定（回填期间闪「私密会话」）；面板 cache miss 在新标题下残留上一群消息并打全局「加载中…」。已对齐面板分阶段路径：header 立刻换、缓存同步上屏、miss 清空后只在消息窗 loading、人名/媒体后补。v2.0 群房间时间线沿用同一套分阶段（pitfall-013）。**工作台增补（2026-08-18）**：`conversation.view` 随 session 重挂时左栏用模块 hold、时间线打开滚到底、「加载更早」保位置、图首帧同步读 `file-data` 缓存、H9 `quiet` 不 bump L1。验收：`packages/ui-yzj/tests/transcript.client.spec.tsx`、`packages/ui-yzj/tests/panel-switch.client.spec.tsx`、`packages/ui-yzj/tests/conv-list.client.spec.tsx`、`packages/ui-yzj/tests/im-render.client.spec.tsx`。
 
 ---
 
@@ -539,7 +539,7 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 | H6 | 出站帖子 | ack / PushHub / `robot_notify` / 回填写入 `robot-outbound`，标话题回链 | R9：进群房间时间线 | ✅ 关闭（单测） |
 | H7 | guard / write-gate | `whenSession` 覆盖 `yzj-home-*` 与 `yzj-topic-*` | R10/R11 | ✅ 关闭（单测） |
 | H8 | 面板 / 悬浮窗 | `shell.overlay` 已摘除；四页签迁入工作台；卡片「查看」切 workbench domain | 第二聊天淘汰；球退役（R16） | ✅ P2 关闭（单测：dock 不再 `openPanel`） |
-| H9 | 迁移 | 打开群房间时，有真实 ③④ 则幂等 `ensureTopic(rootMsgId=legacy-host, title=历史对话, fromSessionId=宿主)`；不搬事件；空白宿主/单聊不迁 | 降为群房间宿主；历史进首条话题 | ✅ 关闭（`home-open` 单测：有 ③④ 才迁、二次幂等、空白不迁、DM 不迁） |
+| H9 | 迁移 | 打开群房间时，有真实 ③④ 则幂等 `ensureTopic(..., quiet: true)`；`lastActivity` 用宿主原时间；不搬事件；空白宿主/单聊不迁 | 降为群房间宿主；历史进首条话题；打开不刷列表 | ✅ 关闭（quiet 不 bump；home-open 单测） |
 | H10 | 侧栏可见 | 群房间 `session/title` = 群名；话题 `session/title` = `群名 · 话题`（官方列表平铺可扫） | 官方列表能扫出归属 | ✅ 关闭（单测） |
 | H11 | 导航 | `sidebar.footer.action` 云之家入口块；点五域切 `workbench-domain` 并 focus 房间。对话 = 会话列表 + 时间线 + 话题抽屉；待办/日程/知识库 embed 原面板；记忆 = 本地 vault（「不出本机」） | 入口进工作台；单聊无抽屉；群聊 header「话题 N」开关抽屉 | ✅ P2 关闭（单测） |
 | H12 | 模型上下文 | `formatSummonWindow` 头块 `groupId` + 每行 `msgId` + 话题锚点；空 log 仍给 groupId | 话题里问助手能对群发/回复 | ✅ 关闭（单测） |
@@ -547,7 +547,7 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 | H14 | 轻发送 | 群房间 composer 接 CLI send 全集：回复 / @ / @all / 正文表情 / 图 / 文件；P2 删 72px 留白（pitfall-017 失效：球已退役） | 云之家侧能看见对应回复/@/图文件 | ✅ 关闭（单测；真机需 GUI 重启后 e2e） |
 | H15 | 群房间视觉 | 布局跟 canvas：自己靠右、他人靠左、hover 出操作；话题锚点卡只在 session header（chrome 收成「回群房间」文字钮）。工作台会话行优先 CLI 群名，占位「群房间」不得盖住真名；`session/title` 占位可被真名升级 | 与已拍板原型同一套脸 | ✅ 关闭（2026-08-17 视觉刀：tab ring / composer 列 / dock 退役 / 群名占位；单测 + e2e） |
 | H16 | 云之家 workspace | 新 `yzj-home-*` / `yzj-topic-*` 的 `meta.cwd` = `~/.dsh-yzj/workspace`（ensure 目录 + `workspaceRegistry.create(..., '云之家')` + `attachSession`）；robot 通道默认 cwd 同路径。旧会话仍是 `process.cwd()`，attach 失败则吞掉、不分组 | 官方侧栏出现「云之家」分组 | ✅ P0 关闭（路径单测；attach 吞错。机器人入站仍用 `<cwd>/groups/<id>` 子目录作 share 沙箱，不 attach 父 workspace——记此） |
-| H17 | lastActivity / status | `lastActivity` 创建写入、ensure 已有则 touch。`status`：pending/approved 写 → `confirm`；交付或取消 → `running`（L5）；显式 `done`。L2 徽标：accent 数字 = 待确认 ＞ 细点 = 进行中 ＞ 完成无标 | 会话行能反映话题活动与待确认 | ✅ P3 关闭（topics / write-gate / conv-list 单测） |
+| H17 | lastActivity / status | `lastActivity` 创建写入、ensure 已有则 touch（H9 `quiet` 除外）。`status`：pending/approved 写 → `confirm`；交付或取消 → `running`（L5）；显式 `done`。L2 徽标：accent 数字 = 待确认 ＞ 细点 = 进行中 ＞ 完成无标 | 会话行能反映话题活动与待确认 | ✅ P3 关闭（topics / write-gate / conv-list 单测；quiet 不 bump） |
 | H18 | 话题抽屉 | 「交给助手」/ chip 开抽屉透镜，不 `focus` 原生；抽屉「原生会话 ↗」才 focus；锚点条反跳高亮时间线且不关抽屉；单聊无抽屉；透镜气泡 + 「问助手」`home-topic-lens` / `home-topic-ask`（用户 `followup`，不 focus） | L3/L6/R17/R19 | ✅ 关闭（抽屉单测：气泡渲染、问助手不 focus、`legacy-host` 无群锚跳转） |
 | H19 | 群房间精致度 | 同人连发合并、日期分隔、气泡圆角、hover 文字链、助手产物卡、气泡内「N 条回复」chip | §9.1 / §9.5 P1 | ✅ P1 关闭（`room-layout` + transcript 单测） |
 

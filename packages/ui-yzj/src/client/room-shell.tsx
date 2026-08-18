@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react'
 import type { BakedActions } from '@deepseek-ai/dsh-client-ui-slots'
 import { YzjConvList, type YzjConvListInjected } from './conv-list.tsx'
-import { YzjFusedView, type YzjFusedInjected } from './transcript.tsx'
+import { cachedRoomGroupId, YzjFusedView, type YzjFusedInjected } from './transcript.tsx'
 import type { YzjPanelInject } from './rpc.ts'
 import type { YzjPanelActions, YzjPanelState } from './stores.ts'
 import { YzjDomainWorkbench } from './workbench-pane.tsx'
@@ -34,7 +34,7 @@ function asRecord(value: unknown): Record<string, unknown> {
  */
 export function YzjRoomShell(props: YzjRoomShellInjected) {
   const [domain, setDomain] = useState<WorkbenchDomain>(getWorkbenchDomain)
-  const [activeGroupId, setActiveGroupId] = useState('')
+  const [activeGroupId, setActiveGroupId] = useState(() => cachedRoomGroupId(props.sessionId))
 
   useEffect(() => subscribeWorkbenchDomain(() => { setDomain(getWorkbenchDomain()) }), [])
 
@@ -44,6 +44,7 @@ export function YzjRoomShell(props: YzjRoomShellInjected) {
   }, [props.actions, props.panel])
 
   useEffect(() => {
+    setActiveGroupId(cachedRoomGroupId(props.sessionId))
     let cancelled = false
     const load = async (): Promise<void> => {
       const result = await props.homeFused(props.sessionId)

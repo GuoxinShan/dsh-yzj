@@ -24,6 +24,8 @@ export interface HomeOpenFace {
     readonly originText?: string
     readonly originTime?: number
     readonly fromSessionId?: string
+    readonly quiet?: boolean
+    readonly lastActivity?: number
   }): Promise<{ sessionId: string; created: boolean }>
 }
 
@@ -153,6 +155,11 @@ async function maybeMigrateLegacyHost(options: {
   if (options.yzjKind === 'dm' || options.home.ensureTopic === undefined) return undefined
   const events = sessionOf(options.agents.get(options.hostSessionId))?.events ?? []
   if (!hostHasLegacyTurns(events)) return undefined
+  let lastActivity = 0
+  for (const event of events) {
+    const time = event.time ?? 0
+    if (time > lastActivity) lastActivity = time
+  }
   const opened = await openTopicHome({
     home: options.home,
     agents: options.agents,
@@ -163,6 +170,8 @@ async function maybeMigrateLegacyHost(options: {
     title: LEGACY_HOST_TITLE,
     fromSessionId: options.hostSessionId,
     groupName: options.groupName,
+    quiet: true,
+    lastActivity: lastActivity > 0 ? lastActivity : 1,
   })
   if (opened.topicCreated) {
     const digest = composeHandoffDigest(
@@ -249,6 +258,10 @@ export async function openTopicHome(options: {
   readonly groupName?: string
   /** Handoff / H9: the session whose ③④ the lens still reads. */
   readonly fromSessionId?: string
+  /** H9: do not bump `lastActivity` on an existing root. */
+  readonly quiet?: boolean
+  /** H9: stamp create-time activity from the host log, not "now". */
+  readonly lastActivity?: number
 }): Promise<HomeOpenValue & { readonly topicCreated: boolean }> {
   if (options.home.ensureTopic === undefined) {
     const room = await openBoundHome(options)
@@ -264,6 +277,8 @@ export async function openTopicHome(options: {
     ...(options.originText === undefined ? {} : { originText: options.originText }),
     ...(options.title === undefined ? {} : { title: options.title }),
     ...(options.fromSessionId === undefined ? {} : { fromSessionId: options.fromSessionId }),
+    ...(options.quiet === true ? { quiet: true } : {}),
+    ...(options.lastActivity === undefined ? {} : { lastActivity: options.lastActivity }),
   })
   const groupName = options.groupName?.trim()
     || lastSessionTitle(sessionOf(options.agents.get(bound.sessionId))?.events ?? [])

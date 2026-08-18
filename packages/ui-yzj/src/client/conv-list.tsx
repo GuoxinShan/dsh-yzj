@@ -237,17 +237,40 @@ export function buildConvRows(
   return rows.sort((a, b) => b.sortKey - a.sortKey)
 }
 
+type ConvListHold = {
+  bound: ReturnType<typeof parseNavRooms>
+  recent: ReturnType<typeof parseRecentGroups>['rooms']
+  page: number
+  more: boolean
+}
+
+/** Survives `conversation.view` remounts so the left list does not flash empty. */
+let convListHold: ConvListHold | undefined
+
+/** Test helper: drop the module hold so specs start from an empty list. */
+export function clearConvListHold(): void {
+  convListHold = undefined
+}
+
+function rememberConvList(next: ConvListHold): void {
+  convListHold = next
+}
+
 /**
  * Left column of the group-room workbench. Load-more uses the same CLI page
  * as the former floating-panel 会话 list.
  */
 export function YzjConvList(props: YzjConvListInjected) {
-  const [bound, setBound] = useState<ReturnType<typeof parseNavRooms>>([])
-  const [recent, setRecent] = useState<ReturnType<typeof parseRecentGroups>['rooms']>([])
+  const [bound, setBound] = useState<ReturnType<typeof parseNavRooms>>(() => convListHold?.bound ?? [])
+  const [recent, setRecent] = useState<ReturnType<typeof parseRecentGroups>['rooms']>(() => convListHold?.recent ?? [])
   const [error, setError] = useState('')
-  const [page, setPage] = useState(1)
-  const [more, setMore] = useState(false)
+  const [page, setPage] = useState(() => convListHold?.page ?? 1)
+  const [more, setMore] = useState(() => convListHold?.more ?? false)
   const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    rememberConvList({ bound, recent, page, more })
+  }, [bound, recent, page, more])
 
   useEffect(() => {
     let cancelled = false

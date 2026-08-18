@@ -148,7 +148,7 @@ TopicAnchorIndex                           // S1 复活
 | robot-channel §3.6 S1 锚定 | **复活** → R4（加「必须可见」不变量） |
 | robot-channel §9「打开/恢复绑定会话」 | **改写** → 锚定或新建话题（§5） |
 
-迁移（H9，2026-08-18 拍板）：既有 `yzj-home-*` 降为群房间宿主。打开群房间时，若宿主已有真实 ③④（`user/message` / `assistant/message` / `tool/call`），则幂等 `ensureTopic({ source: 'handoff', rootMsgId: 'legacy-host', title: '历史对话', fromSessionId: hostSessionId })`。**不**复制 Session 事件（harness 无跨 session 搬日志 API，且 `KNOWN_SESSION_EVENT_TYPES` 白名单）。透镜合并 `fromSessionId` 上的宿主事件 + 话题自身新事件；新「问助手」打进话题 session。空白宿主（仅 `publishHostSession` 的 `turn/start` + `turn/end` + `session/title`）不迁。单聊不迁（R17）。融合「群工作」tab、dock「发进群」、双意图 composer、面板快捷 IM 在实现刀中移除。
+迁移（H9，2026-08-18 拍板）：既有 `yzj-home-*` 降为群房间宿主。打开群房间时，若宿主已有真实 ③④（`user/message` / `assistant/message` / `tool/call`），则幂等 `ensureTopic({ source: 'handoff', rootMsgId: 'legacy-host', title: '历史对话', fromSessionId: hostSessionId, quiet: true })`。**不**复制 Session 事件（harness 无跨 session 搬日志 API，且 `KNOWN_SESSION_EVENT_TYPES` 白名单）。`lastActivity` 取宿主 ③④ 原时间，**不**写成打开当下——否则 L1 会把该群顶到列表最上并刷成「话题·历史对话」。透镜合并 `fromSessionId` 上的宿主事件 + 话题自身新事件；新「问助手」打进话题 session。空白宿主（仅 `publishHostSession` 的 `turn/start` + `turn/end` + `session/title`）不迁。单聊不迁（R17）。打开房间落在时间线**底部（最新）**；切会话工作台列表用模块缓存，禁止空窗再刷。融合「群工作」tab、dock「发进群」、双意图 composer、面板快捷 IM 在实现刀中移除。
 
 ---
 

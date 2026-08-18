@@ -5,7 +5,7 @@
 import { act } from 'react-dom/test-utils'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it } from 'vitest'
-import { YzjFusedView } from '../src/client/transcript.tsx'
+import { streamAtBottom, YzjFusedView } from '../src/client/transcript.tsx'
 import { subscribeRoomComposerHost } from '../src/client/composer-host.ts'
 
 type Rpc = { ok: true; value: unknown } | { ok: false; error: { message: string } }
@@ -343,5 +343,12 @@ describe('YzjFusedView', () => {
     expect(seen.at(-1)).toBe(second)
     stop()
     act(() => { root2.unmount() })
+  })
+})
+
+describe('streamAtBottom', () => {
+  it('is true within slack of the latest message', () => {
+    expect(streamAtBottom({ scrollHeight: 800, scrollTop: 760, clientHeight: 40 })).toBe(true)
+    expect(streamAtBottom({ scrollHeight: 800, scrollTop: 0, clientHeight: 40 })).toBe(false)
   })
 })
