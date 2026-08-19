@@ -197,7 +197,7 @@ guard `WRITE_SPECS` +2：`yzj_advance_create` 一律标准确认；`yzj_advance_
 | 16 | 主动发现的巡检宿主 | **主形态 = GUI 内 root 会话 `schedule_create`**（session-local，GUI 关了就停）。dsh-routines headless 是无人值守扩展（§14.4），不是替换 | 与 todo 逾期播报同型；harness schedule 只给 live root；C11 无人值守已验证走 routines，两条路并存不打架 |
 | 17 | 监视哪些群 | **scan 显式 `groups` 参数**（schedule prompt 里写死 id/名）；上限 8 群；不做隐式全群扫描 | integration-master-plan「关注群数量设上限」；全量 recent 会把无关闲聊灌进比对 |
 | 18 | 增量 cursor 存在哪 | **host storage-domain `yzj_advance_scan_cursors`**（groupId → lastMsgId）；模型不持 cursor | 与 `yzj_home_bindings` / `robot_yzj_surface` 同模式；模型持 cursor 就能回放或跳过 |
-| 19 | 同源去重谁强制 | **host 强制**（`coreFeedAdvance` 在 append 前，input.refs 与该事项已有 refs 有交集则幂等跳过）。频率上限观察噪音后再定 | §13.3 原为教学面，自动发现会把同一 msgId 喂两次；升 host 后工具/RPC/服务共用一处 |
+| 19 | 同源去重谁强制 | **host 强制**（`coreFeedAdvance` 在 append 前判定）。「同源」的判定口径 v1.5 后被决策 25 收窄（原口径=refs 有交集即幂等） | §13.3 原为教学面，自动发现会把同一 msgId 喂两次；升 host 后工具/RPC/服务共用一处 |
 | 14 | agent feed 是否一律弹确认卡 | **不是**（v1.3 收窄）。卡只门控**改基准**（`goal` / `metrics` / `targetDate` / `assignee`）；纯追加事元与阶段变化（→ `decision-needed` / → `ready-for-review`）静默落 | 进度正常弹卡是纯噪音，会训练用户闭眼点「确认」；偏差已经有「待我决定」当注意力面，再弹卡等于同一件事问两遍，而第一遍「我能写这条吗」没有信息量；改基准会替换后续全部比对锚点，人没看过就换，AI 之后的判断无从校验——这才是值得一次打断的事 |
 | 15 | 「重不重要」谁判断、怎么表达 | **AI 判断**，但只能表达为**阶段**（进不进 `decision-needed` / `ready-for-review`），不能表达为「这次要不要过卡」。判据成文见 §13.1–§13.4 | PRD「状态由 AI 判断触发而非用户手动改」；若让模型自选是否过卡，`tools/pre-execute` 这道写门禁就变成模型可绕的软闸（违背「策略只在 pre-execute」）。判据放教学面、门控线放 host 固定规则，两边都不需要 host 做语义判断（决策 11 保持） |
 | 20 | 意图线程订阅存哪（v1.5） | **host storage-domain `yzj_advance_threads`**（advanceId → 线程 tokens），不动 dbt 双表 schema | 存量事项表加列要动已 provision 的表；storage-domain 与 cursor（决策 18）同模式即可落地。**这是 demo 落位不是合同**——终态订阅是事项聚合的原生关系（迁移文档断层 2） |
@@ -205,6 +205,7 @@ guard `WRITE_SPECS` +2：`yzj_advance_create` 一律标准确认；`yzj_advance_
 | 22 | 对外命名（0819 会议） | 产品名「**AI 推进**」，中性、双向（上对下对齐 + 下对上反馈）；不用「参谋部」（太管理层，产品面向全员）；「战略对齐」被否（单向感） | 0819 14:00 会议对齐结论；品宣名词要短 |
 | 23 | 策略选择的载荷（v1.5） | 决策请求事元的 `变化内容` 按行约定备选（`选项N: 描述`，末行可 `影响: …` 复述）；决策区渲染为可选项，用户选定经 judge `confirm_advance` 带 note 落 user 事元。**MVP 文本约定，终态原生结构化**（迁移文档断层 4） | PRD §5.2.3 最小推进回路要求「AI建议+备选+自定义」；0819 会议演示（私有化 → 加资源/延期/自定义）确认这是显式一步；demo 存储无结构化字段可用 |
 | 24 | MVP 与灵基终态的关系（0819 会议） | **合同 + 证据 → 重建**，不是原型移植。三层拆分（合同/机制形状/宿主脚手架）、断层清单、验证清单收进 [`../migration/advance-lingee-migration.md`](../migration/advance-lingee-migration.md)；新任务先问「存钱还是镀金」 | 会上拍板终态要灵基侧重新组装（Honeycomb 式底座，非现有插件方式）；本仓代码大部分是脚手架，可带走的是合同、机制形状与真机证据 |
+| 25 | 「同源」去重的判定口径（830 实验后收窄，修订决策 19） | **refs 集合完全相等 + 同一 changeType 才算重放**（幂等返回、不追加）；refs 部分重叠正常追加，返回 `overlappedRefs` 提示 | 830 真数据实验（gap §24.6）实测：交集口径误吞「目标更新」——不同事元合法引用同一文档（回放② refs=[0806,0812 纪要]、③ refs=[0812 纪要] 被幂等吞掉，模型追问中断、补救多弹一张卡）。交集口径把「引用同一证据」误等同「同一信号重放」；真正的重放是 refs 集合与语义类型都相同 |
 
 ## 10. 验收口径（第一期）
 
@@ -325,7 +326,7 @@ digest 含：每条事项的目标 / 背景（原来的理解）/ 成功指标 /
 ### 13.3 抑制（命中打扰判据也不重复提）
 
 - 同一事项同一判据已在 `decision-needed` 且未处理 → 补进现有决策请求，不新起一条；
-- 同一来源（msgId / docId）已喂过 → **host 强制去重**（决策 19，`coreFeedAdvance` 幂等跳过）；
+- 同一来源（msgId / docId）已喂过 → **host 强制去重**（决策 19，`coreFeedAdvance` 幂等跳过；「同源」= refs 集合完全相等 + 同一 changeType，决策 25——部分重叠只提示不拦截）；
 - 同一判据曾被用户 `ignore` → 除非指标进一步恶化，不再提。
 
 ### 13.4 验收（→ `ready-for-review`）
@@ -428,7 +429,7 @@ host storage-domain **`yzj_advance_threads`**：`advanceId → [{ token, kind, l
 ### 15.3 采集与分发（决策 21）
 
 - cursor 保持**渠道级**（`yzj_advance_scan_cursors` 不变）：同一渠道被多个事项订阅时一次取流。
-- 分发是模型职责：scan digest 列出新信号 + 各 open 事项的订阅清单，inspect 按「信号 ∈ 哪个事项的线程 + 语义相关」决定喂给谁；host 不做语义判断（决策 11），同源去重兜底（决策 19）。
+- 分发是模型职责：scan digest 列出新信号 + 各 open 事项的订阅清单，inspect 按「信号 ∈ 哪个事项的线程 + 语义相关」决定喂给谁；host 不做语义判断（决策 11），同源去重兜底（决策 19/25）。
 - 双节奏：**Work**（被召唤 / schedule 唤醒，实时比对，§12/§14 既有）+ **Dream**（每日一次，按订阅全量取增量、筛有价值落事元、折叠摘要/建议/偏差提示；无偏差静默）。巡检频率的既有口径（≥300s）适用于 Work 触发；Dream 是低频大预算轮。
 
 ### 15.4 策略选择（决策 23）
