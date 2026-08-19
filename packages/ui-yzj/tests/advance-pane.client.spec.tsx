@@ -8,7 +8,7 @@
 import { act } from 'react-dom/test-utils'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
-import { YzjAdvancePane, queuesOf, STAGE_LABEL, formatScanStatus } from '../src/client/advance-pane.tsx'
+import { YzjAdvancePane, queuesOf, STAGE_LABEL, formatScanStatus, parseDecisionOptions } from '../src/client/advance-pane.tsx'
 import type { AdvancePaneProps } from '../src/client/advance-pane.tsx'
 import { getAdvanceFeedback, setAdvanceFeedback } from '../src/client/advance-feedback.ts'
 import { getAdvanceAskDraft, setAdvanceAskDraft } from '../src/client/advance-ask.ts'
@@ -33,17 +33,21 @@ function entry(over: Record<string, unknown>): Record<string, unknown> {
 interface Face {
   container: HTMLDivElement
   root: Root
-  judged: { advanceId: string; action: string }[]
+  judged: { advanceId: string; action: string; note?: string }[]
   created: Record<string, unknown>[]
   ensured: { count: number }
   getRequests: { advanceId: string; entryOffset?: number; entryLimit?: number }[]
+  threadAdds: { advanceId: string; token: string; label?: string }[]
+  threadRemoves: { advanceId: string; token: string }[]
+  groupFetches: number
 }
 
 function mountPane(config: {
   ready?: boolean
   items?: Record<string, unknown>[]
-  detail?: { item: Record<string, unknown>; entries: Record<string, unknown>[]; entryTotal?: number; sources?: Record<string, unknown>[] }
+  detail?: { item: Record<string, unknown>; entries: Record<string, unknown>[]; entryTotal?: number; sources?: Record<string, unknown>[]; threads?: Record<string, unknown>[] }
   scan?: { scannedAt: number | null; found: number }
+  groups?: Record<string, unknown>[]
 }): Face {
   const container = document.createElement('div')
   document.body.appendChild(container)
@@ -52,6 +56,9 @@ function mountPane(config: {
   const created: Face['created'] = []
   const ensured = { count: 0 }
   const getRequests: Face['getRequests'] = []
+  const threadAdds: Face['threadAdds'] = []
+  const threadRemoves: Face['threadRemoves'] = []
+  const groupState = { fetches: 0 }
   const items = config.items ?? []
   const props: AdvancePaneProps = {
     inject: {
@@ -75,6 +82,7 @@ function mountPane(config: {
             entryOffset: 0,
             entryTotal: detail.entryTotal ?? detail.entries.length,
             sources: detail.sources ?? [],
+            threads: detail.threads ?? [],
           },
         } as Rpc
       },
@@ -82,8 +90,8 @@ function mountPane(config: {
         created.push(input as Record<string, unknown>)
         return { ok: true, value: { advanceId: 'A-NEW', title: input.title, stage: 'draft' } } as Rpc
       },
-      advanceJudge: async (advanceId, action) => {
-        judged.push({ advanceId, action })
+      advanceJudge: async (advanceId, action, note) => {
+        judged.push({ advanceId, action, ...(note === undefined ? {} : { note }) })
         return { ok: true, value: { advanceId, stage: 'updated' } } as Rpc
       },
       advanceEnsure: async () => {
@@ -94,12 +102,30 @@ function mountPane(config: {
         ok: true,
         value: config.scan ?? { scannedAt: null, found: 0 },
       }) as Rpc,
+      advanceThreadAdd: async (advanceId, token, label) => {
+        if (!/^(im|doc|todo|event|file):[A-Za-z0-9_-]+$/.test(token)) {
+          return { ok: false, error: { message: `advance-thread-add failed: 非法线程 token「${token}」` } } as Rpc
+        }
+        threadAdds.push({ advanceId, token, ...(label === undefined ? {} : { label }) })
+        return { ok: true, value: { threads: [], entryAppended: false } } as Rpc
+      },
+      advanceThreadRemove: async (advanceId, token) => {
+        threadRemoves.push({ advanceId, token })
+        return { ok: true, value: { threads: [] } } as Rpc
+      },
+      fetchGroups: async () => {
+        groupState.fetches += 1
+        return { ok: true, value: { list: config.groups ?? [] } } as Rpc
+      },
     },
   }
   act(() => {
     root.render(<YzjAdvancePane {...props} />)
   })
-  return { container, root, judged, created, ensured, getRequests }
+  return {
+    container, root, judged, created, ensured, getRequests, threadAdds, threadRemoves,
+    get groupFetches() { return groupState.fetches },
+  }
 }
 
 async function settle(): Promise<void> {
@@ -135,6 +161,24 @@ describe('formatScanStatus', () => {
   it('renders 尚未巡检 until a patrol has run', () => {
     expect(formatScanStatus(null, 0)).toBe('尚未巡检')
     expect(formatScanStatus(Date.parse('2026-08-19T12:34:00+08:00'), 3)).toMatch(/上次巡检 \d{2}:\d{2} · 本轮发现 3 条/)
+  })
+})
+
+describe('parseDecisionOptions', () => {
+  it('extracts 选项N rows and the 影响 row; rest stays plain', () => {
+    const parsed = parseDecisionOptions('阶段 running→decision-needed\n选项1: 追加资源，目标日期不变\n选项2：目标日期顺延两周\n影响: 检验标准需同步调整\n补充一句')
+    expect(parsed.options).toEqual(['追加资源，目标日期不变', '目标日期顺延两周'])
+    expect(parsed.impact).toBe('检验标准需同步调整')
+    expect(parsed.rest).toContain('阶段 running→decision-needed')
+    expect(parsed.rest).toContain('补充一句')
+    expect(parsed.rest).not.toContain('选项1')
+  })
+
+  it('returns empty options when the detail carries no 选项N row', () => {
+    const parsed = parseDecisionOptions('客户要求改范围')
+    expect(parsed.options).toEqual([])
+    expect(parsed.impact).toBe('')
+    expect(parsed.rest).toBe('客户要求改范围')
   })
 })
 
@@ -325,6 +369,120 @@ describe('YzjAdvancePane', () => {
     expect(draft?.title).toBe('试运行')
     expect(draft?.text).toContain('yzj_advance_inspect')
     expect(draft?.text).toContain('不要 stageTo=completed')
+    act(() => { face.root.unmount() })
+  })
+
+  it('renders subscribed thread chips and unlinks via × (registry only)', async () => {
+    const face = mountPane({
+      items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行' })],
+      detail: {
+        item: item({ advanceId: 'A-1', stage: 'running', title: '试运行' }),
+        entries: [],
+        threads: [
+          { token: 'im:g1', kind: 'persistent', label: 'dsh-2', addedBy: 'agent', addedAt: 1 },
+          { token: 'doc:d1', kind: 'document', label: '范围说明', addedBy: 'user', addedAt: 2 },
+        ],
+      },
+    })
+    await settle()
+    const chips = face.container.querySelector('[data-testid="yzj-advance-threads"]')
+    expect(chips?.textContent).toContain('dsh-2')
+    expect(chips?.textContent).toContain('范围说明')
+    expect(chips?.textContent).toContain('AI 关联')
+    expect(chips?.textContent).toContain('你关联')
+    const remove = face.container.querySelector('[data-testid="yzj-advance-thread-remove-1"]') as HTMLButtonElement
+    await act(async () => { remove.click(); await Promise.resolve() })
+    await settle()
+    expect(face.threadRemoves).toEqual([{ advanceId: 'A-1', token: 'doc:d1' }])
+    act(() => { face.root.unmount() })
+  })
+
+  it('shows the empty subscription copy and opens the 关联渠道 modal with the group picker', async () => {
+    const face = mountPane({
+      items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行' })],
+      detail: { item: item({ advanceId: 'A-1', stage: 'running', title: '试运行' }), entries: [] },
+      groups: [{ groupId: 'g9', groupName: '项目群' }],
+    })
+    await settle()
+    expect(face.container.textContent).toContain('尚未订阅线程')
+    const open = face.container.querySelector('[data-testid="yzj-advance-thread-add-open"]') as HTMLButtonElement
+    await act(async () => { open.click(); await Promise.resolve() })
+    await settle()
+    expect(face.groupFetches).toBe(1)
+    const modal = face.container.querySelector('[data-testid="yzj-advance-thread-modal"]')
+    expect(modal).not.toBeNull()
+    expect(modal?.textContent).toContain('关联即产一条事元')
+    const groupBtn = face.container.querySelector('[data-testid="yzj-advance-thread-group-g9"]') as HTMLButtonElement
+    expect(groupBtn.textContent).toContain('项目群')
+    await act(async () => { groupBtn.click(); await Promise.resolve() })
+    await settle()
+    expect(face.threadAdds).toEqual([{ advanceId: 'A-1', token: 'im:g9', label: '项目群' }])
+    expect(face.container.querySelector('[data-testid="yzj-advance-thread-modal"]')).toBeNull()
+    act(() => { face.root.unmount() })
+  })
+
+  it('关联渠道 modal accepts a manual token and rejects invalid grammar', async () => {
+    const face = mountPane({
+      items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行' })],
+      detail: { item: item({ advanceId: 'A-1', stage: 'running', title: '试运行' }), entries: [] },
+    })
+    await settle()
+    const open = face.container.querySelector('[data-testid="yzj-advance-thread-add-open"]') as HTMLButtonElement
+    await act(async () => { open.click(); await Promise.resolve() })
+    await settle()
+    const input = face.container.querySelector('[data-testid="yzj-advance-thread-token"]') as HTMLInputElement
+    act(() => {
+      const setInput = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+      setInput.call(input, 'doc:5f3a')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const submit = face.container.querySelector('[data-testid="yzj-advance-thread-token-submit"]') as HTMLButtonElement
+    await act(async () => { submit.click(); await Promise.resolve() })
+    await settle()
+    expect(face.threadAdds).toEqual([{ advanceId: 'A-1', token: 'doc:5f3a' }])
+    act(() => { face.root.unmount() })
+  })
+
+  it('decision-needed with 选项N rows renders option buttons; choosing lands confirm_advance with the option note', async () => {
+    const decision = entry({
+      entryId: 'E-9', changeType: '决策请求', summary: '私有化交付冲击目标日期', tone: 'red',
+      detail: '阶段 running→decision-needed\n选项1: 追加资源，目标日期不变\n选项2: 目标日期顺延两周\n影响: 检验标准需同步调整',
+    })
+    const face = mountPane({
+      items: [item({ advanceId: 'A-1', stage: 'decision-needed', title: '要决定' })],
+      detail: { item: item({ advanceId: 'A-1', stage: 'decision-needed', title: '要决定' }), entries: [decision] },
+    })
+    await settle()
+    const area = face.container.querySelector('[data-testid="yzj-advance-decision"]')
+    expect(area?.textContent).toContain('需要你决定')
+    expect(area?.textContent).toContain('影响：检验标准需同步调整')
+    const options = face.container.querySelector('[data-testid="yzj-advance-options"]')
+    expect(options).not.toBeNull()
+    expect(options?.textContent).toContain('选项1：追加资源，目标日期不变')
+    // 既有三动词仍在（渲染缺陷不得影响既有确认推进/忽略）
+    expect(face.container.querySelector('[data-testid="yzj-advance-judge-confirm_advance"]')).not.toBeNull()
+    expect(face.container.querySelector('[data-testid="yzj-advance-judge-ignore"]')).not.toBeNull()
+    const option2 = face.container.querySelector('[data-testid="yzj-advance-option-2"]') as HTMLButtonElement
+    await act(async () => { option2.click(); await Promise.resolve() })
+    await settle()
+    expect(face.judged).toEqual([{ advanceId: 'A-1', action: 'confirm_advance', note: '目标日期顺延两周' }])
+    act(() => { face.root.unmount() })
+  })
+
+  it('decision-needed without 选项N rows keeps the classic verbs only', async () => {
+    const decision = entry({ entryId: 'E-9', changeType: '决策请求', summary: '客户要求改范围', tone: 'red', detail: '客户要求改范围' })
+    const face = mountPane({
+      items: [item({ advanceId: 'A-1', stage: 'decision-needed', title: '要决定' })],
+      detail: { item: item({ advanceId: 'A-1', stage: 'decision-needed', title: '要决定' }), entries: [decision] },
+    })
+    await settle()
+    expect(face.container.querySelector('[data-testid="yzj-advance-options"]')).toBeNull()
+    const area = face.container.querySelector('[data-testid="yzj-advance-decision"]')
+    expect(area?.textContent).toContain('客户要求改范围')
+    const confirm = face.container.querySelector('[data-testid="yzj-advance-judge-confirm_advance"]') as HTMLButtonElement
+    await act(async () => { confirm.click(); await Promise.resolve() })
+    await settle()
+    expect(face.judged).toEqual([{ advanceId: 'A-1', action: 'confirm_advance' }])
     act(() => { face.root.unmount() })
   })
 })
