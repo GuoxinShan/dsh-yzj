@@ -4,9 +4,9 @@
  * max(latest group message, latest topic activity); topic wins with a
  * 「话题·标题」prefix. Click always lands on the timeline (drawer stays shut).
  */
-import { useEffect, useState } from 'react'
-import { bindAndFocusGroup } from './home-focus.ts'
+import { useEffect, useRef, useState } from 'react'
 import { formatListTime } from './im-cache.ts'
+import { YzjLoginBanner } from './login-banner.tsx'
 import css from './home.module.css'
 
 /** One topic under a bound room (from `/yzj home-nav`). */
@@ -41,6 +41,10 @@ export interface YzjConvListInjected {
   fetchGroups?: (limit?: number, page?: number) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   homeOpen?: (groupId: string, title?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   focusBoundSession?: (sessionId: string) => void
+  /** R24: switch the timeline group without opening a DSH session. */
+  onSelectGroup?: (row: ConvRow) => void
+  authStatus?: () => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
+  authLogin?: () => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -55,11 +59,14 @@ function asString(value: unknown): string {
   return typeof value === 'string' ? value : ''
 }
 
-/** Nested topic label: drop the 「群名 · 」prefix the official list still uses. */
+/** Nested topic label: drop the group-name affix (legacy 「群名 · 」prefix or current 「 · 群名」suffix). */
 export function topicNavLabel(groupName: string, title: string): string {
-  const prefix = `${groupName.trim()} · `
+  const group = groupName.trim()
+  const prefix = `${group} · `
+  const suffix = ` · ${group}`
   const body = title.trim()
-  if (prefix !== ' · ' && body.startsWith(prefix)) return body.slice(prefix.length) || '话题'
+  if (group !== '' && body.startsWith(prefix)) return body.slice(prefix.length) || '话题'
+  if (group !== '' && body.endsWith(suffix)) return body.slice(0, body.length - suffix.length) || '话题'
   return body || '话题'
 }
 
@@ -237,17 +244,52 @@ export function buildConvRows(
   return rows.sort((a, b) => b.sortKey - a.sortKey)
 }
 
+type ConvListHold = {
+  bound: ReturnType<typeof parseNavRooms>
+  recent: ReturnType<typeof parseRecentGroups>['rooms']
+  page: number
+  more: boolean
+}
+
+/** Survives `conversation.view` remounts so the left list does not flash empty. */
+let convListHold: ConvListHold | undefined
+
+/** Test helper: drop the module hold so specs start from an empty list. */
+export function clearConvListHold(): void {
+  convListHold = undefined
+}
+
+/** Last painted list, if the workbench has loaded once this page. */
+export function peekConvListHold(): ConvListHold | undefined {
+  return convListHold
+}
+
+function rememberConvList(next: ConvListHold): void {
+  convListHold = next
+}
+
 /**
- * Left column of the group-room workbench. Load-more uses the same CLI page
- * as the former floating-panel 会话 list.
+ * Left column of the group-room workbench. Further CLI pages load when the
+ * list is scrolled to the bottom (or when the first page does not fill it).
  */
 export function YzjConvList(props: YzjConvListInjected) {
-  const [bound, setBound] = useState<ReturnType<typeof parseNavRooms>>([])
-  const [recent, setRecent] = useState<ReturnType<typeof parseRecentGroups>['rooms']>([])
+  const [bound, setBound] = useState<ReturnType<typeof parseNavRooms>>(() => convListHold?.bound ?? [])
+  const [recent, setRecent] = useState<ReturnType<typeof parseRecentGroups>['rooms']>(() => convListHold?.recent ?? [])
   const [error, setError] = useState('')
-  const [page, setPage] = useState(1)
-  const [more, setMore] = useState(false)
+  const [page, setPage] = useState(() => convListHold?.page ?? 1)
+  const [more, setMore] = useState(() => convListHold?.more ?? false)
   const [loading, setLoading] = useState(false)
+  const [groupsTick, setGroupsTick] = useState(0)
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const pageRef = useRef(page)
+  const moreRef = useRef(more)
+  const loadingRef = useRef(false)
+  pageRef.current = page
+  moreRef.current = more
+
+  useEffect(() => {
+    rememberConvList({ bound, recent, page, more })
+  }, [bound, recent, page, more])
 
   useEffect(() => {
     let cancelled = false
@@ -276,7 +318,11 @@ export function YzjConvList(props: YzjConvListInjected) {
     let cancelled = false
     void props.fetchGroups(20, 1).then((result) => {
       if (cancelled) return
-      if (!result.ok) return
+      if (!result.ok) {
+        setError(result.error.message)
+        return
+      }
+      setError('')
       const parsed = parseRecentGroups(result.value)
       setRecent(parsed.rooms)
       setMore(parsed.more)
@@ -284,23 +330,26 @@ export function YzjConvList(props: YzjConvListInjected) {
     })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [groupsTick])
 
   const rows = buildConvRows(recent, bound)
 
   const openRow = (row: ConvRow): void => {
-    if (row.opened && row.sessionId !== '') {
-      props.focusBoundSession?.(row.sessionId)
+    if (props.onSelectGroup !== undefined) {
+      props.onSelectGroup(row)
       return
     }
-    void bindAndFocusGroup(props.homeOpen, props.focusBoundSession, row.groupId, row.groupName)
+    if (row.opened && row.sessionId !== '') props.focusBoundSession?.(row.sessionId)
   }
 
   const loadMore = (): void => {
-    if (loading || props.fetchGroups === undefined) return
+    const fetchGroups = props.fetchGroups
+    if (loadingRef.current || !moreRef.current || fetchGroups === undefined) return
+    loadingRef.current = true
     setLoading(true)
-    const nextPage = page + 1
-    void props.fetchGroups(20, nextPage).then((result) => {
+    const nextPage = pageRef.current + 1
+    void fetchGroups(20, nextPage).then((result) => {
+      loadingRef.current = false
       setLoading(false)
       if (!result.ok) {
         setError(result.error.message)
@@ -311,19 +360,43 @@ export function YzjConvList(props: YzjConvListInjected) {
         const seen = new Set(prev.map(room => room.groupId))
         return [...prev, ...parsed.rooms.filter(room => !seen.has(room.groupId))]
       })
-      setMore(parsed.more)
+      setMore(parsed.more === true && parsed.rooms.length > 0)
       setPage(nextPage)
     })
   }
 
+  const maybeLoadMore = (): void => {
+    const el = bodyRef.current
+    if (el === null || el.clientHeight === 0) return
+    if (el.scrollHeight - el.scrollTop - el.clientHeight <= 80) loadMore()
+  }
+
+  useEffect(() => {
+    maybeLoadMore()
+  })
+
+  const login = props.authStatus !== undefined && props.authLogin !== undefined
+    ? (
+      <YzjLoginBanner
+        authStatus={props.authStatus}
+        authLogin={props.authLogin}
+        compact
+        onLoggedIn={() => {
+          setError('')
+          setGroupsTick(tick => tick + 1)
+        }}
+      />
+    )
+    : null
+
   return (
     <nav className={css.convList} data-testid="yzj-conv-list" aria-label="会话">
-      <div className={css.convListHead}>会话</div>
-      {error !== '' && <p className={css.convListHint}>{error}</p>}
+      {login}
+      {error !== '' && login === null && <p className={css.convListHint}>{error}</p>}
       {rows.length === 0 && error === '' && (
-        <p className={css.convListHint}>还没有最近会话。点侧栏脚「云之家 → 对话」打开一个。</p>
+        <p className={css.convListHint}>还没有最近会话。点侧栏脚「云之家」打开一个。</p>
       )}
-      <div className={css.convListBody}>
+      <div className={css.convListBody} ref={bodyRef} data-testid="yzj-conv-list-body" onScroll={maybeLoadMore}>
         {rows.map((row) => {
           const active = row.groupId === props.activeGroupId || (row.sessionId !== '' && row.sessionId === props.sessionId)
           const glyph = row.headerUrl !== undefined && row.headerUrl !== ''
@@ -357,11 +430,7 @@ export function YzjConvList(props: YzjConvListInjected) {
           )
         })}
       </div>
-      {more && (
-        <button type="button" className={css.convMore} onClick={loadMore} disabled={loading} data-testid="yzj-conv-more">
-          {loading ? '加载中…' : '加载更多会话'}
-        </button>
-      )}
+      {loading && <p className={css.convListHint} data-testid="yzj-conv-more">加载中…</p>}
     </nav>
   )
 }

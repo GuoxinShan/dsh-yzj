@@ -4,8 +4,8 @@
  */
 import { act } from 'react-dom/test-utils'
 import { createRoot } from 'react-dom/client'
-import { describe, expect, it } from 'vitest'
-import { buildConvRows, YzjConvList } from '../src/client/conv-list.tsx'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { buildConvRows, clearConvListHold, YzjConvList } from '../src/client/conv-list.tsx'
 
 describe('buildConvRows', () => {
   it('prefixes 话题· when topic activity is newer than the last group message', () => {
@@ -97,11 +97,20 @@ describe('buildConvRows', () => {
 })
 
 describe('YzjConvList', () => {
-  it('lists recent conversations and load-more, click binds', async () => {
+  beforeEach(() => {
+    clearConvListHold()
+  })
+  afterEach(() => {
+    clearConvListHold()
+  })
+
+  it('lists recent conversations, pages on scroll, and click selects the group', async () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
     const root = createRoot(container)
+    const selected: string[] = []
     const opened: string[] = []
+    const pages: number[] = []
     act(() => {
       root.render(
         <YzjConvList
@@ -111,12 +120,16 @@ describe('YzjConvList', () => {
             opened.push(groupId)
             return { ok: true, value: { sessionId: `yzj-home-${groupId}` } }
           }}
-          fetchGroups={async (_limit, page) => ({
-            ok: true,
-            value: page === 2
-              ? { list: [{ groupId: 'g-b', groupName: '第二页群', lastMsg: { content: 'b' }, lastMsgSendTime: '2026-08-16 10:00:00' }], more: false }
-              : { list: [{ groupId: 'g-recent', groupName: '最近群', lastMsg: { content: 'hi' }, lastMsgSendTime: '2026-08-17 10:00:00' }], more: true },
-          })}
+          onSelectGroup={(row) => { selected.push(row.groupId) }}
+          fetchGroups={async (_limit, page) => {
+            pages.push(page ?? 1)
+            return {
+              ok: true,
+              value: page === 2
+                ? { list: [{ groupId: 'g-b', groupName: '第二页群', lastMsg: { content: 'b' }, lastMsgSendTime: '2026-08-16 10:00:00' }], more: false }
+                : { list: [{ groupId: 'g-recent', groupName: '最近群', lastMsg: { content: 'hi' }, lastMsgSendTime: '2026-08-17 10:00:00' }], more: true },
+            }
+          }}
           focusBoundSession={() => undefined}
         />,
       )
@@ -124,12 +137,95 @@ describe('YzjConvList', () => {
     await act(async () => { await Promise.resolve() })
     await act(async () => { await Promise.resolve() })
     expect(container.textContent).toContain('最近群')
-    const more = container.querySelector('[data-testid="yzj-conv-more"]') as HTMLButtonElement
-    expect(more).toBeDefined()
-    await act(async () => { more.click(); await Promise.resolve() })
+    const body = container.querySelector('[data-testid="yzj-conv-list-body"]') as HTMLDivElement
+    Object.defineProperty(body, 'scrollHeight', { configurable: true, value: 800 })
+    Object.defineProperty(body, 'clientHeight', { configurable: true, value: 200 })
+    Object.defineProperty(body, 'scrollTop', { configurable: true, writable: true, value: 0 })
+    expect(container.textContent).not.toContain('第二页群')
+    await act(async () => {
+      body.scrollTop = 760
+      body.dispatchEvent(new Event('scroll'))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
     expect(container.textContent).toContain('第二页群')
+    expect(pages).toContain(2)
     const recent = container.querySelector('[data-testid="yzj-conv-row-g-recent"]') as HTMLButtonElement
     await act(async () => { recent.click(); await Promise.resolve() })
-    expect(opened).toEqual(['g-recent'])
+    expect(selected).toEqual(['g-recent'])
+    expect(opened).toEqual([])
+  })
+
+  it('keeps recent rows on remount before fetchGroups returns (pitfall-013)', async () => {
+    const groups = {
+      ok: true as const,
+      value: {
+        list: [{ groupId: 'g-hold', groupName: '缓存群', lastMsg: { content: 'hi' }, lastMsgSendTime: '2026-08-17 10:00:00' }],
+        more: false,
+      },
+    }
+    const first = document.createElement('div')
+    document.body.appendChild(first)
+    const root = createRoot(first)
+    act(() => {
+      root.render(
+        <YzjConvList
+          sessionId="yzj-home-g-a"
+          homeNav={async () => ({ ok: true, value: { rooms: [] } })}
+          fetchGroups={async () => groups}
+        />,
+      )
+    })
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    expect(first.textContent).toContain('缓存群')
+    act(() => { root.unmount() })
+
+    let finish: ((value: typeof groups) => void) | undefined
+    const pending = new Promise<typeof groups>(resolve => { finish = resolve })
+    const second = document.createElement('div')
+    document.body.appendChild(second)
+    const root2 = createRoot(second)
+    act(() => {
+      root2.render(
+        <YzjConvList
+          sessionId="yzj-home-g-b"
+          homeNav={async () => ({ ok: true, value: { rooms: [] } })}
+          fetchGroups={async () => pending}
+        />,
+      )
+    })
+    expect(second.textContent).toContain('缓存群')
+    await act(async () => { finish?.(groups); await Promise.resolve() })
+    act(() => { root2.unmount() })
+  })
+
+  it('shows the CLI login card when auth-status reports logged-out', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const logins: string[] = []
+    act(() => {
+      root.render(
+        <YzjConvList
+          sessionId="yzj-home-g-a"
+          homeNav={async () => ({ ok: true, value: { rooms: [] } })}
+          fetchGroups={async () => ({ ok: false, error: { message: 'no app credentials configured' } })}
+          authStatus={async () => ({
+            ok: true,
+            value: { loggedIn: false, name: '', openId: '', reason: 'no app credentials configured' },
+          })}
+          authLogin={async () => {
+            logins.push('go')
+            return { ok: true, value: { started: true, alreadyRunning: false } }
+          }}
+        />,
+      )
+    })
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    expect(container.textContent).toContain('云之家未登录')
+    const open = container.querySelector('[data-testid="yzj-login-open"]') as HTMLButtonElement
+    await act(async () => { open.click(); await Promise.resolve() })
+    expect(logins).toEqual(['go'])
+    act(() => { root.unmount() })
   })
 })

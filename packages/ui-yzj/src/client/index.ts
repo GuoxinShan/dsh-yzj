@@ -1,9 +1,6 @@
 /**
- * Browser half: the sidebar-foot 云之家 dock plus the group-room workbench
- * (conversation.view) and keyed tool-result cards. All data flows through
- * the Connection RPC channel (`/yzj`) registered by this package's node
- * half; components receive every fact and verb through the standard props
- * shares. P2 retired the floating ball (`shell.overlay`).
+ * Browser half: 云之家 dock (injected under New Session) plus the
+ * center-column workbench cover (R27) and keyed tool-result cards.
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
@@ -13,15 +10,15 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { YzjToolCard, YZJ_TOOL_NAMES } from './cards.tsx'
-import { YzjComposerDock, dragInsertRequest, type YzjDropInjected } from './composer.tsx'
+import { YzjComposerDock } from './composer.tsx'
 import type { YzjHomeChromeInjected } from './home-chrome.tsx'
-import { YzjRoomComposer, selectGroupRoomComposer, type YzjRoomComposerInjected } from './room-composer.tsx'
 import { YzjSessionShell, type YzjSessionShellInjected } from './session-shell.tsx'
-import { YzjYunzhijiaDock, type YzjGroupSpaceInjected } from './group-space.tsx'
-import { YzjRoomShell, type YzjRoomShellInjected } from './room-shell.tsx'
+import { type YzjGroupSpaceInjected } from './group-space.tsx'
+import { mountWorkbench } from './workbench-mount.tsx'
+import { mountSidebarEntry } from './sidebar-entry.tsx'
+import { closeWorkbench } from './workbench-overlay.ts'
 import { applyYzjAtSource } from './input-source.ts'
 import { YzjSettingsSection } from './settings-section.tsx'
-import { createYzjStore } from './stores.ts'
 import { createYzjPanelInject } from './rpc.ts'
 import { openPanelTarget } from './panel-controller.ts'
 import { focusBoundSession } from './home-focus.ts'
@@ -86,11 +83,11 @@ function insertDraftText(actx: import('@deepseek-ai/dsh-client-runtime/client').
  */
 export function apply(ctx: ClientContext): void {
   const connection = ctx.get('connection') as ConnectionHandle | undefined
-  const store = createYzjStore()
   const rpcInject = createYzjPanelInject(connection)
   const panelInject = {
     ...rpcInject,
     focusBoundSession: (sessionId: string): void => {
+      closeWorkbench()
       const sessions = ctx.sessions as unknown as Parameters<typeof focusBoundSession>[0] | undefined
       if (sessions === undefined || typeof sessions.open !== 'function') return
       focusBoundSession(sessions, sessionId)
@@ -98,27 +95,23 @@ export function apply(ctx: ClientContext): void {
   }
   const openWriteContextFor = (record: YzjWriteRecord): void => openWriteContext(record)
 
-  // 云之家 settings section (设置 → 云之家): the management home for the
-  // robot channels and the memory vault — NOT workspace-panel tabs (user
-  // decision). `slots.inject` defers until the settings shell declares the
-  // seat, so compositions without the settings UI simply skip it.
+  // 云之家 settings section (设置 → 云之家): robot-channel management.
+  // Memory vault UI is deferred (R21 v1.6). `slots.inject` defers until the
+  // settings shell declares the seat.
   ctx.slots.inject('settings.section', () => ctx.slots.register(
     { name: 'settings.section', id: 'yzj', order: 25, label: '云之家', inject: () => panelInject },
     YzjSettingsSection,
   ))
 
-  // Drop band: registered in `conversation.input.dock` (its own row above the
-  // composer card) because `conversation.composer.dock` only renders in the
-  // non-hero phase — a brand-new session would have no drop target at all.
-  // The band itself stays hidden until a yzj drag crosses the window
-  // (see composer.tsx). P2 retired the floating ball; domains live in the
-  // workbench.
+  // Topic 回群聊 / unbound 丢进群. Drag-to-chip retired with the floating
+  // panel (R21 v1.6). `conversation.composer.dock` only renders in the
+  // non-hero phase, so this seat stays on `conversation.input.dock`.
   ctx.slots.inject('conversation.input.dock', () => ctx.slots.register(
     {
       name: 'conversation.input.dock',
-      id: 'yzj-drop-band',
+      id: 'yzj-home-chrome',
       order: 100,
-      inject: (sessionId: string): YzjDropInjected & YzjHomeChromeInjected => {
+      inject: (sessionId: string): YzjHomeChromeInjected => {
         const actx = scopeOf(ctx, sessionId)
         const draftFace = (): { draft: string; draftRev: number } => {
           const conversation = actx?.get('conversation') as
@@ -128,15 +121,6 @@ export function apply(ctx: ClientContext): void {
         }
         return {
           sessionId,
-          insertReference: (ref) => {
-            if (actx === undefined) return
-            const attempt = (): boolean => {
-              const state = draftFace()
-              const length = state.draft.length
-              return actx.bail(actx, 'slash/input-insert-reference', dragInsertRequest(ref, { start: length, end: length, draftRev: state.draftRev })) === true
-            }
-            if (!attempt()) setTimeout(() => { attempt() }, 80)
-          },
           readDraft: () => draftFace().draft,
           clearDraft: () => {
             if (actx === undefined) return
@@ -147,6 +131,7 @@ export function apply(ctx: ClientContext): void {
           homeSend: (id, content) => panelInject.homeSend?.(id, content) ?? Promise.resolve({ ok: false as const, error: { message: 'homeSend unavailable' } }),
           homeDigest: (id) => panelInject.homeDigest?.(id) ?? Promise.resolve({ ok: false as const, error: { message: 'homeDigest unavailable' } }),
           homeHandoff: (groupId, digest) => panelInject.homeHandoff?.(groupId, digest) ?? Promise.resolve({ ok: false as const, error: { message: 'homeHandoff unavailable' } }),
+          ...(panelInject.homeOpen === undefined ? {} : { homeOpen: panelInject.homeOpen }),
           fetchGroups: (limit, page) => panelInject.fetchGroups(limit, page),
           focusBoundSession: panelInject.focusBoundSession,
         }
@@ -155,77 +140,37 @@ export function apply(ctx: ClientContext): void {
     YzjComposerDock,
   ))
 
-  ctx.slots.inject('conversation.view', () => ctx.slots.register(
-    {
-      name: 'conversation.view',
-      id: 'yzj-home',
-      order: -50,
-      label: '群房间',
-      store,
-      inject: (sessionId: string): YzjRoomShellInjected => ({
-        sessionId,
-        homeFused: (id) => panelInject.homeFused?.(id) ?? Promise.resolve({ ok: false as const, error: { message: 'homeFused unavailable' } }),
-        homeBackfill: (id, opts) => panelInject.homeBackfill?.(id, opts) ?? Promise.resolve({ ok: false as const, error: { message: 'homeBackfill unavailable' } }),
-        homeTopicOpen: (input) => panelInject.homeTopicOpen?.(input) ?? Promise.resolve({ ok: false as const, error: { message: 'homeTopicOpen unavailable' } }),
-        homeTopicLens: (id) => panelInject.homeTopicLens?.(id) ?? Promise.resolve({ ok: false as const, error: { message: 'homeTopicLens unavailable' } }),
-        homeTopicAsk: (id, text) => panelInject.homeTopicAsk?.(id, text) ?? Promise.resolve({ ok: false as const, error: { message: 'homeTopicAsk unavailable' } }),
-        focusBoundSession: panelInject.focusBoundSession,
-        fetchFileData: panelInject.fetchFileData,
-        fetchContact: panelInject.fetchContact,
-        homeNav: () => panelInject.homeNav?.() ?? Promise.resolve({ ok: false as const, error: { message: 'homeNav unavailable' } }),
-        fetchGroups: (limit, page) => panelInject.fetchGroups(limit, page),
-        panel: panelInject,
-        ...(panelInject.homeOpen === undefined ? {} : { homeOpen: panelInject.homeOpen }),
-      }),
-    },
-    YzjRoomShell,
-  ))
-
-  ctx.slots.inject('conversation.composer', () => ctx.slots.register(
-    {
-      name: 'conversation.composer',
-      select: selectGroupRoomComposer,
-      inject: (sessionId: string): YzjRoomComposerInjected => ({
-        sessionId,
-        homeSend: (id, content, opts) => panelInject.homeSend?.(id, content, opts) ?? Promise.resolve({ ok: false as const, error: { message: 'homeSend unavailable' } }),
-        uploadFile: panelInject.uploadFile,
-        homeFused: (id) => panelInject.homeFused?.(id) ?? Promise.resolve({ ok: false as const, error: { message: 'homeFused unavailable' } }),
-        fetchContact: panelInject.fetchContact,
-      }),
-    },
-    YzjRoomComposer,
-  ))
-
   ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register(
     {
       name: 'conversation.session.header.actions',
       id: 'yzj-session-shell',
       order: -80,
-      label: '群房间',
+      label: '群聊',
       inject: (sessionId: string): YzjSessionShellInjected => ({
         sessionId,
         homeBinding: (id) => panelInject.homeBinding?.(id) ?? Promise.resolve({ ok: false as const, error: { message: 'homeBinding unavailable' } }),
+        homeOpen: (groupId, title) => panelInject.homeOpen?.(groupId, title) ?? Promise.resolve({ ok: false as const, error: { message: 'homeOpen unavailable' } }),
         focusBoundSession: panelInject.focusBoundSession,
       }),
     },
     YzjSessionShell,
   ))
 
-  ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register(
-    {
-      name: 'sidebar.footer.action',
-      id: 'yzj-group-space',
-      order: -80,
-      inject: (): YzjGroupSpaceInjected => ({
-        homeNav: () => panelInject.homeNav?.() ?? Promise.resolve({ ok: false as const, error: { message: 'homeNav unavailable' } }),
-        focusBoundSession: panelInject.focusBoundSession,
-        fetchGroups: (limit, page) => panelInject.fetchGroups(limit, page),
-        robotStatus: () => panelInject.robotStatus(),
-        ...(panelInject.homeOpen === undefined ? {} : { homeOpen: panelInject.homeOpen }),
-      }),
-    },
-    YzjYunzhijiaDock,
-  ))
+  const dockInject: YzjGroupSpaceInjected = {
+    homeNav: () => panelInject.homeNav?.() ?? Promise.resolve({ ok: false as const, error: { message: 'homeNav unavailable' } }),
+    focusBoundSession: panelInject.focusBoundSession,
+    fetchGroups: (limit, page) => panelInject.fetchGroups(limit, page),
+    robotStatus: () => panelInject.robotStatus(),
+    ...(panelInject.homeOpen === undefined ? {} : { homeOpen: panelInject.homeOpen }),
+  }
+  ctx.effect(() => {
+    const disposeView = mountWorkbench(panelInject)
+    const disposeEntry = mountSidebarEntry(dockInject)
+    return () => {
+      disposeView()
+      disposeEntry()
+    }
+  }, 'ui-yzj: workbench overlay + sidebar entry')
 
   applyYzjAtSource(ctx, panelInject)
 
@@ -304,6 +249,9 @@ function openWriteContext(record: YzjWriteRecord): void {
   } else if (record.domain === 'todo') {
     // Todo writes: open the panel on the 待办 tab (live library state).
     openPanelTarget({ kind: 'todo' })
+  } else if (record.domain === 'advance') {
+    // Advance writes: open the workbench on the 推进 board.
+    openPanelTarget({ kind: 'advance' })
   } else {
     // Calendar writes: open the panel on the calendar tab as-is.
     openPanelTarget({ kind: 'event', event: { id: '', startDate: 0, title: '' } })

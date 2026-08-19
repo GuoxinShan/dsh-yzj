@@ -71,6 +71,13 @@ export interface TopicEnsureInput {
   readonly originText?: string
   readonly originTime?: number
   readonly fromSessionId?: string
+  /**
+   * When true, an existing root is returned as-is (no `lastActivity` bump).
+   * Used by H9 migrate-on-open so merely focusing a room does not steal L1.
+   */
+  readonly quiet?: boolean
+  /** Create-time activity clock; default `Date.now()`. H9 passes host ③④ time. */
+  readonly lastActivity?: number
 }
 
 const topicSchema = z.object({
@@ -234,6 +241,9 @@ export class TopicAnchorStore {
     if (input.rootMsgId !== undefined && input.rootMsgId !== '') {
       const existing = this.getByAnchor(input.yzjConversationId, input.rootMsgId)
       if (existing !== undefined) {
+        if (input.quiet === true) {
+          return { sessionId: existing.dshSessionId, created: false, record: existing }
+        }
         const touched: TopicRecord = { ...existing, lastActivity: Date.now() }
         await this.putTopic(touched)
         return { sessionId: touched.dshSessionId, created: false, record: touched }
@@ -252,7 +262,7 @@ export class TopicAnchorStore {
       title: defaultTitle(input),
       source: input.source,
       createdAt: now,
-      lastActivity: now,
+      lastActivity: input.lastActivity ?? now,
       status: 'running',
       ...(input.rootMsgId === undefined || input.rootMsgId === '' ? {} : { rootMsgId: input.rootMsgId }),
       ...(input.originWho === undefined ? {} : { originWho: input.originWho }),

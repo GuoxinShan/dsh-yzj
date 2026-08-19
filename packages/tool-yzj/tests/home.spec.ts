@@ -7,7 +7,9 @@ import {
   HomeBindingStore, conversationKindOf, homeSessionId,
   type HomeBindingRecord,
 } from '../src/home.ts'
-import { sessionIdFromAssemble } from '../src/index.ts'
+import {
+  applySummonOncePreStep, sessionHasSummonWindow, sessionIdFromAssemble, summonWindowText,
+} from '../src/index.ts'
 import { latestUserSourceKind } from '../src/bound-log.ts'
 
 function memoryFacility(): {
@@ -124,5 +126,73 @@ describe('sessionIdFromAssemble (T5 systemPrompt.context)', () => {
     expect(latestUserSourceKind(gui)).toBe('user')
     expect(latestUserSourceKind(plugin)).toBe('plugin')
     expect(latestUserSourceKind([])).toBe('none')
+  })
+
+  it('does not put the window in the runtime snapshot', () => {
+    const home = {
+      getBySession: () => undefined,
+      getTopicBySession: () => ({ yzjConversationId: 'g-a' }),
+      formatSummonWindow: () => '［本群最近消息］\ngroupId: g-a',
+    }
+    const agent = { session: { id: 'yzj-topic-g-a-m1', events: [] as { type: string; data: unknown }[] } }
+    expect(summonWindowText(home, { agent, scope: agent })).toBe('')
+  })
+
+  it('detects an already-planted window inject or old snapshot section', () => {
+    expect(sessionHasSummonWindow([
+      { type: 'user/message', data: { source: { kind: 'plugin', plugin: 'ui-yzj' }, content: '［本群最近消息（仅本轮上下文，非完整群档）］' } },
+    ])).toBe(true)
+    expect(sessionHasSummonWindow([
+      {
+        type: 'user/message',
+        data: {
+          source: {
+            kind: 'plugin',
+            plugin: '@deepseek-ai/dsh-system-prompt',
+            form: 'snapshot',
+            sections: [{ name: 'yzj-bound-window', text: 'x' }],
+          },
+        },
+      },
+    ])).toBe(true)
+    expect(sessionHasSummonWindow([
+      { type: 'user/message', data: { source: { kind: 'user' }, content: '明天评审什么' } },
+    ])).toBe(false)
+  })
+
+  it('pre-step plants the window once ahead of the user turn', async () => {
+    const home = {
+      getBySession: () => undefined,
+      getTopicBySession: () => ({ yzjConversationId: 'g-a' }),
+      formatSummonWindow: () => '［本群最近消息］\ngroupId: g-a',
+    }
+    const listeners: ((payload: unknown, next: () => Promise<{ kind: string; messages: unknown[] }>) => Promise<unknown>)[] = []
+    applySummonOncePreStep({
+      on: (_name: string, listener: (...args: never[]) => unknown) => {
+        listeners.push(listener as never)
+      },
+    }, home)
+    const user = { role: 'user', content: [{ type: 'text', text: '明天评审什么' }], source: { kind: 'user' } }
+    const decision = await listeners[0]!({
+      agent: { session: { id: 'yzj-topic-g-a-m1', events: [] } },
+      messages: [user],
+    }, async () => ({ kind: 'enter', messages: [user] })) as { kind: string; messages: { source?: { plugin?: string }; content?: { text?: string }[] }[] }
+    expect(decision.kind).toBe('enter')
+    expect(decision.messages).toHaveLength(2)
+    expect(decision.messages[0]?.source?.plugin).toBe('yzj-summon-window')
+    expect(decision.messages[0]?.content?.[0]?.text).toContain('groupId: g-a')
+    const again = await listeners[0]!({
+      agent: {
+        session: {
+          id: 'yzj-topic-g-a-m1',
+          events: [{
+            type: 'user/message',
+            data: { source: { kind: 'plugin', plugin: 'yzj-summon-window' }, content: '［本群最近消息' },
+          }],
+        },
+      },
+      messages: [user],
+    }, async () => ({ kind: 'enter', messages: [user] })) as { messages: unknown[] }
+    expect(again.messages).toHaveLength(1)
   })
 })

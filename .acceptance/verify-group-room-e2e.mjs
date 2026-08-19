@@ -49,8 +49,14 @@ const dock = page.getByTestId('yzj-group-space')
 await dock.waitFor({ state: 'visible', timeout: 25000 })
 ok('sidebar-foot 云之家 dock is visible (no floating ball)', await dock.isVisible())
 ok('floating ball is gone', await page.getByLabel('云之家悬浮窗').count().then(n => n === 0).catch(() => true))
-await page.getByTestId('yzj-dock-chat').click()
+ok('sidebar-foot has one 云之家 entry, not four domain buttons', await page.getByTestId('yzj-dock-home').isVisible())
+ok('sidebar-foot has no 对话 dock button', await page.getByTestId('yzj-dock-chat').count().then(n => n === 0))
+ok('sidebar-foot has no 待办 dock button', await page.getByTestId('yzj-dock-todo').count().then(n => n === 0))
+await page.getByTestId('yzj-dock-home').click()
 await page.waitForTimeout(2500)
+const tabs = page.getByTestId('yzj-workbench-tabs')
+await tabs.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {})
+ok('workbench top tabs are visible', await tabs.isVisible().catch(() => false))
 
 const convList = page.getByTestId('yzj-conv-list')
 await convList.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {})
@@ -82,7 +88,7 @@ await roomComposer.waitFor({ state: 'visible', timeout: 20000 }).catch(() => {})
 const chromeText = `${await roomComposer.innerText().catch(() => '')}\n${await roomPill.innerText().catch(() => '')}`
 ok('group room chrome is 发进群, not 丢进群', chromeText.includes('发进群') && !chromeText.includes('丢进群'), chromeText.slice(0, 80))
 ok('dock 发进群 chrome is gone', await page.getByTestId('yzj-home-chrome').count().then(n => n === 0).catch(() => true))
-const tablistVisible = await page.getByRole('tablist').filter({ has: page.getByRole('tab', { name: '群房间' }) }).isVisible().catch(() => false)
+const tablistVisible = await page.getByRole('tablist').filter({ has: page.getByRole('tab', { name: '群聊' }) }).isVisible().catch(() => false)
 ok('tab ring is hidden on the group room', !tablistVisible)
 const convBox = await convList.boundingBox().catch(() => null)
 const sendBox = await page.getByTestId('yzj-send-to-group').boundingBox().catch(() => null)
@@ -96,11 +102,11 @@ ok(
   convBox !== null && sendBox !== null && sendBox.x >= convBox.x + convBox.width - 12,
   convBox && sendBox ? `listRight=${Math.round(convBox.x + convBox.width)} sendX=${Math.round(sendBox.x)}` : 'missing box',
 )
-await page.getByTestId('yzj-dock-todo').click()
+await page.getByTestId('yzj-workbench-tab-todo').click()
 await page.waitForTimeout(800)
 const hostGone = await page.getByTestId('yzj-room-composer-host').count().then(n => n === 0).catch(() => true)
 ok('timeline host unmounts on 待办', hostGone)
-await page.getByTestId('yzj-dock-chat').click()
+await page.getByTestId('yzj-workbench-tab-chat').click()
 await stream.waitFor({ state: 'visible', timeout: 8000 }).catch(() => {})
 await page.waitForTimeout(600)
 const hostBack = page.getByTestId('yzj-room-composer-host')
@@ -119,7 +125,7 @@ const streamText = await stream.innerText().catch(() => '')
 ok('timeline never labels senders 群消息 (H13)', !streamText.includes('群消息'), streamText.slice(0, 120))
 await page.screenshot({ path: shot('1-room.png') })
 
-const roomTab = page.getByRole('tab', { name: '群房间' })
+const roomTab = page.getByRole('tab', { name: '群聊' })
 if (await roomTab.isVisible().catch(() => false)) await roomTab.click().catch(() => {})
 await stream.waitFor({ state: 'visible', timeout: 8000 }).catch(() => {})
 await page.waitForTimeout(500)
@@ -197,7 +203,7 @@ if (draftVisible && sendVisible) {
       await back.first().click()
       await page.waitForTimeout(800)
     }
-    const roomTabAgain = page.getByRole('tab', { name: '群房间' })
+    const roomTabAgain = page.getByRole('tab', { name: '群聊' })
     if (await roomTabAgain.count() > 0) await roomTabAgain.first().click().catch(() => {})
     await stream.waitFor({ state: 'visible', timeout: 8000 }).catch(() => {})
     let linked = false
@@ -216,13 +222,13 @@ if (draftVisible && sendVisible) {
 
 await page.keyboard.press('Escape').catch(() => {})
 await page.waitForTimeout(400)
-const jumpRoom = page.getByRole('button', { name: '回群房间' })
+const jumpRoom = page.getByTestId('yzj-topic-anchor')
 if (await jumpRoom.count() > 0) {
   await jumpRoom.first().click()
   await page.waitForTimeout(800)
 }
 const roomChrome = await page.getByTestId('yzj-room-composer').innerText().catch(() => '')
-ok('回群房间 restores 发进群 chrome', roomChrome.includes('发进群') && !roomChrome.includes('问助手'), roomChrome.slice(0, 80))
+ok('锚点卡回群聊 restores 发进群 chrome', roomChrome.includes('发进群') && !roomChrome.includes('问助手'), roomChrome.slice(0, 80))
 await page.screenshot({ path: shot('4-room-back.png') })
 
 const searchBtn = page.getByRole('button', { name: '搜索会话' })

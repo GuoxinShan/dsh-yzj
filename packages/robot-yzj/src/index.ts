@@ -40,6 +40,29 @@ export const name = 'robot-yzj'
 /** Required services: the agent registry (robot sessions) and the tools registry (robot_* controls). The CLI bridge is optional (allowFrom resolution only). */
 export const inject = ['agents', 'tools']
 
+/** Mount the host default preset (standard) so inbound topics get bash/files (R28). */
+async function composeDefaultPreset(ctx: Context): Promise<{
+  agentPreset?: string
+  setup?: (agentCtx: Context) => Promise<void>
+}> {
+  const presets = ctx.get('agentPresets') as {
+    defaultId?: string
+    resolve(id?: string): Promise<{ id: string }>
+    mount(agentCtx: Context, id: string): Promise<unknown>
+  } | undefined
+  if (presets === undefined) return {}
+  try {
+    const id = (await presets.resolve(presets.defaultId)).id
+    if (id === '') return {}
+    return {
+      agentPreset: id,
+      setup: async (agentCtx) => { await presets.mount(agentCtx, id) },
+    }
+  } catch {
+    return {}
+  }
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     yzjRobot: YzjRobot
@@ -576,6 +599,7 @@ export class YzjRobot extends Service {
       // Plugin-wide default model (model-yzj) as the chain's last link:
       // consulted live so editing yzj-model.json applies without restart.
       fallbackRoute: () => this.ctx.get('yzjModels')?.get(),
+      composePreset: () => composeDefaultPreset(this.ctx),
       resolveOverride: key => this.overrides.get(key),
       confirm: this.confirm,
       push: this.hub,

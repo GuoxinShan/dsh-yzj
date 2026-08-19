@@ -27,7 +27,7 @@ packages/       @dsh-yzj/* workspace 包（均 private、ESM；开发态，发�
   bridge/         ctx.yzjBridge —— 有界子进程通道：argv 数组直启 yzj-cli
   tool-yzj/       模型面工具族 + 写操作确认 guard（风险表）+ ctx.yzjTodo 服务
   ui-yzj/         dsh.client 双面包：node half 为 /yzj RPC 通道 + write-gate，
-                  browser half 为 toolview 富卡片 + 云之家工作台（入口块 + 三栏；悬浮球已退役）
+                  browser half 为 toolview 富卡片 + 云之家工作台（侧栏单入口 + 顶栏页签 + 三栏；悬浮球已退役）
   robot-yzj/      机器人通道（入站 WS + 出站 webhook，见 docs/spec/robot-channel-plan.md）
   memory-yzj/     记忆库（vault + dream 固化 + memory_* 工具）
   model-yzj/      插件级默认模型路由
@@ -81,11 +81,13 @@ node .acceptance/verify-real-data.mjs   # 需运行中的 GUI + 已登录 yzj-cl
 - **兄弟 checkout 是唯一事实源**：所有 `@deepseek-ai/*` 依赖以 `link:` 相对路径指向 `../deepseek-harness`；vitest 经 alias 把 client 包解析到 harness 的 TS 源。harness 接口变化在本仓库直接体现为类型/测试失败，就地适配，不复制其代码。
 - **两面包界限**：host 面（bridge、tool-yzj、ui-yzj node half）产出普通 ESM `lib/index.js`；browser half 经 `tsdown.shared.ts` 产出 closure-factory bundle（`window.__ModuleLoader__.load` 注入），其纯度门禁禁止跨插件值导入——协作只走 cordis 服务与 `/yzj` RPC。
 - **注册即效应**：一切贡献经 `ctx.effect()` / `ctx.on()` 或返回 disposer 的官方 API；bundle 卸载 / profile 移除后必须无残留（harness 全局约定，此处同样成立）。
-- **写路径两分**（产品法已拍板，见 [docs/spec/dsh-home-session.md](docs/spec/dsh-home-session.md) §8）：确认卡只门控 **agent 发起的写**——`tools/pre-execute` → `guard.ts` 的 `WRITE_SPECS` 风险表（删除类 strong，其余 standard）→ host 侧 write-gate 应答 `approval/request`；**用户从 DSH 发出**（及现行面板 composer 过渡态、待办勾选、`/yzj` `home-send` / `im-send` / `file-upload` 等直写）是用户本人意志，不经确认卡。绑定家园上 agent 调用 `robot_notify` / `robot_continue` 也进 `WRITE_SPECS`（D9；v2.0 起 `whenSession` 须同时覆盖 `yzj-home-*` 与 `yzj-topic-*`，见 group-room-topics R10）。会话模型以 [docs/spec/group-room-topics.md](docs/spec/group-room-topics.md) 为准：1 群 = 1 群房间 + N 话题会话，每个视图只有一个发送动词。新增写工具必须同提交进 `WRITE_SPECS`。
+- **写路径两分**（产品法已拍板，见 [docs/spec/dsh-home-session.md](docs/spec/dsh-home-session.md) §8）：确认卡只门控 **agent 发起的写**——`tools/pre-execute` → `guard.ts` 的 `WRITE_SPECS` 风险表（删除类 strong，其余 standard）→ host 侧 write-gate 应答 `approval/request`；**用户从 DSH 发出**（及现行面板 composer 过渡态、待办勾选、`/yzj` `home-send` / `im-send` / `file-upload` 等直写）是用户本人意志，不经确认卡。绑定家园上 agent 调用 `robot_notify` / `robot_continue` 也进 `WRITE_SPECS`（D9；v2.0 起 `whenSession` 须同时覆盖 `yzj-home-*` 与 `yzj-topic-*`，见 group-room-topics R10）。**话题 job-done 投递（R29）**也是产品契约面、无确认卡：轮次 idle 后 host 以 CLI 本人身份把总结回帖到锚点并带上本轮产物，不是 agent 另起 `yzj_im_message_send`。会话模型以 [docs/spec/group-room-topics.md](docs/spec/group-room-topics.md) 为准：1 群 = 1 群房间 + N 话题会话，每个视图只有一个发送动词。新增写工具必须同提交进 `WRITE_SPECS`。
 - **禁止绕过桥接**：仓库内禁止以 bash 直调 `yzj-cli` 执行写命令；代码里唯一的子进程路径是 bridge 的 argv 数组 spawn（无 shell 插值）。`bundle/skills/yzj-cli/SKILL.md` 的红线（结构化工具优先、禁止编造 ID、写前先查）与之一致，改动工具面时同步维护。
 - **有界输出**：每个工具产出有界 digest 并把裁剪后的结构化载荷经 `output.presentationMeta` 投影给 UI；上限（timeoutMs / maxRenderChars / maxMetaChars）是 schema 校验的 Config 字段，不是常量。
 - **RPC 通道只过无损 JSON**：`/yzj` 通道两向都不携带 harness 活对象；先取所需叶子字段，再构造自有数据对象，绝不整体序列化 Context/Session/Service。
 - **新工具清单**：域模块实现 → guard 风险表（若写）→ `cards.tsx` keyed 卡片视图 → 包 README 工具清单同步 → 测试。
+- **工具 execute 契约**（harness `docs/cookbook/adding-a-tool.md`）：`execute(args, exec)` 返回一个规范 JSON 值；抛错或非法返回 → `isError`；领域结果留在 value 里（含非零 CLI 退出）；尊重 `exec.signal`；注册后不要改 definition。策略走 `tools/pre-execute`（本仓即 `WRITE_SPECS`），不要写进 `execute`。复用 `yzjToolOutput`，schema 保持字面量结构（pitfall-009）。UI 卡是 keyed `tool.call.toolview`，不用 cookbook 的 `presentCall` / `presentResult`，也不用 `ConversationNodeDefinition`。
+- **设置座不要抄 cookbook**：`adding-a-settings-card.md` 的 `settings.plugin.item` + `installSettingsSection` 是 Plugins 页。本仓是 `settings.section`（设置 → 云之家，id `yzj`），持久化走 `/yzj` RPC。
 - **todo 为 demo 阶段**：后端是多维表格「待办任务库」（首用自动开通）；工具核、`ctx.yzjTodo` 服务与面板任务库切换器共享 active-library holder，agent 写入跟随当前激活库。迁移方案见 [docs/migration/todo-backend-migration.md](docs/migration/todo-backend-migration.md)。
 - **测试自跳过而非失败**：依赖真实登录 / CLI 的测试在缺失时 skip（`tools.spec.ts` 范式）；平台差异在测试内显式分支（bridge 的 fake CLI 在 Windows 经 `node` 路由）。
 - **踩坑记录制度**：[docs/pitfalls/](docs/pitfalls/README.md) 是实现级坑库，agent 必须维护它：(a) **动手前查索引**，命中相关条目先读再写代码；(b) **解决新坑必须回写**——排查中出现「现象与文档/预期不符」「超过一次构建-验证循环才定位」「jsdom/单测绿但真实环境异常」任一情形，修复后**同一提交**内新增 `pitfall-NNN-<english-slug>.md`（复现条件/根因/解法/回归覆盖四段）并更新 README 索引表；(c) 触发既有坑的解法变更时更新原条目而非另开新条。jsdom 测试通过不等于浏览器没问题（pitfall-001 的核心教训）。

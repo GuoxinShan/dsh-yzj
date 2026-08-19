@@ -10,7 +10,7 @@
  * @module @dsh-yzj/bridge
  */
 
-import { spawn, execFile } from 'node:child_process'
+import { spawn, execFile, type ChildProcess } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { promisify } from 'node:util'
@@ -18,6 +18,18 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 
 const execFileAsync = promisify(execFile)
+
+/** Handle returned by {@link YzjBridge.start}: the child is already running. */
+export interface YzjStartHandle {
+  /** True when the same argv is still running from a previous `start`. */
+  alreadyRunning: boolean
+}
+
+/** One background child tracked by {@link YzjBridge.start}. */
+interface StartedChild {
+  child: ChildProcess
+  timer: ReturnType<typeof setTimeout>
+}
 
 /** Result of one `yzj-cli` invocation. */
 export interface YzjRunResult {
@@ -116,6 +128,8 @@ export interface Config {
 
 const DEFAULT_BINARY = 'yzj-cli'
 const DEFAULT_TIMEOUT_MS = 60_000
+/** Background `start()` budget — long enough for interactive `auth login`. */
+const DEFAULT_START_TIMEOUT_MS = 600_000
 const DEFAULT_MAX_OUTPUT_CHARS = 200_000
 /** Empty profile string means "no --profile flag" (the CLI default profile). */
 const NO_PROFILE = ''
@@ -140,6 +154,8 @@ export default class YzjBridge extends Service {
   static Config: z<Config> = ConfigSchema
 
   private readonly config: ResolvedConfig
+  /** In-flight `start()` children, keyed by the caller argv (joined). */
+  private readonly started = new Map<string, StartedChild>()
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'yzjBridge')
@@ -149,6 +165,7 @@ export default class YzjBridge extends Service {
       timeoutMs: config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
       maxOutputChars: config.maxOutputChars ?? DEFAULT_MAX_OUTPUT_CHARS,
     }
+    ctx.effect(() => () => { this.stopAll() })
   }
 
   /**
@@ -254,6 +271,67 @@ export default class YzjBridge extends Service {
         })
       })
     })
+  }
+
+  /**
+   * Spawn one `yzj-cli` command without awaiting exit. Used for interactive
+   * `auth login`: the CLI opens the system browser and must stay alive until
+   * the user finishes (or the timeout fires). A second `start` of the same
+   * argv while the child is still running is a no-op. Plugin unload kills
+   * every background child.
+   * @param command - argv after the executable and any configured `--profile`.
+   * @param options.timeoutMs - kill budget; defaults to 10 minutes.
+   */
+  async start(
+    command: readonly string[],
+    options?: { timeoutMs?: number },
+  ): Promise<YzjStartHandle> {
+    const key = command.join('\0')
+    const existing = this.started.get(key)
+    if (existing !== undefined && existing.child.exitCode === null && !existing.child.killed) {
+      return { alreadyRunning: true }
+    }
+    this.forget(key)
+    const timeoutMs = options?.timeoutMs ?? DEFAULT_START_TIMEOUT_MS
+    const [executable, prefix] = await resolveBinary(this.config.binary)
+    const argv = [
+      ...prefix,
+      ...(this.config.profile === undefined ? [] : ['--profile', this.config.profile]),
+      ...command,
+    ]
+    return new Promise<YzjStartHandle>((resolve, reject) => {
+      const child = spawn(executable, argv, { stdio: 'ignore' })
+      const onError = (error: Error): void => {
+        this.forget(key)
+        reject(new YzjSpawnError(`failed to spawn yzj-cli binary "${this.config.binary}": ${String(error)}`))
+      }
+      child.once('error', onError)
+      child.once('spawn', () => {
+        child.off('error', onError)
+        const timer = setTimeout(() => { child.kill('SIGKILL') }, timeoutMs)
+        this.started.set(key, { child, timer })
+        child.on('close', () => { this.forget(key) })
+        resolve({ alreadyRunning: false })
+      })
+    })
+  }
+
+  /** Kill every background `start()` child. Called on plugin unload. */
+  stopAll(): void {
+    for (const key of [...this.started.keys()]) {
+      const entry = this.started.get(key)
+      if (entry === undefined) continue
+      if (entry.child.exitCode === null && !entry.child.killed) entry.child.kill('SIGKILL')
+      this.forget(key)
+    }
+  }
+
+  /** Drop one tracked child without killing it (exit / spawn-error path). */
+  private forget(key: string): void {
+    const entry = this.started.get(key)
+    if (entry === undefined) return
+    clearTimeout(entry.timer)
+    this.started.delete(key)
   }
 
   /**

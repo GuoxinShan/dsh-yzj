@@ -7,6 +7,7 @@
 import { useEffect, useState } from 'react'
 import css from './home.module.css'
 import { topicNavLabel } from './conv-list.tsx'
+import type { ArtifactBadge } from '../artifact-badge.ts'
 
 /** Matches tool-yzj `LEGACY_HOST_ROOT` — not imported (browser-half purity). */
 const LEGACY_HOST_ROOT = 'legacy-host'
@@ -29,6 +30,7 @@ export interface TopicLensBubble {
   readonly role: 'user' | 'assistant'
   readonly text: string
   readonly time: number
+  readonly artifacts?: readonly ArtifactBadge[]
 }
 
 /** Drawer mode: list of this group's topics, or one topic as an IM lens. */
@@ -53,6 +55,21 @@ function clock(ms: number | undefined): string {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
+function asArtifacts(value: unknown): ArtifactBadge[] {
+  if (!Array.isArray(value)) return []
+  const out: ArtifactBadge[] = []
+  for (const row of value) {
+    if (typeof row !== 'object' || row === null) continue
+    const rec = row as Record<string, unknown>
+    if (typeof rec.name !== 'string' || rec.name === '') continue
+    out.push({
+      name: rec.name,
+      type: typeof rec.type === 'string' && rec.type !== '' ? rec.type : 'FILE',
+    })
+  }
+  return out
+}
+
 function asBubbles(value: unknown): TopicLensBubble[] {
   if (typeof value !== 'object' || value === null) return []
   const raw = (value as { bubbles?: unknown }).bubbles
@@ -61,12 +78,16 @@ function asBubbles(value: unknown): TopicLensBubble[] {
   for (const row of raw) {
     if (typeof row !== 'object' || row === null) continue
     const rec = row as Record<string, unknown>
-    if ((rec.role !== 'user' && rec.role !== 'assistant') || typeof rec.text !== 'string' || rec.text === '') continue
+    if (rec.role !== 'user' && rec.role !== 'assistant') continue
+    const artifacts = asArtifacts(rec.artifacts)
+    const text = typeof rec.text === 'string' ? rec.text : ''
+    if (text === '' && artifacts.length === 0) continue
     out.push({
       id: typeof rec.id === 'string' ? rec.id : `b${out.length}`,
       role: rec.role,
-      text: rec.text,
+      text,
       time: typeof rec.time === 'number' ? rec.time : 0,
+      ...(artifacts.length === 0 ? {} : { artifacts }),
     })
   }
   return out
@@ -171,8 +192,25 @@ function YzjTopicLens(props: {
             className={`${css.topicLensRow} ${bubble.role === 'user' ? css.topicLensRowUser : css.topicLensRowAssistant}`}
             data-testid={`yzj-lens-bubble-${bubble.role}`}
           >
-            <div className={`${css.topicLensBubble} ${bubble.role === 'user' ? css.topicLensBubbleUser : css.topicLensBubbleAssistant}`}>
-              {bubble.text}
+            <div className={css.topicLensStack}>
+              {bubble.text !== '' && (
+                <div className={`${css.topicLensBubble} ${bubble.role === 'user' ? css.topicLensBubbleUser : css.topicLensBubbleAssistant}`}>
+                  {bubble.text}
+                </div>
+              )}
+              {bubble.artifacts?.map(card => (
+                <span
+                  key={card.name}
+                  className={css.artifactCard}
+                  data-testid={`yzj-lens-artifact-${card.name}`}
+                >
+                  <span className={css.artifactType}>{card.type}</span>
+                  <span className={css.artifactMeta}>
+                    <span className={css.artifactName}>{card.name}</span>
+                    <span className={css.artifactNote}>本话题产物</span>
+                  </span>
+                </span>
+              ))}
             </div>
           </div>
         ))}
@@ -232,7 +270,7 @@ export function YzjTopicDrawer(props: YzjTopicDrawerProps) {
         <button type="button" className={css.topicDrawerNav} onClick={props.onClose} aria-label="关闭话题抽屉">×</button>
       </div>
       <div className={css.topicDrawerBody}>
-        {ordered.length === 0 && <p className={css.topicDrawerHint}>还没有话题。把一条群消息「交给助手」就会出现在这里。</p>}
+        {ordered.length === 0 && <p className={css.topicDrawerHint}>还没有话题</p>}
         {ordered.map((topic) => (
           <button
             key={topic.dshSessionId}

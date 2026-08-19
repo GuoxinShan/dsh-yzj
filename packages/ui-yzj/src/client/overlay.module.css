@@ -1,0 +1,31 @@
+/* Center-column cover + sidebar entry (R27). Attribute-scoped; --dsw-* tokens. */
+
+[data-pane='conversation'],
+[class*='centerCol'] {
+  position: relative;
+}
+
+[data-dsh-yzj-view] {
+  position: absolute;
+  inset: 0;
+  display: none;
+  z-index: 60;
+  min-height: 0;
+  background: var(--dsw-alias-bg-base);
+}
+
+html[data-dsh-yzj-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-active]) [data-dsh-yzj-view] {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+html[data-dsh-yzj-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-active]) [data-pane='conversation'] > :not([data-dsh-yzj-view]),
+html[data-dsh-yzj-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-active]) [class*='centerCol'] > :not([data-dsh-yzj-view]) {
+  display: none !important;
+}
+
+.entryHost {
+  width: 100%;
+  flex: none;
+}

@@ -14,6 +14,10 @@ Returns `YzjRunResult`: `ok`, `exitCode` (`null` when killed by the timeout), `s
 
 Rejects with `YzjSpawnError` only when the configured binary cannot be launched.
 
+### `start(command, options?)`
+
+Spawn a command without awaiting exit. Used for interactive `auth login` (the CLI opens the system browser and must stay alive). A second `start` of the same argv while the child is still running is a no-op (`alreadyRunning: true`). Default kill budget is 10 minutes. Plugin unload calls `stopAll()`.
+
 ### `check(timeoutMs?)`
 
 Runs `contact user get` and returns whether the binary is reachable and authenticated; used by tests and by consumers deciding whether to advertise tools.

@@ -3,15 +3,15 @@
  * backend (待办任务库). Buckets by urgency (逾期 / 今天 / 进行中 / 待办 /
  * 已完成), #tag chips aggregate anything (a tag can be a project, a group,
  * a theme), quick-create parses `#tag` + dates straight from the input, and
- * every row is a drag source into the composer. Completing/reopening and
- * quick-creating are user-direct writes (no confirmation card — the panel
- * acts as the user's own hand); agent writes still go through the tool
- * confirmation flow. Data arrives through the /yzj RPC face only.
+ * Completing/reopening and quick-creating are user-direct writes (no
+ * confirmation card — the panel acts as the user's own hand); agent writes
+ * still go through the tool confirmation flow. Data arrives through the
+ * /yzj RPC face only.
  */
-import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { BakedActions } from '@deepseek-ai/dsh-client-ui-slots'
 import type { YzjPanelActions, YzjPanelState } from './stores.ts'
-import { YZJ_DRAG_MIME, type YzjDragRef } from './panel.tsx'
+
 import css from './todo-pane.module.css'
 
 type UnknownRecord = Record<string, unknown>
@@ -425,19 +425,6 @@ export function TodoPane(props: TodoPaneProps) {
     })
   }
 
-  const startDrag = (event: DragEvent, todo: UnknownRecord): void => {
-    const ref: YzjDragRef = {
-      kind: 'todo',
-      id: asString(todo.todoId),
-      title: asString(todo.title),
-      sub: `${asString(todo.status)}${asString(todo.ddl) === '' ? '' : ` · ${asString(todo.ddl)}`}`,
-      ...(props.libraryLink === '' ? {} : { url: props.libraryLink }),
-    }
-    event.dataTransfer.effectAllowed = 'copy'
-    event.dataTransfer.setData(YZJ_DRAG_MIME, JSON.stringify(ref))
-    event.dataTransfer.setData('text/plain', `【云之家·待办】${ref.title}${ref.sub === undefined ? '' : `（${ref.sub}）`}`)
-  }
-
   // --- Empty state: one-click provisioning (never flash while loading) ---
   if (!props.ready && !props.loading) {
     return (
@@ -446,7 +433,7 @@ export function TodoPane(props: TodoPaneProps) {
           <div className={css.heroIcon}>✓</div>
           <div className={css.heroTitle}>开通待办任务库</div>
           <div className={css.heroText}>
-            待办以一张多维表格作为演示载体（自动建在你的个人知识库），支持 #标签 聚合、逾期提醒与拖入对话；
+            待办以一张多维表格作为演示载体（自动建在你的个人知识库），支持 #标签 聚合与逾期提醒；
             后续将无缝切换到原生待办后端，标签与任务数据一并迁移。
           </div>
           <button type="button" className={css.heroButton} onClick={onEnsure} disabled={ensuring}>
@@ -617,9 +604,6 @@ export function TodoPane(props: TodoPaneProps) {
                 <div key={todoId}>
                   <div
                     className={status === 'done' ? `${css.row} ${css.rowDone}` : overdue ? `${css.row} ${css.rowOverdue}` : css.row}
-                    draggable
-                    onDragStart={(event) => { startDrag(event, todo) }}
-                    title="拖入对话，让 agent 处理这条待办"
                   >
                     <StatusDot
                       status={status}
@@ -665,7 +649,7 @@ export function TodoPane(props: TodoPaneProps) {
                           {asString(todo.log).split('\n').slice(-4).map((line, index) => <div key={index}>{line}</div>)}
                         </div>
                       )}
-                      <div className={css.detailHint}>拖入对话可让 agent 跟进；改期/改负责人请直接告诉 agent。</div>
+                      <div className={css.detailHint}>改期/改负责人请直接告诉 agent。</div>
                     </div>
                   )}
                 </div>

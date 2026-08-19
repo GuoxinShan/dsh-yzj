@@ -1,7 +1,7 @@
 /**
  * One-slot bus from the group-room timeline to the room composer:
  * 「回复」on a row arms the composer reply bar. Exactly one composer
- * listens per session view (same shape as drop-bus).
+ * listens per session view.
  */
 
 /** Target of a group-room reply gesture. */

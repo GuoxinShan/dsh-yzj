@@ -16,18 +16,22 @@ import type { YzjPanelInject } from './rpc.ts'
 import {
   getRoomComposerHost, subscribeRoomComposerHost,
 } from './composer-host.ts'
+import { useWorkbenchDomain } from './workbench-domain.ts'
+import { peekImSeat, subscribeImSeat } from './im-seat.ts'
 import css from './home.module.css'
 
 /** Injected send / upload / speaker path for the room composer. */
 export interface YzjRoomComposerInjected {
   readonly sessionId: string
+  /** R27 overlay: local draft, no official InputBar takeover. */
+  standalone?: boolean
   homeSend: (
     sessionId: string,
     content: string | undefined,
     opts?: YzjPanelInject['sendMessageOpts'],
   ) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   uploadFile?: YzjPanelInject['uploadFile']
-  homeFused?: (sessionId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
+  homeFused?: (sessionId: string, groupId?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   fetchContact?: YzjPanelInject['fetchContact']
 }
 
@@ -37,6 +41,23 @@ export function selectGroupRoomComposer({ session, interactions }: ComposerChain
   const id = session?.sessionId
   if (typeof id !== 'string' || !id.startsWith('yzj-home-')) return null
   return { room: true }
+}
+
+/** Collapse the official composer seat so a hidden takeover leaves no gap. */
+function collapseComposerSeat(on: boolean): () => void {
+  const seat = document.querySelector<HTMLElement>('[data-composer-seat]')
+  if (seat === null) return () => {}
+  if (!on) return () => {}
+  seat.style.setProperty('height', '0')
+  seat.style.setProperty('min-height', '0')
+  seat.style.setProperty('overflow', 'hidden')
+  seat.style.setProperty('padding', '0')
+  return () => {
+    seat.style.removeProperty('height')
+    seat.style.removeProperty('min-height')
+    seat.style.removeProperty('overflow')
+    seat.style.removeProperty('padding')
+  }
 }
 
 /** Portal target inside the timeline column (`transcript.tsx`). */
@@ -71,18 +92,32 @@ function useComposerHost(): HTMLElement | null {
 }
 
 /**
- * Canvas-shaped composer: placeholder 「发进 群名…」, primary button 「发进群」,
- * toolbar for emoji / image / file, reply bar above the input.
+ * DSH-shaped composer card: draft + attach tools + circular send.
+ * Placeholder names the group; the send control is an icon (aria 发进群).
  */
 export function YzjRoomComposer(
-  props: PropsRuntime<'conversation.composer'> & YzjRoomComposerInjected & { matched: { room: true } },
+  props: Partial<PropsRuntime<'conversation.composer'>> & YzjRoomComposerInjected & { matched?: { room: true } },
 ) {
-  const draft = props.useInput(s => s.draft)
-  const groupName = props.useSessions(s => {
-    const row = (s as { byId?: Record<string, SessionRow> }).byId?.[props.sessionId]
-    const title = row?.displayTitle
-    return typeof title === 'string' && title !== '' && title !== '群房间' && title !== '私聊房间' ? title : '群'
-  })
+  const standalone = props.standalone === true
+  const [localDraft, setLocalDraft] = useState('')
+  const draft = standalone || props.useInput === undefined
+    ? localDraft
+    : props.useInput(s => s.draft)
+  const setDraft = (value: string): void => {
+    if (standalone || props.inputActions === undefined) setLocalDraft(value)
+    else props.inputActions.setDraft(value)
+  }
+  const hangerName = props.useSessions === undefined
+    ? '群'
+    : props.useSessions(s => {
+      const row = (s as { byId?: Record<string, SessionRow> }).byId?.[props.sessionId]
+      const title = row?.displayTitle
+      return typeof title === 'string' && title !== '' && title !== '群房间' && title !== '私聊房间' ? title : '群'
+    })
+  const [seat, setSeat] = useState(peekImSeat)
+  useEffect(() => subscribeImSeat(() => { setSeat(peekImSeat()) }), [])
+  const groupId = seat?.groupId ?? ''
+  const groupName = seat?.groupName !== undefined && seat.groupName !== '' ? seat.groupName : hangerName
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [replyTo, setReplyTo] = useState<RoomReplyTarget | null>(null)
@@ -100,7 +135,7 @@ export function YzjRoomComposer(
     let cancelled = false
     const load = async (): Promise<void> => {
       if (props.homeFused === undefined) return
-      const result = await props.homeFused(props.sessionId)
+      const result = await props.homeFused(props.sessionId, groupId === '' ? undefined : groupId)
       if (cancelled || !result.ok) return
       setSpeakers(speakersOf(result.value))
     }
@@ -110,7 +145,7 @@ export function YzjRoomComposer(
       cancelled = true
       window.clearInterval(timer)
     }
-  }, [props.sessionId])
+  }, [props.sessionId, groupId])
 
   const sendText = async (content: string, extra?: YzjPanelInject['sendMessageOpts']): Promise<void> => {
     const mentions = resolveAtMentions(content, speakers)
@@ -123,6 +158,7 @@ export function YzjRoomComposer(
     const replyMsgId = replyTo?.msgId
     const result = await props.homeSend(props.sessionId, content, {
       ...extra,
+      ...(groupId === '' ? {} : { groupId }),
       ...(replyMsgId === undefined ? {} : { replyMsgId }),
       ...(mentions.atOpenIds.length === 0 ? {} : { atOpenIds: [...mentions.atOpenIds] }),
       ...(mentions.atAll ? { atAll: true } : {}),
@@ -132,17 +168,14 @@ export function YzjRoomComposer(
       setError(result.error.message)
       return
     }
-    props.inputActions.setDraft('')
+    setDraft('')
     setReplyTo(null)
     setEmojiOpen(false)
   }
 
   const send = async (): Promise<void> => {
     const text = draft.trim()
-    if (text === '') {
-      setError('先写点内容再发进群')
-      return
-    }
+    if (text === '' || busy) return
     await sendText(text)
   }
 
@@ -203,21 +236,17 @@ export function YzjRoomComposer(
   }
 
   const host = useComposerHost()
+  const domain = useWorkbenchDomain()
+  const hide = domain !== 'im'
+  // Overlay composer never touches the official seat. Slot takeover still
+  // collapses it for the leftover hanger path.
   useEffect(() => {
-    if (host === null) return
-    const seat = document.querySelector<HTMLElement>('[data-composer-seat]')
-    if (seat === null) return
-    seat.style.setProperty('height', '0')
-    seat.style.setProperty('min-height', '0')
-    seat.style.setProperty('overflow', 'hidden')
-    seat.style.setProperty('padding', '0')
-    return () => {
-      seat.style.removeProperty('height')
-      seat.style.removeProperty('min-height')
-      seat.style.removeProperty('overflow')
-      seat.style.removeProperty('padding')
-    }
-  }, [host])
+    if (standalone) return
+    return collapseComposerSeat(true)
+  }, [standalone])
+  if (hide) {
+    return <span className={css.roomComposerSeat} data-testid="yzj-room-composer-seat" hidden />
+  }
   const face = (
     <div className={css.roomComposer} data-testid="yzj-room-composer">
       {replyTo !== null && (
@@ -234,7 +263,7 @@ export function YzjRoomComposer(
               type="button"
               className={css.roomEmojiBtn}
               onClick={() => {
-                props.inputActions.setDraft(`${draft}${emoji}`)
+                setDraft(`${draft}${emoji}`)
                 setEmojiOpen(false)
               }}
             >
@@ -243,47 +272,49 @@ export function YzjRoomComposer(
           ))}
         </div>
       )}
-      <div className={css.roomComposerTools}>
-        <button type="button" className={css.roomToolBtn} onClick={() => setEmojiOpen(open => !open)}>表情</button>
-        <button type="button" className={css.roomToolBtn} onClick={() => imageRef.current?.click()}>图片</button>
-        <button type="button" className={css.roomToolBtn} onClick={() => fileRef.current?.click()}>文件</button>
-        <input
-          ref={imageRef}
-          type="file"
-          accept="image/*"
-          hidden
-          onChange={event => { pickFile('image', event.target.files?.[0]); event.target.value = '' }}
-        />
-        <input
-          ref={fileRef}
-          type="file"
-          hidden
-          onChange={event => { pickFile('file', event.target.files?.[0]); event.target.value = '' }}
-        />
-      </div>
-      <div className={css.roomComposerRow}>
+      <div className={css.roomComposerCard}>
         <textarea
           className={css.roomComposerInput}
           value={draft}
-          placeholder={`发进 ${groupName}…`}
+          placeholder={`发到 ${groupName}…`}
           rows={2}
-          aria-label={`发进 ${groupName}`}
-          onChange={event => props.inputActions.setDraft(event.target.value)}
+          aria-label={`发到 ${groupName}`}
+          onChange={event => setDraft(event.target.value)}
           onKeyDown={onKeyDown}
         />
-        <button
-          type="button"
-          className={`${css.chromeBtn} ${css.chromePrimary}`}
-          data-testid="yzj-send-to-group"
-          disabled={busy}
-          onClick={() => { void send() }}
-        >
-          {busy ? '发进群…' : '发进群'}
-        </button>
+        <div className={css.roomComposerBar}>
+          <div className={css.roomComposerTools}>
+            <button type="button" className={css.roomToolBtn} onClick={() => setEmojiOpen(open => !open)}>表情</button>
+            <button type="button" className={css.roomToolBtn} onClick={() => imageRef.current?.click()}>图片</button>
+            <button type="button" className={css.roomToolBtn} onClick={() => fileRef.current?.click()}>文件</button>
+            <input
+              ref={imageRef}
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={event => { pickFile('image', event.target.files?.[0]); event.target.value = '' }}
+            />
+            <input
+              ref={fileRef}
+              type="file"
+              hidden
+              onChange={event => { pickFile('file', event.target.files?.[0]); event.target.value = '' }}
+            />
+          </div>
+          <button
+            type="button"
+            className={css.roomSendCircle}
+            data-testid="yzj-send-to-group"
+            aria-label="发进群"
+            disabled={busy || draft.trim() === ''}
+            onClick={() => { void send() }}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M8 12.5V3.5M8 3.5L3.5 8M8 3.5L12.5 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        </div>
       </div>
-      <p className={css.roomComposerCaption}>
-        本人身份直发，无确认卡。要用助手，点消息旁的「交给助手」。
-      </p>
       {error !== '' && <p role="alert">{error}</p>}
     </div>
   )

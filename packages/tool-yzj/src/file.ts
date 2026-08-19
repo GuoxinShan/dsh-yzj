@@ -48,9 +48,9 @@ export function applyFileTools(ctx: Context, budget: YzjToolBudget): void {
 
   ctx.tools.register(defineTool({
     name: 'yzj_file_download',
-    description: 'Download a file by fileId to the local machine. Output may be a directory or file path; without --output the name comes from the server. Without --overwrite an existing file is auto-renamed (report.pdf → report (1).pdf).',
+    description: 'Download a file by fileId to the local machine. fileId comes from yzj_file_upload or a file message param.file_id (list/summon-window `fileId=`), never from an IM msgId. Output may be a directory or file path; without --output the name comes from the server. Without --overwrite an existing file is auto-renamed (report.pdf → report (1).pdf).',
     parameters: {
-      id: { type: 'string', required: true, description: 'File id (from yzj_file_upload or an IM attachment).' },
+      id: { type: 'string', required: true, description: 'Yunzhijia file service id: yzj_file_upload return value or IM file message param.file_id. Not the message msgId.' },
       output: { type: 'string', description: 'Output directory or file path.' },
       overwrite: { type: 'boolean', description: 'Overwrite an existing file; requires user confirmation.' },
     },

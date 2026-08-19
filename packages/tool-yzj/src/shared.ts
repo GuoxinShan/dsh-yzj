@@ -80,6 +80,18 @@ export function asNumber(value: unknown): number | undefined {
   return typeof value === 'number' ? value : undefined
 }
 
+/**
+ * Model-facing file-id suffix. `file_id` is the Yunzhijia file service id
+ * (yzj_file_download / yzj_im_message_send), never the IM msgId.
+ */
+export function fileIdMark(param: Record<string, unknown> | undefined): string {
+  if (param === undefined) return ''
+  const id = typeof param.file_id === 'string' ? param.file_id : ''
+  if (id === '') return ''
+  const size = typeof param.size === 'number' ? param.size : undefined
+  return size === undefined ? ` fileId=${id}` : ` fileId=${id} size=${size}`
+}
+
 export function asBool(value: unknown): boolean {
   return value === true
 }

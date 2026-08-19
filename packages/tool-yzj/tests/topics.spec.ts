@@ -141,4 +141,24 @@ describe('TopicAnchorStore', () => {
     await store.setStatus('yzj-topic-missing', 'confirm')
     expect(store.getBySession('yzj-topic-missing')).toBeUndefined()
   })
+
+  it('quiet ensure returns the existing root without bumping lastActivity', async () => {
+    const store = new TopicAnchorStore()
+    const first = await store.ensureTopic({
+      yzjConversationId: 'g-a',
+      source: 'handoff',
+      rootMsgId: LEGACY_HOST_ROOT,
+      lastActivity: 42,
+    })
+    expect(first.record.lastActivity).toBe(42)
+    const again = await store.ensureTopic({
+      yzjConversationId: 'g-a',
+      source: 'handoff',
+      rootMsgId: LEGACY_HOST_ROOT,
+      quiet: true,
+    })
+    expect(again.created).toBe(false)
+    expect(again.sessionId).toBe(first.sessionId)
+    expect(again.record.lastActivity).toBe(42)
+  })
 })

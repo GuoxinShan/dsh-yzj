@@ -18,10 +18,14 @@ export interface YzjPanelInject {
   fetchGroups: (limit?: number, page?: number) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   fetchMessages: (groupId: string, limit?: number, page?: { type: 'newest' | 'old' | 'new'; msgId?: string }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   fetchWhoami: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Probe `yzj-cli` login: `{ loggedIn, name, openId, reason }` (always ok). */
+  authStatus: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Spawn `yzj-cli auth login` (opens the system browser). User-direct. */
+  authLogin: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   fetchSearch: (keyword: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   fetchDoc: (id: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   fetchDocBlocks: (id: string, blockId?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** 多维表格 schema (tables and fields) — used for dbt drag previews. */
+  /** 多维表格 schema (tables and fields) — used for dbt @-ref previews. */
   fetchSheet: (id: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   fetchWorkspace: (id: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   fetchEvent: (id: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
@@ -56,6 +60,16 @@ export interface YzjPanelInject {
   selectTodoLibrary: (docId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Adopt-or-provision a team library in one enterprise workspace. */
   ensureTeamTodo: (workspace: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** AI推进 board snapshot (items + library) over the yzjAdvance core. */
+  advanceState: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** One advancement item: projection + 事元 stream window + sources. */
+  advanceGet: (advanceId: string, entryOffset?: number, entryLimit?: number) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Start-modal direct write: create one advancement item (user's own will). */
+  advanceCreate: (input: { title: string; goal?: string; background?: string; metrics?: string; assignee?: string; targetDate?: string; tags?: string[] }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Panel judge verbs (user-direct; each lands as one user 事元). */
+  advanceJudge: (advanceId: string, action: 'confirm_condition' | 'confirm_advance' | 'accept' | 'reject' | 'ignore', note?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** One-click provision of the 事项/事元 tables (empty-state action). */
+  advanceEnsure: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** One write-confirmation record for a tool call (undefined when not gated). */
   fetchWrite: (sessionId: string, callId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Settle one pending write-confirmation decision. */
@@ -118,8 +132,8 @@ export interface YzjPanelInject {
   focusBoundSession?: (sessionId: string) => void
   /** Binding row for one DSH session (or unbound). */
   homeBinding?: (sessionId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Fused / room VIEW snapshot (IM log + topic list). */
-  homeFused?: (sessionId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Fused / room VIEW snapshot (IM log + topic list). Prefer groupId (R24). */
+  homeFused?: (sessionId: string, groupId?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Workbench session list: bound rooms plus their topics (L1). */
   homeNav?: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Mint or focus a topic session under a group (交给助手). */
@@ -131,14 +145,14 @@ export interface YzjPanelInject {
     title?: string
     groupName?: string
   }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Topic-drawer lens bubbles (user/assistant; plugin followups omitted). */
+  /** Topic-drawer lens bubbles (user/assistant + write/edit file cards). */
   homeTopicLens?: (sessionId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Ask the topic agent from the drawer; does not focus native Chat. */
   homeTopicAsk?: (sessionId: string, text: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Backfill recent Yunzhijia messages into the bound log. */
-  homeBackfill?: (sessionId: string, opts?: { beforeMsgId?: string; limit?: number }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  homeBackfill?: (sessionId: string, opts?: { beforeMsgId?: string; limit?: number; groupId?: string }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** DSH「发进群」: optimistic ② + CLI send, no user-turn. */
-  homeSend?: (sessionId: string, content: string | undefined, opts?: YzjPanelInject['sendMessageOpts']) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  homeSend?: (sessionId: string, content: string | undefined, opts?: YzjPanelInject['sendMessageOpts'] & { groupId?: string }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Private-transcript digest candidates for 丢进群. */
   homeDigest?: (sessionId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Confirmed D8 handoff into a bound group session. */
@@ -168,6 +182,8 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
       ...(page === undefined ? { type: 'newest' } : page),
     }),
     fetchWhoami: () => call('whoami', {}),
+    authStatus: () => call('auth-status', {}),
+    authLogin: () => call('auth-login', {}),
     fetchSearch: (keyword) => call('search', { keyword }),
     fetchDoc: (id) => call('doc-get', { id }),
     fetchDocBlocks: (id, blockId) => call('doc-blocks', blockId === undefined ? { id } : { id, blockId }),
@@ -199,6 +215,27 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
     todoLibraries: () => call('todo-libraries', {}),
     selectTodoLibrary: (docId) => call('todo-select', { docId }),
     ensureTeamTodo: (workspace) => call('todo-ensure-team', { workspace }),
+    advanceState: () => call('advance-state', {}),
+    advanceGet: (advanceId, entryOffset, entryLimit) => call('advance-get', {
+      advanceId,
+      ...(entryOffset === undefined ? {} : { entryOffset }),
+      ...(entryLimit === undefined ? {} : { entryLimit }),
+    }),
+    advanceCreate: (input) => call('advance-create', {
+      title: input.title,
+      ...(input.goal === undefined || input.goal === '' ? {} : { goal: input.goal }),
+      ...(input.background === undefined || input.background === '' ? {} : { background: input.background }),
+      ...(input.metrics === undefined || input.metrics === '' ? {} : { metrics: input.metrics }),
+      ...(input.assignee === undefined || input.assignee === '' ? {} : { assignee: input.assignee }),
+      ...(input.targetDate === undefined || input.targetDate === '' ? {} : { targetDate: input.targetDate }),
+      ...(input.tags === undefined || input.tags.length === 0 ? {} : { tags: input.tags }),
+    }),
+    advanceJudge: (advanceId, action, note) => call('advance-judge', {
+      advanceId,
+      action,
+      ...(note === undefined || note === '' ? {} : { note }),
+    }),
+    advanceEnsure: () => call('advance-ensure', {}),
     fetchWrite: (sessionId, callId) => call('write-list', { sessionId, callId }),
     decideWrite: (writeId, outcome) => call('write-decide', { writeId, outcome }),
     robotStatus: () => call('robot-status', {}),
@@ -271,18 +308,22 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
       ...(title === undefined || title === '' ? {} : { title }),
     }),
     homeBinding: (sessionId) => call('home-binding', { sessionId }),
-    homeFused: (sessionId) => call('home-fused', { sessionId }),
+    homeFused: (sessionId, groupId) => call('home-fused', groupId !== undefined && groupId !== ''
+      ? { groupId }
+      : { sessionId }),
     homeNav: () => call('home-nav', {}),
     homeTopicOpen: (input) => call('home-topic-open', input),
     homeTopicLens: (sessionId) => call('home-topic-lens', { sessionId }),
     homeTopicAsk: (sessionId, text) => call('home-topic-ask', { sessionId, text }),
     homeBackfill: (sessionId, opts) => call('home-backfill', {
       sessionId,
+      ...(opts?.groupId === undefined || opts.groupId === '' ? {} : { groupId: opts.groupId }),
       ...(opts?.beforeMsgId === undefined ? {} : { beforeMsgId: opts.beforeMsgId }),
       ...(opts?.limit === undefined ? {} : { limit: opts.limit }),
     }),
     homeSend: (sessionId, content, opts) => call('home-send', {
       sessionId,
+      ...(opts?.groupId === undefined || opts.groupId === '' ? {} : { groupId: opts.groupId }),
       ...(content === undefined ? {} : { content }),
       ...(opts?.msgType === undefined ? {} : { msgType: opts.msgType }),
       ...(opts?.fileId === undefined ? {} : { fileId: opts.fileId }),

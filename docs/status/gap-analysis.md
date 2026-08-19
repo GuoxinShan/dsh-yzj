@@ -25,7 +25,7 @@
 - 设计清单 17 项全部有实现对应（`yzj_group_list`→`yzj_im_group_recent` 等，§5.1 主表已列实现名映射列）。
 - 补充工具 14 项全部实现（§5.1 表后）。
 - **门禁**：设计清单全部写工具 + 补充表写工具**均已入闸**（`guard.ts` 22 项：5 强确认 + 17 标准确认），只读全放行；`yzj_file_download` 仅 `overwrite` 时确认。风险分级（standard/strong）随 `yzj/ask-pending` 事件传给确认卡（强确认红色卡片）。
-- 未登录引导：`failureDigest` 检测 auth/登录类 stderr 后附「请先运行 `yzj-cli auth login`」文案。
+- 未登录引导：工作台会话列 + 设置→云之家 登录卡（`/yzj auth-status` / `auth-login` 拉起本机 `yzj-cli auth login`）；`failureDigest` 检测 auth/登录类 stderr 后仍附同一条命令兜底。
 
 ## 2A. 设计补强｜悬浮窗全量可拖拽 → composer（用户思路）— 🟢 已达成
 
@@ -106,7 +106,7 @@ skill「影子任务库」章节含完整表结构（`todo_id`/标题/`状态` �
 
 ## 12. 安全与异常分支（§5.5、旅程 8）— ✅ 主体
 
-单点门禁 ✅、身份/凭据 ✅、审计 ✅（批准对 + 工具事件落日志）、完整参数展示 ✅（卡片全文不截断）、未登录引导 ✅、ID 失效不编造 ✅、确认卡无人处理挂起 ✅。快照决策标注 ⚪ 待拍板。
+单点门禁 ✅、身份/凭据 ✅、审计 ✅（批准对 + 工具事件落日志）、完整参数展示 ✅（卡片全文不截断）、未登录引导 ✅（工作台/设置登录卡 + 工具摘要兜底）、ID 失效不编造 ✅、确认卡无人处理挂起 ✅。快照决策标注 ⚪ 待拍板。
 
 ## 13. 旅程与阶段验收对照（§4、§6）
 
@@ -119,7 +119,7 @@ skill「影子任务库」章节含完整表结构（`todo_id`/标题/`状态` �
 | 5 @ 拉上下文 | ✅（三组：同事/会话/文档，真实候选；「起草消息给他」⚪ 可选） |
 | 6 知识库问答 | ✅ |
 | 7 确认卡状态机 | ✅（待确认→已批准执行中→工具结果终态；取消；真实 E2E） |
-| 8 异常分支 | ✅ 主体（未登录引导/ID 不编造/挂起不写；灰 chip ⚪ 可选） |
+| 8 异常分支 | ✅ 主体（未登录登录卡 + 工具摘要/ID 不编造/挂起不写；灰 chip ⚪ 可选） |
 
 | 阶段 | 完成度 |
 |---|---|
@@ -519,40 +519,76 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 
 ### 22.4 切会话 UI（2026-08-17）
 
-点任意群/单聊会闪一下：融合视图把初始 `bound: false` 当成未绑定（回填期间闪「私密会话」）；面板 cache miss 在新标题下残留上一群消息并打全局「加载中…」。已对齐面板分阶段路径：header 立刻换、缓存同步上屏、miss 清空后只在消息窗 loading、人名/媒体后补。v2.0 群房间时间线沿用同一套分阶段（pitfall-013）。验收：`packages/ui-yzj/tests/transcript.client.spec.tsx`、`packages/ui-yzj/tests/panel-switch.client.spec.tsx`。
+点任意群/单聊会闪一下：融合视图把初始 `bound: false` 当成未绑定（回填期间闪「私密会话」）；面板 cache miss 在新标题下残留上一群消息并打全局「加载中…」。已对齐面板分阶段路径：header 立刻换、缓存同步上屏、miss 清空后只在消息窗 loading、人名/媒体后补。v2.0 群房间时间线沿用同一套分阶段（pitfall-013）。**工作台增补（2026-08-18）**：`conversation.view` 随 session 重挂时左栏用模块 hold、时间线打开滚到底、「加载更早」保位置、图首帧同步读 `file-data` 缓存、H9 `quiet` 不 bump L1。验收：`packages/ui-yzj/tests/transcript.client.spec.tsx`、`packages/ui-yzj/tests/panel-switch.client.spec.tsx`、`packages/ui-yzj/tests/conv-list.client.spec.tsx`、`packages/ui-yzj/tests/im-render.client.spec.tsx`。
 
 ---
 
 ## 23. v2.0｜群房间 + 话题会话（2026-08-17 拍板；e2e 刀）
 
-设计基线：[`../spec/group-room-topics.md`](../spec/group-room-topics.md)（R1–R21，含 v1.1 工作台）。**本节记录目标 vs 现状。** 本刀：锚定表、入站/交给助手开话题、群房间 IM 视图占住对话格、composer takeover「发进群」、`yzj-topic-*` 写闸、出站帖子进房间日志、面板第二 IM 退役；v1.1 P0 把侧栏树换成入口块 + 工作台两栏 + 话题抽屉。v1.1 P1 精致度六条、P2 四域迁入工作台并退役悬浮球、P3 `TopicRecord.status` 已落地。**视觉刀（2026-08-17）**：tab ring 真藏（pitfall-018）、发进群 portal 进时间线列、dock「发进群」退役、会话行不以「群房间」占位盖 CLI 群名。**宿主生命周期刀（2026-08-17）**：composer portal 改注册/订阅总线（pitfall-019）；view-ring observer 收窄到 header；e2e 量不到发送盒即失败。v1.2（2026-08-18）：H9 旧宿主 ③④ 迁成「历史对话」话题；H18 抽屉透镜气泡 + 问助手；H4 入站 e2e（未连接 skip）；发布口径与根 registry 依赖对齐。
+设计基线：[`../spec/group-room-topics.md`](../spec/group-room-topics.md)（R1–R22，含 v1.1 工作台）。**本节记录目标 vs 现状。** 本刀：锚定表、入站/交给助手开话题、群房间 IM 视图占住对话格、composer takeover「发进群」、`yzj-topic-*` 写闸、出站帖子进房间日志、面板第二 IM 退役；v1.1 P0 把侧栏树换成入口块 + 工作台两栏 + 话题抽屉。v1.1 P1 精致度六条、P2 四域迁入工作台并退役悬浮球、P3 `TopicRecord.status` 已落地。**视觉刀（2026-08-17）**：tab ring 真藏（pitfall-018）、发进群 portal 进时间线列、dock「发进群」退役、会话行不以「群房间」占位盖 CLI 群名。**宿主生命周期刀（2026-08-17）**：composer portal 改注册/订阅总线（pitfall-019）；view-ring observer 收窄到 header；e2e 量不到发送盒即失败。v1.2（2026-08-18）：H9 旧宿主 ③④ 迁成「历史对话」话题；H18 抽屉透镜气泡 + 问助手；H4 入站 e2e（未连接 skip）；发布口径与根 registry 依赖对齐。**v1.3 布局刀（2026-08-18）**：群房间 opt-in `data-conversation-composer-overlay` 有界视图契约（pitfall-020），三栏内部滚动、打开即触底（wheel/touch 门控的跟随判定）；`BOT-` 发送者标「机器人」（原 openId 尾号兜底废弃）；机器人长帖折叠「展开全文」；home-nav 分页回填绑定房间真名（「群聊」鬼影行消除）；话题官方列表标题改「话题 · 群名」（H10 修订）；话题抽屉 340px + 锚点卡 clamp 两行；侧栏脚 dock 视觉重排（图标行 + 当前域高亮 + 机器人状态点）。**v1.3 尾刀**：视图可见名称改「群聊/私聊」（「群房间」保留为设计概念名）；话题页重复的回群入口收口到头部锚点卡（chrome 条按钮删除）；17 个 pin-only 空壳房间 session 清除 + focus 路径全部走 `homeOpen` 自愈重建（H21）。**v1.4 产品法修订（2026-08-18）**：R20 纠正——官方侧栏「云之家」只收 `yzj-topic-*`（群聊长出的 agent session），`yzj-home-*` 房间不 attach。`attachYzjSession` 按 id 闸门，home-open / topic-open / ask / handoff 已跟。回归 = cwd/RPC 单测。**v1.5 视图归属（同日）**：R22 / H23——话题与普通会话不得挂 IM 壳；只藏「群聊」tab 不够，必须点「对话」清掉持久化 `view=yzj-home`（pitfall-022）。**v1.11 盖层（2026-08-19）**：R27 / H33——工作台是中间栏 DOM 盖层，开面板不建挂钩。**v1.17 入口刀（同日）**：R31 / H40——左边只留一个「云之家」，四域用顶栏页签。
 
 ### 23.1 目标 vs 现状
 
 | # | 面 | 现状 | v2.0 目标 | 状态 |
 |---|---|---|---|---|
 | H1 | 基数 | `yzj-home-*` 群房间 + `yzj_topic_anchors` / `ensureTopic` | 1 群 = 1 群房间 + 0..N 话题（R1） | ✅ 关闭（单测） |
-| H2 | 视图 | 群房间 session 自动切「群房间」view 并隐藏 tab ring；话题/私聊隐藏「群房间」tab，官方 Chat 仍是对话格 | 群房间占对话格；话题 = 官方 chat | ✅ 关闭（pitfall-018：`display:none !important`；tablist 入场后 observer 只挂 header，不扫整页时间线） |
+| H2 | 视图 | **v1.5**：群房间自动切「群聊」并藏 tab ring。话题/未绑定/普通 session **点「对话」**（写入 `view=chat`）并藏「群聊」tab——只 hidden 不够，残留 `view=yzj-home` 仍挂 IM 壳（R22 / pitfall-022）。`YzjRoomShell` 非 `yzj-home-*` 不画。kind 只跟 id 前缀 | 群房间占对话格；话题 = 官方 chat | ✅ 关闭（v1.5 补拨 view + 壳前缀闸；pitfall-018 藏 ring 仍有效） |
 | H3 | Composer | 群房间 `conversation.composer` takeover 藏官方条；可见面 portal 进时间线列。宿主由 transcript `ref` 注册、composer 订阅（pitfall-019）。dock「发进群」退役（R2） | 群房间唯一动词=发进群；话题唯一动词=问助手；发送条不压会话列表 | ✅ 关闭（takeover + 宿主总线；切工作台域再切回跟到新节点；确认卡 chain priority 更高；发送面见 H14） |
-| H4 | 话题入口 | 「交给助手」→ `home-topic-open`；@机器人 `resolveSession` 走 `ensureTopic`；回复链续同一话题；丢进群落地房间并开 handoff 话题；发进群 `local-*` ack 后 `retargetAnchor` 到真实 msgId（pitfall-015） | 四入口锚出话题 | ✅ 关闭（router 单测 mint `yzj-topic-*`；`.acceptance/verify-robot-at-topic.mjs`：dock 未配置/未连接 skip 退出 0；已连接则断言 dock + 话题抽屉可开。禁止 bash 直调 `yzj-cli` 代发 @） |
+| H4 | 话题入口 | 「交给助手」→ `home-topic-open`；@机器人 `resolveSession` 走 `ensureTopic`；回复链续同一话题；丢进群落地房间并开 handoff 话题；发进群 `local-*` ack 后 `retargetAnchor` 到真实 msgId（pitfall-015） | 四入口锚出话题 | ✅ 关闭（router 单测 mint `yzj-topic-*`；`.acceptance/verify-robot-at-topic.mjs`：点 `yzj-dock-home` 开盖层后断言话题抽屉可开。禁止 bash 直调 `yzj-cli` 代发 @） |
 | H5 | 锚定 | `TopicAnchorStore`：`(groupId, rootMsgId)` + outbound msgId 登记 | R4 锚定表 | ✅ 关闭（单测） |
 | H6 | 出站帖子 | ack / PushHub / `robot_notify` / 回填写入 `robot-outbound`，标话题回链 | R9：进群房间时间线 | ✅ 关闭（单测） |
 | H7 | guard / write-gate | `whenSession` 覆盖 `yzj-home-*` 与 `yzj-topic-*` | R10/R11 | ✅ 关闭（单测） |
 | H8 | 面板 / 悬浮窗 | `shell.overlay` 已摘除；四页签迁入工作台；卡片「查看」切 workbench domain | 第二聊天淘汰；球退役（R16） | ✅ P2 关闭（单测：dock 不再 `openPanel`） |
-| H9 | 迁移 | 打开群房间时，有真实 ③④ 则幂等 `ensureTopic(rootMsgId=legacy-host, title=历史对话, fromSessionId=宿主)`；不搬事件；空白宿主/单聊不迁 | 降为群房间宿主；历史进首条话题 | ✅ 关闭（`home-open` 单测：有 ③④ 才迁、二次幂等、空白不迁、DM 不迁） |
-| H10 | 侧栏可见 | 群房间 `session/title` = 群名；话题 `session/title` = `群名 · 话题`（官方列表平铺可扫） | 官方列表能扫出归属 | ✅ 关闭（单测） |
-| H11 | 导航 | `sidebar.footer.action` 云之家入口块；点五域切 `workbench-domain` 并 focus 房间。对话 = 会话列表 + 时间线 + 话题抽屉；待办/日程/知识库 embed 原面板；记忆 = 本地 vault（「不出本机」） | 入口进工作台；单聊无抽屉；群聊 header「话题 N」开关抽屉 | ✅ P2 关闭（单测） |
-| H12 | 模型上下文 | `formatSummonWindow` 头块 `groupId` + 每行 `msgId` + 话题锚点；空 log 仍给 groupId | 话题里问助手能对群发/回复 | ✅ 关闭（单测） |
-| H13 | 人名 / openId | CLI 解析 `fromUser.openId/oId/name`；撞键补身份；回填通讯录补名；客户端 `resolveSenders` 与 host 共用 `contact-parse.ts` 拆信封（pitfall-003）；时间线禁止「群消息」占位 | 行上是真人名+头像 | ✅ 关闭（单测 + 真机：真人显示真名；机器人账号不在通讯录，按规格兜底显示 openId 尾号） |
+| H9 | 迁移 | 打开群房间时，有真实 ③④ 则幂等 `ensureTopic(..., quiet: true)`；`lastActivity` 用宿主原时间；不搬事件；空白宿主/单聊不迁 | 降为群房间宿主；历史进首条话题；打开不刷列表 | ✅ 关闭（quiet 不 bump；home-open 单测） |
+| H10 | 侧栏可见 | 话题 `session/title` = `话题 · 群名`。房间保持 blank（R14 v1.8）：只在 current 时显「新会话」，点走消失；不进「云之家」分组（R20） | 官方「云之家」能扫出话题、扫不到群聊；挂钩不常驻未分组 | ✅ 标题规则关闭（单测）；房间 blank 见 H31 |
+| H11 | 导航 | **v1.17 / R31**：左边「新建会话」下只有一个「云之家」入口（`yzj-dock-home`），点它 `openWorkbench()` 打开盖层，不切域、不 focus 挂钩。四域是工作台顶栏页签（`yzj-workbench-tab-*` / `setWorkbenchDomain`）。对话 = 会话列表 + 时间线 + 话题抽屉；待办/日程/知识库 embed 原面板。**记忆入口搁置**（R21 v1.6）：dock / 工作台 / 设置分段不露，包与工具保留 | 左边一个入口；页签切域；单聊无抽屉；群聊 header「话题 N」开关抽屉 | ✅ P2 关闭；记忆面 v1.6 卸入口；v1.17 收成单入口（dock / room-shell 单测） |
+| H12 | 模型上下文 | **v1.13**：近窗是一次 plugin inject（`yzj-summon-window` / pre-step），不进 snapshot。记忆仍在 `yzj-memory` snapshot。话题窗走回复链。 | 轨迹里记忆与近窗是两条 plugin 消息 | ✅ 关闭（pre-step + thread + ask inject 单测；pitfall-031） |
+| H13 | 人名 / openId | CLI 解析 `fromUser.openId/oId/name`；撞键补身份；回填通讯录补名；客户端 `resolveSenders` 与 host 共用 `contact-parse.ts` 拆信封（pitfall-003）；时间线禁止「群消息」占位；`BOT-` 前缀发送者标「机器人」（v1.3：机器人不在通讯录，openId 尾号兜底废弃） | 行上是真人名+头像 | ✅ 关闭（单测 + 真机：真人真名、机器人标「机器人」；本 profile 未配置机器人通道时我方助手帖子同样落「机器人」，不伪造「助手」） |
 | H14 | 轻发送 | 群房间 composer 接 CLI send 全集：回复 / @ / @all / 正文表情 / 图 / 文件；P2 删 72px 留白（pitfall-017 失效：球已退役） | 云之家侧能看见对应回复/@/图文件 | ✅ 关闭（单测；真机需 GUI 重启后 e2e） |
-| H15 | 群房间视觉 | 布局跟 canvas：自己靠右、他人靠左、hover 出操作；话题锚点卡只在 session header（chrome 收成「回群房间」文字钮）。工作台会话行优先 CLI 群名，占位「群房间」不得盖住真名；`session/title` 占位可被真名升级 | 与已拍板原型同一套脸 | ✅ 关闭（2026-08-17 视觉刀：tab ring / composer 列 / dock 退役 / 群名占位；单测 + e2e） |
-| H16 | 云之家 workspace | 新 `yzj-home-*` / `yzj-topic-*` 的 `meta.cwd` = `~/.dsh-yzj/workspace`（ensure 目录 + `workspaceRegistry.create(..., '云之家')` + `attachSession`）；robot 通道默认 cwd 同路径。旧会话仍是 `process.cwd()`，attach 失败则吞掉、不分组 | 官方侧栏出现「云之家」分组 | ✅ P0 关闭（路径单测；attach 吞错。机器人入站仍用 `<cwd>/groups/<id>` 子目录作 share 沙箱，不 attach 父 workspace——记此） |
-| H17 | lastActivity / status | `lastActivity` 创建写入、ensure 已有则 touch。`status`：pending/approved 写 → `confirm`；交付或取消 → `running`（L5）；显式 `done`。L2 徽标：accent 数字 = 待确认 ＞ 细点 = 进行中 ＞ 完成无标 | 会话行能反映话题活动与待确认 | ✅ P3 关闭（topics / write-gate / conv-list 单测） |
+| H15 | 群房间视觉 | 布局跟 canvas：自己靠右、他人靠左、hover 出操作；话题回群叠在官方 composer dock（与 InputBar 同宽）。工作台会话行优先 CLI 群名，占位「群房间」不得盖住真名；`session/title` 占位可被真名升级 | 与已拍板原型同一套脸 | ✅ 关闭（2026-08-17 视觉刀 + 回群落 composer 列；单测 + e2e） |
+| H16 | 云之家 workspace | cwd 仍是 `~/.dsh-yzj/workspace`（房间与话题都建在这，防污染编码区）。**v1.4：`attachYzjSession` 只对 `yzj-topic-*` 调 `attachSession`**；`yzj-home-*` / 其它 id 直接跳过。`ensureYzjHostWorkspace` 顺带 `detachSession` 清掉 v1.1 误挂的房间。robot 通道默认 cwd 同路径。旧会话仍是 `process.cwd()`，attach 失败则吞掉、不分组 | 官方侧栏「云之家」= 话题，不是群聊 | ✅ 关闭（闸 + 存量 detach；cwd 单测：ensure 摘 `yzj-home-*`、留话题） |
+| H17 | lastActivity / status | `lastActivity` 创建写入、ensure 已有则 touch（H9 `quiet` 除外）。`status`：pending/approved 写 → `confirm`；交付或取消 → `running`（L5）；显式 `done`。L2 徽标：accent 数字 = 待确认 ＞ 细点 = 进行中 ＞ 完成无标 | 会话行能反映话题活动与待确认 | ✅ P3 关闭（topics / write-gate / conv-list 单测；quiet 不 bump） |
 | H18 | 话题抽屉 | 「交给助手」/ chip 开抽屉透镜，不 `focus` 原生；抽屉「原生会话 ↗」才 focus；锚点条反跳高亮时间线且不关抽屉；单聊无抽屉；透镜气泡 + 「问助手」`home-topic-lens` / `home-topic-ask`（用户 `followup`，不 focus） | L3/L6/R17/R19 | ✅ 关闭（抽屉单测：气泡渲染、问助手不 focus、`legacy-host` 无群锚跳转） |
 | H19 | 群房间精致度 | 同人连发合并、日期分隔、气泡圆角、hover 文字链、助手产物卡、气泡内「N 条回复」chip | §9.1 / §9.5 P1 | ✅ P1 关闭（`room-layout` + transcript 单测） |
+| H20 | 有界布局 | 视图根带 `data-conversation-composer-overlay`（pitfall-020）：三栏各自内部滚动、打开即触底（wheel/touch 门控跟随 + 内容层 ResizeObserver）、composer 钉底；抽屉 340px 有界、锚点卡 clamp 两行；机器人长帖 >240 字折叠「展开全文」；home-nav 对占位房间名分页回填 CLI 真名（60s 缓存） | 房间 = IM 应用的肌肉记忆布局 | ✅ 关闭（v1.3 布局刀；`.acceptance/verify-room-layout.mjs` 全绿） |
+| H21 | 房间在官方侧栏的去留 | **v1.4 拍板 + 已落地**：群聊本身不进官方侧栏「云之家」；进该分组的是群聊长出的 agent session（话题）。归档藏房间是死路（pitfall-021）。正确手段 = 不 attach 房间；**已挂上的用 `detachSession` 撤回**（ensure 时扫 `yzj-home-*`）。**2026-08-18 清理刀**仍有效：17 个 pin-only 空壳已删；focus 走 `homeOpen` 自愈；房间是临时座位，binding + 插件日志才是真相。R14 空 turn 只防 blank 复用。**同日开发机再清**：停 web GUI 后删 4 个残留 `yzj-home-*` session 目录，并从 `workspace.json`「云之家」成员 / `session_projcache` 去掉对应 id；绑定表与 `yzj_home_logs` / 话题未动。打开群聊会按 homeOpen 自愈重建座位 | 打开群聊 / 重启后「云之家」无该群名行；话题仍在 | ✅ 关闭（闸 + 存量 detach 单测；本机残留房间文件已删） |
+| H22 | 说明书卸脸 | 话题 chrome 卸掉「下方发送 = 问助手」等式；未绑定 chrome 只留安静「丢进群」链；侧栏脚去 emoji / 去左边框选中、机器人只留状态点；群聊 composer 去 chip 边框、输入圆角；会话列去「会话」头、头像改圆、加载更多改文字链；抽屉空态收成「还没有话题」。**话题回群**：卸掉 header 双行卡 / 挤在标题旁的小字。入口改走官方 `conversation.input.dock`，与 InputBar 卡同宽同圆角，文案只留「回群聊」 | 控件自己说话，密度跟官方侧栏 | ✅ 关闭（chrome / dock / transcript / session-shell 单测） |
+| H23 | 错画 IM | `conversation.view`「群聊」对每个 session 都在（list 槽无 select）。只藏 tab 时，话题/普通会话若持久化 `view=yzj-home`（点过 tab、或房间切走后没拨回）就整页变成群聊三栏。v1.5：view-ring 点「对话」+ 壳前缀闸 + fused 只把 `kind=room` 当 IM | 只有 `yzj-home-*` 渲染 IM | ✅ 关闭（R22；view-ring / room-shell / transcript 单测；pitfall-022） |
+| H24 | 工作台首帧 | 侧栏脚「对话」曾 `await homeNav` 再 `homeOpen` 才 focus，冷 CLI / 重开座位时左下角要点很久。现：点「云之家」= `openWorkbench()` 开盖层，不 focus、不换域（R27 / R31） | 点「云之家」立刻出工作台 | ✅ 关闭（dock / overlay 单测） |
+| H25 | 非对话域发送条 | 待办/日程等仍 focus 房间以挂 `conversation.view`，时间线一卸，发进群 takeover 把卡片画回官方 `composerSeat`。现：域 ≠ 对话时 takeover 仍占位但画 `null` 并收起座位 | 只有对话/群聊有 composer | ✅ 关闭（room-composer 单测） |
+| H26 | 拖入引用 | 悬浮窗「一切皆可拖」在工作台残留：面板/待办 `draggable` + 全屏 overlay + drop-bus 往 composer 塞 ☁ chip。v1.6 / R23 卸掉拖源、overlay、drop-bus；`conversation.input.dock` 只留回群/丢进群。@ 源不动 | 不能再拖条目进输入框 | ✅ 关闭（面板/待办无 drag；dock 无 insertReference） |
+| H27 | 他人气泡 | 视觉刀把他人底设成 `--dsw-alias-bg-layer-1`。浅色主题该 token 与画布同白，别人的话看起来没气泡。改为 `--dsw-alias-interactive-bg-hover-solid`（pitfall-023） | 他人 / 助手也有可见 chip | ✅ 关闭（CSS + transcript 单测） |
+| H28 | 点群开会话 | 会话列每点一行 `homeOpen` + `sessions.open`：卡、未分组多一行、官方超长 composer 闪。v1.7 / R24：点群只切 groupId；`home-fused` / `home-send` / 回填走 groupId；挂钩座位不换。inject 必须把 groupId 传进 `homeFused`（`(id, groupId) => …`），否则点了时间线不换。cache-miss 不得提前 return 卸掉 `#yzj-room-composer-host`（否则官方 InputBar 闪「给智能体发消息」） | 切群立刻出时间线；未分组不增生；loading 仍挂宿主 | ✅ 关闭（conv-list：click 不调 homeOpen；transcript：切 groupId 宿主节点不变） |
+| H29 | 话题空 turn | 「交给助手」对话题套房间的 `publishHostSession` 空 turn 1；第一次提问再开 turn 1 → 官方 Chat `more than one start Match`。v1.7 / R25：话题只钉标题，不写空 turn | 交给助手后再问，历史能回放 | ✅ 关闭（home-open 单测：话题无 turn/start） |
+| H30 | 话题问助手损坏 | 抽屉 followup 无 `message.id` → resume `lacks an identified message`；host `agents.create` 不传模型 → `{{model}}` 无值。`identifiedUserMessage` + `topicAgentRoute`（yzjModels / agentDefaultModel） | 问助手后官方 Chat 能打开、能续问 | ✅ 关闭（bound-io / home-open 单测；已坏 session 须停 GUI 后删目录） |
+| H31 | 挂钩走「新会话」点走就藏 | 试过停写空 turn。真机：focus 到挂钩后窗口标题已是群名，但无 tab ring、`yzj-room-shell` 为 0，并栈溢出。维持空 turn（R14） | 点「对话」必须出工作台 | ✅ 关闭（否决；home-open 仍写空 turn） |
+| H32 | 未登录入口 | 原先只有工具摘要「请先运行 `yzj-cli auth login`」；home-nav 是本地表，未登录会话列空着。v1.10 / R26：`auth-status` 探测 + `auth-login` 后台拉起 CLI 浏览器登录；工作台会话列 / 非对话域顶栏 / 设置→云之家 登录卡 | 页面上能跳去登录，不用自己开终端 | ✅ 关闭（bridge `start` + RPC + login-banner / conv-list / settings 单测） |
+| H33 | 工作台挂钩 | 开工作台必须 focus/建 `yzj-home-*` 才能挂 `conversation.view`；入口在侧栏脚。v1.11 / R27：中间栏 DOM 盖层 + 「新建会话」下入口；开面板不造 session；话题仍 `sessions.open` | 开云之家不新建会话；点话题才回官方 Chat | ✅ 关闭（overlay / sidebar-entry / dock 不再 focus；room-shell overlay 模式） |
+| H34 | 召唤窗每次重贴 / 记忆跟着重发 / 文件没 fileId | GUI 每轮 snapshot 带完整近窗（skip 把 snapshot 当 plugin 又同轮闪掉）；整份快照（含 `yzj-memory`）跟着 2741↔577 重发。`messageLine` / 窗口只渲染 `[文件]:名`。v1.12：稳住快照指纹、时间戳带日期、digest 输出 `fileId=` | 续问不再新贴窗/记忆；群附件能按 fileId 下载 | ✅ 关闭（bound-log / home / im 单测；pitfall-029） |
+| H35 | 话题没有标准工具 | 程序化 `create` 漏挂 preset，裸作用域只有 host 的 `yzj_*`。v1.13 / R28：create/resume mount `agentPresets.defaultId`（standard） | 话题里能读文件 / bash，同时还能发群 | ✅ 关闭（home-open 单测；pitfall-030） |
+| H36 | 日程永远是 8 月 3 日那条 | 面板/工具一次拉整月。云之家 `calendar event list` 跨天窗口按循环系列折叠，只留窗口内第一次（实测 2 日已丢 18 日那次）。v1.14：按天拆查。v1.15：7 天条带 + 快慢指针（peek 后缀、只信最早日、空尾一停），RPC 与 `yzj_calendar_event_list` 共用 | 打开 8 月能看到各次；今天右侧有今天的会；不再 31 天全打 | ✅ 关闭（calendar-range / events RPC 单测；已登录 tools 冒烟；pitfall-032） |
+| H37 | 日程/对话不像灵基原型 | 面板日程只有月点 + 右栏列表，无日/周/年；工作台切域只靠侧栏 dock。v1.16：顶栏页签 + 日程四视图（对照 lingee 原型 `.cal` / `calendar-page__tabs`） | 顶栏能切四域；日程能切日/周/月/年 | ✅ 关闭（calendar-pane / room-shell 单测） |
+| H38 | 话题结果不回云之家话题 | DSH 话题里问助手，回复只留在 DSH；群里锚点回复链是空的。模型偶尔调 `yzj_im_message_send`（还要确认卡），且会把过程也发出去。v1.17 / R29：`agent/status` idle 后 host 以 CLI 本人身份把本轮**最后一条助手正文**回复到 `rootMsgId`；本轮 `write`/`edit` 产物 `file upload` 成功后再写进总结（图进 richText 回复；其它文件因 CLI 不支持 file+reply，跟发群时间线，总结写明落点，pitfall-033）。跳过 plugin 入站 / 已调 `yzj_im_message_send` / 写闸 pending / 假锚点 / 无正文。投递失败不清 watermark，下一轮 idle 可重试。机器人通道本刀不动 | 云之家话题链能看见总结 + 产物；不是每条气泡 | ✅ 关闭（`topic-deliver` 单测 + dsh-2 真机回帖；file 不能进链是 CLI 契约不是漏实现） |
+| H39 | 话题面板看不到产物 | 云之家 file 不能挂回复链，话题抽屉透镜原先只有文字气泡。v1.17 / R30：透镜把本轮 write/edit 文件画在助手气泡下。R29 发群照旧。助手正文读 `data.message.content` 与 `data.content` | 抽屉里能看见纪要.md 等卡片；群里文件帖仍在 | ✅ 关闭（`topicLensBubbles` 单测 + 抽屉客户端卡） |
+| H40 | 四域多个侧栏入口 | 侧栏曾并排「对话 / 待办 / 日程 / 知识库」四钮，和官方侧栏抢注意力。v1.17 / R31：左边只留「云之家」；四域改工作台顶栏页签。卡片「查看」仍 `setWorkbenchDomain` | 一个入口 + 页签 | ✅ 关闭（dock 无四钮；room-shell 顶栏页签单测） |
 
-沿用不动：消息日志存储/去重/回填（T1/T7–T9）、召唤窗口（T4/T5）、写路径 D9、群内建议卡（ConfirmBroker）、未绑定私聊与丢进群（D7/D8）。G3 与 G5 继续开放。
+沿用不动：消息日志存储/去重/回填（T1/T7–T9）、召唤窗口（T4/T5）、写路径 D9、群内建议卡（ConfirmBroker）、未绑定私聊与丢进群（D7/D8）。G3 与 G5 继续开放。**v1.17 / R29**：话题 job-done 投递是「问助手」的契约投递面（CLI 本人身份、无确认卡），不是 D9 agent 另起写；agent 显式 `yzj_im_message_send` 仍走确认卡。
 
 ### 23.2 验收指针
 
-按 [`group-room-topics.md`](../spec/group-room-topics.md) §7 + §9.7。H2/H3/H5/H6/H7/H8/H9/H10/H11/H12/H13/H14/H15/H16/H17/H18/H19 有单测。H4 入站话题有 router 单测，`local-*`→真实 msgId 的 `retargetAnchor` 有 topics 单测；真机 `.acceptance/verify-robot-at-topic.mjs`（未连接 skip）。真机脚本：`.acceptance/verify-group-room-e2e.mjs`（需运行中 GUI + 已登录 yzj-cli；**禁止杀 3080 / `--profile web` 宿主**——改 host / browser 后请用户手动重启 GUI；改 browser TS 后 bundle 前必须先 `tsc -b`，见 pitfall-016）。**v1.1 P0**：入口块 + 会话列表 + 话题抽屉 + `lastActivity` + `~/.dsh-yzj/workspace`。**P1**：时间线精致度六条。**P2**：四域迁入工作台、`shell.overlay` 摘除、72px 留白删除。**P3**：`TopicRecord.status` + L2 徽标 + write-gate L5 回落。**视觉刀**：pitfall-018 tab ring、composer 列、dock 退役、群名占位。**宿主生命周期**：pitfall-019 总线 + view-ring 收窄到 header + e2e 盒子缺失即失败。**v1.2**：H9 历史对话话题、H18 透镜气泡/问助手、H4 skip 型 e2e、发布口径。
+按 [`group-room-topics.md`](../spec/group-room-topics.md) §7 + §9.7。H2/H3/H5/H6/H7/H8/H9/H10/H11/H12/H13/H14/H15/H16/H17/H18/H19 有单测。H4 入站话题有 router 单测，`local-*`→真实 msgId 的 `retargetAnchor` 有 topics 单测；真机 `.acceptance/verify-robot-at-topic.mjs`（点 `yzj-dock-home` 开盖层后走抽屉；机器人状态在设置）。真机脚本：`.acceptance/verify-group-room-e2e.mjs`（需运行中 GUI + 已登录 yzj-cli；**禁止杀 3080 / `--profile web` 宿主**——改 host / browser 后请用户手动重启 GUI；改 browser TS 后 bundle 前必须先 `tsc -b`，见 pitfall-016）。**v1.1 P0**：入口块 + 会话列表 + 话题抽屉 + `lastActivity` + `~/.dsh-yzj/workspace`。**P1**：时间线精致度六条。**P2**：四域迁入工作台、`shell.overlay` 摘除、72px 留白删除。**P3**：`TopicRecord.status` + L2 徽标 + write-gate L5 回落。**视觉刀**：pitfall-018 tab ring、composer 列、dock 退役、群名占位。**宿主生命周期**：pitfall-019 总线 + view-ring 收窄到 header + e2e 盒子缺失即失败。**v1.2**：H9 历史对话话题、H18 透镜气泡/问助手、H4 skip 型 e2e、发布口径。**v1.3 布局刀**：`.acceptance/verify-room-layout.mjs`（有界三栏 / 触底 / composer 可见 / 无鬼影行 / 机器人标注 / 长帖折叠 / 抽屉有界）；pitfall-020（overlay 契约 + 跟随门控）；H10 标题改「话题 · 群名」。**v1.4**：R20/H16/H21 云之家分组只进话题；`attachYzjSession` 闸 + cwd/RPC 单测。**v1.5**：R22/H23 话题与普通会话不得挂 IM 壳；view-ring 点「对话」+ `YzjRoomShell` 前缀闸。**v1.6**：R21/H11 记忆入口搁置；R23/H26 拖入引用退役（面板/待办无 drag，`verify-drop.mjs` skip）。**H27**：他人气泡浅色主题可见（pitfall-023）。**v1.7**：R24/H28 点群只切 groupId，不建/不 focus DSH 会话（pitfall-024）。**R25/H29 空 turn**：话题不写空 turn 1（pitfall-025）。**v1.9 / H12**：话题问助手近窗（pitfall-027；`.acceptance/verify-summon-window.mjs`）。**v1.11 / H33**：工作台盖中间栏，开面板不建挂钩（R27 / pitfall-028）。**v1.14 / H36**：日程按天拆查，循环实例不再被整月折叠成第一次（pitfall-032）。**v1.15 / H36**：改成周条带 + 快慢指针，空后缀一次停。**v1.17 / H38**：话题 job-done 投递（`topic-deliver.spec.ts`；dsh-2 真机回帖自跳过若未登录）。**v1.17 / H39**：话题透镜产物卡（`topicLensBubbles` + 抽屉客户端；发群 R29 仍在）。**v1.17 / H40**：侧栏单入口 + 工作台页签（`yzj-dock-home` / `yzj-workbench-tab-*`；dock / room-shell 单测）。
+
+## 24. AI推进第一期｜事元流驱动的推进事项（2026-08-19，设计随提交）
+
+设计基线 [`ai-advance-design.md`](../spec/ai-advance-design.md) v1.0（PRD《AI推进-产品PRD v2.1》+ 灵基原型 lgap17 版引用锚点全文收录于其 §0）。三条硬要求（用户拍板）全部落地：
+
+| 面 | 交付 | 证据 |
+|---|---|---|
+| 数据模型 | `advance.ts`：事项/事元双表（同「待办任务库」dbt，`sheet table create` 自愈开通，SingleSelect 预注册六态与来源/变化类型）；**feed 是唯一变更通道**（无 update/delete 工具），字段级 `原值→新值` diff host 生成；投影（阶段/目标/指标/最新动态）随 feed 折叠回写，读路径以流为准 | `advance.spec.ts` 15 项（fake bridge 有状态存储）：建表、幂等、投影折叠、六态流转、非法跳变拒绝且零事元、**时间线无损**（feed N 条翻页读回全量且有序）、judge 用户事元 |
+| 工具面 | `yzj_advance_list/get/create/feed`（45→49）；guard `WRITE_SPECS` +2（create/feed 标准确认，25→27 写门禁） | guard.spec 绿；确认卡 `advance` 域展示变化类型/摘要/阶段流转/原值→新值/refs chips |
+| 服务/RPC | `ctx.yzjAdvance`（state/get/ensure/create/feed/judge）与 todo 共享 active-library holder（库切换双板跟随）；`/yzj` +5 端点（advance-state/get/create/judge/ensure，25→30） | judge 五动词（确认新条件/确认推进→updated/验收→completed/打回→running/忽略→running）全部落 `操作者=user` 事元——D9 直写无卡 |
+| 独立看板 | **第五页签「推进」**（`WorkbenchDomain` 扩 `advance`，R21/R31 v1.18 修订——推进有真实数据源，与空壳「会议/AI速记」页不同）；`advance-pane.tsx` 按 lgap17 信息架构复刻：左队列三组带徽标（待我决定/待我验收/我关注的推进，空态文案沿原型语气）、主详情（kicker+阶段 pill、成功指标卡行、当前有效目标、阶段化决策区、三色时间旅程+来源跳转+查看全部翻页）、右侧信息来源（状态标：已确认/已读取/未达标/等待中）+已有产物+PRD 底注；发起推进弹窗=面板直写立项。**待办页签与 todo-pane 零改动** | `advance-pane.client.spec.tsx` 8 项 + room-shell 五页签断言；全量 551 绿；真机走查 `.acceptance/verify-advance-board.mjs`（需重启 GUI 后跑，截图进 shots-advance/） |
+
+**分期状态**：①地基本次交付；② 事元接入便捷化、③ AI 主动回路（机制 C–F：AI 触发阶段/最小推进回路/验收辅助/schedule 巡检）、④ 知识沉淀出口（事元流折复盘文档入知识库 + 纪要模板）、⑤ 归集分析——见设计 §8。
+
+**已知偏差**：(a) AGENTS/本档旧文提到的 `bundle/skills/yzj-cli/SKILL.md` 在当前仓库不存在（历史路径）；第一期 agent 教学面由工具 description（立项预填、running 勿打扰、feed 唯一变更通道）与 spec 承载，机器级 skill 的「AI推进」章节待 skill 文件回仓后补。(b) 来源跳转按「可跳则跳」降级：doc 走 web url/知识库域、对话跳对话域、待办跳待办页签，无消息级锚点（CLI 限制，设计 §9-8）。(c) 双写非事务：投影是缓存、流是事实（设计 §9-6，原生后端应服务端折叠）。

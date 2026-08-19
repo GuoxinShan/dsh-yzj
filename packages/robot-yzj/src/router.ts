@@ -118,6 +118,14 @@ export interface RobotRouterOptions {
   readonly fallbackRoute?: () => { provider?: string; model?: string } | undefined
   /** Per-conversation override lookup (wins over agentOptions); absent = none. */
   readonly resolveOverride?: OverrideResolver
+  /**
+   * Mount the host default agent preset (standard + host yzj tools).
+   * Absent = bare scope, host tools only (pitfall-030).
+   */
+  readonly composePreset?: () => Promise<{
+    readonly agentPreset?: string
+    readonly setup?: CreateAgentOptions['setup']
+  }>
   /** Shared confirmation broker for gated writes (suggestion cards). */
   readonly confirm?: ConfirmBroker
   /** Shared event-driven push hub; absent = turns run but nothing is pushed. */
@@ -262,6 +270,7 @@ export class RobotRouter {
   private readonly agentOptions: { provider?: string; model?: string } | undefined
   private readonly fallbackRoute: (() => { provider?: string; model?: string } | undefined) | undefined
   private readonly resolveOverride: OverrideResolver | undefined
+  private readonly composePreset: RobotRouterOptions['composePreset']
   private readonly confirm: ConfirmBroker | undefined
   private readonly push: PushHub | undefined
   private readonly memory: RouterMemoryFace | undefined
@@ -306,6 +315,7 @@ export class RobotRouter {
     this.agentOptions = options.agentOptions
     this.fallbackRoute = options.fallbackRoute
     this.resolveOverride = options.resolveOverride
+    this.composePreset = options.composePreset
     this.confirm = options.confirm
     this.push = options.push
     this.memory = options.memory
@@ -910,7 +920,13 @@ export class RobotRouter {
       }
     }
     const window = this.homeFace()?.formatSummonWindow?.(message.groupId, message.msgId, sessionId) ?? ''
-    if (window !== '') {
+    const events = (agent.session?.events ?? []) as unknown as { type: string; data: unknown }[]
+    const already = events.some((event) => {
+      if (event.type !== 'user/message') return false
+      const raw = JSON.stringify(event.data ?? '')
+      return raw.includes('［本群最近消息')
+    })
+    if (window !== '' && !already) {
       try {
         agent.inject(createUserMessage({
           content: [{ type: 'text', text: window }],
@@ -959,13 +975,26 @@ export class RobotRouter {
         this.logger?.warn(`robot: mkdir session cwd failed for ${cwd}: ${String(error)}`)
       }
     }
-    const meta = { cwd }
+    const composition = this.composePreset === undefined ? {} : await this.composePreset()
+    const meta = {
+      cwd,
+      ...(composition.agentPreset === undefined ? {} : { agentPreset: composition.agentPreset }),
+    }
     // A robot session is durable across host restarts: prefer resuming the
     // persisted log, fall back to a fresh create when none exists. Creating
     // over an existing log is a hard id-collision error in the session store.
     const handle = await this.agents
-      .resume({ resumeSessionId: sessionId, ...(agentOptions === undefined ? {} : { agentOptions }) })
-      .catch(() => this.agents.create({ sessionId, meta, ...(agentOptions === undefined ? {} : { agentOptions }) }))
+      .resume({
+        resumeSessionId: sessionId,
+        ...(agentOptions === undefined ? {} : { agentOptions }),
+        ...(composition.setup === undefined ? {} : { setup: composition.setup }),
+      })
+      .catch(() => this.agents.create({
+        sessionId,
+        meta,
+        ...(agentOptions === undefined ? {} : { agentOptions }),
+        ...(composition.setup === undefined ? {} : { setup: composition.setup }),
+      }))
       .catch(error => {
         this.logger?.warn(`robot: create/resume agent failed for ${sessionId}: ${String(error)}`)
         return undefined

@@ -268,6 +268,26 @@ export function imageUrlOf(fileId: string): string {
 
 const fileDataCache = new Map<string, string>()
 const fileDataInflight = new Map<string, Promise<string | undefined>>()
+const FILE_DATA_LIMIT = 96
+
+function rememberFileData(fileId: string, dataUrl: string): void {
+  fileDataCache.set(fileId, dataUrl)
+  for (const key of fileDataCache.keys()) {
+    if (fileDataCache.size <= FILE_DATA_LIMIT) break
+    fileDataCache.delete(key)
+  }
+}
+
+/** Synchronous hit in the in-session file-data cache (no RPC). */
+export function peekFileData(fileId: string): string | undefined {
+  return fileDataCache.get(fileId)
+}
+
+/** Test helper: drop proxy hits so specs do not leak across files. */
+export function clearFileDataCache(): void {
+  fileDataCache.clear()
+  fileDataInflight.clear()
+}
 
 /**
  * Resolve a fileId's data URL through the /yzj file-data proxy. Results are
@@ -282,19 +302,16 @@ export async function resolveFileData(
   let pending = fileDataInflight.get(fileId)
   if (pending === undefined) {
     pending = inject.fetchFileData(fileId).then((result) => {
+      fileDataInflight.delete(fileId)
       if (!result.ok) return undefined
       const value = (result.value ?? {}) as { dataUrl?: unknown }
       const dataUrl = typeof value.dataUrl === 'string' ? value.dataUrl : ''
-      if (dataUrl !== '') {
-        fileDataCache.set(fileId, dataUrl)
-        // Bounded: drop oldest entries beyond 32.
-        for (const key of fileDataCache.keys()) {
-          if (fileDataCache.size <= 32) break
-          fileDataCache.delete(key)
-        }
-      }
+      if (dataUrl !== '') rememberFileData(fileId, dataUrl)
       return dataUrl === '' ? undefined : dataUrl
-    }).catch(() => undefined)
+    }).catch(() => {
+      fileDataInflight.delete(fileId)
+      return undefined
+    })
     fileDataInflight.set(fileId, pending)
   }
   return pending
