@@ -331,7 +331,7 @@ describe('YzjTopicDrawer', () => {
     document.body.appendChild(container)
     const root = createRoot(container)
     const asked: string[] = []
-    setAdvanceAskDraft({ advanceId: 'A-1', title: '试运行', text: '请验收辅助 A-1' })
+    setAdvanceAskDraft({ advanceId: 'A-1', title: '试运行', text: '请验收辅助 A-1', kind: 'review' })
     await act(async () => {
       root.render(
         <YzjTopicDrawer

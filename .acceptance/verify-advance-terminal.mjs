@@ -1,9 +1,7 @@
 /**
- * ④期 cancelled 终局真机走查(spec §16.7-2):建探针(面板直写无卡)→
- * 详情「中止推进」二次确认 → judge cancel。
- * 存量推进库(v1.6 前建)缺 cancelled SingleSelect 选项:预期 assertStageOption
- * 明示报错引导(不静默丢);若库已补选项则走通 cancelled 全流(队列消失+
- * 终局提示出现+重启回 running)。
+ * ④期 cancelled 终局真机走查(spec §16.7-2,存量库已补 cancelled 选项后):
+ * 对既有「终局探针」点「中止推进」(二次确认)→ 阶段已中止 → 终局提示
+ * 「沉淀复盘」出现 → 队列排除。走查后探针留在 cancelled(可手工重启或清理)。
  */
 import { chromium } from 'playwright'
 import { existsSync, mkdirSync } from 'node:fs'
@@ -14,6 +12,7 @@ const OUT = join(dirname(fileURLToPath(import.meta.url)), 'shots-advance-termina
 mkdirSync(OUT, { recursive: true })
 const shot = (name) => join(OUT, name)
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+const PROBE = '终局探针'
 
 let failures = 0
 const ok = (name, cond, extra = '') => {
@@ -34,53 +33,38 @@ await page.waitForTimeout(2000)
 await page.getByTestId('yzj-workbench-tabs').getByRole('tab', { name: '推进' }).click()
 await page.waitForTimeout(5000)
 
-// --- 1. 发起推进(面板直写探针) ---
 const pane = page.getByTestId('yzj-advance-pane')
-const startBtn = page.getByTestId('yzj-advance-start')
-await startBtn.click()
-await page.getByTestId('yzj-advance-start-modal').waitFor({ state: 'visible', timeout: 8000 })
-const stamp = Date.now().toString().slice(-6)
-const title = `终局探针 ${stamp}`
-await page.getByTestId('yzj-advance-draft-title').fill(title)
-await page.getByTestId('yzj-advance-draft-goal').fill('④期 cancelled 走查探针,可随时清理')
-await page.getByTestId('yzj-advance-create').click()
-await page.waitForTimeout(12000)
-let paneText = await pane.innerText().catch(() => '')
-ok('探针立项出现在队列', paneText.includes(title), paneText.slice(0, 100).replace(/\n/g, ' '))
-await page.screenshot({ path: shot('1-created.png') })
-
-// --- 2. 详情 → 中止推进(二次确认) ---
-await pane.getByText(title).first().click()
+await pane.getByText(new RegExp(PROBE)).first().click()
 await page.waitForTimeout(4000)
+
+// 中止推进(二次确认)
 const cancelBtn = page.getByTestId('yzj-advance-judge-cancel')
 ok('「中止推进」按钮出现(非终态)', await cancelBtn.count().then((n) => n > 0))
 await cancelBtn.click()
 await page.waitForTimeout(800)
 const armedText = await cancelBtn.innerText()
-ok('二次确认态(确认中止?再点一次)', armedText.includes('再点一次'), armedText)
-await page.screenshot({ path: shot('2-cancel-armed.png') })
+ok('二次确认态', armedText.includes('再点一次'), armedText)
 await cancelBtn.click()
 await page.waitForTimeout(8000)
-await page.screenshot({ path: shot('3-after-cancel.png') })
+await page.screenshot({ path: shot('4-cancelled.png') })
 
 const detail = page.getByTestId('yzj-advance-detail')
 const detailText = await detail.innerText().catch(() => '')
-const guided = /缺.*cancelled.*选项|补加选项/.test(detailText)
-const cancelledOk = detailText.includes('已中止')
-if (guided) {
-  info('存量库缺 cancelled 选项 → assertStageOption 明示引导(预期路径)')
-  ok('缺选项明示引导(不静默丢)', true)
-} else {
-  ok('cancelled 流转成功(库已含选项)', cancelledOk, detailText.slice(0, 120).replace(/\n/g, ' '))
-  // 终局提示:completed/cancelled 区有「沉淀复盘」
-  const terminal = page.getByTestId('yzj-advance-terminal')
-  ok('终局提示+沉淀复盘入口', await terminal.count().then((n) => n > 0))
-  // 队列排除 cancelled
-  paneText = await pane.innerText().catch(() => '')
-  ok('队列不再显示已中止探针', !paneText.includes(title), '')
-  // 重启:cancelled→running 需经 RPC judge?重启走 agent feed actor 非 user 会被拦;
-  // 面板无重启按钮——本期不设(决策 27 只要求状态机允许)。跳过。
-}
+ok('阶段已中止', detailText.includes('已中止'), detailText.slice(0, 150).replace(/\n/g, ' '))
+const terminal = page.getByTestId('yzj-advance-terminal')
+ok('终局提示+沉淀复盘入口出现', await terminal.count().then((n) => n > 0))
+const exportBtn = page.getByTestId('yzj-advance-export-review')
+ok('「沉淀复盘」按钮可点', await exportBtn.count().then((n) => n > 0))
+const queueEl = page.getByTestId('yzj-advance-queue')
+const queueText = await queueEl.innerText().catch(() => '')
+ok('队列不再显示已中止探针', !queueText.includes(PROBE), queueText.slice(0, 120).replace(/\n/g, ' '))
+
+// 点「沉淀复盘」验证跳对话域预填(不发送)
+await exportBtn.click().catch(() => {})
+await page.waitForTimeout(2500)
+await page.screenshot({ path: shot('5-export-review.png') })
+const bodyText = await page.evaluate(() => document.body.innerText)
+ok('跳对话域且 banner 提示复盘已预备', bodyText.includes('复盘沉淀已预备'), '')
 
 console.log(failures === 0 ? 'ALL PASS' : `${failures} FAILURES`)
 await browser.close()

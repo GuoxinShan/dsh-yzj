@@ -469,6 +469,7 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                         advanceId,
                         title,
                         text: reviewAskText(advanceId, title),
+                        kind: 'review',
                       })
                       setWorkbenchDomain('im')
                     }}
@@ -573,7 +574,7 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                           onClick={() => {
                             const advanceId = asString(detail.item.advanceId)
                             const title = asString(detail.item.title)
-                            setAdvanceAskDraft({ advanceId, title, text: exportReviewAskText(advanceId, title) })
+                            setAdvanceAskDraft({ advanceId, title, text: exportReviewAskText(advanceId, title), kind: 'export' })
                             setWorkbenchDomain('im')
                           }}
                         >

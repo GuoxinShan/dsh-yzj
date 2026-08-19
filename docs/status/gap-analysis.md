@@ -758,4 +758,6 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 
 **真机（2026-08-19 晚，本机 Mac，GUI 重启加载 main 合并后 bundle）**：`pnpm test` **602 绿**（595+7）；`node .acceptance/verify-advance-terminal.mjs` → **ALL PASS**：面板直写探针「终局探针」立项（无卡）→ 详情「中止推进」二次确认态正确 → judge cancel 撞上存量库缺 cancelled 选项，`assertStageOption` 明示引导（「请在多维表格给该字段补加选项 cancelled 后重试」）——不静默丢的诚实路径按设计工作。截图 `shots-advance-terminal/1-3`。
 
-**已知边界（计划内）**：(a) 存量推进库需手工补 `cancelled` 选项一次（多维表格 UI；CLI 无补选项命令）后 cancelled 全流才通；(b) 终局事项从队列排除后详情不可再打开，「沉淀复盘」提示只在收口当刻可见（决策 26：主路径是用户口述）；(c) 复盘/纪要的批量落待办（决策 28）与面板直写一键沉淀（决策 26 明确不做）均未实现，属教学面口径。(d) 面板 judge 区「中止推进」按钮本期无单测覆盖 busy 态（二次确认已覆盖）。
+**存量库升级（同日晚，用户拍板「删掉重新加」）**：CLI 无补选项口子（实测：运行期写未注册值回读为空串，静默丢弃今日仍成立；`sheets/update` 端点仅供 rename）→ 对推进库做**备份→删「事项」表→按最新 itemFieldsJson 七态重建→导回**：事项 7 条字段级零差异、事元 24 条未动、阶段选项含 cancelled。备份留 `/tmp/yzj-advance-backup/`。升级后重跑 `verify-advance-terminal.mjs` → **ALL PASS**：探针中止 → 已中止 → 终局提示「沉淀复盘」→ 队列排除 → 跳对话域 banner「复盘沉淀已预备」。截图 `shots-advance-terminal/4-cancelled.png`、`5-export-review.png`。
+
+**已知边界（计划内）**：(a) ~~存量推进库需手工补 cancelled 选项~~ 已由备份-重建-导回完成（见上）；(b) 终局事项从队列排除后详情不可再打开，「沉淀复盘」提示只在收口当刻可见（决策 26：主路径是用户口述）；(c) 复盘/纪要的批量落待办（决策 28）与面板直写一键沉淀（决策 26 明确不做）均未实现，属教学面口径。(d) 面板 judge 区「中止推进」按钮本期无单测覆盖 busy 态（二次确认已覆盖）。(e) banner 文案按 draft kind 区分（验收/复盘）——复用 bus 时记得带 kind，否则误导（本日走查抓到，已修）。
