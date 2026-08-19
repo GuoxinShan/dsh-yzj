@@ -44,6 +44,7 @@
 | 33 | yzj-cli `msg-type file` 不能带 `--reply-msg-id`，产物文件进不了回复链 | ui-yzj 话题 job-done / `parseImSend` / `yzj_im_message_send` | [pitfall-033-cli-file-cannot-reply.md](pitfall-033-cli-file-cannot-reply.md) |
 | 34 | rc.7：`tool.call.toolview` 要 type-import merge；SessionId branded；禁止 `/src/` 深路径 | ui-yzj browser half / 根包 registry 对齐 | [pitfall-034-rc7-slot-merge-and-sessionid.md](pitfall-034-rc7-slot-merge-and-sessionid.md) |
 | 35 | 新鲜 web profile 的内测声明 / API Key 卡挡住云之家 dock | `.acceptance` 真机脚本 / 空 web profile 首启 | [pitfall-035-first-run-onboarding-masks-dock.md](pitfall-035-first-run-onboarding-masks-dock.md) |
+| 36 | 验收脚本的话题步骤对「目标群有没有话题锚点」敏感：数据态差异被误读成代码回归 | `.acceptance/verify-advance-feed.mjs` / 任何以话题为前置的走查 | [pitfall-036-acceptance-topic-data-precondition.md](pitfall-036-acceptance-topic-data-precondition.md) |
 
 ## 维护规则
 

@@ -61,6 +61,16 @@ const SOURCE_ICON: Record<string, string> = {
   '对话': '聊', '待办': '待', '文档': '文', '会议': '会', '日程': '日', '数据': '数', '人工': '人',
 }
 
+/** Single-character icon per thread token prefix (订阅渠道 chip). */
+const THREAD_ICON: Record<string, string> = {
+  im: '群', doc: '文', todo: '待', event: '日', file: '附',
+}
+
+function threadIconOf(token: string): string {
+  const prefix = token.split(':')[0] ?? ''
+  return THREAD_ICON[prefix] ?? '源'
+}
+
 /** Workbench domain a source type jumps to (可跳则跳，不可跳则只标注). */
 function sourceJumpDomain(sourceType: string): 'im' | 'todo' | 'docs' | 'calendar' | null {
   if (sourceType === '对话') return 'im'
@@ -72,7 +82,7 @@ function sourceJumpDomain(sourceType: string): 'im' | 'todo' | 'docs' | 'calenda
 
 /** Props: the RPC verbs the board needs (subset of the panel inject). */
 export interface AdvancePaneProps {
-  inject: Pick<YzjPanelInject, 'advanceState' | 'advanceGet' | 'advanceCreate' | 'advanceJudge' | 'advanceEnsure' | 'advanceScanState'>
+  inject: Pick<YzjPanelInject, 'advanceState' | 'advanceGet' | 'advanceCreate' | 'advanceJudge' | 'advanceEnsure' | 'advanceScanState' | 'advanceThreadAdd' | 'advanceThreadRemove' | 'fetchGroups'>
 }
 
 /** Queue-head patrol line (spec §14.5). */
@@ -82,6 +92,34 @@ export function formatScanStatus(scannedAt: number | null, found: number): strin
   const hh = String(date.getHours()).padStart(2, '0')
   const mm = String(date.getMinutes()).padStart(2, '0')
   return `上次巡检 ${hh}:${mm} · 本轮发现 ${found} 条`
+}
+
+/**
+ * Parse one decision-request 事元 detail into selectable options (spec §15.4
+ * / 决策 23): `选项N: …` lines become buttons, the `影响: …` line is shown
+ * separately, the remaining lines stay as plain detail. No `选项N` line →
+ * options empty (the classic two verbs render unchanged).
+ */
+export function parseDecisionOptions(detail: string): { options: string[]; impact: string; rest: string } {
+  const options: string[] = []
+  let impact = ''
+  const rest: string[] = []
+  for (const line of detail.split('\n')) {
+    const trimmed = line.trim()
+    if (trimmed === '') continue
+    const option = trimmed.match(/^选项\d+[:：]\s*(.+)$/)
+    if (option !== null) {
+      options.push((option[1] ?? '').trim())
+      continue
+    }
+    const impactMatch = trimmed.match(/^影响[:：]\s*(.+)$/)
+    if (impactMatch !== null) {
+      impact = (impactMatch[1] ?? '').trim()
+      continue
+    }
+    rest.push(trimmed)
+  }
+  return { options, impact, rest: rest.join('\n') }
 }
 
 interface BoardState {
@@ -97,6 +135,7 @@ interface DetailState {
   entries: UnknownRecord[]
   entryTotal: number
   sources: UnknownRecord[]
+  threads: UnknownRecord[]
 }
 
 export function YzjAdvancePane(props: AdvancePaneProps) {
@@ -110,6 +149,9 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
   const [draft, setDraft] = useState({ title: '', goal: '', metrics: '', assignee: '', targetDate: '', background: '' })
   const [error, setError] = useState('')
   const [scanLine, setScanLine] = useState('尚未巡检')
+  const [threadModalOpen, setThreadModalOpen] = useState(false)
+  const [threadToken, setThreadToken] = useState('')
+  const [groupOptions, setGroupOptions] = useState<UnknownRecord[]>([])
 
   const loadScan = async (): Promise<void> => {
     const result = await props.inject.advanceScanState()
@@ -160,6 +202,8 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
     }
     let live = true
     setDetailLoading(true)
+    setThreadModalOpen(false)
+    setThreadToken('')
     void props.inject.advanceGet(activeId, showAll ? 0 : undefined, showAll ? 200 : undefined).then((result) => {
       if (!live) return
       setDetailLoading(false)
@@ -173,6 +217,7 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
         entries: asArray(value.entries).map(asRecord),
         entryTotal: typeof value.entryTotal === 'number' ? value.entryTotal : 0,
         sources: asArray(value.sources).map(asRecord),
+        threads: asArray(value.threads).map(asRecord),
       })
     })
     return () => { live = false }
@@ -182,11 +227,11 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
 
   const queues = useMemo(() => queuesOf(board.items), [board.items])
 
-  const judge = async (action: 'confirm_condition' | 'confirm_advance' | 'accept' | 'reject' | 'ignore'): Promise<void> => {
+  const judge = async (action: 'confirm_condition' | 'confirm_advance' | 'accept' | 'reject' | 'ignore', note?: string): Promise<void> => {
     if (busy || activeId === '') return
     setBusy(true)
     setError('')
-    const result = await props.inject.advanceJudge(activeId, action)
+    const result = await props.inject.advanceJudge(activeId, action, note)
     setBusy(false)
     if (!result.ok) {
       setError(result.error.message)
@@ -203,8 +248,64 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
         entries: asArray(value.entries).map(asRecord),
         entryTotal: typeof value.entryTotal === 'number' ? value.entryTotal : 0,
         sources: asArray(value.sources).map(asRecord),
+        threads: asArray(value.threads).map(asRecord),
       })
     }
+  }
+
+  /** Re-pull the detail only (thread add/remove landed registry/entry rows). */
+  const refreshDetail = async (): Promise<void> => {
+    if (activeId === '') return
+    const result = await props.inject.advanceGet(activeId)
+    if (!result.ok) {
+      setError(result.error.message)
+      return
+    }
+    const value = asRecord(result.value)
+    setDetail({
+      item: asRecord(value.item),
+      entries: asArray(value.entries).map(asRecord),
+      entryTotal: typeof value.entryTotal === 'number' ? value.entryTotal : 0,
+      sources: asArray(value.sources).map(asRecord),
+      threads: asArray(value.threads).map(asRecord),
+    })
+  }
+
+  const openThreadModal = async (): Promise<void> => {
+    setThreadModalOpen(true)
+    const result = await props.inject.fetchGroups()
+    if (!result.ok) return
+    const value = asRecord(result.value)
+    const rows = asArray(value.list).length > 0 ? asArray(value.list) : asArray(result.value)
+    setGroupOptions(rows.map(asRecord).filter(row => asString(row.groupId) !== ''))
+  }
+
+  const addThread = async (token: string, label?: string): Promise<void> => {
+    if (busy || activeId === '') return
+    setBusy(true)
+    setError('')
+    const result = await props.inject.advanceThreadAdd(activeId, token, label)
+    setBusy(false)
+    if (!result.ok) {
+      setError(result.error.message)
+      return
+    }
+    setThreadModalOpen(false)
+    setThreadToken('')
+    await refreshDetail()
+  }
+
+  const removeThread = async (token: string): Promise<void> => {
+    if (busy || activeId === '') return
+    setBusy(true)
+    setError('')
+    const result = await props.inject.advanceThreadRemove(activeId, token)
+    setBusy(false)
+    if (!result.ok) {
+      setError(result.error.message)
+      return
+    }
+    await refreshDetail()
   }
 
   const create = async (): Promise<void> => {
@@ -298,6 +399,9 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
   const latestDecision = detail === null
     ? undefined
     : [...detail.entries].reverse().find(entry => asString(entry.changeType) === '决策请求')
+  const decisionParsed = latestDecision === undefined
+    ? undefined
+    : parseDecisionOptions(asString(latestDecision.detail))
 
   return (
     <div className={css.body} data-testid="yzj-advance-pane">
@@ -407,10 +511,27 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                   </div>
                   {stage === 'decision-needed' && (
                     <div className={css.decision}>
-                      {latestDecision !== undefined && (
+                      {latestDecision !== undefined && decisionParsed !== undefined && (
                         <>
                           <h3>{asString(latestDecision.summary)}</h3>
-                          {asString(latestDecision.detail) !== '' && <p>{asString(latestDecision.detail)}</p>}
+                          {decisionParsed.options.length > 0 && (
+                            <div className={css.options} data-testid="yzj-advance-options">
+                              {decisionParsed.options.map((option, index) => (
+                                <button
+                                  key={`o${index}`}
+                                  type="button"
+                                  className={css.optionBtn}
+                                  data-testid={`yzj-advance-option-${index + 1}`}
+                                  disabled={busy}
+                                  onClick={() => { void judge('confirm_advance', option) }}
+                                >
+                                  选项{index + 1}：{option}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                          {decisionParsed.impact !== '' && <p className={css.impact}>影响：{decisionParsed.impact}</p>}
+                          {decisionParsed.rest !== '' && <p>{decisionParsed.rest}</p>}
                         </>
                       )}
                       <div className={css.verbs}>
@@ -483,6 +604,37 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
               <aside className={css.side} data-testid="yzj-advance-sources">
                 <section className={css.section}>
                   <div className={css.sectionHead}>
+                    <h2>订阅渠道</h2>
+                    <button type="button" className={css.linkBtn} data-testid="yzj-advance-thread-add-open" disabled={busy} onClick={() => { void openThreadModal() }}>关联渠道</button>
+                  </div>
+                  {detail.threads.length === 0 ? (
+                    <p className={css.quiet}>尚未订阅线程；关联群后巡检会按订阅取流。</p>
+                  ) : (
+                    <div className={css.threads} data-testid="yzj-advance-threads">
+                      {detail.threads.map((thread, index) => {
+                        const token = asString(thread.token)
+                        return (
+                          <span key={token === '' ? `t${index}` : token} className={css.threadChip} data-testid={`yzj-advance-thread-${index}`}>
+                            <i className={css.threadIcon}>{threadIconOf(token)}</i>
+                            <b>{asString(thread.label) === '' ? token : asString(thread.label)}</b>
+                            <em>{asString(thread.addedBy) === 'user' ? '你关联' : 'AI 关联'}</em>
+                            <button
+                              type="button"
+                              aria-label="解除关联"
+                              data-testid={`yzj-advance-thread-remove-${index}`}
+                              disabled={busy}
+                              onClick={() => { void removeThread(token) }}
+                            >
+                              ×
+                            </button>
+                          </span>
+                        )
+                      })}
+                    </div>
+                  )}
+                </section>
+                <section className={css.section}>
+                  <div className={css.sectionHead}>
                     <h2>当前判断来自哪里</h2>
                     <small>跨工作现场</small>
                   </div>
@@ -546,6 +698,51 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
               <button type="button" onClick={() => { setStartOpen(false) }}>关闭</button>
               <button type="button" className={css.primary} data-testid="yzj-advance-create" disabled={busy || draft.title.trim() === ''} onClick={() => { void create() }}>
                 {busy ? '创建中…' : '开始推进'}
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
+      {threadModalOpen && (
+        <div className={css.mask} data-testid="yzj-advance-thread-modal">
+          <section className={css.modal} role="dialog" aria-modal="true" aria-label="关联渠道">
+            <header className={css.modalHead}>
+              <h2>关联渠道</h2>
+              <button type="button" aria-label="关闭" onClick={() => { setThreadModalOpen(false) }}>×</button>
+            </header>
+            <p className={css.sideNote}>IM 群是持续渠道（巡检增量取流）；文档 / 待办 / 日程 / 文件是单文档源，关联即产一条事元。</p>
+            {groupOptions.length > 0 && (
+              <div className={css.threadGroupList} data-testid="yzj-advance-thread-groups">
+                {groupOptions.map((group) => {
+                  const groupId = asString(group.groupId)
+                  return (
+                    <button
+                      key={groupId}
+                      type="button"
+                      data-testid={`yzj-advance-thread-group-${groupId}`}
+                      disabled={busy}
+                      onClick={() => { void addThread(`im:${groupId}`, asString(group.groupName)) }}
+                    >
+                      {asString(group.groupName) === '' ? groupId : asString(group.groupName)}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+            <label className={css.fieldLabel}>
+              或输入线程 token（im: / doc: / todo: / event: / file:）
+              <input value={threadToken} data-testid="yzj-advance-thread-token" placeholder="doc:5f3a…" onChange={(event) => { setThreadToken(event.target.value) }} />
+            </label>
+            <footer className={css.modalFoot}>
+              <button type="button" onClick={() => { setThreadModalOpen(false) }}>取消</button>
+              <button
+                type="button"
+                className={css.primary}
+                data-testid="yzj-advance-thread-token-submit"
+                disabled={busy || threadToken.trim() === ''}
+                onClick={() => { void addThread(threadToken.trim()) }}
+              >
+                {busy ? '关联中…' : '关联'}
               </button>
             </footer>
           </section>

@@ -218,6 +218,70 @@ describe('createRpcHandler', () => {
     })
   })
 
+  it('advance-thread-add / advance-thread-remove are user-direct subscription writes (spec §15.2)', async () => {
+    const gate: YzjWriteGateFace = { list: () => [], decide: () => false }
+    const bare = createRpcHandler(mountBridge({}), gate)
+    expect(await bare('advance-thread-add', { advanceId: 'A-1', token: 'doc:d1' }, undefined as never)).toEqual({
+      ok: false,
+      error: { code: 'internal', message: 'advance-thread-add: yzjAdvance 服务不可用（tool-yzj 未挂载）', details: {} },
+    })
+    expect(await bare('advance-thread-remove', { advanceId: 'A-1', token: 'doc:d1' }, undefined as never)).toEqual({
+      ok: false,
+      error: { code: 'internal', message: 'advance-thread-remove: yzjAdvance 服务不可用（tool-yzj 未挂载）', details: {} },
+    })
+    const ctx = new Context()
+    const adds: { advanceId: string; token: string; label?: string }[] = []
+    const removes: { advanceId: string; token: string }[] = []
+    ctx.provide('yzjAdvance', {
+      threadAdd: async (advanceId: string, token: string, label?: string) => {
+        if (!/^(im|doc|todo|event|file):/.test(token)) throw new Error(`advance: 非法线程 token「${token}」`)
+        adds.push({ advanceId, token, ...(label === undefined ? {} : { label }) })
+        return { threads: [{ token, kind: 'document', label: label ?? '', addedBy: 'user', addedAt: 1 }], entryAppended: true }
+      },
+      threadRemove: async (advanceId: string, token: string) => {
+        removes.push({ advanceId, token })
+        return []
+      },
+    })
+    const handler = createRpcHandler(ctx, gate)
+    expect(await handler('advance-thread-add', { advanceId: 'A-1' }, undefined as never)).toEqual({
+      ok: false,
+      error: { code: 'internal', message: 'advance-thread-add endpoint requires advanceId and token payloads', details: {} },
+    })
+    const added = await handler('advance-thread-add', { advanceId: 'A-1', token: 'doc:d1', label: '范围说明' }, undefined as never)
+    expect(added.ok).toBe(true)
+    expect(added.ok && (added.value as { entryAppended: boolean }).entryAppended).toBe(true)
+    expect(adds).toEqual([{ advanceId: 'A-1', token: 'doc:d1', label: '范围说明' }])
+    const serviceError = await handler('advance-thread-add', { advanceId: 'A-1', token: 'msg:bad' }, undefined as never)
+    expect(serviceError.ok).toBe(false)
+    expect(serviceError.ok === false && serviceError.error.message).toContain('advance-thread-add failed')
+    expect(await handler('advance-thread-remove', { token: 'doc:d1' }, undefined as never)).toEqual({
+      ok: false,
+      error: { code: 'internal', message: 'advance-thread-remove endpoint requires advanceId and token payloads', details: {} },
+    })
+    const removed = await handler('advance-thread-remove', { advanceId: 'A-1', token: 'doc:d1' }, undefined as never)
+    expect(removed).toEqual({ ok: true, value: { threads: [] } })
+    expect(removes).toEqual([{ advanceId: 'A-1', token: 'doc:d1' }])
+  })
+
+  it('advance-get folds the subscribed threads into the detail (no extra read endpoint)', async () => {
+    const ctx = new Context()
+    ctx.provide('yzjAdvance', {
+      get: async (advanceId: string) => ({
+        item: { advanceId, title: '试运行' },
+        entries: [],
+        entryOffset: 0,
+        entryTotal: 0,
+        sources: [],
+        threads: [{ token: 'im:g1', kind: 'persistent', label: 'dsh-2', addedBy: 'agent', addedAt: 1 }],
+      }),
+    })
+    const handler = createRpcHandler(ctx, { list: () => [], decide: () => false })
+    const result = await handler('advance-get', { advanceId: 'A-1' }, undefined as never)
+    expect(result.ok).toBe(true)
+    expect(result.ok && (result.value as { threads: { token: string }[] }).threads.map(row => row.token)).toEqual(['im:g1'])
+  })
+
   it('dream and model-default endpoints project their services', async () => {
     const ctx = new Context()
     const dreamSets: Record<string, unknown>[] = []

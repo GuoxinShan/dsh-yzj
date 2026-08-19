@@ -27,7 +27,7 @@ docs/
   status/                             ← 实现与设计的对照与验收证据
     gap-analysis.md                    设计×实现 gap 对照（每功能提交留痕，含验收证据）
   plans/                              ← 进行中的实现计划（交接用；完工即删，事实以 spec + gap 为准）
-    advance-threads-dev-plan.md        ③.2 意图线程订阅开发交接（spec §15 的实现分解 + 验收总表 + 交回件）
+    （当前无进行中的计划）
   diagrams/                           ← AI推进图集（archscribe：*-spec.json 为源，*.html 为交互产物；编号留空号不重排）
     advance-1-architecture             MVP 架构与环路（实现视图：事元流绕环一周）
     advance-3-gate                     增量感应门 × 门控线（打扰判据 vs 批写规则，不叠问）
