@@ -608,3 +608,12 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 **不做（③期）**：文档/日程工作台行「喂给推进」；AI 主动回路 C–F。agent composer chip 喂入仍走 ①期 `yzj_advance_feed` 确认卡。
 
 **已知偏差**：与 §24 (a)(b)(c) 同；另：群房间「喂给推进」是行操作文字链，不是独立 chip 组件（产品文案沿用「喂给推进」，实现是 picker 模态）。
+
+**真机（2026-08-19，rc.7 web profile 新实例）**：编 harness client+web dist → `dsh web :3080` → `dsh plugin --profile web add -w link:<本仓>`。boot 图含 `@dsh-yzj/bundle/ui-yzj`，`/plugins/@dsh-yzj/bundle/ui-yzj/client.js` 200。新鲜 profile 先关掉内测声明/API Key 卡（pitfall-035）后：
+
+| 脚本 | chrome | 写路径 |
+|---|---|---|
+| `.acceptance/verify-advance-board.mjs` | **PASS** dock / 五页签「对话 待办 日程 知识库 推进」/ `yzj-advance-pane` 挂上（空态「推进看板还没有开通」+「一键开通」） | **SKIP** exit 0：本机无 `yzj-cli`（`spawn yzj-cli ENOENT`），登录卡在 |
+| `.acceptance/verify-advance-feed.mjs` | **PASS** 「推进」页签 + 看板挂上 | 同上；立项 / 「现在反馈」事项卡 / 群房间 hover picker 需已登录 yzj-cli，本轮未跑 |
+
+截图（git 忽略 `shots*/`）：`shots-advance/1-tabs.png`、`2-board.png`；`shots-advance-feed/0-advance-tab.png`。写路径要在装了 `yzj-cli auth login` 的机器上重跑同一脚本，不要把 ENOENT 当产品失败。

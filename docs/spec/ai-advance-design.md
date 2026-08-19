@@ -237,3 +237,4 @@ UserFeed  // /yzj advance-feed，actor=user
 3. 「现在反馈」切到对话域并出现事项卡；卡上直写与预选喂入都进同一事项；取消后卡消失。
 4. `/yzj advance-feed` 带 `stageTo` 被拒；agent `yzj_advance_feed` 带 `stageTo` 仍走确认卡（回归①期）。
 5. 待办页签、六态、feed 唯一变更通道均不变。
+6. `.acceptance/verify-advance-feed.mjs`：已登录走「立项 → 现在反馈 → 喂给推进 → 时间线」；未登录/无 `yzj-cli` 在五页签+看板 chrome 通过后对写路径 `SKIP` exit 0。新鲜 web profile 须先关掉内测声明/API Key 卡（pitfall-035）。
