@@ -744,3 +744,18 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 **真机（2026-08-19，本机 Mac，GUI 重启加载 worktree bundle，`yzj-cli` 已登录）**：`pnpm test` **592 绿**（基线 575 + 新增 17）。`node .acceptance/verify-advance-threads.mjs` → **ALL PASS**：sidecar 探针 `A-20260819-001`「线程探针 910289」走到 decision-needed → 决策区渲染 选项1/选项2 按钮 + 影响行、既有三动词仍在 → 点选项2 落 user 事元「确认推进：目标日期顺延两周」（你的判断）→ 关联渠道弹层群 picker（10 群）关联后 chip 出现、× 解除 → 手输 `doc:e2e-probe-doc` 落一条备注事元「关联渠道：e2e-probe-doc」。零页面错误。截图 `.acceptance/shots-advance-threads/1-decision-options.png` — `4-doc-thread.png`。**既有 E2E 回归**：`YZJ_E2E_GROUP=dsh-2 node .acceptance/verify-advance-feed.mjs` → ALL PASS（②③期现在反馈/事项卡/群房间喂入/picker 全通；话题步骤自跳过，见 pitfall-037：dsh-2 当前无话题锚点，属数据态非回归）；另以有话题的 测试群走查话题链路（抽屉 → 透镜 → 喂给推进 picker → 问助手预填不 followup）全绿。
 
 **已知偏差**：(a) agent 在 feed 里带 `subscribe` 意图（§15.2 提及）本切片未做，订阅写路径只有 create 参数 + 面板直写两条（计划内排除）；(b) 单文档源只做「关联即一条事元」，内容更新监测未排期（计划内排除，spec §15.1 已注）；(c) Dream 每日节奏未落地（④期配套，本切片只保证 scan 聚合可被任何节奏调用）；(d) 浏览器验收的线程①演示走用户关联路径（storage-domain 注册表是 GUI 进程私有的，sidecar 写入对 GUI 不可见，同 §24.4 sidecar cursor 局限）——立项挂线程①与「同群两事项一次取流」由 fake CLI 单测覆盖；(e) 线程 chip 未展示「最近取流时间」（§15.2 投影句的可选细节，cursor domain 未按线程反查，后置）；(f) vitest client 测试的 harness 源 alias 在无兄弟 checkout的 worktree 下回退到 `~/dev/deepseek-harness`（`DSH_HARNESS_ROOT` 可覆盖）——环境适配，不改变「兄弟 checkout 是唯一事实源」语义。
+## 24.8 AI推进｜④期知识沉淀出口 + 第七态 cancelled（2026-08-19，设计随提交）
+
+设计基线 [`ai-advance-design.md`](../spec/ai-advance-design.md) **v1.6 §16**，决策 26–31（同日拍板：复盘=终局收口、面板不做独立沉淀按钮、一批一次确认、dream 只改 prompt、落点「推进复盘/<事项名>」、工具面零新增）。真机实验第 0 波人工基线（10 分钟/4 篇）是④期自动化收益的对照。
+
+| 面 | 交付 | 证据 |
+|---|---|---|
+| 第七态 cancelled | `cancelled`（已中止）入状态机：非终态均可达、`cancelled→running` 可重启；judge 第六动词 `cancel`（用户直写无卡，D9）；open 队列/scan 订阅聚合/inspect 全排终局（`isOpenStage` 统一）；**终局 host 强制**：agent `stageTo=completed/cancelled` 一律拒绝（actor≠user）——顺带补齐 spec §13.5 早声称「状态机拒绝 completed」而代码未拦的偏差 | `advance.spec.ts` +5：cancel 落 user 事元/重启、legacy 库缺选项明示报错、agent 终局拦截、状态机边、list open 排除 |
+| 存量表 schema 守卫 | `assertStageOption`：写 cancelled 前读 `sheet get` 校验「阶段」SingleSelect 选项（实测形状 `fields[].data.items[].value`），缺则明示引导补选项，不静默丢（迁移文档 §3 事实 5 / pitfall-003） | 真机走查命中（见下） |
+| 面板 | STAGE_LABEL「已中止」+ dot 灰；队列排除终局；决策区底部低强调「中止推进」（二次确认态「确认中止？再点一次」）；终局（completed/cancelled）渲染「沉淀复盘」入口（跳对话域预填，复用「请 AI 验收」bus 模式） | `advance-pane.client.spec.tsx` +2：终局提示写 draft、二次确认；queuesOf 语义更新（终局不进队列，spec §2） |
+| 教学面 | `INSPECT_DISCIPLINE` 补沉淀四步/纪要四步；feed description 同步（七态+终局禁止+沉淀流程）；模板两份落 `docs/spec/advance-review-template.md`（五段）/ `meeting-minutes-template.md`（金蝶四段式） | 文本断言随既有 digest 用例 |
+| dream 取材 | `DREAM_PROMPT` 补推进事项取材指引（yzj_advance_list/get 读终局事项产物事元），放开「只用 memory_*」为「memory_* + yzj_advance_*（只读）」（决策 29） | `memory-yzj/src/dream.ts` |
+
+**真机（2026-08-19 晚，本机 Mac，GUI 重启加载 main 合并后 bundle）**：`pnpm test` **602 绿**（595+7）；`node .acceptance/verify-advance-terminal.mjs` → **ALL PASS**：面板直写探针「终局探针」立项（无卡）→ 详情「中止推进」二次确认态正确 → judge cancel 撞上存量库缺 cancelled 选项，`assertStageOption` 明示引导（「请在多维表格给该字段补加选项 cancelled 后重试」）——不静默丢的诚实路径按设计工作。截图 `shots-advance-terminal/1-3`。
+
+**已知边界（计划内）**：(a) 存量推进库需手工补 `cancelled` 选项一次（多维表格 UI；CLI 无补选项命令）后 cancelled 全流才通；(b) 终局事项从队列排除后详情不可再打开，「沉淀复盘」提示只在收口当刻可见（决策 26：主路径是用户口述）；(c) 复盘/纪要的批量落待办（决策 28）与面板直写一键沉淀（决策 26 明确不做）均未实现，属教学面口径。(d) 面板 judge 区「中止推进」按钮本期无单测覆盖 busy 态（二次确认已覆盖）。
