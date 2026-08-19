@@ -775,3 +775,5 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 全量 606 绿。**产物区收掉（用户拍板 2026-08-20）**：「已有产物」区（sources 的文档类子集聚合）从右栏移除——产物是事元的一部分，随「当前判断来自哪里」呈现；spec §7 sideHtml 口径已同步。右栏自此只有意图线程（订阅渠道）+ 事元（信息来源）两区。
 
 **事元来源区窗口化（同日续）**：「当前判断来自哪里」默认只显示最近 3 条 +「展开全部 N 条 / 收起」（与时间旅程「查看全部」同型）；意图线程的加（关联渠道弹层）/去（chip ×）为既有能力，真机确认在位。607 绿。
+
+**目录级订阅（同日续，决策 32，用户拍板「知识库一整个才能自动获取增量」）**：token 词汇加 **`dir:<docId>`**（知识库目录节点；整库=库根目录 `dir:<kbId>`），kind=persistent 进持续渠道——scan 聚合时按 `doc list --parent-id` 取增量（首扫快照 docId→updateTime 建基线不回灌；增量=新增/更新文档，信号 refs=<docId>、sourceType=文档）；cursor 存 scan domain 新 `dirs` 表。关联弹层**去掉手输 token**（开发者界面不是用户界面）：只留 IM 群 picker + 知识库目录 picker（「我的知识（整库）」+ 一层 hasChildren 目录）；chip 图标加「库」。单测 +3（dir 扫描全生命周期：基线/新增/更新/静默；弹层无手输+目录 picker+dir 关联；threadKindOf dir=persistent）；真机：弹层关联「830实验·共识」ALL PASS（`audit-5/6`），scan digest 含目录基线行（`audit-7`）。608 绿。存量 doc:/todo:/event:/file: 单文档源保留（关联即事元，静态引用）。

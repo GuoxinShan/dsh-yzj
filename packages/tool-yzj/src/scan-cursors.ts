@@ -23,6 +23,13 @@ export interface ScanPatrolMeta {
   readonly found: number
 }
 
+/** One knowledge-base directory thread's snapshot cursor (v1.7, 决策 32): docId → updateTime. */
+export interface DirScanCursor {
+  readonly knownDocs: Readonly<Record<string, string>>
+  readonly scannedAt: number
+  readonly label: string
+}
+
 const cursorSchema = z.object({
   lastMsgId: z.string().min(1),
   scannedAt: z.number().int(),
@@ -34,13 +41,20 @@ const patrolSchema = z.object({
   found: z.number().int(),
 }) as unknown as z.ZodType<ScanPatrolMeta>
 
-/** Durable domain: groupId → cursor + last-patrol meta. */
+const dirCursorSchema = z.object({
+  knownDocs: z.record(z.string(), z.string()),
+  scannedAt: z.number().int(),
+  label: z.string(),
+}) as unknown as z.ZodType<DirScanCursor>
+
+/** Durable domain: groupId → cursor + last-patrol meta + dir:<docId> → doc snapshot. */
 export const yzjAdvanceScanDomainSpec = defineDomain({
   name: 'yzj_advance_scan_cursors',
   version: 0,
   tables: {
     cursors: domainTable<string, ScanCursor>(cursorSchema),
     meta: domainTable<string, ScanPatrolMeta>(patrolSchema),
+    dirs: domainTable<string, DirScanCursor>(dirCursorSchema),
   },
 })
 
@@ -53,6 +67,10 @@ export interface ScanCursorStoreFace {
   entries(): [string, ScanCursor][]
   lastPatrol(): ScanPatrolMeta | undefined
   recordPatrol(found: number, at?: number): Promise<void>
+  /** One directory thread's snapshot cursor (`dir:<docId>` key), or undefined. */
+  getDir(key: string): DirScanCursor | undefined
+  /** Persist one directory thread's snapshot. */
+  putDir(key: string, value: DirScanCursor): Promise<void>
 }
 
 /**
@@ -62,7 +80,9 @@ export interface ScanCursorStoreFace {
 export class ScanCursorStore implements ScanCursorStoreFace {
   private table: KvTable<string, ScanCursor> | undefined
   private meta: KvTable<string, ScanPatrolMeta> | undefined
+  private dirs: KvTable<string, DirScanCursor> | undefined
   private readonly memoryCursors = new Map<string, ScanCursor>()
+  private readonly memoryDirs = new Map<string, DirScanCursor>()
   private memoryPatrol: ScanPatrolMeta | undefined
 
   /**
@@ -74,8 +94,11 @@ export class ScanCursorStore implements ScanCursorStoreFace {
     const domain = await facility.open(yzjAdvanceScanDomainSpec)
     this.table = domain.table('cursors')
     this.meta = domain.table('meta')
+    this.dirs = domain.table('dirs')
     for (const [key, value] of this.memoryCursors) await this.table.put(key, value)
     this.memoryCursors.clear()
+    for (const [key, value] of this.memoryDirs) await this.dirs.put(key, value)
+    this.memoryDirs.clear()
     if (this.memoryPatrol !== undefined) {
       await this.meta.put(LAST_KEY, this.memoryPatrol)
       this.memoryPatrol = undefined
@@ -119,6 +142,20 @@ export class ScanCursorStore implements ScanCursorStoreFace {
       return
     }
     this.memoryPatrol = value
+  }
+
+  /** One directory thread's snapshot cursor, or undefined. */
+  getDir(key: string): DirScanCursor | undefined {
+    return this.dirs?.get(key) ?? this.memoryDirs.get(key)
+  }
+
+  /** Persist one directory thread's snapshot. */
+  async putDir(key: string, value: DirScanCursor): Promise<void> {
+    if (this.dirs !== undefined) {
+      await this.dirs.put(key, value)
+      return
+    }
+    this.memoryDirs.set(key, value)
   }
 }
 

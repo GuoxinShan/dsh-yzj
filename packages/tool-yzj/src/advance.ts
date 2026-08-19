@@ -232,6 +232,8 @@ export interface ScanSignal {
   readonly fromOpenId: string
   readonly content: string
   readonly sendTime: string
+  /** 'dir' = 知识库目录线程的文档增量(msgId 位放 docId);undefined/'im' = IM 消息。 */
+  readonly kind?: 'im' | 'dir'
 }
 
 /** One group's scan outcome. */
@@ -266,6 +268,15 @@ function imMessageLine(signal: ScanSignal): string {
   return `[${time}] ${signal.groupName} ${who} ${body} <${signal.msgId}>`
 }
 
+/** One digest line for a signal; dir signals are document deltas, not chat rows. */
+function scanSignalLine(signal: ScanSignal): string {
+  if (signal.kind === 'dir') {
+    const time = signal.sendTime.length >= 16 ? signal.sendTime.slice(5, 16) : signal.sendTime
+    return `[${time}] 目录「${signal.groupName}」${signal.content} <${signal.msgId}>`
+  }
+  return imMessageLine(signal)
+}
+
 /** Model-facing scan digest (spec §14.2). */
 export function buildScanDigest(result: AdvanceScanResult): string {
   const groupLines = result.groups.map((group) => {
@@ -276,7 +287,7 @@ export function buildScanDigest(result: AdvanceScanResult): string {
   })
   const signalLines = result.signals.length === 0
     ? ['新信号：（无）']
-    : ['新信号：', ...result.signals.map(imMessageLine)]
+    : ['新信号：', ...result.signals.map(scanSignalLine)]
   const items = result.openItems.length === 0
     ? 'open 事项：（无）'
     : `open 事项：${result.openItems.map(item => `${item.advanceId} · ${item.title} [${item.stage}]`).join('；')}`
@@ -301,6 +312,83 @@ function parseImMessage(record: unknown): { msgId: string; fromOpenId: string; c
     fromOpenId: asString(message.fromOpenId ?? fromUser.openId ?? fromUser.oId),
     content: asString(message.content),
     sendTime: asString(message.sendTime),
+  }
+}
+
+/** One knowledge-base directory listing row (doc list --parent-id). */
+interface DirDocRow {
+  readonly id: string
+  readonly title: string
+  readonly updateTime: string
+}
+
+async function listDirDocs(ctx: Context, budget: YzjToolBudget, dirId: string): Promise<DirDocRow[]> {
+  // dirId 是目录 docId 时先 doc get 出 kbId(dir:<docId>);整库订阅 dir:<kbId> 直接按 workspace 扫。
+  let workspace = dirId
+  let parentId: string | undefined
+  const got = await runJson(ctx, budget, 'doc get', ['doc', 'get', '--id', dirId])
+  if (got.ok) {
+    const doc = asRecord(got.json)
+    const kb = asString(doc.kbId)
+    if (kb !== '') {
+      workspace = kb
+      parentId = dirId
+    }
+  }
+  const args = ['doc', 'list', '--workspace', workspace]
+  if (parentId !== undefined) args.push('--parent-id', parentId)
+  const ran = await runJson(ctx, budget, 'doc list', args)
+  if (!ran.ok) throw new Error(`doc list 目录 ${dirId} 失败：${ran.content}`)
+  const rows = asArray(ran.json).length > 0 ? asArray(ran.json) : asArray(asRecord(ran.json).list)
+  const out: DirDocRow[] = []
+  for (const row of rows) {
+    const node = asRecord(row)
+    const id = asString(node.id)
+    if (id === '') continue
+    out.push({ id, title: asString(node.title), updateTime: asString(node.updateTime) })
+  }
+  return out
+}
+
+/** Scan one dir: thread (决策 32): first visit snapshots, later visits surface new/updated docs as signals. */
+async function scanDirThread(
+  ctx: Context,
+  budget: YzjToolBudget,
+  cursors: ScanCursorStoreFace,
+  dir: { id: string; label: string },
+  signals: ScanSignal[],
+  groupResults: ScanGroupResult[],
+  now: number,
+): Promise<void> {
+  const key = `dir:${dir.id}`
+  const name = dir.label === '' ? dir.id : dir.label
+  try {
+    const docs = await listDirDocs(ctx, budget, dir.id)
+    const prior = cursors.getDir(key)
+    const snapshot: Record<string, string> = {}
+    for (const doc of docs) snapshot[doc.id] = doc.updateTime
+    if (prior === undefined) {
+      await cursors.putDir(key, { knownDocs: snapshot, scannedAt: now, label: name })
+      groupResults.push({ groupId: key, groupName: name, baseline: true, newCount: 0 })
+      return
+    }
+    const known = prior.knownDocs
+    const fresh = docs.filter(doc => !(doc.id in known) || known[doc.id] !== doc.updateTime)
+    for (const doc of fresh) {
+      signals.push({
+        kind: 'dir',
+        groupId: key,
+        groupName: name,
+        msgId: doc.id,
+        fromOpenId: '',
+        content: `${doc.id in known ? '更新' : '新增'}文档《${doc.title}》`,
+        sendTime: doc.updateTime,
+      })
+    }
+    await cursors.putDir(key, { knownDocs: snapshot, scannedAt: now, label: name })
+    groupResults.push({ groupId: key, groupName: name, baseline: false, newCount: fresh.length })
+  } catch (error) {
+    groupResults.push({ groupId: key, groupName: name, baseline: false, newCount: 0, error: String((error as Error).message) })
   }
 }
 
@@ -400,6 +488,7 @@ export async function coreScanAdvance(
   // no matter how many items subscribe (决策 18/21).
   let effective = groups
   let preItems: { advanceId: string; title: string; stage: string }[] | undefined
+  let scanDirs: { id: string; label: string }[] = []
   if (effective.length === 0) {
     if (threads === undefined) throw new Error('advance scan: groups must not be empty (no thread registry)')
     const binding = await resolveAdvance(ctx, budget, config, caches, false, holder)
@@ -409,20 +498,24 @@ export async function coreScanAdvance(
     }))
     const openIds = new Set(preItems.map(item => item.advanceId))
     const channelIds = new Set<string>()
+    const dirIds = new Map<string, string>()
     for (const [advanceId, rows] of threads.entries()) {
       if (!openIds.has(advanceId)) continue
       for (const row of rows) {
         const parsed = parseThreadToken(row.token)
-        if (parsed !== undefined && parsed.prefix === 'im') channelIds.add(parsed.id)
+        if (parsed === undefined) continue
+        if (parsed.prefix === 'im') channelIds.add(parsed.id)
+        if (parsed.prefix === 'dir') dirIds.set(parsed.id, row.label)
       }
     }
-    if (channelIds.size === 0) {
-      throw new Error('advance scan: 没有 open 事项订阅 im: 渠道；先在面板「关联渠道」或 create threads 挂群')
+    if (channelIds.size === 0 && dirIds.size === 0) {
+      throw new Error('advance scan: 没有 open 事项订阅 im:/dir: 渠道；先在面板「关联渠道」或 create threads 挂群/目录')
     }
     if (channelIds.size > MAX_SCAN_GROUPS) {
       throw new Error(`advance scan: 订阅渠道 ${channelIds.size} 个超过上限 ${MAX_SCAN_GROUPS}（决策 17）；请按事项分批传 groups`)
     }
     effective = [...channelIds]
+    scanDirs = [...dirIds.entries()].map(([id, label]) => ({ id, label }))
   }
   if (effective.length > MAX_SCAN_GROUPS) throw new Error(`advance scan: at most ${MAX_SCAN_GROUPS} groups`)
   const pageSize = !Number.isInteger(limit) || limit < 1 || limit > 20 ? 20 : limit
@@ -475,6 +568,9 @@ export async function coreScanAdvance(
         error: String((error as Error).message),
       })
     }
+  }
+  for (const dir of scanDirs) {
+    await scanDirThread(ctx, budget, cursors, dir, signals, groupResults, now)
   }
   await cursors.recordPatrol(signals.length, now)
   let openItems: { advanceId: string; title: string; stage: string }[]
@@ -1533,7 +1629,7 @@ export class YzjAdvanceService extends Service {
   async threadAdd(advanceId: string, token: string, label?: string): Promise<AdvanceThreadAddResult> {
     const parsed = parseThreadToken(token)
     if (parsed === undefined) {
-      throw new Error(`advance: 非法线程 token「${token}」；语法 im:<groupId> / doc:<docId> / todo:<todoId> / event:<eventId> / file:<fileId>`)
+      throw new Error(`advance: 非法线程 token「${token}」；语法 im:<groupId> / doc:<docId> / dir:<docId> / todo:<todoId> / event:<eventId> / file:<fileId>`)
     }
     const binding = await resolveAdvance(this.ctx, this.budget, this.config, this.caches, false, this.holder)
     const item = await fetchItemById(this.ctx, this.budget, binding, advanceId)
@@ -1799,7 +1895,7 @@ export function applyAdvanceTools(
 
   ctx.tools.register(defineTool({
     name: 'yzj_advance_scan',
-    description: 'Read-only incremental IM scan for AI推进 auto-discovery (spec §14 / §15.3). Host owns the per-group cursor (storage-domain); the model must not pass or invent a msgId cursor. First visit of a group records a baseline and returns no history. Later visits return messages after the cursor, minus self and BOT- senders. groups is optional: omit it to scan every im: channel subscribed by open items (registry yzj_advance_threads, deduped — one fetch per channel whichever items subscribe); the digest lists each item\'s 订阅清单 so you dispatch signals by thread + semantic relevance. Explicit groups stay capped at 8 (决策 17); subscription aggregation errors out instead of silently truncating. Patrol five steps: schedule wake → this tool → no new messages stay silent → new signals → yzj_advance_inspect → feed per §13 (progress-normal silent; interrupt → decision-needed; never completed). When the user says 开启巡检, create a root-session schedule_create(every_seconds≥300) whose prompt lists the groups.',
+    description: 'Read-only incremental IM scan for AI推进 auto-discovery (spec §14 / §15.3). Host owns the per-group cursor (storage-domain); the model must not pass or invent a msgId cursor. First visit of a group records a baseline and returns no history. Later visits return messages after the cursor, minus self and BOT- senders. groups is optional: omit it to scan every im: channel and dir: directory subscribed by open items (registry yzj_advance_threads, deduped — one fetch per channel whichever items subscribe; dir: threads surface new/updated docs in the directory as signals, refs=<docId>). the digest lists each item\'s 订阅清单 so you dispatch signals by thread + semantic relevance. Explicit groups stay capped at 8 (决策 17); subscription aggregation errors out instead of silently truncating. Patrol five steps: schedule wake → this tool → no new messages stay silent → new signals → yzj_advance_inspect → feed per §13 (progress-normal silent; interrupt → decision-needed; never completed). When the user says 开启巡检, create a root-session schedule_create(every_seconds≥300) whose prompt lists the groups.',
     parameters: {
       groups: { type: 'array', items: { type: 'string' }, description: 'Group ids or names to watch (1–8). Omit to aggregate the im: threads of every open item from the subscription registry.' },
       limit: { type: 'number', description: 'Per-group page size 1–20, default 20.' },
@@ -1847,7 +1943,7 @@ export function applyAdvanceTools(
       tags: { type: 'array', items: { type: 'string' }, description: 'Tags for aggregation; # prefixes stripped.' },
       refs: { type: 'array', items: { type: 'string' }, description: 'Traceable ref tokens (yzj:... / msgId / docId) this item originates from; stored on the 立项 entry. Never sent to the CLI.' },
       sourceType: { type: 'string', enum: [...SOURCE_TYPES], description: 'Provenance of the founding signal (default 人工).' },
-      threads: { type: 'array', items: { type: 'string' }, description: 'Intent-thread tokens to subscribe (im:<groupId> / doc:<docId> / todo:<todoId> / event:<eventId> / file:<fileId>). The founding group usually goes here as 线程①; im: threads drive later yzj_advance_scan aggregation.' },
+      threads: { type: 'array', items: { type: 'string' }, description: 'Intent-thread tokens to subscribe (im:<groupId> / dir:<docId 目录或整库 kbId> / doc:<docId> / todo:<todoId> / event:<eventId> / file:<fileId>). The founding group usually goes here as 线程①; im:/dir: threads drive later yzj_advance_scan aggregation.' },
     },
     output: yzjToolOutput,
     timeoutMs: budget.timeoutMs * 4,

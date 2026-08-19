@@ -62,6 +62,8 @@ class FakeStore {
 
   /** Simulates a pre-v1.6 推进库 whose 阶段 SingleSelect lacks the cancelled option. */
   legacyStageOptions = false
+  /** Directory-thread fixture: parentId → listed docs(决策 32 scan dir: mock)。 */
+  dirDocs: Record<string, { id: string; title: string; updateTime: string }[]> = {}
 
   private nextRecordId(): string {
     this.seq += 1
@@ -88,8 +90,16 @@ class FakeStore {
 
   handle(command: string[]): unknown {
     const key = command.slice(0, 2).join(' ')
+    if (key === 'doc list') {
+      // dir: 线程的目录增量(决策 32):带 --parent-id 列目录;否则库发现(待办任务库)
+      const parentAt = command.indexOf('--parent-id')
+      if (parentAt !== -1) {
+        const parentId = command[parentAt + 1] ?? ''
+        return { list: this.dirDocs[parentId] ?? [] }
+      }
+      return { list: [{ id: 'doc1', title: '待办任务库', fileSuffix: 'dbt' }] }
+    }
     if (key === 'doc workspace') return { list: [{ id: 'ws1', name: '我的知识', type: '个人' }] }
-    if (key === 'doc list') return { list: [{ id: 'doc1', title: '待办任务库', fileSuffix: 'dbt' }] }
     if (key === 'sheet get') return { sheets: this.sheets() }
     if (key === 'sheet table') {
       const name = command[command.indexOf('--name') + 1] ?? ''
@@ -101,6 +111,12 @@ class FakeStore {
       // 真实 CLI 返回顶层数组(2026-08-19 实测;旧 {list} 形状曾掩盖 whoami 解析 bug)
       if (this.selfOpenId === '') return []
       return [{ openId: this.selfOpenId, oId: this.selfOpenId }]
+    }
+    // dir: 线程的目录增量 mock(决策 32):doc get 返回 kbId;doc list --parent-id 列目录
+    if (key === 'doc get') {
+      const id = command[command.indexOf('--id') + 1] ?? ''
+      if (id in this.dirDocs) return { kbId: 'kb1' }
+      throw new Error(`doc ${id} not found`)
     }
     if (key === 'im group') return { list: this.groups, more: false }
     if (key === 'im message') {
@@ -703,6 +719,7 @@ describe('thread token grammar (spec §15.2)', () => {
 
   it('maps prefixes to thread kinds and 事元 source types', () => {
     expect(threadKindOf('im')).toBe('persistent')
+    expect(threadKindOf('dir')).toBe('persistent')
     expect(threadKindOf('doc')).toBe('document')
     expect(threadKindOf('file')).toBe('document')
     expect(threadKindOf('msg')).toBeUndefined()
@@ -733,6 +750,39 @@ describe('yzj_advance_scan', () => {
     expect(result.content).toContain('新信号：（无）')
     const data = result.data as { signals: unknown[] }
     expect(data.signals).toEqual([])
+  })
+
+  it('dir: thread snapshots first, then surfaces new/updated docs as signals (决策 32)', async () => {
+    const store = new FakeStore(true)
+    seedIm(store)
+    store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'running' } })
+    store.dirDocs['dir-test'] = [
+      { id: 'd1', title: '纪要 0806', updateTime: '2026-08-19 10:00' },
+    ]
+    const threads = new AdvanceThreadStore()
+    await threads.add('A-1', { token: 'dir:dir-test', kind: 'persistent', label: '830实验·共识', addedBy: 'user', addedAt: 1 })
+    const { tools } = mountWithThreads(store, threads)
+    const scan = tools.find(tool => tool.name === 'yzj_advance_scan')!
+    // 首扫:基线不回灌
+    const first = await scan.execute({})
+    expect(first.content).toContain('基线已立')
+    expect(first.content).not.toContain('纪要 0806')
+    // 新增文档 → 信号
+    store.dirDocs['dir-test']!.push({ id: 'd2', title: '纪要 0812', updateTime: '2026-08-19 12:00' })
+    const second = await scan.execute({})
+    expect(second.content).toContain('新增文档《纪要 0812》')
+    expect(second.content).toContain('<d2>')
+    expect(second.content).toContain('830实验·共识')
+    // 更新文档(updateTime 变) → 信号
+    store.dirDocs['dir-test'] = [
+      { id: 'd1', title: '纪要 0806', updateTime: '2026-08-19 13:00' },
+      { id: 'd2', title: '纪要 0812', updateTime: '2026-08-19 12:00' },
+    ]
+    const third = await scan.execute({})
+    expect(third.content).toContain('更新文档《纪要 0806》')
+    // 无变化 → 静默
+    const fourth = await scan.execute({})
+    expect(fourth.content).toContain('无新消息，静默')
   })
 
   it('second visit with no new messages is silent; a later human message is a signal', async () => {
@@ -851,7 +901,7 @@ describe('intent threads (spec §15 / ③.2)', () => {
     const { tools } = mountWithThreads(store, threads)
     const scan = tools.find(tool => tool.name === 'yzj_advance_scan')!
     const result = await scan.execute({})
-    expect(result.content).toContain('没有 open 事项订阅 im: 渠道')
+    expect(result.content).toContain('没有 open 事项订阅 im:/dir: 渠道')
   })
 
   it('document-source association lands one 备注 事元; repeat is idempotent', async () => {
