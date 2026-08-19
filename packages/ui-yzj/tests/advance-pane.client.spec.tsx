@@ -47,6 +47,7 @@ function mountPane(config: {
   items?: Record<string, unknown>[]
   detail?: { item: Record<string, unknown>; entries: Record<string, unknown>[]; entryTotal?: number; sources?: Record<string, unknown>[]; threads?: Record<string, unknown>[] }
   scan?: { scannedAt: number | null; found: number }
+  dream?: { pending: number; lastDreamAt: number | null }
   groups?: Record<string, unknown>[]
 }): Face {
   const container = document.createElement('div')
@@ -101,6 +102,10 @@ function mountPane(config: {
       advanceScanState: async () => ({
         ok: true,
         value: config.scan ?? { scannedAt: null, found: 0 },
+      }) as Rpc,
+      advanceDreamState: async () => ({
+        ok: true,
+        value: config.dream ?? { pending: 0, lastDreamAt: null },
       }) as Rpc,
       advanceThreadAdd: async (advanceId, token, label) => {
         if (!/^(im|doc|todo|event|file|dir):[A-Za-z0-9_-]+$/.test(token)) {
@@ -518,6 +523,25 @@ describe('YzjAdvancePane', () => {
     await act(async () => { toggle.click(); await Promise.resolve() })
     expect(side.textContent).toContain('来源1')
     expect(toggle.textContent).toContain('收起')
+    act(() => { face.root.unmount() })
+  })
+
+  it('Dream 水位行:pending > 0 时显示「池中 N 条待抽取」+ Dream 抽取按钮写 draft (kind=dream)', async () => {
+    setWorkbenchDomain('advance')
+    const face = mountPane({
+      items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行' })],
+      detail: { item: item({ advanceId: 'A-1', stage: 'running', title: '试运行' }), entries: [] },
+      dream: { pending: 3, lastDreamAt: null },
+    })
+    await settle()
+    const line = face.container.querySelector('[data-testid="yzj-advance-dream-status"]')
+    expect(line?.textContent).toContain('池中 3 条待抽取')
+    const dreamBtn = face.container.querySelector('[data-testid="yzj-advance-dream-now"]') as HTMLButtonElement
+    await act(async () => { dreamBtn.click(); await Promise.resolve() })
+    expect(getWorkbenchDomain()).toBe('im')
+    const draft = getAdvanceAskDraft()
+    expect(draft?.kind).toBe('dream')
+    expect(draft?.text).toContain('yzj_advance_dream_status')
     act(() => { face.root.unmount() })
   })
 

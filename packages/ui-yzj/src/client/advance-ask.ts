@@ -11,8 +11,8 @@ export interface AdvanceAskDraft {
   readonly advanceId: string
   readonly title: string
   readonly text: string
-  /** Which flow produced the draft — drives the banner copy (验收 vs 复盘 vs 巡检). */
-  readonly kind: 'review' | 'export' | 'patrol'
+  /** Which flow produced the draft — drives the banner copy (验收 vs 复盘 vs 巡检 vs Dream 抽取). */
+  readonly kind: 'review' | 'export' | 'patrol' | 'dream'
 }
 
 let current: AdvanceAskDraft | null = null
@@ -55,4 +55,9 @@ export function exportReviewAskText(advanceId: string, title: string): string {
 /** Topic 问助手 prefill for 手动触发一轮巡检(队列头「立即巡检」入口)。 */
 export function patrolAskText(): string {
   return '请做一次推进巡检:调用 yzj_advance_scan(不提群名,按订阅聚合),有新信号则交 yzj_advance_inspect 比对,按巡检纪律处理(进度正常静默 feed,命中打扰判据才 stageTo=decision-needed,无关信号不写)。直接连续调用工具完成,不要询问我。'
+}
+
+/** Topic 问助手 prefill for Dream 蓄水池抽取(spec §17,队列头「Dream 抽取」入口)。 */
+export function dreamAskText(): string {
+  return '请做一轮 Dream 抽取:先 yzj_advance_dream_status 读蓄水池 pending 清单,然后逐条与 open 事项比对(yzj_advance_inspect):有价值的按纪律 feed(refs=<refId>;进度正常静默挂,命中打扰判据才 stageTo=decision-needed 形成建议卡片),无关的跳过;最后 yzj_advance_dream_mark(ids=[已处理条目 id]) 并给我一句「抽取 N 条/产出 M 条建议」的总结。直接连续调用工具完成,不要询问我。'
 }

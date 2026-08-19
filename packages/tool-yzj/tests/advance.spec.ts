@@ -785,6 +785,23 @@ describe('yzj_advance_scan', () => {
     expect(fourth.content).toContain('无新消息，静默')
   })
 
+  it('pages through the full incremental window when a group moved >pageSize messages (分页截断回归)', async () => {
+    const store = new FakeStore(true)
+    seedIm(store)
+    const { tools } = mount(store)
+    const scan = tools.find(tool => tool.name === 'yzj_advance_scan')!
+    await scan.execute({ groups: ['dsh-2'] }) // 基线(此时只有 m0 历史)
+    // 基线后才涌入 25 条 > 单页 20:修复前只取前 20,后 5 条丢失
+    for (let i = 1; i <= 25; i += 1) {
+      store.messages['g-dsh2']!.push({ msgId: `m-${i}`, fromOpenId: 'alice', content: `消息 ${i}`, sendTime: `2026/08/19 10:${String(i).padStart(2, '0')}` })
+    }
+    const found = await scan.execute({ groups: ['dsh-2'] })
+    expect(found.content).toContain('25 条新信号')
+    expect(found.content).toContain('消息 25')
+    const data = found.data as { signals: unknown[] }
+    expect(data.signals).toHaveLength(25)
+  })
+
   it('second visit with no new messages is silent; a later human message is a signal', async () => {
     const store = new FakeStore(true)
     seedIm(store)

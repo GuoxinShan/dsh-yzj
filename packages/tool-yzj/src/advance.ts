@@ -28,6 +28,7 @@ import {
 } from './todo.ts'
 import type { TodoBinding, TodoBindingHolder, TodoConfig } from './todo.ts'
 import { ScanCursorStore, scanStateOf, type AdvanceScanState, type ScanCursorStoreFace } from './scan-cursors.ts'
+import type { DreamPoolFace } from './advance-dreampool.ts'
 import {
   AdvanceThreadStore, parseThreadToken, threadKindOf, sourceTypeOfThread,
 } from './advance-threads.ts'
@@ -359,6 +360,7 @@ async function scanDirThread(
   signals: ScanSignal[],
   groupResults: ScanGroupResult[],
   now: number,
+  pool?: DreamPoolFace,
 ): Promise<void> {
   const key = `dir:${dir.id}`
   const name = dir.label === '' ? dir.id : dir.label
@@ -384,6 +386,8 @@ async function scanDirThread(
         content: `${doc.id in known ? '更新' : '新增'}文档《${doc.title}》`,
         sendTime: doc.updateTime,
       })
+      // Dream 蓄水池(决策 33):信号 copy 入池待抽取,不影响 Work 即时处理
+      await pool?.enqueue({ channel: key, refId: doc.id, content: `${doc.id in known ? '更新' : '新增'}文档《${doc.title}》`, sendTime: doc.updateTime })
     }
     await cursors.putDir(key, { knownDocs: snapshot, scannedAt: now, label: name })
     groupResults.push({ groupId: key, groupName: name, baseline: false, newCount: fresh.length })
@@ -454,6 +458,36 @@ async function listImMessages(
   return asArray(asRecord(ran.json).list)
 }
 
+/** Max messages pulled per group per scan (翻页取完增量的防爆上限;真机实验发现单页 20 截断丢信号)。 */
+export const MAX_SCAN_MESSAGES = 200
+
+/**
+ * Read the full incremental window after `msgId` (type=new), paging until a
+ * short page or the cap. Fixes the 830-experiment gap: one page of 20 silently
+ * dropped later signals when a group moved >20 messages between patrols.
+ */
+async function listImMessagesAll(
+  ctx: Context,
+  budget: YzjToolBudget,
+  groupId: string,
+  afterMsgId: string,
+  pageSize: number,
+): Promise<unknown[]> {
+  const out: unknown[] = []
+  let after = afterMsgId
+  for (let page = 0; page * pageSize < MAX_SCAN_MESSAGES; page += 1) {
+    const rows = await listImMessages(ctx, budget, groupId, 'new', after, pageSize)
+    if (rows.length === 0) break
+    out.push(...rows)
+    if (rows.length < pageSize) break
+    const last = asRecord(rows[rows.length - 1])
+    const next = asString(last.msgId ?? last.id)
+    if (next === '' || next === after) break
+    after = next
+  }
+  return out
+}
+
 function newestMsgId(rows: readonly { msgId: string; sendTime: string }[]): string {
   let best = ''
   let bestTime = ''
@@ -482,6 +516,7 @@ export async function coreScanAdvance(
   limit = 20,
   holder?: TodoBindingHolder,
   threads?: AdvanceThreadStoreFace,
+  pool?: DreamPoolFace,
 ): Promise<AdvanceScanResult> {
   // groups omitted → aggregate the `im:` threads of every open item (spec
   // §15.3): one fetch per channel, the channel-level cursor advances once
@@ -544,7 +579,7 @@ export async function coreScanAdvance(
         groupResults.push({ groupId: resolved.groupId, groupName: resolved.groupName, baseline: true, newCount: 0 })
         continue
       }
-      const rows = (await listImMessages(ctx, budget, resolved.groupId, 'new', prior.lastMsgId, pageSize)).map(parseImMessage)
+      const rows = (await listImMessagesAll(ctx, budget, resolved.groupId, prior.lastMsgId, pageSize)).map(parseImMessage)
       const fresh = rows.filter(row => row.msgId !== '' && row.msgId !== prior.lastMsgId)
       const lastMsgId = newestMsgId(fresh) || prior.lastMsgId
       const accepted = fresh.filter(row => !isSkippableSender(row.fromOpenId, selfOpenId))
@@ -557,6 +592,8 @@ export async function coreScanAdvance(
           content: row.content,
           sendTime: row.sendTime,
         })
+        // Dream 蓄水池(决策 33):copy 入池待抽取
+        await pool?.enqueue({ channel: `im:${resolved.groupId}`, refId: row.msgId, content: row.content, sendTime: row.sendTime })
       }
       await cursors.put(resolved.groupId, { lastMsgId, scannedAt: now, groupName: resolved.groupName })
       groupResults.push({
@@ -570,7 +607,7 @@ export async function coreScanAdvance(
     }
   }
   for (const dir of scanDirs) {
-    await scanDirThread(ctx, budget, cursors, dir, signals, groupResults, now)
+    await scanDirThread(ctx, budget, cursors, dir, signals, groupResults, now, pool)
   }
   await cursors.recordPatrol(signals.length, now)
   let openItems: { advanceId: string; title: string; stage: string }[]
@@ -1522,6 +1559,7 @@ export class YzjAdvanceService extends Service {
   private readonly holder: TodoBindingHolder
   private readonly cursors: ScanCursorStoreFace
   private readonly threads: AdvanceThreadStoreFace
+  private readonly pool: DreamPoolFace | undefined
 
   constructor(
     ctx: Context,
@@ -1530,6 +1568,7 @@ export class YzjAdvanceService extends Service {
     holder: TodoBindingHolder,
     cursors: ScanCursorStoreFace = new ScanCursorStore(),
     threads: AdvanceThreadStoreFace = new AdvanceThreadStore(),
+    pool?: DreamPoolFace,
   ) {
     super(ctx, 'yzjAdvance')
     this.budget = budget
@@ -1537,6 +1576,7 @@ export class YzjAdvanceService extends Service {
     this.holder = holder
     this.cursors = cursors
     this.threads = threads
+    this.pool = pool
   }
 
   /** Board snapshot; `ready` false = tables not provisioned yet. */
@@ -1614,6 +1654,12 @@ export class YzjAdvanceService extends Service {
     return scanStateOf(this.cursors)
   }
 
+  /** Dream-pool snapshot for the board watermark line (spec §17.3). */
+  dreamState(): { pending: number; lastDreamAt: number | null } {
+    if (this.pool === undefined) return { pending: 0, lastDreamAt: null }
+    return { pending: this.pool.pending().length, lastDreamAt: this.pool.lastDreamAt() ?? null }
+  }
+
   /** One item's subscribed threads (lossless rows for the panel). */
   threadsOf(advanceId: string): AdvanceThread[] {
     return this.threads.threadsOf(advanceId).map(row => ({ ...row }))
@@ -1670,7 +1716,7 @@ export class YzjAdvanceService extends Service {
     return rows.map(row => ({ ...row }))
   }
 
-  /** Open the scan-cursor and thread domains once the storage hub is ready. */
+  /** Open the scan-cursor, thread, and dream-pool domains once the storage hub is ready. */
   async openNow(): Promise<void> {
     const facility = this.ctx.get('storageDomain')
     if (facility === undefined) return
@@ -1686,6 +1732,13 @@ export class YzjAdvanceService extends Service {
         await this.threads.open(facility as never)
       } catch (error) {
         this.ctx.logger.warn(`yzjAdvance: thread store failed to open: ${String(error)}`)
+      }
+    }
+    if (this.pool !== undefined && 'open' in this.pool) {
+      try {
+        await (this.pool as { open(facility: unknown): Promise<void> }).open(facility)
+      } catch (error) {
+        this.ctx.logger.warn(`yzjAdvance: dream pool failed to open: ${String(error)}`)
       }
     }
   }
@@ -1710,6 +1763,7 @@ export function applyAdvanceTools(
   holder?: TodoBindingHolder,
   cursors: ScanCursorStoreFace = new ScanCursorStore(),
   threads: AdvanceThreadStoreFace = new AdvanceThreadStore(),
+  pool?: DreamPoolFace,
 ): void {
   const caches: AdvanceCaches = { lib: {}, adv: {} }
 
@@ -1910,7 +1964,7 @@ export function applyAdvanceTools(
       }
       let result: AdvanceScanResult
       try {
-        result = await coreScanAdvance(ctx, budget, config, caches, cursors, groups, args.limit, holder, threads)
+        result = await coreScanAdvance(ctx, budget, config, caches, cursors, groups, args.limit, holder, threads, pool)
       } catch (error) {
         return { content: `yzj advance scan failed: ${String((error as Error).message)}`, truncated: false, data: {} }
       }
@@ -1929,6 +1983,57 @@ export function applyAdvanceTools(
     },
   }))
 
+  // --- Dream 蓄水池(spec §17,决策 33/34)-----------------------------------
+
+  ctx.tools.register(defineTool({
+    name: 'yzj_advance_dream_status',
+    description: 'Read-only Dream-pool status (spec §17): pending signals awaiting distillation + watermark + last dream time. Dream 抽取流程:先读本工具拿 pending 清单 → 交 yzj_advance_inspect 与 open 事项比对 → 有价值的 yzj_advance_feed(refs=<refId>,命中打扰判据才 stageTo=decision-needed 即建议卡片) → 最后 yzj_advance_dream_mark(ids=[已处理的池条目 id]) 并给一句「抽取 N 条/产出 M 条建议」总结。',
+    parameters: {},
+    output: yzjToolOutput,
+    isConcurrencySafe: () => true,
+    async execute() {
+      if (pool === undefined) return { content: 'Dream 蓄水池未挂载（yzj_advance_dreampool domain 未开）', truncated: false, data: {} }
+      const pending = pool.pending()
+      const lastAt = pool.lastDreamAt()
+      const lines = pending.map(entry => `[${entry.sendTime}] ${entry.channel} ${entry.content.slice(0, 80)} <${entry.refId}>(id=${entry.id})`)
+      const content = [
+        `Dream 蓄水池：pending ${pending.length} 条 · 上次抽取 ${lastAt === undefined ? '从未' : new Date(lastAt).toLocaleString('zh-CN', { hour12: false })}`,
+        ...(pending.length === 0 ? ['pending 清单：（无）——静默'] : ['pending 清单（待抽取）：', ...lines]),
+        '抽取后调用 yzj_advance_dream_mark(ids=[...])。',
+      ].join('\n')
+      return {
+        content,
+        truncated: false,
+        data: {
+          kind: 'advance-dream-status',
+          pending: clipJson(pending, { maxChars: budget.maxMetaChars }),
+          pendingCount: pending.length,
+          lastDreamAt: lastAt ?? null,
+        } as unknown as JsonValue,
+      }
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'yzj_advance_dream_mark',
+    description: 'Mark Dream-pool entries done after a distillation (spec §17; host-internal state, not a user-data write — never gated).',
+    parameters: {
+      ids: { type: 'array', items: { type: 'string' }, required: true, description: 'Processed pool entry ids (from yzj_advance_dream_status).' },
+    },
+    output: yzjToolOutput,
+    isConcurrencySafe: () => true,
+    async execute(args) {
+      if (pool === undefined) return { content: 'Dream 蓄水池未挂载', truncated: false, data: {} }
+      const ids = (args.ids ?? []).map((id: unknown) => String(id))
+      const marked = await pool.markDone(ids)
+      await pool.recordDream()
+      return {
+        content: `Dream 抽取完成：标记 ${marked} 条已处理；剩余 pending ${pool.pending().length} 条`,
+        truncated: false,
+        data: { kind: 'advance-dream-mark', marked, pendingCount: pool.pending().length } as unknown as JsonValue,
+      }
+    },
+  }))
   ctx.tools.register(defineTool({
     name: 'yzj_advance_create',
     description: 'Create one advancement item (推进事项) on the AI推进 board (auto-provisions the 事项/事元 tables on first use). Prefill the 7 fields from the conversation so the user only confirms (AI 预填). When 立项 happens inside a group topic, pass threads=[im:<groupId>] so the founding group becomes 线程① (intent-thread subscription, spec §15); later patrol scans follow the subscription. Idempotent: pass advanceId to adopt an existing item. Starts at stage draft; move it with yzj_advance_feed.',

@@ -13,7 +13,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { YzjPanelInject } from './rpc.ts'
 import { setWorkbenchDomain } from './workbench-domain.ts'
 import { setAdvanceFeedback } from './advance-feedback.ts'
-import { setAdvanceAskDraft, reviewAskText, exportReviewAskText, patrolAskText } from './advance-ask.ts'
+import { setAdvanceAskDraft, reviewAskText, exportReviewAskText, patrolAskText, dreamAskText } from './advance-ask.ts'
 import css from './advance-pane.module.css'
 
 type UnknownRecord = Record<string, unknown>
@@ -107,10 +107,15 @@ function sourceJumpDomain(sourceType: string): 'im' | 'todo' | 'docs' | 'calenda
 
 /** Props: the RPC verbs the board needs (subset of the panel inject). */
 export interface AdvancePaneProps {
-  inject: Pick<YzjPanelInject, 'advanceState' | 'advanceGet' | 'advanceCreate' | 'advanceJudge' | 'advanceEnsure' | 'advanceScanState' | 'advanceThreadAdd' | 'advanceThreadRemove' | 'fetchGroups' | 'fetchWorkspaces' | 'fetchDocs'>
+  inject: Pick<YzjPanelInject, 'advanceState' | 'advanceGet' | 'advanceCreate' | 'advanceJudge' | 'advanceEnsure' | 'advanceScanState' | 'advanceThreadAdd' | 'advanceThreadRemove' | 'fetchGroups' | 'fetchWorkspaces' | 'fetchDocs' | 'advanceDreamState'>
 }
 
 /** Queue-head patrol line (spec §14.5). */
+function hhmm(ts: number): string {
+  const date = new Date(ts)
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+}
+
 export function formatScanStatus(scannedAt: number | null, found: number): string {
   if (scannedAt === null) return '尚未巡检'
   const date = new Date(scannedAt)
@@ -180,6 +185,8 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
   const [draft, setDraft] = useState({ title: '', goal: '', metrics: '', assignee: '', targetDate: '', background: '' })
   const [error, setError] = useState('')
   const [scanLine, setScanLine] = useState('尚未巡检')
+  /** Dream 蓄水池水位行(spec §17.3)。 */
+  const [dreamLine, setDreamLine] = useState('')
   const [threadModalOpen, setThreadModalOpen] = useState(false)
   const [groupOptions, setGroupOptions] = useState<UnknownRecord[]>([])
   /** 知识库目录选项(决策 32):整库 + 一层目录。 */
@@ -192,6 +199,19 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
     const scannedAt = typeof value.scannedAt === 'number' ? value.scannedAt : null
     const found = typeof value.found === 'number' ? value.found : 0
     setScanLine(formatScanStatus(scannedAt, found))
+  }
+
+  const loadDream = async (): Promise<void> => {
+    const result = await props.inject.advanceDreamState()
+    if (!result.ok) return
+    const value = asRecord(result.value)
+    const pending = typeof value.pending === 'number' ? value.pending : 0
+    const lastDreamAt = typeof value.lastDreamAt === 'number' ? value.lastDreamAt : null
+    if (pending === 0) {
+      setDreamLine(lastDreamAt === null ? '' : `蓄水池已清空 · 上次抽取 ${hhmm(lastDreamAt)}`)
+      return
+    }
+    setDreamLine(`池中 ${pending} 条待抽取${lastDreamAt === null ? '' : ` · 上次抽取 ${hhmm(lastDreamAt)}`}`)
   }
 
   const loadBoard = async (): Promise<UnknownRecord[]> => {
@@ -217,6 +237,7 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
     void (async () => {
       const items = await loadBoard()
       await loadScan()
+      await loadDream()
       if (!live || items.length === 0) return
       const { decide, review, watch } = queuesOf(items)
       const first = decide[0] ?? review[0] ?? watch[0]
@@ -474,6 +495,23 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
           >
             巡检
           </button>
+          {dreamLine !== '' && (
+            <span className={css.dreamLine} data-testid="yzj-advance-dream-status">
+              {dreamLine}
+              <button
+                type="button"
+                className={css.patrolBtn}
+                data-testid="yzj-advance-dream-now"
+                title="Dream 抽取蓄水池"
+                onClick={() => {
+                  setAdvanceAskDraft({ advanceId: '', title: '蓄水池', text: dreamAskText(), kind: 'dream' })
+                  setWorkbenchDomain('im')
+                }}
+              >
+                Dream 抽取
+              </button>
+            </span>
+          )}
         </div>
         {queueGroup('decide', '待我决定', queues.decide, '当前没有待决定事项', 'AI 会在需要你的权限时再提醒')}
         {queueGroup('review', '待我验收', queues.review, '暂无待验收结果', '只有业务标准满足后才进入这里')}
