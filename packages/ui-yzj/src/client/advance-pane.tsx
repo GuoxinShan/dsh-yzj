@@ -175,6 +175,8 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
   const [cancelArmed, setCancelArmed] = useState(false)
   /** 「已结束」折叠区(completed/cancelled 事项,终局提示事后可达)。 */
   const [showClosed, setShowClosed] = useState(false)
+  /** 事元来源区窗口化:默认最近 3 条,可展开全部(时间旅程同型「查看全部」)。 */
+  const [showAllSources, setShowAllSources] = useState(false)
   const [draft, setDraft] = useState({ title: '', goal: '', metrics: '', assignee: '', targetDate: '', background: '' })
   const [error, setError] = useState('')
   const [scanLine, setScanLine] = useState('尚未巡检')
@@ -771,7 +773,7 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                     <p className={css.quiet}>暂无信息来源。</p>
                   ) : (
                     <div className={css.sourceList}>
-                      {detail.sources.map((source, index) => {
+                      {(showAllSources ? detail.sources : detail.sources.slice(-3)).map((source, index) => {
                         const sourceRef = stripRefPrefix(asString(source.ref))
                         const sourceKind = refKindOf(asString(source.sourceType))
                         const sourceHref = refHref(sourceKind, sourceRef)
@@ -791,6 +793,16 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                         )
                       })}
                     </div>
+                  )}
+                  {detail.sources.length > 3 && (
+                    <button
+                      type="button"
+                      className={css.more}
+                      data-testid="yzj-advance-sources-toggle"
+                      onClick={() => { setShowAllSources(!showAllSources) }}
+                    >
+                      {showAllSources ? '收起' : `展开全部 ${detail.sources.length} 条`}
+                    </button>
                   )}
                   <p className={css.sideNote}>AI 推进不建立新的文件库，而是解释这些工作事实为什么支持或不支持当前目标。</p>
                 </section>
