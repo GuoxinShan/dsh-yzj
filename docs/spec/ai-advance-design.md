@@ -215,6 +215,7 @@ guard `WRITE_SPECS` +2：`yzj_advance_create` 一律标准确认；`yzj_advance_
 | 29 | dream 取材接口 | **只改 dream prompt 模板**（补「可经 yzj_advance_list/get 读事项产物事元」取材指引），不动 memory-yzj 机制 | dream 固化流程（vault/执行器）已验证；取材是指引不是新机制 |
 | 30 | 复盘文档默认落点 | **「我的知识/推进复盘/<事项名>」自动建父目录**（可选手改） | 830「830实验·共识」父目录模式已验证（演示/清理两便）；一个事项可多次复盘，目录归档系列 |
 | 31 | ④期实现范围 | **教学面 + 模板 + 终局提示 + cancelled 态**；工具面零新增（get/import/feed 全复用）；④-b 纪要出口只做模板+流程打包，群里转录自动感知留⑤期 | 830 第 0 波证明现有工具链人工已跑通（10 分钟/4 篇基线）；④期价值是流程打包，不是新能力（迁移文档「存钱 vs 镀金」） |
+| 32 | 订阅粒度：单文档 vs 目录（v1.7） | **目录级 `dir:<docId>` 进持续渠道**（新增/更新文档 = 增量信号）；单文档 `doc:` 保留为「关联即事元」的静态引用。关联弹层去掉手输 token：只留 IM 群 picker + 知识库目录 picker | 用户拍板：「应该是知识库一整个这样才能自动获取增量」——单文档源没有增量语义；手输 token 是开发者界面不是用户界面。目录级（含整库根）比整库更精准，整库作为根目录特例同机制支持 |
 
 ## 10. 验收口径（第一期）
 
@@ -421,14 +422,14 @@ headless profile 挂 yzj **host half**（`docs/spec/headless-yzj.cordis.yml`：b
 
 | 类 | 例 | 增量语义 |
 |---|---|---|
-| **持续渠道** | IM 群 / 话题 | 有 cursor 概念，每轮取新消息（scan 既有机制） |
+| **持续渠道** | IM 群 / 话题；**知识库目录**（v1.7 起，`dir:`——含整库根目录） | 有 cursor 概念，每轮取增量（scan 既有机制；目录级按「新增/更新文档」取增量） |
 | **单文档源** | 纪要 / 文档 / AI 产物 / 待办 / 日程 | 关联即产一条事元；此后仅内容更新才算新 event（demo 阶段以更新时间戳判断，够用即可） |
 
 **手动喂 ≠ 手动关联**（旅程图两条边）：单条直喂（②期 UserFeed / agent feed）直接产事元、立即生效，不经线程；关联渠道是订阅，之后靠采集节奏取增量。
 
 ### 15.2 订阅承载（demo 落位，决策 20）
 
-host storage-domain **`yzj_advance_threads`**：`advanceId → [{ token, kind, label, addedBy, addedAt }]`。token 形态沿 refs 词汇：`im:<groupId>` / `doc:<docId>` / `todo:<todoId>` / `event:<eventId>` / `file:<fileId>`。不动 dbt 双表。
+host storage-domain **`yzj_advance_threads`**：`advanceId → [{ token, kind, label, addedBy, addedAt }]`。token 形态沿 refs 词汇：`im:<groupId>` / `doc:<docId>` / `todo:<todoId>` / `event:<eventId>` / `file:<fileId>`；v1.7 起加 **`dir:<docId>`**（知识库目录节点；整库 = 库根目录）。不动 dbt 双表。
 
 写路径：
 - **用户关联/解除**（面板详情右栏「信息来源」区加「关联渠道」入口）= 用户本人意志 → `/yzj` RPC 直写（D9，同 judge）。
@@ -441,6 +442,7 @@ host storage-domain **`yzj_advance_threads`**：`advanceId → [{ token, kind, l
 
 - cursor 保持**渠道级**（`yzj_advance_scan_cursors` 不变）：同一渠道被多个事项订阅时一次取流。
 - 分发是模型职责：scan digest 列出新信号 + 各 open 事项的订阅清单，inspect 按「信号 ∈ 哪个事项的线程 + 语义相关」决定喂给谁；host 不做语义判断（决策 11），同源去重兜底（决策 19/25）。
+- **目录线程的增量（v1.7，决策 32）**：`dir:<docId>` 线程按「`doc list --parent-id` 该目录」取增量——首扫建基线（docId→updateTime 快照，不回灌）；增量 = 新增文档或 updateTime 变化，信号 refs=[docId]、sourceType=文档。cursor 存 scan domain 的 `dirs` 表（与群 cursor 同域不同表）。
 - 双节奏：**Work**（被召唤 / schedule 唤醒，实时比对，§12/§14 既有）+ **Dream**（每日一次，按订阅全量取增量、筛有价值落事元、折叠摘要/建议/偏差提示；无偏差静默）。巡检频率的既有口径（≥300s）适用于 Work 触发；Dream 是低频大预算轮。
 
 > ③.2 实现落点：`yzj_advance_scan` 的 `groups` 改为可选——缺省时从注册表聚合全部 open 事项的 `im:` 线程去重取流（超过 8 个渠道报错提示分批，不悄悄截断，决策 17 刚性保持）；digest 新增「订阅清单」行供模型分发。Dream 仅定合同，未落地（④期配套）。

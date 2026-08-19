@@ -103,7 +103,7 @@ function mountPane(config: {
         value: config.scan ?? { scannedAt: null, found: 0 },
       }) as Rpc,
       advanceThreadAdd: async (advanceId, token, label) => {
-        if (!/^(im|doc|todo|event|file):[A-Za-z0-9_-]+$/.test(token)) {
+        if (!/^(im|doc|todo|event|file|dir):[A-Za-z0-9_-]+$/.test(token)) {
           return { ok: false, error: { message: `advance-thread-add failed: 非法线程 token「${token}」` } } as Rpc
         }
         threadAdds.push({ advanceId, token, ...(label === undefined ? {} : { label }) })
@@ -117,6 +117,17 @@ function mountPane(config: {
         groupState.fetches += 1
         return { ok: true, value: { list: config.groups ?? [] } } as Rpc
       },
+      fetchWorkspaces: async () => ({
+        ok: true,
+        value: [{ id: 'kb1', name: '我的知识' }],
+      }) as Rpc,
+      fetchDocs: async () => ({
+        ok: true,
+        value: [
+          { id: 'dirA', title: '830实验·共识', hasChildren: true },
+          { id: 'docB', title: '散文档', hasChildren: false },
+        ],
+      }) as Rpc,
     },
   }
   act(() => {
@@ -549,7 +560,7 @@ describe('YzjAdvancePane', () => {
     expect(face.groupFetches).toBe(1)
     const modal = face.container.querySelector('[data-testid="yzj-advance-thread-modal"]')
     expect(modal).not.toBeNull()
-    expect(modal?.textContent).toContain('关联即产一条事元')
+    expect(modal?.textContent).toContain('关联即订阅，解除不删事元')
     const groupBtn = face.container.querySelector('[data-testid="yzj-advance-thread-group-g9"]') as HTMLButtonElement
     expect(groupBtn.textContent).toContain('项目群')
     await act(async () => { groupBtn.click(); await Promise.resolve() })
@@ -559,7 +570,7 @@ describe('YzjAdvancePane', () => {
     act(() => { face.root.unmount() })
   })
 
-  it('关联渠道 modal accepts a manual token and rejects invalid grammar', async () => {
+  it('关联渠道 modal:无手输 token;知识库目录 picker 关联 dir: 线程(决策 32)', async () => {
     const face = mountPane({
       items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行' })],
       detail: { item: item({ advanceId: 'A-1', stage: 'running', title: '试运行' }), entries: [] },
@@ -568,16 +579,17 @@ describe('YzjAdvancePane', () => {
     const open = face.container.querySelector('[data-testid="yzj-advance-thread-add-open"]') as HTMLButtonElement
     await act(async () => { open.click(); await Promise.resolve() })
     await settle()
-    const input = face.container.querySelector('[data-testid="yzj-advance-thread-token"]') as HTMLInputElement
-    act(() => {
-      const setInput = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
-      setInput.call(input, 'doc:5f3a')
-      input.dispatchEvent(new Event('input', { bubbles: true }))
-    })
-    const submit = face.container.querySelector('[data-testid="yzj-advance-thread-token-submit"]') as HTMLButtonElement
-    await act(async () => { submit.click(); await Promise.resolve() })
+    // 手输 token 已移除(决策 32)
+    expect(face.container.querySelector('[data-testid="yzj-advance-thread-token"]')).toBeNull()
+    // 目录 picker:整库 + hasChildren 目录;散文档不列
+    const dirs = face.container.querySelector('[data-testid="yzj-advance-thread-dirs"]')
+    expect(dirs?.textContent).toContain('我的知识（整库）')
+    expect(dirs?.textContent).toContain('830实验·共识')
+    expect(dirs?.textContent).not.toContain('散文档')
+    const dirBtn = face.container.querySelector('[data-testid="yzj-advance-thread-dir-dirA"]') as HTMLButtonElement
+    await act(async () => { dirBtn.click(); await Promise.resolve() })
     await settle()
-    expect(face.threadAdds).toEqual([{ advanceId: 'A-1', token: 'doc:5f3a' }])
+    expect(face.threadAdds).toEqual([{ advanceId: 'A-1', token: 'dir:dirA', label: '830实验·共识' }])
     act(() => { face.root.unmount() })
   })
 

@@ -88,7 +88,7 @@ const SOURCE_ICON: Record<string, string> = {
 
 /** Single-character icon per thread token prefix (订阅渠道 chip). */
 const THREAD_ICON: Record<string, string> = {
-  im: '群', doc: '文', todo: '待', event: '日', file: '附',
+  im: '群', doc: '文', todo: '待', event: '日', file: '附', dir: '库',
 }
 
 function threadIconOf(token: string): string {
@@ -107,7 +107,7 @@ function sourceJumpDomain(sourceType: string): 'im' | 'todo' | 'docs' | 'calenda
 
 /** Props: the RPC verbs the board needs (subset of the panel inject). */
 export interface AdvancePaneProps {
-  inject: Pick<YzjPanelInject, 'advanceState' | 'advanceGet' | 'advanceCreate' | 'advanceJudge' | 'advanceEnsure' | 'advanceScanState' | 'advanceThreadAdd' | 'advanceThreadRemove' | 'fetchGroups'>
+  inject: Pick<YzjPanelInject, 'advanceState' | 'advanceGet' | 'advanceCreate' | 'advanceJudge' | 'advanceEnsure' | 'advanceScanState' | 'advanceThreadAdd' | 'advanceThreadRemove' | 'fetchGroups' | 'fetchWorkspaces' | 'fetchDocs'>
 }
 
 /** Queue-head patrol line (spec §14.5). */
@@ -181,8 +181,9 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
   const [error, setError] = useState('')
   const [scanLine, setScanLine] = useState('尚未巡检')
   const [threadModalOpen, setThreadModalOpen] = useState(false)
-  const [threadToken, setThreadToken] = useState('')
   const [groupOptions, setGroupOptions] = useState<UnknownRecord[]>([])
+  /** 知识库目录选项(决策 32):整库 + 一层目录。 */
+  const [dirOptions, setDirOptions] = useState<{ id: string; label: string }[]>([])
 
   const loadScan = async (): Promise<void> => {
     const result = await props.inject.advanceScanState()
@@ -234,7 +235,6 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
     let live = true
     setDetailLoading(true)
     setThreadModalOpen(false)
-    setThreadToken('')
     void props.inject.advanceGet(activeId, showAll ? 0 : undefined, showAll ? 200 : undefined).then((result) => {
       if (!live) return
       setDetailLoading(false)
@@ -305,10 +305,33 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
   const openThreadModal = async (): Promise<void> => {
     setThreadModalOpen(true)
     const result = await props.inject.fetchGroups()
-    if (!result.ok) return
-    const value = asRecord(result.value)
-    const rows = asArray(value.list).length > 0 ? asArray(value.list) : asArray(result.value)
-    setGroupOptions(rows.map(asRecord).filter(row => asString(row.groupId) !== ''))
+    if (result.ok) {
+      const value = asRecord(result.value)
+      const rows = asArray(value.list).length > 0 ? asArray(value.list) : asArray(result.value)
+      setGroupOptions(rows.map(asRecord).filter(row => asString(row.groupId) !== ''))
+    }
+    // 知识库目录 picker(决策 32):个人库「我的知识」整库 + 一层目录(hasChildren)
+    const dirs: { id: string; label: string }[] = []
+    const wsResult = await props.inject.fetchWorkspaces('personal')
+    if (wsResult.ok) {
+      const workspaces = asArray(wsResult.value).map(asRecord)
+      const mine = workspaces.find(row => asString(row.name).includes('我的知识')) ?? workspaces[0]
+      const kbId = asString(mine?.id)
+      if (kbId !== '') {
+        dirs.push({ id: kbId, label: `${asString(mine?.name) || '我的知识'}（整库）` })
+        const docsResult = await props.inject.fetchDocs(kbId)
+        if (docsResult.ok) {
+          const nodes = asArray(docsResult.value).map(asRecord)
+          for (const node of nodes) {
+            const id = asString(node.id)
+            const title = asString(node.title)
+            const hasChildren = node.hasChildren === true || (typeof node.childrenCount === 'number' && node.childrenCount > 0)
+            if (id !== '' && title !== '' && hasChildren) dirs.push({ id, label: title })
+          }
+        }
+      }
+    }
+    setDirOptions(dirs)
   }
 
   const addThread = async (token: string, label?: string): Promise<void> => {
@@ -322,7 +345,6 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
       return
     }
     setThreadModalOpen(false)
-    setThreadToken('')
     await refreshDetail()
   }
 
@@ -844,40 +866,48 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
               <h2>关联渠道</h2>
               <button type="button" aria-label="关闭" onClick={() => { setThreadModalOpen(false) }}>×</button>
             </header>
-            <p className={css.sideNote}>IM 群是持续渠道（巡检增量取流）；文档 / 待办 / 日程 / 文件是单文档源，关联即产一条事元。</p>
+            <p className={css.sideNote}>IM 群与知识库目录都是持续渠道：巡检按订阅取增量（群=新消息，目录=新增/更新文档）。关联即订阅，解除不删事元。</p>
             {groupOptions.length > 0 && (
-              <div className={css.threadGroupList} data-testid="yzj-advance-thread-groups">
-                {groupOptions.map((group) => {
-                  const groupId = asString(group.groupId)
-                  return (
-                    <button
-                      key={groupId}
-                      type="button"
-                      data-testid={`yzj-advance-thread-group-${groupId}`}
-                      disabled={busy}
-                      onClick={() => { void addThread(`im:${groupId}`, asString(group.groupName)) }}
-                    >
-                      {asString(group.groupName) === '' ? groupId : asString(group.groupName)}
-                    </button>
-                  )
-                })}
-              </div>
+              <>
+                <p className={css.threadGroupLabel}>IM 群</p>
+                <div className={css.threadGroupList} data-testid="yzj-advance-thread-groups">
+                  {groupOptions.map((group) => {
+                    const groupId = asString(group.groupId)
+                    return (
+                      <button
+                        key={groupId}
+                        type="button"
+                        data-testid={`yzj-advance-thread-group-${groupId}`}
+                        disabled={busy}
+                        onClick={() => { void addThread(`im:${groupId}`, asString(group.groupName)) }}
+                      >
+                        {asString(group.groupName) === '' ? groupId : asString(group.groupName)}
+                      </button>
+                    )
+                  })}
+                </div>
+              </>
             )}
-            <label className={css.fieldLabel}>
-              或输入线程 token（im: / doc: / todo: / event: / file:）
-              <input value={threadToken} data-testid="yzj-advance-thread-token" placeholder="doc:5f3a…" onChange={(event) => { setThreadToken(event.target.value) }} />
-            </label>
+            {dirOptions.length > 0 && (
+              <>
+                <p className={css.threadGroupLabel}>知识库目录</p>
+                <div className={css.threadGroupList} data-testid="yzj-advance-thread-dirs">
+                  {dirOptions.map((dir) => (
+                    <button
+                      key={dir.id}
+                      type="button"
+                      data-testid={`yzj-advance-thread-dir-${dir.id}`}
+                      disabled={busy}
+                      onClick={() => { void addThread(`dir:${dir.id}`, dir.label) }}
+                    >
+                      {dir.label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
             <footer className={css.modalFoot}>
-              <button type="button" onClick={() => { setThreadModalOpen(false) }}>取消</button>
-              <button
-                type="button"
-                className={css.primary}
-                data-testid="yzj-advance-thread-token-submit"
-                disabled={busy || threadToken.trim() === ''}
-                onClick={() => { void addThread(threadToken.trim()) }}
-              >
-                {busy ? '关联中…' : '关联'}
-              </button>
+              <button type="button" onClick={() => { setThreadModalOpen(false) }}>关闭</button>
             </footer>
           </section>
         </div>

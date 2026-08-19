@@ -572,6 +572,12 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+.threadGroupLabel {
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-tertiary);
+  margin: 10px 0 4px;
+}
+
 /* --- refs chips / closed zone / patrol (v1.7 UX polish) ---------------------------------- */
 
 .refs {

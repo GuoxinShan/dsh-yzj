@@ -29,11 +29,11 @@ export interface AdvanceThread {
   readonly addedAt: number
 }
 
-/** Token prefixes of the refs vocabulary (spec §15.2). */
-export const THREAD_PREFIXES = ['im', 'doc', 'todo', 'event', 'file'] as const
+/** Token prefixes of the refs vocabulary (spec §15.2; `dir:` added in v1.7 — 知识库目录,持续渠道). */
+export const THREAD_PREFIXES = ['im', 'doc', 'todo', 'event', 'file', 'dir'] as const
 
-/** Literal token grammar: `im:<groupId>` / `doc:<docId>` / … (spec §15.2). */
-const THREAD_TOKEN_RE = /^(im|doc|todo|event|file):([A-Za-z0-9_-]+)$/
+/** Literal token grammar: `im:<groupId>` / `doc:<docId>` / `dir:<docId>` / … (spec §15.2). */
+const THREAD_TOKEN_RE = /^(im|doc|todo|event|file|dir):([A-Za-z0-9_-]+)$/
 
 /** Parsed thread token; undefined when the grammar does not match. */
 export function parseThreadToken(token: string): { prefix: typeof THREAD_PREFIXES[number]; id: string } | undefined {
@@ -42,9 +42,9 @@ export function parseThreadToken(token: string): { prefix: typeof THREAD_PREFIXE
   return { prefix: match[1] as typeof THREAD_PREFIXES[number], id: match[2] ?? '' }
 }
 
-/** Thread class of one prefix: `im:` is persistent, the rest document. */
+/** Thread class of one prefix: `im:` and `dir:` are persistent, the rest document. */
 export function threadKindOf(prefix: string): AdvanceThreadKind | undefined {
-  if (prefix === 'im') return 'persistent'
+  if (prefix === 'im' || prefix === 'dir') return 'persistent'
   if (prefix === 'doc' || prefix === 'todo' || prefix === 'event' || prefix === 'file') return 'document'
   return undefined
 }
