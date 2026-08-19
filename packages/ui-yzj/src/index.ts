@@ -264,7 +264,7 @@ export interface YzjWriteGateFace {
  * `messages`, `whoami`, `auth-status`, `auth-login`, `search`, `doc-get`, `doc-blocks`, `sheet-get`,
  * `workspace-get`, `event-get`, `contact-get`, `write-list`, and
  * `write-decide`, `home-open` / `home-send` / `home-fused` / `home-nav` / `home-handoff` /
- * `home-topic-lens` / `home-topic-ask`
+ * `home-topic-lens` / `home-topic-ask` / `advance-scan-state`
  * endpoints, all backed by the yzj-cli bridge, the write-gate, and `ctx.yzjHome`.
  * Endpoint payloads are validated as lossless JSON before use.
  * @param ctx - Cordis context carrying the bridge service.
@@ -646,6 +646,15 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
           return { ok: true, value: await advance.ensure() }
         } catch (error) {
           return internalError(`advance-ensure failed: ${String(error)}`)
+        }
+      }
+      case 'advance-scan-state': {
+        const advance = ctx.get('yzjAdvance')
+        if (advance === undefined) return internalError('advance-scan-state: yzjAdvance 服务不可用（tool-yzj 未挂载）')
+        try {
+          return { ok: true, value: advance.scanState() }
+        } catch (error) {
+          return internalError(`advance-scan-state failed: ${String(error)}`)
         }
       }
       case 'advance-feed': {

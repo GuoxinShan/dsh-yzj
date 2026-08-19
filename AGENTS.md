@@ -10,7 +10,7 @@ dsh-yzj 是 DeepSeek Harness 的独立插件 bundle 仓库：`yzj-cli` 桥接、
 2. **文档即接口**：下一个读这个仓库的是另一个 agent，它以 `docs/` 为首要输入。文档陈旧 = 下一个 agent 必然做错。每个提交自问：「只读 docs/ 的人（agent）能准确重建当前系统的行为吗？」不能，就补。
 3. **docs/ 目录义务**（职责与阅读顺序见 [docs/README.md](docs/README.md)，改动对应面时同提交更新）：
    - `spec/` — 设计基线：`integration-master-plan.md`（整体方案/人在闭环验收基准）、`group-room-topics.md`（**v2.0 产品法**：1 群 = 1 群房间 + N 话题；v1.1 工作台三栏 P0–P3 已落地）、`dsh-home-session.md` / `dsh-home-transcript.md`（v1.x 历史快照；D9 写路径与消息日志机制沿用，1:1 绑定与融合一条流已被 v2.0 覆盖）、`todo-design.md`（todo 域 + §11.2 决策表）、`robot-channel-plan.md`（机器人通道协议；会话落点以 group-room-topics 为准）；
-   - `migration/` — 架构演进：`todo-backend-migration.md`（demo→原生后端分层 + §3 实测格式事实）；
+   - `migration/` — 架构演进：`todo-backend-migration.md`（demo→原生后端分层 + §3 实测格式事实）、`advance-lingee-migration.md`（AI推进 MVP→灵基：合同/机制/脚手架三层 + 断层清单）；
    - `status/` — `gap-analysis.md`：设计×实现分歧与验收证据，**每个功能提交都应在此留痕**；
    - `pitfalls/` — 踩坑库（见 Conventions「踩坑记录制度」）。
 4. **决策必须留档**：拍板（设计取舍、风险分级、命名）写进对应设计文档的决策表，附理由；不允许只存在于提交信息或对话里的决策。
@@ -60,7 +60,7 @@ pnpm dsh plugin --profile web add -w link:<本仓库路径>
 node .acceptance/verify-real-data.mjs   # 需运行中的 GUI + 已登录 yzj-cli
 ```
 
-改 host 面后 `pnpm run build` 即可；改 browser half 后还要 `pnpm run bundle`。web profile 禁用 client HMR、host 也不热加载 `lib/*.mjs`，验收前必须重启 GUI。仓外 agent（Cursor 等）可自行停掉 3080 再拉起新实例；**只有跑在该 GUI 里的 dsh agent 才禁止杀宿主**（见下条）。
+改 host 面后 `pnpm run build` 即可；改 browser half 后还要 `pnpm run bundle`。web profile 禁用 client HMR、host 也不热加载 `lib/*.mjs`，验收前必须重启 GUI。
 
 ### 证据匹配改动面
 
@@ -76,12 +76,11 @@ node .acceptance/verify-real-data.mjs   # 需运行中的 GUI + 已登录 yzj-cl
 
 ## Conventions
 
-- **自杀红线只约束跑在 dsh 里的 agent**：若本会话的运行环境就是监听 3080 / 命令行含 `--profile web` / `bin.ts "web"` 的 harness 宿主，禁止 kill 它——杀自己则会话、后台 job、全部状态一起消失且无法自愈。kill 前必须核对命令行。
-- **仓外 agent 要用新实例验收时，可以停掉并重启 GUI**：Cursor / Codex 等不跑在该 web 进程里，停 3080 不会自杀。host 面与 browser bundle 都要新实例才生效。做法：核对 PID 与命令行确认是 web GUI → 停掉 → 在 harness checkout 用原启动命令拉起（例如 `node --import tsx/esm apps/cli/src/bin.ts web`）→ 等到 `http://127.0.0.1:3080/` 可访问再跑 `.acceptance/`。不要误杀 `--profile ops` 调度 daemon，除非那就是本次要测的实例。
+- **验收要新实例就重启 GUI**：host 面与 browser bundle 都要新进程才生效。核对 PID 与命令行确认是 web GUI（`web --port 3080` / `bin.ts web`）→ 停掉 → 在 harness checkout 用原启动命令拉起（例如 `node --import tsx/esm apps/cli/src/bin.ts web`）→ 等到 `http://127.0.0.1:3080/` 可访问再跑 `.acceptance/`。不要误杀 `--profile ops` 调度 daemon，除非那就是本次要测的实例。
 - **兄弟 checkout 是唯一事实源**：所有 `@deepseek-ai/*` 依赖以 `link:` 相对路径指向 `../deepseek-harness`；vitest 经 alias 把 client 包解析到 harness 的 TS 源。harness 接口变化在本仓库直接体现为类型/测试失败，就地适配，不复制其代码。
 - **两面包界限**：host 面（bridge、tool-yzj、ui-yzj node half）产出普通 ESM `lib/index.js`；browser half 经 `tsdown.shared.ts` 产出 closure-factory bundle（`window.__ModuleLoader__.load` 注入），其纯度门禁禁止跨插件值导入——协作只走 cordis 服务与 `/yzj` RPC。
 - **注册即效应**：一切贡献经 `ctx.effect()` / `ctx.on()` 或返回 disposer 的官方 API；bundle 卸载 / profile 移除后必须无残留（harness 全局约定，此处同样成立）。
-- **写路径两分**（产品法已拍板，见 [docs/spec/dsh-home-session.md](docs/spec/dsh-home-session.md) §8）：确认卡只门控 **agent 发起的写**——`tools/pre-execute` → `guard.ts` 的 `WRITE_SPECS` 风险表（删除类 strong，其余 standard）→ host 侧 write-gate 应答 `approval/request`；**用户从 DSH 发出**（及现行面板 composer 过渡态、待办勾选、`/yzj` `home-send` / `im-send` / `file-upload` 等直写）是用户本人意志，不经确认卡。绑定家园上 agent 调用 `robot_notify` / `robot_continue` 也进 `WRITE_SPECS`（D9；v2.0 起 `whenSession` 须同时覆盖 `yzj-home-*` 与 `yzj-topic-*`，见 group-room-topics R10）。**话题 job-done 投递（R29）**也是产品契约面、无确认卡：轮次 idle 后 host 以 CLI 本人身份把总结回帖到锚点并带上本轮产物，不是 agent 另起 `yzj_im_message_send`。会话模型以 [docs/spec/group-room-topics.md](docs/spec/group-room-topics.md) 为准：1 群 = 1 群房间 + N 话题会话，每个视图只有一个发送动词。新增写工具必须同提交进 `WRITE_SPECS`。
+- **写路径两分**（产品法已拍板，见 [docs/spec/dsh-home-session.md](docs/spec/dsh-home-session.md) §8）：确认卡只门控 **agent 发起的写**——`tools/pre-execute` → `guard.ts` 的 `WRITE_SPECS` 风险表（删除类 strong，其余 standard；条件门控写 `when` 谓词，如 `yzj_advance_feed` 只在改推进基准时问，见 [docs/spec/ai-advance-design.md](docs/spec/ai-advance-design.md) §13.5）→ host 侧 write-gate 应答 `approval/request`；**用户从 DSH 发出**（及现行面板 composer 过渡态、待办勾选、`/yzj` `home-send` / `im-send` / `file-upload` 等直写）是用户本人意志，不经确认卡。绑定家园上 agent 调用 `robot_notify` / `robot_continue` 也进 `WRITE_SPECS`（D9；v2.0 起 `whenSession` 须同时覆盖 `yzj-home-*` 与 `yzj-topic-*`，见 group-room-topics R10）。**话题 job-done 投递（R29）**也是产品契约面、无确认卡：轮次 idle 后 host 以 CLI 本人身份把总结回帖到锚点并带上本轮产物，不是 agent 另起 `yzj_im_message_send`。会话模型以 [docs/spec/group-room-topics.md](docs/spec/group-room-topics.md) 为准：1 群 = 1 群房间 + N 话题会话，每个视图只有一个发送动词。新增写工具必须同提交进 `WRITE_SPECS`。
 - **禁止绕过桥接**：仓库内禁止以 bash 直调 `yzj-cli` 执行写命令；代码里唯一的子进程路径是 bridge 的 argv 数组 spawn（无 shell 插值）。`bundle/skills/yzj-cli/SKILL.md` 的红线（结构化工具优先、禁止编造 ID、写前先查）与之一致，改动工具面时同步维护。
 - **有界输出**：每个工具产出有界 digest 并把裁剪后的结构化载荷经 `output.presentationMeta` 投影给 UI；上限（timeoutMs / maxRenderChars / maxMetaChars）是 schema 校验的 Config 字段，不是常量。
 - **RPC 通道只过无损 JSON**：`/yzj` 通道两向都不携带 harness 活对象；先取所需叶子字段，再构造自有数据对象，绝不整体序列化 Context/Session/Service。

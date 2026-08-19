@@ -167,8 +167,13 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.feedbackBtn {
+.kickerActions {
   margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+
+.feedbackBtn {
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
   background: var(--dsw-alias-bg-base);

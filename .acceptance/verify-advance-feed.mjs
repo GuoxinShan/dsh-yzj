@@ -1,8 +1,11 @@
 /**
- * Browser acceptance for AI推进 ②期 (ai-advance-design §11) against the
- * live GUI (:3080). Requires rebuilt client + running dsh web + logged-in
- * yzj-cli. Journey: 推进 tab → 现在反馈 → 对话域事项卡 → 群房间「喂给推进」
- * picker. Unlogged GUI skips with exit 0. Screenshots land in shots-advance-feed/.
+ * Browser acceptance for AI推进 ②③期 (ai-advance-design §11 / §12.5)
+ * against the live GUI (:3080). Requires rebuilt client + running dsh web +
+ * logged-in yzj-cli. Journey: create probe → 现在反馈 card feed → 现在反馈
+ * again (preset) → 群房间「喂给推进」→ 话题透镜锚点 / 问助手栏（取消、不
+ * followup）→ reopen the probe on the board → 「请 AI 验收」切对话 + 问助手
+ * 草稿且不 followup. Unlogged GUI skips with exit 0. Screenshots land in
+ * shots-advance-feed/.
  */
 import { chromium } from 'playwright'
 import { existsSync, mkdirSync } from 'node:fs'
@@ -100,11 +103,14 @@ await startButton.click()
 const modal = page.getByTestId('yzj-advance-start-modal')
 await modal.waitFor({ state: 'visible', timeout: 8000 })
 const stamp = Date.now().toString().slice(-6)
-await page.getByTestId('yzj-advance-draft-title').fill(`喂入探针 ${stamp}`)
+const probeTitle = `喂入探针 ${stamp}`
+const roomSummary = `${GROUP_NAME} 群房间喂入 ${stamp}`
+const topicSummary = `话题透镜喂入 ${stamp}`
+await page.getByTestId('yzj-advance-draft-title').fill(probeTitle)
 await page.getByTestId('yzj-advance-draft-goal').fill('②期真机走查探针')
 await page.getByTestId('yzj-advance-create').click()
 await page.waitForTimeout(12000)
-ok('probe item created', (await pane.innerText().catch(() => '')).includes(`喂入探针 ${stamp}`))
+ok('probe item created', (await pane.innerText().catch(() => '')).includes(probeTitle))
 
 const feedback = page.getByTestId('yzj-advance-feedback')
 await feedback.waitFor({ state: 'visible', timeout: 8000 }).catch(() => {})
@@ -125,6 +131,14 @@ await card.getByTestId('yzj-advance-feedback-send').click()
 await page.waitForTimeout(8000)
 ok('事项卡 clears after feed', await card.count().then(n => n === 0))
 
+await tabs.getByRole('tab', { name: '推进' }).click()
+await page.waitForTimeout(2500)
+const reselect = page.getByTestId('yzj-advance-queue').getByText(probeTitle, { exact: true })
+if (await reselect.count() > 0) await reselect.click()
+await page.waitForTimeout(1500)
+await page.getByTestId('yzj-advance-feedback').click()
+await page.waitForTimeout(2000)
+
 const groupRow = page.getByTestId('yzj-conv-list').locator('button').filter({ hasText: GROUP_NAME }).first()
 const groupFound = await groupRow.count().then(n => n > 0).catch(() => false)
 ok(`list includes ${GROUP_NAME}`, groupFound)
@@ -143,19 +157,115 @@ if (groupFound) {
     const picker = page.getByTestId('yzj-advance-feed-picker')
     ok('picker opens', await picker.count().then(n => n > 0))
     ok('picker says 不改阶段', (await picker.innerText().catch(() => '')).includes('不改阶段'))
+    const probeRow = picker.locator('label').filter({ hasText: probeTitle })
+    ok('picker lists the probe', await probeRow.count().then(n => n > 0))
+    ok('picker presets 现在反馈 item', await probeRow.locator('input').isChecked().catch(() => false))
+    await probeRow.click()
+    await picker.getByTestId('yzj-advance-feed-summary').fill(roomSummary)
     await page.screenshot({ path: join(OUT, '3-picker.png') })
     await picker.getByTestId('yzj-advance-feed-submit').click()
     await page.waitForTimeout(8000)
     ok('picker closed after feed', await picker.count().then(n => n === 0))
   }
+
+  const toggle = page.getByTestId('yzj-topic-toggle')
+  const toggleReady = await toggle.waitFor({ state: 'visible', timeout: 8000 }).then(() => true).catch(() => false)
+  ok('topic drawer toggle', toggleReady)
+  if (toggleReady) {
+    await toggle.click()
+    await page.waitForTimeout(1000)
+    ok('topic drawer opens', await page.getByTestId('yzj-topic-drawer').count().then(n => n > 0))
+    const topicCard = page.locator('[data-testid^="yzj-topic-card-"]').first()
+    const alreadyLens = await page.getByTestId('yzj-topic-lens').count().then(n => n > 0)
+    const hasTopic = alreadyLens || await topicCard.count().then(n => n > 0)
+    ok(`${GROUP_NAME} has a topic to open`, hasTopic)
+    if (hasTopic) {
+      if (!alreadyLens) {
+        await topicCard.click()
+        await page.waitForTimeout(2000)
+      }
+      const lensFeed = page.getByTestId('yzj-topic-feed')
+      const hasAnchorFeed = await lensFeed.waitFor({ state: 'visible', timeout: 8000 }).then(() => true).catch(() => false)
+      ok('话题透镜锚点 喂给推进', hasAnchorFeed)
+      if (hasAnchorFeed) {
+        await lensFeed.click()
+        await page.waitForTimeout(1500)
+        const topicPicker = page.getByTestId('yzj-advance-feed-picker')
+        ok('topic picker opens', await topicPicker.count().then(n => n > 0))
+        const topicProbe = topicPicker.locator('label').filter({ hasText: probeTitle })
+        await topicProbe.click()
+        await topicPicker.getByTestId('yzj-advance-feed-summary').fill(topicSummary)
+        await page.screenshot({ path: join(OUT, '5-topic-picker.png') })
+        await topicPicker.getByTestId('yzj-advance-feed-submit').click()
+        await page.waitForTimeout(8000)
+        ok('topic picker closed after feed', await topicPicker.count().then(n => n === 0))
+      }
+      const ask = page.getByLabel('问助手')
+      await ask.fill('不该发给助手')
+      const askFeed = page.getByTestId('yzj-topic-feed-ask')
+      ok('问助手栏 喂给推进 enabled', await askFeed.isEnabled().catch(() => false))
+      await askFeed.click()
+      await page.waitForTimeout(1500)
+      const askPicker = page.getByTestId('yzj-advance-feed-picker')
+      const askSummary = await askPicker.getByTestId('yzj-advance-feed-summary').inputValue().catch(() => '')
+      ok('ask-bar picker uses draft', askSummary.includes('不该发给助手'), askSummary.slice(0, 80))
+      await askPicker.getByRole('button', { name: '取消' }).click()
+      await page.waitForTimeout(500)
+      const lensText = await page.getByTestId('yzj-topic-lens').innerText().catch(() => '')
+      ok('ask-bar 喂给推进 did not followup', !lensText.includes('不该发给助手'))
+      await page.screenshot({ path: join(OUT, '5-topic-lens.png') })
+    }
+  }
 }
 
 await tabs.getByRole('tab', { name: '推进' }).click()
 await page.waitForTimeout(4000)
+const queueProbe = page.getByTestId('yzj-advance-queue').getByText(probeTitle, { exact: true })
+ok('queue still lists the probe', await queueProbe.count().then(n => n > 0))
+if (await queueProbe.count() > 0) await queueProbe.click()
+await page.waitForTimeout(4000)
 const timeline = page.getByTestId('yzj-advance-timeline')
 const tlText = await timeline.innerText().catch(() => '')
-ok('timeline has user 进度更新', tlText.includes('进度更新') || tlText.includes('真机口头进度') || tlText.includes('群'))
+ok('timeline has 卡直写 真机口头进度', tlText.includes('真机口头进度') && tlText.includes('你的判断'))
+ok('timeline has 群房间喂入', tlText.includes(roomSummary) || tlText.includes('对话'))
+ok('timeline has 话题透镜喂入', tlText.includes(topicSummary))
 await page.screenshot({ path: join(OUT, '4-timeline.png') })
+
+const review = page.getByTestId('yzj-advance-review')
+ok('请 AI 验收 on the kicker', await review.count().then(n => n > 0))
+await review.click()
+await page.waitForTimeout(2000)
+const reviewDomain = await page.locator('[data-testid="yzj-room-shell"]').getAttribute('data-workbench-domain').catch(() => '')
+ok('请 AI 验收 switches to 对话', reviewDomain === 'im', reviewDomain ?? '')
+const banner = page.getByTestId('yzj-advance-ask-banner')
+await banner.waitFor({ state: 'visible', timeout: 8000 }).catch(() => {})
+ok('验收预备 banner', await banner.count().then(n => n > 0), await banner.innerText().catch(() => ''))
+await page.screenshot({ path: join(OUT, '6-ask-banner.png') })
+const reviewToggle = page.getByTestId('yzj-topic-toggle')
+const reviewToggleReady = await reviewToggle.waitFor({ state: 'visible', timeout: 8000 }).then(() => true).catch(() => false)
+if (reviewToggleReady) {
+  if (await page.getByTestId('yzj-topic-drawer').count() === 0) {
+    await reviewToggle.click()
+    await page.waitForTimeout(1000)
+  }
+  const reviewTopic = page.locator('[data-testid^="yzj-topic-card-"]').first()
+  if (await page.getByTestId('yzj-topic-lens').count() === 0 && await reviewTopic.count() > 0) {
+    await reviewTopic.click()
+    await page.waitForTimeout(2000)
+  }
+  const askBox = page.getByLabel('问助手')
+  const askVal = await askBox.inputValue().catch(() => '')
+  ok(
+    '问助手 filled with inspect prompt',
+    askVal.includes('yzj_advance_inspect') && askVal.includes('不要 stageTo=completed'),
+    askVal.slice(0, 80),
+  )
+  await page.waitForTimeout(2500)
+  const lensAfterAsk = await page.getByTestId('yzj-topic-lens').innerText().catch(() => '')
+  ok('请 AI 验收 did not followup', !lensAfterAsk.includes('yzj_advance_inspect'))
+  await page.screenshot({ path: join(OUT, '7-ask-draft.png') })
+}
+
 ok('zero page errors', pageErrors.length === 0, pageErrors.join(' | '))
 
 await browser.close()

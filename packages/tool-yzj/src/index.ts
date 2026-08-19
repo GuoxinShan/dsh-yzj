@@ -21,6 +21,7 @@ import { applyTodoTools } from './todo.ts'
 import { YzjTodoService } from './todo.ts'
 import type { TodoConfig } from './todo.ts'
 import { applyAdvanceTools, YzjAdvanceService } from './advance.ts'
+import { ScanCursorStore } from './scan-cursors.ts'
 import { YzjHomeService } from './home.ts'
 import { applyApprovalGuard } from './guard.ts'
 import type { YzjToolBudget } from './shared.ts'
@@ -89,8 +90,11 @@ export function apply(ctx: Context, config: Config): void {
   applyTodoTools(ctx, budget, config.todo ?? {}, todoService.holder)
   // The advance (AI推进) board shares the active-library holder: the panel
   // switcher moves both the todo tab and the advance board to the same doc.
-  new YzjAdvanceService(ctx, budget, config.todo ?? {}, todoService.holder)
-  applyAdvanceTools(ctx, budget, config.todo ?? {}, todoService.holder)
+  // Scan cursors are a host-owned storage-domain (决策 18) shared by the
+  // scan tool and the board status RPC.
+  const scanCursors = new ScanCursorStore()
+  const advanceService = new YzjAdvanceService(ctx, budget, config.todo ?? {}, todoService.holder, scanCursors)
+  applyAdvanceTools(ctx, budget, config.todo ?? {}, todoService.holder, scanCursors)
   // Product-home binding table (dsh-home-session): one Yunzhijia
   // conversation ↔ one DSH session. Shared by robot inbound and UI pick-group.
   const home = new YzjHomeService(ctx, {
@@ -101,6 +105,7 @@ export function apply(ctx: Context, config: Config): void {
   })
   ctx.inject(['storageDomain'], () => {
     void home.openNow()
+    void advanceService.openNow()
   })
   // Window is a one-shot plugin inject (not a snapshot section). Register
   // on the host so official Chat and drawer turns both see it (events bubble).

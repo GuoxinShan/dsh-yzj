@@ -13,6 +13,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { YzjPanelInject } from './rpc.ts'
 import { setWorkbenchDomain } from './workbench-domain.ts'
 import { setAdvanceFeedback } from './advance-feedback.ts'
+import { setAdvanceAskDraft, reviewAskText } from './advance-ask.ts'
 import css from './advance-pane.module.css'
 
 type UnknownRecord = Record<string, unknown>
@@ -71,7 +72,16 @@ function sourceJumpDomain(sourceType: string): 'im' | 'todo' | 'docs' | 'calenda
 
 /** Props: the RPC verbs the board needs (subset of the panel inject). */
 export interface AdvancePaneProps {
-  inject: Pick<YzjPanelInject, 'advanceState' | 'advanceGet' | 'advanceCreate' | 'advanceJudge' | 'advanceEnsure'>
+  inject: Pick<YzjPanelInject, 'advanceState' | 'advanceGet' | 'advanceCreate' | 'advanceJudge' | 'advanceEnsure' | 'advanceScanState'>
+}
+
+/** Queue-head patrol line (spec §14.5). */
+export function formatScanStatus(scannedAt: number | null, found: number): string {
+  if (scannedAt === null) return '尚未巡检'
+  const date = new Date(scannedAt)
+  const hh = String(date.getHours()).padStart(2, '0')
+  const mm = String(date.getMinutes()).padStart(2, '0')
+  return `上次巡检 ${hh}:${mm} · 本轮发现 ${found} 条`
 }
 
 interface BoardState {
@@ -99,6 +109,16 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
   const [startOpen, setStartOpen] = useState(false)
   const [draft, setDraft] = useState({ title: '', goal: '', metrics: '', assignee: '', targetDate: '', background: '' })
   const [error, setError] = useState('')
+  const [scanLine, setScanLine] = useState('尚未巡检')
+
+  const loadScan = async (): Promise<void> => {
+    const result = await props.inject.advanceScanState()
+    if (!result.ok) return
+    const value = asRecord(result.value)
+    const scannedAt = typeof value.scannedAt === 'number' ? value.scannedAt : null
+    const found = typeof value.found === 'number' ? value.found : 0
+    setScanLine(formatScanStatus(scannedAt, found))
+  }
 
   const loadBoard = async (): Promise<UnknownRecord[]> => {
     const result = await props.inject.advanceState()
@@ -122,6 +142,7 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
     let live = true
     void (async () => {
       const items = await loadBoard()
+      await loadScan()
       if (!live || items.length === 0) return
       const { decide, review, watch } = queuesOf(items)
       const first = decide[0] ?? review[0] ?? watch[0]
@@ -283,7 +304,7 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
       <aside className={css.queue} data-testid="yzj-advance-queue">
         <div className={css.queueHead}>
           <b>我的推进</b>
-          <span>当前需要关注的事项</span>
+          <span data-testid="yzj-advance-scan-status">{scanLine}</span>
         </div>
         {queueGroup('decide', '待我决定', queues.decide, '当前没有待决定事项', 'AI 会在需要你的权限时再提醒')}
         {queueGroup('review', '待我验收', queues.review, '暂无待验收结果', '只有业务标准满足后才进入这里')}
@@ -312,22 +333,41 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                 <span className={`${css.stagePill} ${css[`pill_${dotToneOf(stage)}`]}`} data-testid="yzj-advance-stage">
                   {STAGE_LABEL[stage] ?? stage}
                 </span>
-                <button
-                  type="button"
-                  className={css.feedbackBtn}
-                  data-testid="yzj-advance-feedback"
-                  onClick={() => {
-                    setAdvanceFeedback({
-                      advanceId: asString(detail.item.advanceId),
-                      title: asString(detail.item.title),
-                      goal: asString(detail.item.goal),
-                      stage,
-                    })
-                    setWorkbenchDomain('im')
-                  }}
-                >
-                  现在反馈
-                </button>
+                <div className={css.kickerActions}>
+                  <button
+                    type="button"
+                    className={css.feedbackBtn}
+                    data-testid="yzj-advance-feedback"
+                    onClick={() => {
+                      setAdvanceFeedback({
+                        advanceId: asString(detail.item.advanceId),
+                        title: asString(detail.item.title),
+                        goal: asString(detail.item.goal),
+                        stage,
+                      })
+                      setWorkbenchDomain('im')
+                    }}
+                  >
+                    现在反馈
+                  </button>
+                  <button
+                    type="button"
+                    className={css.feedbackBtn}
+                    data-testid="yzj-advance-review"
+                    onClick={() => {
+                      const advanceId = asString(detail.item.advanceId)
+                      const title = asString(detail.item.title)
+                      setAdvanceAskDraft({
+                        advanceId,
+                        title,
+                        text: reviewAskText(advanceId, title),
+                      })
+                      setWorkbenchDomain('im')
+                    }}
+                  >
+                    请 AI 验收
+                  </button>
+                </div>
               </div>
               <h1>{asString(detail.item.title)}</h1>
               <div className={css.meta}>

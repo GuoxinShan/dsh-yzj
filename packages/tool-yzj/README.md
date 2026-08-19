@@ -13,7 +13,7 @@ Model-facing Yunzhijia tools over `ctx.yzjBridge`. This package owns tool schema
 | im | `yzj_im_message_send/list`, `yzj_im_group_recent` |
 | file | `yzj_file_upload`, `yzj_file_download` |
 | todo | `yzj_todo_list/create/update/complete` (semantic todo core, demo-stage sheet backend; see `ctx.yzjTodo`) |
-| advance | `yzj_advance_list/get/create/feed` (AI推进 board; see `ctx.yzjAdvance`) |
+| advance | `yzj_advance_list/get/inspect/scan/create/feed` (AI推进 board; see `ctx.yzjAdvance`) |
 
 Every tool returns `{ content, truncated, data }`:
 
@@ -28,11 +28,11 @@ Durable group-room table: one Yunzhijia conversation (group or DM) ↔ one DSH h
 
 ## Advancement board (`ctx.yzjAdvance`)
 
-Event-sourced AI推进 core (docs/spec/ai-advance-design.md): one advancement item (推进事项) is the fold of an append-only 事元 stream stored in two tables (「事项」/「事元」) inside the same 待办任务库 dbt as the todo family — the panel library switcher moves both. `yzj_advance_feed` is the ONLY mutation channel: goal updates, progress, deviations, decision requests, and six-stage moves (`draft→running→(decision-needed→updated)*→ready-for-review→completed`) are all entries with host-generated `原值→新值` diffs and traceable refs; the item row only caches the projection. The stream is never truncated storage-side (knowledge-sedimentation source); digests and panel first-screens window it. The service backs the `/yzj` RPC endpoints (`advance-state/get/create/judge/ensure/feed`); panel judge verbs (confirm/accept/reject/ignore) and the user-direct `advance-feed` (one-sentence 事元, no `stageTo`) are user-direct writes landing as `操作者=user` entries.
+Event-sourced AI推进 core (docs/spec/ai-advance-design.md): one advancement item (推进事项) is the fold of an append-only 事元 stream stored in two tables (「事项」/「事元」) inside the same 待办任务库 dbt as the todo family — the panel library switcher moves both. `yzj_advance_feed` is the ONLY mutation channel: goal updates, progress, deviations, decision requests, and six-stage moves (`draft→running→(decision-needed→updated)*→ready-for-review→completed`) are all entries with host-generated `原值→新值` diffs and traceable refs; the item row only caches the projection. Host forcibly skips a second feed whose refs already sit on the stream (决策 19). The stream is never truncated storage-side (knowledge-sedimentation source); digests and panel first-screens window it. `yzj_advance_inspect` is read-only 比对材料 (goal/background/metrics/legal next stages + the interrupt/silence/suppression criteria of spec §13; host does not judge). `yzj_advance_scan` is the read-only incremental IM scan (host-owned cursors in `yzj_advance_scan_cursors`). The service backs the `/yzj` RPC endpoints (`advance-state/get/create/judge/ensure/feed/scan-state`); panel judge verbs, the start modal, and the user-direct `advance-feed` (one-sentence 事元, no `stageTo`) are user-direct writes landing as `操作者=user` entries. 「请 AI 验收」pre-fills the topic ask bar and does not auto-send. Patrol five steps live in `INSPECT_DISCIPLINE`.
 
 ## Approval guard
 
-`tools/pre-execute` returns `{ kind: 'ask', reason }` for operations that must never run unconfirmed: `yzj_doc_delete`, `yzj_doc_move`, `yzj_doc_block_delete`, `yzj_sheet_table_delete`, `yzj_sheet_record_delete`, `yzj_calendar_event_delete`, `yzj_im_message_send`, `yzj_file_upload`, `yzj_file_download` with `overwrite: true`, todo writes, advance writes (`yzj_advance_create/feed`), `robot_share_write`, and **bound-home** `robot_notify` / `robot_continue` (D9 group push; the unbound operator console stays ungated). The composed ApprovalService routes the ask to the GUI approval panel (or the in-group suggestion card on inbound homes) and audits the pair on the session log.
+`tools/pre-execute` returns `{ kind: 'ask', reason }` for operations that must never run unconfirmed: `yzj_doc_delete`, `yzj_doc_move`, `yzj_doc_block_delete`, `yzj_sheet_table_delete`, `yzj_sheet_record_delete`, `yzj_calendar_event_delete`, `yzj_im_message_send`, `yzj_file_upload`, `yzj_file_download` with `overwrite: true`, todo writes, `yzj_advance_create`, `yzj_advance_feed` **only when it rewrites the baseline** (`goal`/`metrics`/`targetDate`/`assignee` — plain appends and stage moves stay silent, spec §13.5), `robot_share_write`, and **bound-home** `robot_notify` / `robot_continue` (D9 group push; the unbound operator console stays ungated). The composed ApprovalService routes the ask to the GUI approval panel (or the in-group suggestion card on inbound homes) and audits the pair on the session log.
 
 ## Config
 

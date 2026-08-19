@@ -12,6 +12,7 @@ import type { YzjPanelInject } from './rpc.ts'
 import { YzjTopicDrawer } from './topic-drawer.tsx'
 import { AdvanceFeedPicker } from './advance-feed-picker.tsx'
 import { setAdvanceFeedback, useAdvanceFeedback } from './advance-feedback.ts'
+import { setAdvanceAskDraft, useAdvanceAskDraft } from './advance-ask.ts'
 import { topicListBadge } from './conv-list.tsx'
 import { registerRoomComposerHost, ROOM_COMPOSER_HOST_ID } from './composer-host.ts'
 import {
@@ -260,6 +261,7 @@ export function YzjFusedView(props: YzjFusedInjected) {
   const [unclamped, setUnclamped] = useState<ReadonlySet<string>>(() => new Set())
   const [feedTarget, setFeedTarget] = useState<{ summary: string; refs: string[] } | null>(null)
   const feedback = useAdvanceFeedback()
+  const askDraft = useAdvanceAskDraft()
   const highlightRef = useRef<HTMLDivElement | null>(null)
   const streamRef = useRef<HTMLDivElement | null>(null)
   const followBottomRef = useRef(true)
@@ -518,6 +520,12 @@ export function YzjFusedView(props: YzjFusedInjected) {
               onDone={() => setAdvanceFeedback(null)}
             />
             <button type="button" className={css.chromeLink} onClick={() => setAdvanceFeedback(null)}>取消</button>
+          </div>
+        )}
+        {askDraft !== null && (
+          <div className={css.chrome} data-testid="yzj-advance-ask-banner">
+            <span>验收问题已预备 · {askDraft.title}（{askDraft.advanceId}）。打开话题后会出现在问助手栏。</span>
+            <button type="button" className={css.chromeLink} onClick={() => setAdvanceAskDraft(null)}>取消</button>
           </div>
         )}
         {emptyPhase ? (

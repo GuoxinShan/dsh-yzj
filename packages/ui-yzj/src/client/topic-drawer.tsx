@@ -11,6 +11,7 @@ import type { ArtifactBadge } from '../artifact-badge.ts'
 import type { YzjPanelInject } from './rpc.ts'
 import { AdvanceFeedPicker } from './advance-feed-picker.tsx'
 import { useAdvanceFeedback } from './advance-feedback.ts'
+import { setAdvanceAskDraft, useAdvanceAskDraft } from './advance-ask.ts'
 
 /** Matches tool-yzj `LEGACY_HOST_ROOT` — not imported (browser-half purity). */
 const LEGACY_HOST_ROOT = 'legacy-host'
@@ -117,6 +118,7 @@ function YzjTopicLens(props: {
   const [asking, setAsking] = useState(false)
   const [feedOpen, setFeedOpen] = useState(false)
   const feedback = useAdvanceFeedback()
+  const askDraft = useAdvanceAskDraft()
   const title = props.lens === undefined
     ? '话题'
     : topicNavLabel(props.groupName, props.lens.title)
@@ -147,6 +149,10 @@ function YzjTopicLens(props: {
     }
   }, [props.lensSessionId, props.homeTopicLens])
 
+  useEffect(() => {
+    if (askDraft !== null && askDraft.text.trim() !== '') setDraft(askDraft.text)
+  }, [askDraft])
+
   const ask = async (): Promise<void> => {
     const text = draft.trim()
     if (text === '' || props.homeTopicAsk === undefined || asking) return
@@ -158,6 +164,7 @@ function YzjTopicLens(props: {
       return
     }
     setDraft('')
+    setAdvanceAskDraft(null)
     setBubbles(prev => [...prev, { id: `local-${Date.now()}`, role: 'user', text, time: Date.now() }])
     if (props.homeTopicLens !== undefined) {
       const lens = await props.homeTopicLens(props.lensSessionId)

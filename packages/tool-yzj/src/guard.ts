@@ -62,7 +62,11 @@ const WRITE_SPECS: Record<string, DangerousSpec> = {
   yzj_todo_complete: { reason: '完成待办（状态置 done）', level: 'standard' },
   // --- advance family (AI推进看板; docs/spec/ai-advance-design.md §4) ---
   yzj_advance_create: { reason: '在AI推进看板立项推进事项（首用时自动开通事项/事元双表）', level: 'standard' },
-  yzj_advance_feed: { reason: '向推进事项喂入事元（目标/进度/偏差/决策/阶段变化，追加进时间旅程）', level: 'standard' },
+  yzj_advance_feed: {
+    reason: '改写推进事项的比对基准（目标/成功指标/目标日期/负责人）',
+    level: 'standard',
+    when: rewritesAdvanceBaseline,
+  },
   // --- robot-yzj group shared workspace (design robot-channel-plan §8.4) ---
   robot_share_write: { reason: '写入群共享工作区文件（<cwd>/groups/<groupId>/shared/）', level: 'standard', prefix: '工作区写操作确认' },
   // --- robot-yzj group push from a bound home (D9; operator console stays ungated) ---
@@ -76,6 +80,23 @@ const WRITE_SPECS: Record<string, DangerousSpec> = {
     level: 'standard',
     whenSession: isBoundHomeSession,
   },
+}
+
+/** Projection fields whose rewrite replaces the baseline every later comparison rests on. */
+const ADVANCE_BASELINE_FIELDS = ['goal', 'metrics', 'targetDate', 'assignee'] as const
+
+/**
+ * Advance feed asks only when it rewrites the comparison baseline
+ * (ai-advance-design.md §13.5 / 决策 14). A normal-progress entry carries no
+ * decision for the user, and a deviation already surfaces in the board's
+ * 待我决定 queue — carding those would ask the same thing twice while the
+ * first ask ("may I append this?") carries no information.
+ */
+function rewritesAdvanceBaseline(args: Record<string, unknown>): boolean {
+  return ADVANCE_BASELINE_FIELDS.some((field) => {
+    const value = args[field]
+    return typeof value === 'string' && value.trim() !== ''
+  })
 }
 
 /** Group-room host or a topic session. Missing id → ask (fail closed on the D9 hole). */
