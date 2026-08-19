@@ -31,7 +31,7 @@ dsh plugin --profile web add github:GuoxinShan/dsh-yzj#v0.1.0
 安装后重启 GUI（源码启动时重启 `node --import tsx/esm apps/cli/src/bin.ts web`），侧栏脚出现一个「云之家」入口；点开工作台后用顶栏页签切对话 / 待办 / 日程 / 知识库 / 推进（记忆入口搁置）。
 
 > 本地开发用 `link:` 依赖指向 harness checkout；对外安装走 monobundle + git tag
-> （根包依赖已全部指向 registry 的 `@deepseek-ai` rc.6 系列，见 docs/release.md）。
+> （根包依赖已全部指向 registry 的 `@deepseek-ai` rc.7 系列，见 docs/release.md）。
 
 ## 功能面
 

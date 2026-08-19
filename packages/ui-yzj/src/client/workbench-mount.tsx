@@ -3,6 +3,7 @@
  * The conversation subtree stays mounted underneath; CSS hides it while
  * `html[data-dsh-yzj-active]` is set.
  */
+import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import { useSyncExternalStore } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { createYzjStore, type YzjPanelState } from './stores.ts'
@@ -48,7 +49,9 @@ export function mountWorkbench(panel: WorkbenchMountInject): () => void {
 
   const paint = (): void => {
     if (container === undefined || root === undefined) return
-    const sessionId = ''
+    // R27 overlay has no hanger session; rc.7 composer props still want a branded id.
+    // R27 overlay has no hanger session; rc.7 composer props still want a branded id.
+    const sessionId = '' as SessionId as SessionId
     root.render(
       <>
         <YzjRoomShell

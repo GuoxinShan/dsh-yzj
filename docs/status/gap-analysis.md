@@ -391,7 +391,7 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 | 🟡 外部依赖 | Adaptive 确认卡 / checklist 原地更新（S2/R3） | 协议依据已锁定，等开放平台协调 |
 | ⚪ 可选 | 标准确认同会话合并 / chip 快照标注 / @同事起草入口 / chip 灰化 / 灰 chip | 设计标注可选，未实现 |
 | 🔒 受限 | yzj.write 持久化事件族 / 通知卡按钮 / 多 chip 批量序列化 / 自定义 session 事件 / 确认卡进程内存态 | harness/协议边界，已备案 |
-| 🧹 发布 | 对外 git 安装走根 `@dsh-yzj/bundle` registry 依赖；workspace 六包保留 `link:` 兄弟 checkout（开发事实源） | ✅ 关闭（2026-08-18）：根 `dependencies` 已是 `^0.1.0-rc.6`，无 `link:`；tag `v0.1.0` / `v0.1.1` 已打。**不要**把 workspace `link:` 换成 registry——会拆掉 vitest alias / 类型闭环。AGENTS.md Pre-release 段已删，口径见 `docs/release.md` |
+| 🧹 发布 | 对外 git 安装走根 `@dsh-yzj/bundle` registry 依赖；workspace 六包保留 `link:` 兄弟 checkout（开发事实源） | ✅ 关闭（2026-08-18 起；**2026-08-19 升 rc.7**）：根 `dependencies` 已是 `^0.1.0-rc.7`，无 `link:`；tag `v0.1.0` / `v0.1.1` 已打。**不要**把 workspace `link:` 换成 registry——会拆掉 vitest alias / 类型闭环。browser half 须 `import type {} from '@deepseek-ai/dsh-client-ui-tool/client'` 才能 merge `tool.call.toolview`；session 槽 `inject` / overlay hanger 用 branded `SessionId`（pitfall-034）。口径见 `docs/release.md` |
 | 🧹 业务 | routine 内容为 demo 巡检，真实定时任务未定义 | 待用户提供 |
 
 **文档修正（同提交）**：`robot-channel-plan.md` §3.6.4 对齐表 C5 原标 ✅ 与 §20.5「!fork 未做」矛盾——已改标 ⚠️ 观察项；R2.10 `!fork` 落地后改回 ✅（含 !configure/!feedback/会话 deep link 降级实现）。

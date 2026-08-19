@@ -10,14 +10,14 @@
 
 - **monobundle**：根 `package.json` = `@dsh-yzj/bundle`（`exports` 子路径
   `./bridge`…`./model-yzj` + `./client`；`dsh.bundle` patch + `dsh.client`
-  声明；`dependencies` 仅 `@deepseek-ai/*`（registry rc.6 系列）+ react/zod）；
+  声明；`dependencies` 仅 `@deepseek-ai/*`（registry rc.7 系列）+ react/zod）；
 - 构建：根 `tsdown.config.ts` 把六包 `lib/index.js` 聚合成 `lib/*.mjs`
   （`noExternal /@dsh-yzj\//` 内嵌互依，`@deepseek-ai/*` 外部化）；
   `scripts/copy-client.mjs` 原样搬运 ui-yzj closure bundle 为 `lib/client.js`；
 - patch 行名用子路径（`@dsh-yzj/bundle/robot-yzj` 等）；
   `./ui-yzj/package.json` 导出满足 client-modules 的 `resolvePkgJson`；
 - 本地开发不变：workspace 六包对 `@deepseek-ai/*` 的 `link:` **必须保留**（兄弟 checkout 是类型/测试事实源）；测试直跑源码。
-- 根包对外依赖已经是 registry `^0.1.0-rc.6`，**不要**把 workspace `link:` 改成 registry——那会拆掉开发态闭环。首个 tag（`v0.1.0` / `v0.1.1`）已打，AGENTS.md 旧「Pre-release 发布前替换 link:」口径作废。
+- 根包对外依赖已经是 registry `^0.1.0-rc.7`，**不要**把 workspace `link:` 改成 registry——那会拆掉开发态闭环。首个 tag（`v0.1.0` / `v0.1.1`）已打，AGENTS.md 旧「Pre-release 发布前替换 link:」口径作废。
 
 ## 1. 发布步骤（全部本地可完成，无需账号）
 
@@ -46,8 +46,9 @@ pnpm 从 GitHub 拉仓库根包（`@dsh-yzj/bundle`，`dsh.bundle` 声明被 rec
 ## 3. 已放弃的路线（记录原因）
 
 - **npm 全量发布**：需要 npm 账号；且 `@deepseek-ai/*` 的 rc.5 从未发布
-  （registry 0.1.0 系列只有 rc.2/rc.3/rc.6，本地 rc.5 是内部号）——registry
-  版本不可用是当初的卡点；monobundle 后不再需要。
+  （当时 registry 0.1.0 系列只有 rc.2/rc.3/rc.6，本地 rc.5 是内部号；
+  **现行对外口径是 `^0.1.0-rc.7`**）——registry 版本不可用是当初的卡点；
+  monobundle 后不再需要。
 - **多包 GitHub 安装**：bundle 依赖六个未发布包 + `workspace:^` 在 git 安装
   时不重写——解析必然失败；monobundle 内嵌互依彻底绕开。
 

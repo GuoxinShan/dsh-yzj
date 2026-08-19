@@ -7,10 +7,10 @@
  * context block so the agent receives real substance — not just a title.
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
-import type { InputTriggerServiceContract } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type {
-  ClientSessionContext, InputTriggerCandidate, InputTriggerSource, ReferenceCodec, ReferenceInsert,
-} from '@deepseek-ai/dsh-client-ui-input-trigger/src/types.ts'
+  ClientSessionContext, InputTriggerCandidate, InputTriggerServiceContract, InputTriggerSource,
+  ReferenceCodec, ReferenceInsert,
+} from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type { YzjPanelInject } from './rpc.ts'
 import type { YzjDragRef } from './panel.tsx'
 import { clearRefContextCache, fetchRefContext } from './context.ts'

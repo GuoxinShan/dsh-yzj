@@ -2,13 +2,14 @@
  * Browser half: 云之家 dock (injected under New Session) plus the
  * center-column workbench cover (R27) and keyed tool-result cards.
  */
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-input-trigger/client'
+import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 import { YzjToolCard, YZJ_TOOL_NAMES } from './cards.tsx'
 import { YzjComposerDock } from './composer.tsx'
 import type { YzjHomeChromeInjected } from './home-chrome.tsx'
@@ -54,8 +55,8 @@ function asString(value: unknown): string {
 }
 
 /** The client session scope face (see the composer dock for the why). */
-function scopeOf(ctx: ClientContext, sessionId: string): import('@deepseek-ai/dsh-client-runtime/client').AgentContext | undefined {
-  const sessions = ctx.sessions as unknown as { scope: (id: string) => import('@deepseek-ai/dsh-client-runtime/client').AgentContext | undefined }
+function scopeOf(ctx: ClientContext, sessionId: SessionId): import('@deepseek-ai/dsh-client-runtime/client').AgentContext | undefined {
+  const sessions = ctx.sessions as unknown as { scope: (id: SessionId) => import('@deepseek-ai/dsh-client-runtime/client').AgentContext | undefined }
   return sessions.scope(sessionId)
 }
 
@@ -111,7 +112,7 @@ export function apply(ctx: ClientContext): void {
       name: 'conversation.input.dock',
       id: 'yzj-home-chrome',
       order: 100,
-      inject: (sessionId: string): YzjHomeChromeInjected => {
+      inject: (sessionId: SessionId): YzjHomeChromeInjected => {
         const actx = scopeOf(ctx, sessionId)
         const draftFace = (): { draft: string; draftRev: number } => {
           const conversation = actx?.get('conversation') as
@@ -146,7 +147,7 @@ export function apply(ctx: ClientContext): void {
       id: 'yzj-session-shell',
       order: -80,
       label: '群聊',
-      inject: (sessionId: string): YzjSessionShellInjected => ({
+      inject: (sessionId: SessionId): YzjSessionShellInjected => ({
         sessionId,
         homeBinding: (id) => panelInject.homeBinding?.(id) ?? Promise.resolve({ ok: false as const, error: { message: 'homeBinding unavailable' } }),
         homeOpen: (groupId, title) => panelInject.homeOpen?.(groupId, title) ?? Promise.resolve({ ok: false as const, error: { message: 'homeOpen unavailable' } }),
@@ -196,7 +197,7 @@ export function apply(ctx: ClientContext): void {
       {
         name: 'tool.call.toolview',
         key: toolName,
-        inject: (sessionId: string): WriteCardInjected => {
+        inject: (sessionId: SessionId): WriteCardInjected => {
           const actx = scopeOf(ctx, sessionId)
           return {
             fetchWrite: async (callId): Promise<YzjWriteRecord | undefined> => {
