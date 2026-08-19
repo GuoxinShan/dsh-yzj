@@ -492,6 +492,24 @@ describe('YzjAdvancePane', () => {
     act(() => { face.root.unmount() })
   })
 
+  it('事元来源区窗口化:默认最近 3 条,可展开/收起', async () => {
+    const five = [1, 2, 3, 4, 5].map(i => ({ sourceType: '文档', label: `来源${i}`, ref: `doc${i}`, at: `08-1${i}`, status: '已读取' }))
+    const face = mountPane({
+      items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行' })],
+      detail: { item: item({ advanceId: 'A-1', stage: 'running', title: '试运行' }), entries: [], sources: five },
+    })
+    await settle()
+    const side = face.container.querySelector('[data-testid="yzj-advance-sources"]')!
+    expect(side.textContent).not.toContain('来源1')
+    expect(side.textContent).toContain('来源5')
+    const toggle = side.querySelector('[data-testid="yzj-advance-sources-toggle"]') as HTMLButtonElement
+    expect(toggle.textContent).toContain('展开全部 5 条')
+    await act(async () => { toggle.click(); await Promise.resolve() })
+    expect(side.textContent).toContain('来源1')
+    expect(toggle.textContent).toContain('收起')
+    act(() => { face.root.unmount() })
+  })
+
   it('renders subscribed thread chips and unlinks via × (registry only)', async () => {
     const face = mountPane({
       items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行' })],
