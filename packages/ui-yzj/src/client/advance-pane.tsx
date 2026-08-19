@@ -12,6 +12,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { YzjPanelInject } from './rpc.ts'
 import { setWorkbenchDomain } from './workbench-domain.ts'
+import { setAdvanceFeedback } from './advance-feedback.ts'
 import css from './advance-pane.module.css'
 
 type UnknownRecord = Record<string, unknown>
@@ -311,6 +312,22 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                 <span className={`${css.stagePill} ${css[`pill_${dotToneOf(stage)}`]}`} data-testid="yzj-advance-stage">
                   {STAGE_LABEL[stage] ?? stage}
                 </span>
+                <button
+                  type="button"
+                  className={css.feedbackBtn}
+                  data-testid="yzj-advance-feedback"
+                  onClick={() => {
+                    setAdvanceFeedback({
+                      advanceId: asString(detail.item.advanceId),
+                      title: asString(detail.item.title),
+                      goal: asString(detail.item.goal),
+                      stage,
+                    })
+                    setWorkbenchDomain('im')
+                  }}
+                >
+                  现在反馈
+                </button>
               </div>
               <h1>{asString(detail.item.title)}</h1>
               <div className={css.meta}>

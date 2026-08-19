@@ -7,9 +7,11 @@
  */
 import { act } from 'react-dom/test-utils'
 import { createRoot, type Root } from 'react-dom/client'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { YzjAdvancePane, queuesOf, STAGE_LABEL } from '../src/client/advance-pane.tsx'
 import type { AdvancePaneProps } from '../src/client/advance-pane.tsx'
+import { getAdvanceFeedback, setAdvanceFeedback } from '../src/client/advance-feedback.ts'
+import { getWorkbenchDomain, setWorkbenchDomain } from '../src/client/workbench-domain.ts'
 
 type Rpc = { ok: true; value: unknown } | { ok: false; error: { message: string } }
 
@@ -124,6 +126,11 @@ describe('queuesOf', () => {
 })
 
 describe('YzjAdvancePane', () => {
+  afterEach(() => {
+    setAdvanceFeedback(null)
+    setWorkbenchDomain('im')
+  })
+
   it('shows the provisioning hero and ensures on click', async () => {
     const face = mountPane({ ready: false })
     await settle()
@@ -247,6 +254,26 @@ describe('YzjAdvancePane', () => {
     expect(face.created).toHaveLength(1)
     expect(face.created[0]?.title).toBe('KA 试运行')
     expect(face.created[0]?.goal).toBe('进入试运行')
+    act(() => { face.root.unmount() })
+  })
+
+  it('现在反馈 writes the card bus and switches to 对话', async () => {
+    setWorkbenchDomain('advance')
+    const face = mountPane({
+      items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行', goal: '进入试运行' })],
+      detail: { item: item({ advanceId: 'A-1', stage: 'running', title: '试运行', goal: '进入试运行' }), entries: [] },
+    })
+    await settle()
+    const button = face.container.querySelector('[data-testid="yzj-advance-feedback"]') as HTMLButtonElement
+    expect(button).not.toBeNull()
+    await act(async () => { button.click(); await Promise.resolve() })
+    expect(getWorkbenchDomain()).toBe('im')
+    expect(getAdvanceFeedback()).toEqual({
+      advanceId: 'A-1',
+      title: '试运行',
+      goal: '进入试运行',
+      stage: 'running',
+    })
     act(() => { face.root.unmount() })
   })
 })

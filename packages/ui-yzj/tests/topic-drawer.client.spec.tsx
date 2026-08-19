@@ -4,10 +4,15 @@
  */
 import { act } from 'react-dom/test-utils'
 import { createRoot } from 'react-dom/client'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { YzjTopicDrawer } from '../src/client/topic-drawer.tsx'
+import { setAdvanceFeedback } from '../src/client/advance-feedback.ts'
 
 describe('YzjTopicDrawer', () => {
+  afterEach(() => {
+    setAdvanceFeedback(null)
+  })
+
   it('lists topics and opens a lens without focusing native chat', () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
@@ -165,5 +170,157 @@ describe('YzjTopicDrawer', () => {
     })
     expect(container.querySelector('[data-testid="yzj-drawer-anchor"]')).toBeNull()
     expect(container.textContent).toContain('还没有助手回合')
+  })
+
+  it('lens 喂给推进 feeds the origin as a 对话 ref, never legacy-host', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const fed: Record<string, unknown>[] = []
+    const advanceState = async () => ({
+      ok: true as const,
+      value: { ready: true, items: [{ advanceId: 'A-1', title: '试运行', stage: 'running', latest: '' }] },
+    })
+    const advanceFeed = async (input: { advanceId: string; summary: string; sourceType?: string; refs?: string[] }) => {
+      fed.push(input)
+      return { ok: true as const, value: { advanceId: input.advanceId } }
+    }
+    await act(async () => {
+      root.render(
+        <YzjTopicDrawer
+          groupName="群"
+          topics={[{
+            dshSessionId: 'yzj-topic-1',
+            title: '排期',
+            source: 'yzj',
+            rootMsgId: 'm-root',
+            originText: '原话进度',
+            originWho: '张三',
+          }]}
+          lensSessionId="yzj-topic-1"
+          onClose={() => undefined}
+          onBack={() => undefined}
+          onOpenLens={() => undefined}
+          onNative={() => undefined}
+          onJumpOrigin={() => undefined}
+          advanceState={advanceState}
+          advanceFeed={advanceFeed}
+        />,
+      )
+    })
+    expect(container.querySelector('[data-testid="yzj-topic-feed"]')).not.toBeNull()
+    await act(async () => {
+      (container.querySelector('[data-testid="yzj-topic-feed"]') as HTMLButtonElement).click()
+      await Promise.resolve()
+    })
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    expect(container.querySelector('[data-testid="yzj-advance-feed-picker"]')).not.toBeNull()
+    expect((container.querySelector('[data-testid="yzj-advance-feed-summary"]') as HTMLTextAreaElement).value).toBe('原话进度')
+    await act(async () => {
+      (container.querySelector('[data-testid="yzj-advance-feed-submit"]') as HTMLButtonElement).click()
+      await Promise.resolve()
+    })
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    expect(fed).toEqual([{
+      advanceId: 'A-1',
+      summary: '原话进度',
+      sourceType: '对话',
+      refs: ['m-root'],
+    }])
+    act(() => { root.unmount() })
+
+    const legacy = document.createElement('div')
+    document.body.appendChild(legacy)
+    const legacyRoot = createRoot(legacy)
+    await act(async () => {
+      legacyRoot.render(
+        <YzjTopicDrawer
+          groupName="群"
+          topics={[{
+            dshSessionId: 'yzj-topic-legacy',
+            title: '历史对话',
+            source: 'handoff',
+            rootMsgId: 'legacy-host',
+            originText: '不该跳群消息',
+          }]}
+          lensSessionId="yzj-topic-legacy"
+          onClose={() => undefined}
+          onBack={() => undefined}
+          onOpenLens={() => undefined}
+          onNative={() => undefined}
+          onJumpOrigin={() => undefined}
+          advanceState={advanceState}
+          advanceFeed={advanceFeed}
+        />,
+      )
+    })
+    expect(legacy.querySelector('[data-testid="yzj-topic-feed"]')).toBeNull()
+    expect(legacy.querySelector('[data-testid="yzj-topic-feed-ask"]')).not.toBeNull()
+    act(() => { legacyRoot.unmount() })
+  })
+
+  it('问助手栏 喂给推进 uses the draft as summary and does not mix with followup', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const asked: string[] = []
+    const fed: Record<string, unknown>[] = []
+    await act(async () => {
+      root.render(
+        <YzjTopicDrawer
+          groupName="群"
+          topics={[{
+            dshSessionId: 'yzj-topic-1',
+            title: '排期',
+            source: 'dsh',
+            rootMsgId: 'm-root',
+            originText: '锚点原文',
+          }]}
+          lensSessionId="yzj-topic-1"
+          onClose={() => undefined}
+          onBack={() => undefined}
+          onOpenLens={() => undefined}
+          onNative={() => undefined}
+          onJumpOrigin={() => undefined}
+          homeTopicAsk={async (_id, text) => {
+            asked.push(text)
+            return { ok: true, value: { ok: true } }
+          }}
+          advanceState={async () => ({
+            ok: true,
+            value: { ready: true, items: [{ advanceId: 'A-1', title: '试运行', stage: 'running', latest: '' }] },
+          })}
+          advanceFeed={async (input) => {
+            fed.push(input)
+            return { ok: true, value: { advanceId: input.advanceId } }
+          }}
+        />,
+      )
+    })
+    const input = container.querySelector('[aria-label="问助手"]') as HTMLInputElement
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+    await act(async () => {
+      setter?.call(input, '口头一句')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => {
+      (container.querySelector('[data-testid="yzj-topic-feed-ask"]') as HTMLButtonElement).click()
+      await Promise.resolve()
+    })
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    expect((container.querySelector('[data-testid="yzj-advance-feed-summary"]') as HTMLTextAreaElement).value).toBe('口头一句')
+    await act(async () => {
+      (container.querySelector('[data-testid="yzj-advance-feed-submit"]') as HTMLButtonElement).click()
+      await Promise.resolve()
+    })
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    expect(asked).toEqual([])
+    expect(fed).toEqual([{
+      advanceId: 'A-1',
+      summary: '口头一句',
+      sourceType: '对话',
+      refs: ['m-root'],
+    }])
+    act(() => { root.unmount() })
   })
 })

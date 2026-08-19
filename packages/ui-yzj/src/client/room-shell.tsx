@@ -161,6 +161,10 @@ export function YzjRoomShell(props: YzjRoomShellInjected) {
             {...(props.focusBoundSession === undefined ? {} : { focusBoundSession: props.focusBoundSession })}
             {...(props.fetchFileData === undefined ? {} : { fetchFileData: props.fetchFileData })}
             {...(props.fetchContact === undefined ? {} : { fetchContact: props.fetchContact })}
+            {...(props.panel === undefined ? {} : {
+              advanceState: props.panel.advanceState,
+              advanceFeed: props.panel.advanceFeed,
+            })}
           />
         </div>
       )}

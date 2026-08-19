@@ -70,6 +70,8 @@ export interface YzjPanelInject {
   advanceJudge: (advanceId: string, action: 'confirm_condition' | 'confirm_advance' | 'accept' | 'reject' | 'ignore', note?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** One-click provision of the 事项/事元 tables (empty-state action). */
   advanceEnsure: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** User-direct 事元 feed (D9, no confirm card; no stageTo). */
+  advanceFeed: (input: { advanceId: string; summary: string; sourceType?: string; refs?: string[] }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** One write-confirmation record for a tool call (undefined when not gated). */
   fetchWrite: (sessionId: string, callId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Settle one pending write-confirmation decision. */
@@ -236,6 +238,12 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
       ...(note === undefined || note === '' ? {} : { note }),
     }),
     advanceEnsure: () => call('advance-ensure', {}),
+    advanceFeed: (input) => call('advance-feed', {
+      advanceId: input.advanceId,
+      summary: input.summary,
+      ...(input.sourceType === undefined || input.sourceType === '' ? {} : { sourceType: input.sourceType }),
+      ...(input.refs === undefined || input.refs.length === 0 ? {} : { refs: input.refs }),
+    }),
     fetchWrite: (sessionId, callId) => call('write-list', { sessionId, callId }),
     decideWrite: (writeId, outcome) => call('write-decide', { writeId, outcome }),
     robotStatus: () => call('robot-status', {}),

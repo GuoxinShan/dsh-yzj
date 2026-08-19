@@ -589,6 +589,22 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 | 服务/RPC | `ctx.yzjAdvance`（state/get/ensure/create/feed/judge）与 todo 共享 active-library holder（库切换双板跟随）；`/yzj` +5 端点（advance-state/get/create/judge/ensure，25→30） | judge 五动词（确认新条件/确认推进→updated/验收→completed/打回→running/忽略→running）全部落 `操作者=user` 事元——D9 直写无卡 |
 | 独立看板 | **第五页签「推进」**（`WorkbenchDomain` 扩 `advance`，R21/R31 v1.18 修订——推进有真实数据源，与空壳「会议/AI速记」页不同）；`advance-pane.tsx` 按 lgap17 信息架构复刻：左队列三组带徽标（待我决定/待我验收/我关注的推进，空态文案沿原型语气）、主详情（kicker+阶段 pill、成功指标卡行、当前有效目标、阶段化决策区、三色时间旅程+来源跳转+查看全部翻页）、右侧信息来源（状态标：已确认/已读取/未达标/等待中）+已有产物+PRD 底注；发起推进弹窗=面板直写立项。**待办页签与 todo-pane 零改动** | `advance-pane.client.spec.tsx` 8 项 + room-shell 五页签断言；全量 551 绿；真机走查 `.acceptance/verify-advance-board.mjs`（需重启 GUI 后跑，截图进 shots-advance/） |
 
-**分期状态**：①地基本次交付；② 事元接入便捷化、③ AI 主动回路（机制 C–F：AI 触发阶段/最小推进回路/验收辅助/schedule 巡检）、④ 知识沉淀出口（事元流折复盘文档入知识库 + 纪要模板）、⑤ 归集分析——见设计 §8。
+**分期状态**：①地基已交付；**② 事元接入便捷化本次交付（§24.1）**；③ AI 主动回路（机制 C–F：AI 触发阶段/最小推进回路/验收辅助/schedule 巡检）、④ 知识沉淀出口（事元流折复盘文档入知识库 + 纪要模板）、⑤ 归集分析——见设计 §8。
 
 **已知偏差**：(a) AGENTS/本档旧文提到的 `bundle/skills/yzj-cli/SKILL.md` 在当前仓库不存在（历史路径）；第一期 agent 教学面由工具 description（立项预填、running 勿打扰、feed 唯一变更通道）与 spec 承载，机器级 skill 的「AI推进」章节待 skill 文件回仓后补。(b) 来源跳转按「可跳则跳」降级：doc 走 web url/知识库域、对话跳对话域、待办跳待办页签，无消息级锚点（CLI 限制，设计 §9-8）。(c) 双写非事务：投影是缓存、流是事实（设计 §9-6，原生后端应服务端折叠）。
+
+## 24.1 AI推进第二期｜事元接入便捷化（2026-08-19，设计随提交）
+
+设计基线 [`ai-advance-design.md`](../spec/ai-advance-design.md) v1.1 §11。不改双表/六态/确认卡；补「人在工作现场把一条信号挂上事项」的用户直写入口。
+
+| 面 | 交付 | 证据 |
+|---|---|---|
+| RPC | `/yzj advance-feed`：`actor=user`、`changeType` 固定「进度更新」；**拒绝** `stageTo` / `goal` / `metrics` / `targetDate` / `assignee`（决策 10）；有 refs 默认 `sourceType=对话`，否则「人工」 | `rpc.node.spec.ts`：无服务失败闭合；带 stageTo/goal 零调用；refs 过滤空串 |
+| 群房间 | 消息 hover「喂给推进」（助手帖除外）→ 事项选择器 + 一句话（默认消息前 80 字）→ `refs=[msgId]`、`sourceType=对话`；无 inject 不露按钮 | `transcript.client.spec.tsx`：picker 提交载荷；无 inject 不含「喂给推进」；助手行无按钮 |
+| 话题透镜 | 锚点旁 / 问助手栏「喂给推进」；草稿作 summary；`legacy-host` 不当 ref；问助手栏仍只 `followup`，两按钮不混 | `topic-drawer.client.spec.tsx`：锚点 feed refs=`m-root`；legacy 无锚点按钮；草稿 feed 且 asked=[] |
+| 现在反馈 | 看板 kicker「现在反馈」→ `setAdvanceFeedback` + `setWorkbenchDomain('im')`；对话顶非模态事项卡一句话 `sourceType=人工`；取消清卡 | `advance-pane.client.spec.tsx` bus + 切域；`transcript.client.spec.tsx` 卡直写清 bus |
+| 选择器 | `AdvanceFeedPicker`：列事项、presetId 预选、空板禁用、空摘要拦截 | `advance-feed-picker.client.spec.tsx` |
+
+**不做（③期）**：文档/日程工作台行「喂给推进」；AI 主动回路 C–F。agent composer chip 喂入仍走 ①期 `yzj_advance_feed` 确认卡。
+
+**已知偏差**：与 §24 (a)(b)(c) 同；另：群房间「喂给推进」是行操作文字链，不是独立 chip 组件（产品文案沿用「喂给推进」，实现是 picker 模态）。

@@ -42,7 +42,7 @@ dsh plugin --profile web add github:GuoxinShan/dsh-yzj#v0.1.0
 - **im**：发消息（text/file/richText、@、回复、多图）、聊天记录、最近会话
 - **file**：上传（≤30MB、最多 5 并发）、下载（自动重命名 / 覆盖）
 - **todo**：语义化待办工具族（demo 阶段以多维表格「待办任务库」承载，首用自动开通）——`yzj_todo_list/create/update/complete`；稳定 ID 幂等、host 强制状态机、追加式推进日志；**核心理念 tag 自由聚合**（tag 可以是项目/群组/主题）；**团队协作**：面板任务库切换器一键切换个人/团队库或按需在企业知识库开通（权限标注），agent 写入跟随当前激活库，浏览器持久化选择；后端迁移架构见 `docs/migration/todo-backend-migration.md`
-- **advance（AI推进）**：事元流驱动的「推进事项」（设计见 `docs/spec/ai-advance-design.md`）——`yzj_advance_list/get/create/feed`；一个事项是可溯源事元（对话/待办/文档/会议/日程/数据）的 event-sourced 聚合体，**feed 是唯一变更通道**（目标更新/进度/偏差/决策请求/阶段变化全部为追加事元，host 生成 `原值→新值` diff），六态状态机 `draft→running→(decision-needed→updated)*→ready-for-review→completed`，`running` 稳态不打扰；事元流存储层永不裁剪（未来知识沉淀来源）；与待办同库（「事项/事元」双表，库切换器双板跟随），待办是事元的一种
+- **advance（AI推进）**：事元流驱动的「推进事项」（设计见 `docs/spec/ai-advance-design.md`）——`yzj_advance_list/get/create/feed`；一个事项是可溯源事元（对话/待办/文档/会议/日程/数据）的 event-sourced 聚合体，**feed 是唯一变更通道**（目标更新/进度/偏差/决策请求/阶段变化全部为追加事元，host 生成 `原值→新值` diff），六态状态机 `draft→running→(decision-needed→updated)*→ready-for-review→completed`，`running` 稳态不打扰；事元流存储层永不裁剪（未来知识沉淀来源）；与待办同库（「事项/事元」双表，库切换器双板跟随），待办是事元的一种。**②期用户直写**：群房间/话题「喂给推进」、看板「现在反馈」走 `/yzj advance-feed`（`操作者=user`，不经确认卡，**不能改阶段**）
 - **memory**：明文 Markdown 记忆库（`@dsh-yzj/memory-yzj`，设计见 `docs/spec/memory-vault-design.md`）——`memory_observe/read/search/dream_load/dream_apply` 五工具 + `systemPrompt.context` 有界注入；管理面在 **设置 → 云之家 · 记忆库**（sections/entities 展开、观察草稿区、注入统计、dream 固化日志、直写「记一条」、**dream 开关/每日时间/模型选择/立即固化、插件默认模型设置**）；dream 固化**默认关闭**（`dream.json` 运行时开关），开启后每日定时或手动触发，模型链＝dream 配置 > 插件默认（`@dsh-yzj/model-yzj`，robot 通道同用）> harness 默认；rev 乐观锁保护人工编辑；`group:<id>` scope 留缝群组记忆；dsh-routines routine 为备选路径（模板 `docs/spec/memory-dream-routine.yaml`）
 - **定时任务（无人值守）**：外部引擎 **dsh-routines**（专用 `ops` daemon profile，官方推荐形态）+ 自研 `ctx.chatnode` 投递——digest 经 **chatnode 桥**（`POST /yzj/chatnode`，loopback + Bearer 口令）由 web profile 的机器人通道推送进群，ops 侧不持任何机器人凭据（架构/决策/生产布局见 `docs/spec/routines-delivery.md`）；routine 为 YAML（`~/.dsh/routines/*.yaml`），到点起 headless 子进程独立会话，审计完整（`runs/<runId>.json` + digest）；生产部署：`start-prod.cmd` 统一入口 + 登录自启 ops daemon（幂等防双跑）
 
@@ -50,7 +50,7 @@ dsh plugin --profile web add github:GuoxinShan/dsh-yzj#v0.1.0
 
 全部 27 个写工具按风险分级在 `tools/pre-execute` 返回 `ask`（标准确认 / 强确认），由 host 侧 `write-gate` 应答 `approval/request` waterfall 后，在浏览器渲染**按 domain 分发的确认卡**：参数全文（消息目标/文档落位/记录内容/日程时间/待办字段等，不折叠截断；目标以解析后的名称展示，ID 不再裸露）、风险徽标（删除类强确认红色卡片）、四动词（确认 / 取消 / 查看上下文 / 编辑）。`查看上下文` 打开面板并锚定对应 tab/消息（卡片↔面板双向跳转）；终态由官方工具事件承载（回放安全）。覆盖：`doc`（含 workspace/rename/move/import/block）、`sheet`（含 table/record）、`calendar`、`im message send`、`file upload/download`、`todo` 与 `advance` 全部写操作。
 
-**写路径两分（已拍板，见 [dsh-home-session.md](docs/spec/dsh-home-session.md) §8 / group-room-topics R6）**：确认卡门控的是 **agent 发起的写**；**用户从 DSH 发出**（群房间「发进群」、待办勾选/新建）即用户本人意志，不经确认卡。删除类强确认。面板不再提供第二套 IM 发送。
+**写路径两分（已拍板，见 [dsh-home-session.md](docs/spec/dsh-home-session.md) §8 / group-room-topics R6）**：确认卡门控的是 **agent 发起的写**；**用户从 DSH 发出**（群房间「发进群」、待办勾选/新建、推进「喂给推进 / 现在反馈 / judge」）即用户本人意志，不经确认卡。删除类强确认。面板不再提供第二套 IM 发送。
 
 ## 与 yzj-cli skill 的关系
 
@@ -63,7 +63,7 @@ bundle 交付**改造版 skill**（`packages/bundle/skills/yzj-cli/SKILL.md`）�
 ### UI 设计
 
 - **工具结果富卡片**：`tool.call.toolview` keyed 注册全部 49 个工具名。pending 态从参数渲染标题；settled 态优先渲染结构化 `meta`（文档详情/列表、数据表 schema、记录表、日程时间线、消息气泡、联系人卡片、待办列表/动作摘要、推进队列/时间旅程摘要），无结构时回退到 digest 文本。失败态显示错误摘要。
-- **云之家工作台**：侧栏脚一个「云之家」入口 → 工作台。五域用顶栏页签切（对话 / 待办 / 日程 / 知识库 / 推进）。对话页签 = 会话列表 + 群房间时间线 + 话题抽屉；待办 / 日程 / 知识库 embed 原面板（记忆入口搁置，vault 仍是本地不出本机）；**推进页签 = AI推进看板**（推进队列三栏目 + 详情：成功指标卡 / 决策区 / 推进时间旅程 / 信息来源，见 [ai-advance-design.md](docs/spec/ai-advance-design.md)）。悬浮球已退役。群房间与话题见 [group-room-topics.md](docs/spec/group-room-topics.md)，对照 gap §23–§24。
+- **云之家工作台**：侧栏脚一个「云之家」入口 → 工作台。五域用顶栏页签切（对话 / 待办 / 日程 / 知识库 / 推进）。对话页签 = 会话列表 + 群房间时间线 + 话题抽屉；待办 / 日程 / 知识库 embed 原面板（记忆入口搁置，vault 仍是本地不出本机）；**推进页签 = AI推进看板**（推进队列三栏目 + 详情：成功指标卡 / 决策区 / 推进时间旅程 / 信息来源，「现在反馈」切回对话域带事项卡，见 [ai-advance-design.md](docs/spec/ai-advance-design.md)）。群房间 hover「喂给推进」把一条消息挂到事项上。悬浮球已退役。群房间与话题见 [group-room-topics.md](docs/spec/group-room-topics.md)，对照 gap §23–§24.1。
 
 ## 开发
 

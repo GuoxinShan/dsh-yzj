@@ -1,7 +1,7 @@
 # AI推进：事元流驱动的「推进事项」
 
-> 版本：v1.0（已拍板并开工）
-> 日期：2026-08-19
+> 版本：v1.1（①期已落地；**v1.1 = ②期事元接入便捷化**，见 §8 / §11）
+> 日期：2026-08-19（v1.1 同日）
 > 决策人：Guoxin Shan
 > 定位：AI推进的一等对象是**「推进事项」——一个聚合了很多事元、动态变化的事件推进体**，不是 todolist。IM 消息、待办、文档、会议纪要、日程都是事元；每个事元可溯源，会让这件事产生目标更新、进度更新、偏差、决策请求；AI 的价值是把变化过程看清楚。
 > 三条硬要求（用户 2026-08-19 拍板）：① 推进必须有待办以外的**独立看板**承载；② **完整时间线**永不裁剪，作为未来知识沉淀来源；③ AI 参与方式必须明确（§5 六机制）。
@@ -139,6 +139,7 @@ guard `WRITE_SPECS` +2：`yzj_advance_create` / `yzj_advance_feed` 均标准确�
 
 - **agent 发起的写**（`yzj_advance_create` / `yzj_advance_feed`）→ 标准确认卡。
 - **用户面板判断**（judge 五动词、发起推进弹窗的直写创建）= 用户本人意志 → `/yzj` RPC 直写，不经确认卡（与面板待办勾选/快捷新建同一原则）。
+- **用户一句话喂事元**（②期 §11：群房间/话题「喂给推进」、事项卡「现在反馈」的直写 feed）= 用户本人意志 → `/yzj advance-feed`，`操作者=user`，不经确认卡。RPC **不接受** `stageTo` / 目标字段（决策 10）。
 
 ## 7. 独立「推进」页签与 UI（复刻原型 lgap17 信息架构）
 
@@ -158,14 +159,14 @@ guard `WRITE_SPECS` +2：`yzj_advance_create` / `yzj_advance_feed` 均标准确�
 
 信息来源状态推导（第一期启发式，③期由 AI 判定取代）：最新一条该 ref 的事元——决策请求→等待中；偏差→未达标；操作者=user→已确认；其余→已读取。
 
-`/yzj` RPC 新端点：`advance-state`（队列快照）/ `advance-get`（详情+事元窗口）/ `advance-create`（面板直写立项）/ `advance-judge`（五动词直写）/ `advance-ensure`（一键开通双表）。
+`/yzj` RPC 端点：`advance-state`（队列快照）/ `advance-get`（详情+事元窗口）/ `advance-create`（面板直写立项）/ `advance-judge`（五动词直写）/ `advance-ensure`（一键开通双表）/ **`advance-feed`（②期用户一句话喂事元，不经确认卡，不接受 stageTo）**。
 
 ## 8. 分期
 
 | 期 | 内容 | 状态 |
 |---|---|---|
-| ① 地基 | 本设计 + 双表存储 + 4 工具 + guard + `ctx.yzjAdvance` + 独立「推进」页签（队列/详情/时间旅程/信息来源/judge 直写）+ skill 教学 | 本次实现 |
-| ② 事元接入便捷化 | 话题里把 IM 消息/文档/纪要/日程 chip 一句话喂给事项；「现在反馈」跳对话域带事项卡 | 待排 |
+| ① 地基 | 本设计 + 双表存储 + 4 工具 + guard + `ctx.yzjAdvance` + 独立「推进」页签（队列/详情/时间旅程/信息来源/judge 直写）+ skill 教学 | ✅ 已落地（gap §24） |
+| ② 事元接入便捷化 | 话题/群房间把 IM 消息一句话喂给事项（用户直写 feed）；「现在反馈」跳对话域带事项卡。文档/日程 chip 仍走 agent `yzj_advance_feed`（①期已通） | 本次实现（§11） |
 | ③ AI 主动回路（机制 C–F） | 语义比对 → 核心变量对比 → 建议 → 复述影响 → 确认落 feed；AI 触发阶段；验收辅助；schedule 巡检 | 待排 |
 | ④ 知识沉淀出口 | 完整事元流折成复盘文档入知识库；金蝶标准纪要模板；共识入库、下一步生成待办/日程（自动回链为事元）；供 memory-yzj dream 取材 | 待排 |
 | ⑤ 同类纪要/推进归集分析 | 后置 | 待排 |
@@ -183,6 +184,7 @@ guard `WRITE_SPECS` +2：`yzj_advance_create` / `yzj_advance_feed` 均标准确�
 | 7 | 面板判断动词 | judge 五动词（confirm_condition/confirm_advance/accept/reject/ignore）直写 | D9：用户本人意志不经确认卡；每次判断都落为 user 事元（PRD「每次用户的判断及操作都记录在推进时间旅程上」） |
 | 8 | 来源跳转边界 | doc 真跳（web url/知识库域）；对话跳对话域定位群（无消息锚点）；待办跳待办页签 | CLI 无消息级 deep link；不造假链接 |
 | 9 | 角色三态（管理者/执行者/相关方） | 第一期不做 | 本仓单用户视角；PRD v2.1 的角色是任务角色（创建人/负责人/关注人），负责人字段已留 |
+| 10 | 用户一句话喂事元能否改阶段 | **不能**。面板 `advance-feed` 不接受 `stageTo` / 目标字段；只追加「这条信号属于该事项」。阶段仍由 agent feed（确认卡）或 judge 五动词触发 | PRD「状态由 AI 判断触发而非用户手动改」；②期便捷化是溯源接入，不是第二套状态机 |
 
 ## 10. 验收口径（第一期）
 
@@ -194,3 +196,44 @@ guard `WRITE_SPECS` +2：`yzj_advance_create` / `yzj_advance_feed` 均标准确�
 6. 六态非法跳变被拒并给出合法路径。
 7. UI 结构与原型 lgap17 版逐区对照（队列三组徽标 / kicker+指标卡 / 目标区 / 阶段化决策区 / 时间旅程三色 / 信息来源状态标 / 空态文案），`.acceptance/verify-advance-board.mjs` 走查留证。
 8. `pnpm test` 绿；文档只读可重建行为；侧栏仍单入口。
+
+---
+
+## 11. ②期：事元接入便捷化
+
+> v1.1。不改双表/六态/确认卡；只补「人在工作现场把一条信号挂上事项」的直写入口，以及看板回到对话的事项卡。
+
+### 11.1 对象
+
+```
+UserFeed  // /yzj advance-feed，actor=user
+  advanceId:  string     // 必填
+  summary:    string     // 必填，一句话
+  sourceType: 对话 | 待办 | 文档 | 会议 | 日程 | 数据 | 人工   // 默认：有 msg 引用则「对话」，否则「人工」
+  changeType: 进度更新     // 面板固定；不开放阶段/目标字段
+  refs:       string[]   // msgId / yzj token / docId … 可空
+```
+
+禁止从这条 RPC 传 `stageTo` / `goal` / `metrics` / `targetDate` / `assignee`。host 拒绝。agent 仍走 `yzj_advance_feed` 确认卡改阶段。
+
+### 11.2 入口
+
+| 入口 | 手势 | 写什么 |
+|---|---|---|
+| 群房间消息 hover | 「喂给推进」（与「交给助手」并列） | 事项选择器 + 一句话（默认消息前 80 字）→ UserFeed，`refs=[msgId]`，`sourceType=对话` |
+| 话题透镜锚点 / 问助手栏 | 「喂给推进」 | 同上；锚点消息作 ref；问助手栏用当前草稿作 summary |
+| 推进看板详情 | 「现在反馈」（PRD §6.3） | 切工作台「对话」域，注入事项卡（id/名称/阶段/目标摘要）。卡上可一句话直写 UserFeed（`sourceType=人工`）；群房间「喂给推进」预选该事项。取消清卡 |
+
+文档/日程工作台行的「喂给推进」与 agent composer chip 喂入：agent 路径①期已通（`yzj_advance_feed` + refs）；工作台行入口③期再补。
+
+### 11.3 事项卡（现在反馈）
+
+模块级 bus（与 `workbench-domain` 同款，不经 harness）：`setAdvanceFeedback(card | null)`。对话时间线顶部渲染一张非模态条，不顶走时间线、不 focus 官方 Chat。卡片不是第二条 IM，只是推进对象的透镜。
+
+### 11.4 验收口径（②期）
+
+1. 群房间一条消息「喂给推进」→ 选出事项 + 一句话 → 该事项时间旅程多一条 `操作者=user`、`来源=对话`、refs 含 msgId 的事元；无确认卡。
+2. 话题透镜「喂给推进」同样落 user 事元；问助手栏仍只 `followup`，两个按钮不混。
+3. 「现在反馈」切到对话域并出现事项卡；卡上直写与预选喂入都进同一事项；取消后卡消失。
+4. `/yzj advance-feed` 带 `stageTo` 被拒；agent `yzj_advance_feed` 带 `stageTo` 仍走确认卡（回归①期）。
+5. 待办页签、六态、feed 唯一变更通道均不变。

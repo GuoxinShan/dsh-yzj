@@ -8,6 +8,9 @@ import { useEffect, useState } from 'react'
 import css from './home.module.css'
 import { topicNavLabel } from './conv-list.tsx'
 import type { ArtifactBadge } from '../artifact-badge.ts'
+import type { YzjPanelInject } from './rpc.ts'
+import { AdvanceFeedPicker } from './advance-feed-picker.tsx'
+import { useAdvanceFeedback } from './advance-feedback.ts'
 
 /** Matches tool-yzj `LEGACY_HOST_ROOT` — not imported (browser-half purity). */
 const LEGACY_HOST_ROOT = 'legacy-host'
@@ -46,6 +49,8 @@ export interface YzjTopicDrawerProps {
   onJumpOrigin: (msgId: string) => void
   homeTopicLens?: (sessionId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   homeTopicAsk?: (sessionId: string, text: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
+  advanceState?: YzjPanelInject['advanceState']
+  advanceFeed?: YzjPanelInject['advanceFeed']
 }
 
 function clock(ms: number | undefined): string {
@@ -103,11 +108,15 @@ function YzjTopicLens(props: {
   onJumpOrigin: (msgId: string) => void
   homeTopicLens?: YzjTopicDrawerProps['homeTopicLens']
   homeTopicAsk?: YzjTopicDrawerProps['homeTopicAsk']
+  advanceState?: YzjTopicDrawerProps['advanceState']
+  advanceFeed?: YzjTopicDrawerProps['advanceFeed']
 }) {
   const [bubbles, setBubbles] = useState<TopicLensBubble[]>([])
   const [draft, setDraft] = useState('')
   const [error, setError] = useState('')
   const [asking, setAsking] = useState(false)
+  const [feedOpen, setFeedOpen] = useState(false)
+  const feedback = useAdvanceFeedback()
   const title = props.lens === undefined
     ? '话题'
     : topicNavLabel(props.groupName, props.lens.title)
@@ -171,15 +180,27 @@ function YzjTopicLens(props: {
         <button type="button" className={css.topicDrawerNav} onClick={props.onClose} aria-label="关闭话题抽屉">×</button>
       </div>
       {showAnchor && (
-        <button
-          type="button"
-          className={css.topicAnchorBar}
-          data-testid="yzj-drawer-anchor"
-          onClick={() => props.onJumpOrigin(rootMsgId)}
-        >
-          <span>{who === '' ? '群消息锚点' : `${who}${when === '' ? '' : ` · ${when}`}`}</span>
-          <span className={css.topicAnchorExcerpt}>{origin === '' ? '点这里定位群消息' : origin}</span>
-        </button>
+        <div className={css.topicAnchorWrap}>
+          <button
+            type="button"
+            className={css.topicAnchorBar}
+            data-testid="yzj-drawer-anchor"
+            onClick={() => props.onJumpOrigin(rootMsgId)}
+          >
+            <span>{who === '' ? '群消息锚点' : `${who}${when === '' ? '' : ` · ${when}`}`}</span>
+            <span className={css.topicAnchorExcerpt}>{origin === '' ? '点这里定位群消息' : origin}</span>
+          </button>
+          {props.advanceState !== undefined && props.advanceFeed !== undefined && (
+            <button
+              type="button"
+              className={css.topicDrawerNav}
+              data-testid="yzj-topic-feed"
+              onClick={() => setFeedOpen(true)}
+            >
+              喂给推进
+            </button>
+          )}
+        </div>
       )}
       <div className={css.topicDrawerBody} data-testid="yzj-topic-lens">
         {error !== '' && <p className={css.topicDrawerHint} role="alert">{error}</p>}
@@ -233,7 +254,41 @@ function YzjTopicLens(props: {
         <button type="submit" className={css.topicDrawerSend} disabled={asking || props.homeTopicAsk === undefined}>
           {asking ? '发送中…' : '发送'}
         </button>
+        {props.advanceState !== undefined && props.advanceFeed !== undefined && (
+          <button
+            type="button"
+            className={css.topicDrawerNav}
+            data-testid="yzj-topic-feed-ask"
+            disabled={draft.trim() === ''}
+            onClick={() => setFeedOpen(true)}
+          >
+            喂给推进
+          </button>
+        )}
       </form>
+      {feedOpen && props.advanceState !== undefined && props.advanceFeed !== undefined && (
+        <AdvanceFeedPicker
+          advanceState={props.advanceState}
+          {...(feedback === null ? {} : { presetId: feedback.advanceId })}
+          defaultSummary={draft.trim() !== '' ? draft.trim() : origin.slice(0, 80)}
+          onClose={() => setFeedOpen(false)}
+          onSubmit={async (advanceId, summary) => {
+            const result = await props.advanceFeed?.({
+              advanceId,
+              summary,
+              sourceType: '对话',
+              ...(rootMsgId === undefined || rootMsgId === '' || rootMsgId === LEGACY_HOST_ROOT
+                ? {}
+                : { refs: [rootMsgId] }),
+            })
+            if (result === undefined || !result.ok) {
+              return { ok: false, error: { message: result === undefined ? 'unavailable' : result.error.message } }
+            }
+            setDraft('')
+            return { ok: true }
+          }}
+        />
+      )}
     </aside>
   )
 }
@@ -258,6 +313,8 @@ export function YzjTopicDrawer(props: YzjTopicDrawerProps) {
         onJumpOrigin={props.onJumpOrigin}
         {...(props.homeTopicLens === undefined ? {} : { homeTopicLens: props.homeTopicLens })}
         {...(props.homeTopicAsk === undefined ? {} : { homeTopicAsk: props.homeTopicAsk })}
+        {...(props.advanceState === undefined ? {} : { advanceState: props.advanceState })}
+        {...(props.advanceFeed === undefined ? {} : { advanceFeed: props.advanceFeed })}
       />
     )
   }
