@@ -178,6 +178,37 @@ export function refsOverlap(incoming: readonly string[], existing: readonly stri
   return incoming.some(token => token !== '' && have.has(token))
 }
 
+/**
+ * True when the incoming refs form exactly the same set as the entry's refs
+ * AND the changeType matches — a genuine replay of the same signal (决策 25,
+ * 修订决策 19 的交集语义). Partial overlap is NOT a replay: distinct entries
+ * may legitimately cite the same document (e.g. one 纪要 ref feeding both a
+ * progress note and a later goal update — the 830 experiment hit this).
+ */
+export function isRefReplay(
+  incoming: readonly string[],
+  changeType: string,
+  entry: { readonly refs: readonly string[]; readonly changeType: string },
+): boolean {
+  if (incoming.length === 0 || entry.refs.length !== incoming.length) return false
+  if (entry.changeType !== changeType) return false
+  const have = new Set(entry.refs.filter(token => token !== ''))
+  return incoming.every(token => token !== '' && have.has(token))
+}
+
+/** Refs shared between the incoming feed and the existing stream (for the overlap hint). */
+export function overlappedRefsOf(incoming: readonly string[], existing: readonly { readonly refs: readonly string[] }[]): string[] {
+  if (incoming.length === 0) return []
+  const incomingSet = new Set(incoming.filter(token => token !== ''))
+  const shared = new Set<string>()
+  for (const entry of existing) {
+    for (const ref of entry.refs) {
+      if (ref !== '' && incomingSet.has(ref)) shared.add(ref)
+    }
+  }
+  return [...shared]
+}
+
 /** One IM signal surfaced by a scan. */
 export interface ScanSignal {
   readonly groupId: string
@@ -1017,8 +1048,10 @@ export interface AdvanceFeedResult {
   stageFrom: AdvanceStage
   stageChanged: boolean
   binding: AdvanceBinding
-  /** True when a matching ref was already on the stream (决策 19). */
+  /** True when a matching ref was already on the stream (决策 19,收窄见决策 25). */
   idempotent: boolean
+  /** Refs shared with existing entries when a non-idempotent feed still cites them (决策 25). */
+  overlappedRefs: readonly string[]
 }
 
 /**
@@ -1042,12 +1075,18 @@ export async function coreFeedAdvance(
     throw new Error(`advance: 事项 ${input.advanceId} 不存在；先用 yzj_advance_list 查真实 id，不要猜测`)
   }
   const incomingRefs = (input.refs ?? []).filter(token => token.trim() !== '')
+  let overlappedRefs: string[] = []
   if (incomingRefs.length > 0) {
     const existing = await fetchEntries(ctx, budget, binding, input.advanceId)
-    const hit = existing.find(entry => refsOverlap(incomingRefs, entry.refs))
-    if (hit !== undefined) {
-      return { item, entry: hit, stageFrom: item.stage, stageChanged: false, binding, idempotent: true }
+    // 重放判定用模型声明的 changeType(缺省「备注」,与 appendEntry 归一一致);
+    // stageTo 衍生的「阶段变化」不参与——阶段由 diff 承载,不是信号身份。
+    const rawChangeType = input.changeType ?? '备注'
+    const changeType = CHANGE_TYPES.includes(rawChangeType as typeof CHANGE_TYPES[number]) ? rawChangeType : '备注'
+    const replay = existing.find(entry => isRefReplay(incomingRefs, changeType, entry))
+    if (replay !== undefined) {
+      return { item, entry: replay, stageFrom: item.stage, stageChanged: false, binding, idempotent: true, overlappedRefs: [] }
     }
+    overlappedRefs = overlappedRefsOf(incomingRefs, existing)
   }
   const diffs: string[] = []
   const projection: Record<string, unknown> = {}
@@ -1108,7 +1147,7 @@ export async function coreFeedAdvance(
     assigneeOpenId: projection[ITEM_F.assignee] === undefined ? item.assigneeOpenId : parseAssignee(asString(projection[ITEM_F.assignee])).openId,
     latest: asString(projection[ITEM_F.latest]),
   }
-  return { item: updated, entry, stageFrom: item.stage, stageChanged, binding, idempotent: false }
+  return { item: updated, entry, stageFrom: item.stage, stageChanged, binding, idempotent: false, overlappedRefs }
 }
 
 // ---------------------------------------------------------------------------
@@ -1617,7 +1656,7 @@ export function applyAdvanceTools(
 
   ctx.tools.register(defineTool({
     name: 'yzj_advance_feed',
-    description: 'Feed one 事元 (source unit) into an advancement item — the ONLY mutation channel: goal updates, progress, deviations, decision requests, and stage moves are all append-only entries with host-generated 原值→新值 diffs; the item projection is refolded. Stage moves obey the six-stage machine (draft→running→(decision-needed→updated)*→ready-for-review→completed). Patrol: yzj_advance_scan then yzj_advance_inspect, then this tool. Host forcibly dedupes the same ref/msgId (决策 19) — a second feed with an overlapping refs token returns the existing 事元 and appends nothing. running items stay quiet — do not feed when there is no deviation, and never re-state a fact already on the timeline. Interrupt the user (changeType 偏差 + stageTo decision-needed) only when a criterion fires: the signal contradicts 任务背景, a metric flips off-target or moves away from it, the gap cannot close before the target date, a blocker threatens that date, continuing needs scope/resource/priority trade-offs or crosses a stated red line, or two+ viable paths would change the baseline. Deliverables complete AND metrics N/N AND no open deviation → 验收请求 + ready-for-review. Never stageTo completed (the user taps 确认达到目标). The confirmation card appears ONLY when you rewrite the baseline (goal/metrics/targetDate/assignee) — plain appends and stage moves land silently, the board queue is where the user is found. Min-loop in the topic: contrast 原来的理解 vs 现在的约束, propose options, wait, restate impact, then feed.',
+    description: 'Feed one 事元 (source unit) into an advancement item — the ONLY mutation channel: goal updates, progress, deviations, decision requests, and stage moves are all append-only entries with host-generated 原值→新值 diffs; the item projection is refolded. Stage moves obey the six-stage machine (draft→running→(decision-needed→updated)*→ready-for-review→completed). Patrol: yzj_advance_scan then yzj_advance_inspect, then this tool. Host forcibly dedupes only an exact replay — the same refs set AND the same changeType (决策 25): a genuine re-feed returns the existing 事元 and appends nothing; a partial refs overlap appends normally and returns an overlappedRefs hint, so distinct entries may cite the same document. running items stay quiet — do not feed when there is no deviation, and never re-state a fact already on the timeline. Interrupt the user (changeType 偏差 + stageTo decision-needed) only when a criterion fires: the signal contradicts 任务背景, a metric flips off-target or moves away from it, the gap cannot close before the target date, a blocker threatens that date, continuing needs scope/resource/priority trade-offs or crosses a stated red line, or two+ viable paths would change the baseline. Deliverables complete AND metrics N/N AND no open deviation → 验收请求 + ready-for-review. Never stageTo completed (the user taps 确认达到目标). The confirmation card appears ONLY when you rewrite the baseline (goal/metrics/targetDate/assignee) — plain appends and stage moves land silently, the board queue is where the user is found. Min-loop in the topic: contrast 原来的理解 vs 现在的约束, propose options, wait, restate impact, then feed.',
     parameters: {
       advanceId: { type: 'string', required: true, description: 'Stable item id (from yzj_advance_list).' },
       summary: { type: 'string', required: true, description: 'Event description — what happened (timeline row text).' },
@@ -1672,9 +1711,13 @@ export function applyAdvanceTools(
         }
       }
       const stageNote = result.stageChanged ? `（阶段 ${result.stageFrom}→${result.item.stage}）` : ''
+      const overlapNote = result.overlappedRefs.length > 0
+        ? `引用重叠提示：${result.overlappedRefs.join(' ')} 已存在于既有些事元（本条仍已追加；若是同一信号的重复上报，无需再 feed）`
+        : ''
       const content = [
         `fed 事元 ${result.entry.entryId} → ${result.item.advanceId} · ${result.entry.changeType} ${result.entry.summary}${stageNote}`,
         result.entry.detail === '' ? '' : `变化：${result.entry.detail.split('\n').join('；')}`,
+        overlapNote,
         `推进看板 ${result.binding.link}`,
       ].filter(line => line !== '').join('\n')
       return {
@@ -1690,6 +1733,7 @@ export function applyAdvanceTools(
           stageFrom: result.stageFrom,
           stageTo: result.item.stage,
           refs: result.entry.refs,
+          overlappedRefs: result.overlappedRefs,
           item: clipJson(itemViewOf(result.item), { maxChars: budget.maxMetaChars }),
           library: bindingMeta(result.binding),
         } as unknown as JsonValue,

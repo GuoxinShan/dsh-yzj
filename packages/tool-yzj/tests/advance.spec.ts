@@ -14,7 +14,7 @@ import {
   checkStageTransition, nextSequentialId, toneOf, parseMetrics,
   parseAdvanceItem, parseAdvanceEntry, aggregateSources,
   buildInspectDigest, buildScanDigest, legalNextStages, INSPECT_DISCIPLINE,
-  isSkippableSender, refsOverlap, MAX_SCAN_GROUPS,
+  isSkippableSender, refsOverlap, isRefReplay, overlappedRefsOf, MAX_SCAN_GROUPS,
 } from '../src/advance.ts'
 import type { AdvanceCaches, YzjAdvanceEntry, YzjAdvanceItem } from '../src/advance.ts'
 import { ScanCursorStore, scanStateOf } from '../src/scan-cursors.ts'
@@ -394,6 +394,47 @@ describe('yzj_advance_feed', () => {
     expect(emptyRefs.content).toContain('fed 事元')
     expect(store.entries).toHaveLength(2)
   })
+
+  it('appends on partial refs overlap with an overlap hint (partial-overlap regression: one doc cited by progress AND goal-update entries)', async () => {
+    const store = new FakeStore(true)
+    store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'running' } })
+    const { tools } = mount(store)
+    const feed = tools.find(tool => tool.name === 'yzj_advance_feed')!
+    // 回放②:refs 两个文档(进度更新)
+    const first = await feed.execute({
+      advanceId: 'A-1', summary: '阶段共识', changeType: '进度更新', refs: ['doc-0806', 'doc-0812'],
+    })
+    expect(first.content).toContain('fed 事元')
+    expect(store.entries).toHaveLength(1)
+    // 回放③:同一文档被目标更新再引——子集重叠,必须追加而不是幂等吞掉
+    const goalUpdate = await feed.execute({
+      advanceId: 'A-1', summary: '定义转向', changeType: '目标更新', goal: '新目标', refs: ['doc-0812'],
+    })
+    expect(goalUpdate.content).toContain('fed 事元')
+    expect(goalUpdate.content).toContain('引用重叠提示')
+    expect(goalUpdate.content).toContain('doc-0812')
+    expect((goalUpdate.data as { overlappedRefs?: string[] }).overlappedRefs).toEqual(['doc-0812'])
+    expect(store.entries).toHaveLength(2)
+    // refs 集合相等但 changeType 不同 → 追加(同一消息可以驱动不同语义的条目)
+    const retyped = await feed.execute({
+      advanceId: 'A-1', summary: '换个变化类型再引同一消息', changeType: '偏差', refs: ['doc-0806', 'doc-0812'],
+    })
+    expect(retyped.content).toContain('fed 事元')
+    expect(store.entries).toHaveLength(3)
+    // refs 超集 → 追加并提示交集
+    const superset = await feed.execute({
+      advanceId: 'A-1', summary: '补充新信号后的合并 feed', changeType: '进度更新', refs: ['doc-0806', 'doc-0812', 'msg-9'],
+    })
+    expect(superset.content).toContain('fed 事元')
+    expect(superset.content).toContain('引用重叠提示')
+    expect(store.entries).toHaveLength(4)
+    // 完全重放(同 refs 集合 + 同 changeType)→ 仍幂等(决策 25 保留判定 8 行为)
+    const replay = await feed.execute({
+      advanceId: 'A-1', summary: '超集那条再喂一遍', changeType: '进度更新', refs: ['doc-0806', 'doc-0812', 'msg-9'],
+    })
+    expect(replay.content).toContain('同源去重')
+    expect(store.entries).toHaveLength(4)
+  })
 })
 
 describe('yzj_advance_list', () => {
@@ -505,6 +546,23 @@ describe('scan helpers', () => {
     expect(refsOverlap(['a'], ['b'])).toBe(false)
     expect(refsOverlap([], ['a'])).toBe(false)
     expect(MAX_SCAN_GROUPS).toBe(8)
+  })
+
+  it('isRefReplay requires the exact refs set AND the same changeType (决策 25)', () => {
+    const entry = { refs: ['a', 'b'], changeType: '进度更新' }
+    expect(isRefReplay(['a', 'b'], '进度更新', entry)).toBe(true)
+    expect(isRefReplay(['b', 'a'], '进度更新', entry)).toBe(true) // 顺序无关
+    expect(isRefReplay(['a'], '进度更新', entry)).toBe(false)      // 子集不是重放
+    expect(isRefReplay(['a', 'b', 'c'], '进度更新', entry)).toBe(false) // 超集不是
+    expect(isRefReplay(['a', 'b'], '目标更新', entry)).toBe(false) // changeType 不同
+    expect(isRefReplay([], '进度更新', entry)).toBe(false)
+  })
+
+  it('overlappedRefsOf returns the shared ref tokens', () => {
+    const existing = [{ refs: ['a', 'b'] }, { refs: ['c'] }]
+    expect(overlappedRefsOf(['a', 'c', 'z'], existing)).toEqual(['a', 'c'])
+    expect(overlappedRefsOf(['z'], existing)).toEqual([])
+    expect(overlappedRefsOf([], existing)).toEqual([])
   })
 })
 
