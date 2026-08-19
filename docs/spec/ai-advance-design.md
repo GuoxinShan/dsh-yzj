@@ -195,7 +195,8 @@ guard `WRITE_SPECS` +2：`yzj_advance_create` / `yzj_advance_feed` 均标准确�
 5. 用户 judge 直写无确认卡；agent create/feed 有确认卡且卡上可见变化摘要与阶段流转。
 6. 六态非法跳变被拒并给出合法路径。
 7. UI 结构与原型 lgap17 版逐区对照（队列三组徽标 / kicker+指标卡 / 目标区 / 阶段化决策区 / 时间旅程三色 / 信息来源状态标 / 空态文案），`.acceptance/verify-advance-board.mjs` 走查留证。
-8. `pnpm test` 绿；文档只读可重建行为；侧栏仍单入口。
+8. **六态闭环真机**：`.acceptance/verify-advance-loop.mjs`（sidecar 经 bridge feed `draft→running→decision-needed` 与 `updated→ready-for-review`；面板点「确认推进」「确认达到目标」直写无卡；时间旅程保留立项/确认推进/验收通过）。agent 面确认卡仍由 `yzj_advance_feed` 门禁覆盖，本脚本不替代卡面走查。
+9. `pnpm test` 绿；文档只读可重建行为；侧栏仍单入口。
 
 ---
 
