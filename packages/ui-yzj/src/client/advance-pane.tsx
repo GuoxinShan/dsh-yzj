@@ -4,7 +4,7 @@
  * "我的推进" queue (待我决定 / 待我验收 / 我关注的推进 with count badges),
  * main detail (kicker + metric cards + goal + stage-aware decision area +
  * 推进时间旅程 with three-tone marks and source jumps), right column
- * (信息来源 + 已有产物). Panel judge verbs and the start modal are
+ * (信息来源;「已有产物」区已于 v1.6 收掉——产物是事元的一部分,随信息来源呈现)。Panel judge verbs and the start modal are
  * user-direct writes (D9: no confirmation card); agent writes go through
  * yzj_advance_create/feed with the standard card. Data arrives through the
  * /yzj RPC face only.
@@ -794,32 +794,6 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                   )}
                   <p className={css.sideNote}>AI 推进不建立新的文件库，而是解释这些工作事实为什么支持或不支持当前目标。</p>
                 </section>
-                {detail.sources.some(source => asString(source.sourceType) === '文档') && (
-                  <section className={css.section}>
-                    <div className={css.sectionHead}>
-                      <h2>已有产物</h2>
-                      <small>仍在产物管理</small>
-                    </div>
-                    <div className={css.sourceList}>
-                      {detail.sources.filter(source => asString(source.sourceType) === '文档').map((source, index) => {
-                        const productRef = stripRefPrefix(asString(source.ref))
-                        const productHref = refHref('doc', productRef)
-                        return (
-                          <div key={`p${index}`} className={css.source}>
-                            <span className={css.sourceIcon}>文</span>
-                            <span className={css.sourceCopy}>
-                              {productHref !== null ? (
-                                <a href={productHref} target="_blank" rel="noreferrer" title={productRef}><b>{asString(source.label)}</b></a>
-                              ) : (
-                                <b>{asString(source.label)}</b>
-                              )}
-                            </span>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </section>
-                )}
               </aside>
             </div>
           </>
