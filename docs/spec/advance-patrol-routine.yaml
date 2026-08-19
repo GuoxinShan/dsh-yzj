@@ -1,0 +1,47 @@
+# dsh-routines routine 模板：AI推进巡检（scan → inspect → feed）
+#
+# GUI 在跑时的主形态是 root 会话 schedule_create（spec §14 / 决策 16），
+# 本文件是 GUI 关掉时的无人值守扩展（P3）。
+#
+# 前置：headless profile 必须能解析 yzj 工具。不要把整份 web bundle
+# （含 ui-yzj）挂进 headless——connection 服务不存在。用
+# docs/spec/headless-yzj.cordis.yml overlay（只挂 bridge + tool-yzj）：
+#
+#   dsh --profile headless --patch <本仓库>/docs/spec/headless-yzj.cordis.yml
+#
+# 或 `dsh plugin --profile headless add -w link:<本仓库>` 后再把 ui-yzj /
+# robot-yzj 行从 headless patch 拿掉。
+#
+# 禁止改基准（无人应卡）：本 prompt 只允许 feed 追加 / 阶段变化。
+#
+# digest 降噪（spike 结论，2026-08-19）：dsh-routines 的 chatnode deliver
+# 每轮都投，没有按内容过滤的开关。要「无发现不推群」有两条路：
+#   1. 本模板默认只用 file deliver，不配 chatnode；
+#   2. 若一定要推群，prompt 约定无发现只输出字面量 [advance-patrol:quiet]，
+#      群侧自行忽略该标记（host 无法替 routines 吞掉空轮）。
+name: advance-patrol
+schedule: "every 15m"
+timezone: Asia/Shanghai
+profile: headless
+cwd: .
+overlap: skip
+timeoutMin: 10
+deliver:
+  - type: file
+prompt: |
+  你是 AI推进 巡检。严格按巡检五步，不要寒暄、不要改基准。
+
+  1. 调用 yzj_advance_scan(groups=["dsh-2"])（把群清单换成实际监视的 1–8 个群 id 或名）。
+  2. 若 digest 写「无新消息，静默」或「基线已立」：本轮结束，只输出字面量
+     [advance-patrol:quiet] 三个词，不要 feed，不要解释。
+  3. 若有新信号：调用 yzj_advance_inspect(signals=<新信号包原文>)。
+  4. 按打扰判据行动：
+     - 无关或复述 → 不写事元；
+     - 属于某事项且进度正常 → yzj_advance_feed changeType=进度更新，refs 带上
+       digest 里的 <msgId>（host 会同源去重）；
+     - 命中打扰判据 → yzj_advance_feed changeType=偏差 stageTo=decision-needed；
+     - 产物齐且指标达标 → changeType=验收请求 stageTo=ready-for-review。
+  5. 禁止：stageTo=completed；禁止带 goal / metrics / targetDate / assignee
+     （无人值守没有人点确认卡）。同 msgId 不要喂第二次。
+
+  有发现时用两三句话总结本轮挂上了什么；无发现只输出 [advance-patrol:quiet]。

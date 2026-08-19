@@ -200,6 +200,24 @@ describe('createRpcHandler', () => {
     })
   })
 
+  it('advance-scan-state reads the last patrol snapshot', async () => {
+    const gate: YzjWriteGateFace = { list: () => [], decide: () => false }
+    const bare = createRpcHandler(mountBridge({}), gate)
+    expect(await bare('advance-scan-state', {}, undefined as never)).toEqual({
+      ok: false,
+      error: { code: 'internal', message: 'advance-scan-state: yzjAdvance 服务不可用（tool-yzj 未挂载）', details: {} },
+    })
+    const ctx = new Context()
+    ctx.provide('yzjAdvance', {
+      scanState: () => ({ scannedAt: 1, found: 2, groups: [] }),
+    })
+    const handler = createRpcHandler(ctx, gate)
+    expect(await handler('advance-scan-state', {}, undefined as never)).toEqual({
+      ok: true,
+      value: { scannedAt: 1, found: 2, groups: [] },
+    })
+  })
+
   it('dream and model-default endpoints project their services', async () => {
     const ctx = new Context()
     const dreamSets: Record<string, unknown>[] = []

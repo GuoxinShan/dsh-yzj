@@ -576,7 +576,7 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 
 ### 23.2 验收指针
 
-按 [`group-room-topics.md`](../spec/group-room-topics.md) §7 + §9.7。H2/H3/H5/H6/H7/H8/H9/H10/H11/H12/H13/H14/H15/H16/H17/H18/H19 有单测。H4 入站话题有 router 单测，`local-*`→真实 msgId 的 `retargetAnchor` 有 topics 单测；真机 `.acceptance/verify-robot-at-topic.mjs`（点 `yzj-dock-home` 开盖层后走抽屉；机器人状态在设置）。真机脚本：`.acceptance/verify-group-room-e2e.mjs`（需运行中 GUI + 已登录 yzj-cli；**禁止杀 3080 / `--profile web` 宿主**——改 host / browser 后请用户手动重启 GUI；改 browser TS 后 bundle 前必须先 `tsc -b`，见 pitfall-016）。**v1.1 P0**：入口块 + 会话列表 + 话题抽屉 + `lastActivity` + `~/.dsh-yzj/workspace`。**P1**：时间线精致度六条。**P2**：四域迁入工作台、`shell.overlay` 摘除、72px 留白删除。**P3**：`TopicRecord.status` + L2 徽标 + write-gate L5 回落。**视觉刀**：pitfall-018 tab ring、composer 列、dock 退役、群名占位。**宿主生命周期**：pitfall-019 总线 + view-ring 收窄到 header + e2e 盒子缺失即失败。**v1.2**：H9 历史对话话题、H18 透镜气泡/问助手、H4 skip 型 e2e、发布口径。**v1.3 布局刀**：`.acceptance/verify-room-layout.mjs`（有界三栏 / 触底 / composer 可见 / 无鬼影行 / 机器人标注 / 长帖折叠 / 抽屉有界）；pitfall-020（overlay 契约 + 跟随门控）；H10 标题改「话题 · 群名」。**v1.4**：R20/H16/H21 云之家分组只进话题；`attachYzjSession` 闸 + cwd/RPC 单测。**v1.5**：R22/H23 话题与普通会话不得挂 IM 壳；view-ring 点「对话」+ `YzjRoomShell` 前缀闸。**v1.6**：R21/H11 记忆入口搁置；R23/H26 拖入引用退役（面板/待办无 drag，`verify-drop.mjs` skip）。**H27**：他人气泡浅色主题可见（pitfall-023）。**v1.7**：R24/H28 点群只切 groupId，不建/不 focus DSH 会话（pitfall-024）。**R25/H29 空 turn**：话题不写空 turn 1（pitfall-025）。**v1.9 / H12**：话题问助手近窗（pitfall-027；`.acceptance/verify-summon-window.mjs`）。**v1.11 / H33**：工作台盖中间栏，开面板不建挂钩（R27 / pitfall-028）。**v1.14 / H36**：日程按天拆查，循环实例不再被整月折叠成第一次（pitfall-032）。**v1.15 / H36**：改成周条带 + 快慢指针，空后缀一次停。**v1.17 / H38**：话题 job-done 投递（`topic-deliver.spec.ts`；dsh-2 真机回帖自跳过若未登录）。**v1.17 / H39**：话题透镜产物卡（`topicLensBubbles` + 抽屉客户端；发群 R29 仍在）。**v1.17 / H40**：侧栏单入口 + 工作台页签（`yzj-dock-home` / `yzj-workbench-tab-*`；dock / room-shell 单测）。
+按 [`group-room-topics.md`](../spec/group-room-topics.md) §7 + §9.7。H2/H3/H5/H6/H7/H8/H9/H10/H11/H12/H13/H14/H15/H16/H17/H18/H19 有单测。H4 入站话题有 router 单测，`local-*`→真实 msgId 的 `retargetAnchor` 有 topics 单测；真机 `.acceptance/verify-robot-at-topic.mjs`（点 `yzj-dock-home` 开盖层后走抽屉；机器人状态在设置）。真机脚本：`.acceptance/verify-group-room-e2e.mjs`（需运行中 GUI + 已登录 yzj-cli；改 host / browser 后须重启 GUI 再跑，见 AGENTS.md「验收要新实例就重启 GUI」；改 browser TS 后 bundle 前必须先 `tsc -b`，见 pitfall-016）。**v1.1 P0**：入口块 + 会话列表 + 话题抽屉 + `lastActivity` + `~/.dsh-yzj/workspace`。**P1**：时间线精致度六条。**P2**：四域迁入工作台、`shell.overlay` 摘除、72px 留白删除。**P3**：`TopicRecord.status` + L2 徽标 + write-gate L5 回落。**视觉刀**：pitfall-018 tab ring、composer 列、dock 退役、群名占位。**宿主生命周期**：pitfall-019 总线 + view-ring 收窄到 header + e2e 盒子缺失即失败。**v1.2**：H9 历史对话话题、H18 透镜气泡/问助手、H4 skip 型 e2e、发布口径。**v1.3 布局刀**：`.acceptance/verify-room-layout.mjs`（有界三栏 / 触底 / composer 可见 / 无鬼影行 / 机器人标注 / 长帖折叠 / 抽屉有界）；pitfall-020（overlay 契约 + 跟随门控）；H10 标题改「话题 · 群名」。**v1.4**：R20/H16/H21 云之家分组只进话题；`attachYzjSession` 闸 + cwd/RPC 单测。**v1.5**：R22/H23 话题与普通会话不得挂 IM 壳；view-ring 点「对话」+ `YzjRoomShell` 前缀闸。**v1.6**：R21/H11 记忆入口搁置；R23/H26 拖入引用退役（面板/待办无 drag，`verify-drop.mjs` skip）。**H27**：他人气泡浅色主题可见（pitfall-023）。**v1.7**：R24/H28 点群只切 groupId，不建/不 focus DSH 会话（pitfall-024）。**R25/H29 空 turn**：话题不写空 turn 1（pitfall-025）。**v1.9 / H12**：话题问助手近窗（pitfall-027；`.acceptance/verify-summon-window.mjs`）。**v1.11 / H33**：工作台盖中间栏，开面板不建挂钩（R27 / pitfall-028）。**v1.14 / H36**：日程按天拆查，循环实例不再被整月折叠成第一次（pitfall-032）。**v1.15 / H36**：改成周条带 + 快慢指针，空后缀一次停。**v1.17 / H38**：话题 job-done 投递（`topic-deliver.spec.ts`；dsh-2 真机回帖自跳过若未登录）。**v1.17 / H39**：话题透镜产物卡（`topicLensBubbles` + 抽屉客户端；发群 R29 仍在）。**v1.17 / H40**：侧栏单入口 + 工作台页签（`yzj-dock-home` / `yzj-workbench-tab-*`；dock / room-shell 单测）。
 
 ## 24. AI推进第一期｜事元流驱动的推进事项（2026-08-19，设计随提交）
 
@@ -591,7 +591,7 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 
 **同日旁路真机（发群指定 dsh-2 `6a8400d4e4b09a073e3feeaf`）**：`topic-deliver` live job-done 绿（锚点「【验收】话题 job-done 锚点（R29）」+ 总结回帖 + `r29-summary.md` 跟发时间线）。群房间 e2e `YZJ_E2E_GROUP=dsh-2`：**发进群直写成功**（`【群房间e2e】01:38:12 5zpd`、无确认卡、交给助手开抽屉）；旧断言「composer 文案含发进群」FAIL——现行 placeholder 是 `发到 {群名}…`、发送钮是 aria「发进群」图标（`room-composer.tsx`）；回复 chip / 幂等「N 条回复」8s 内未出现。`verify-room-layout.mjs` 对 dsh-2：有界三栏 / 触底 / composer 可见 PASS；机器人折叠与抽屉 chip 依赖「测试群」的 BOT 历史，dsh-2 上 0 行属预期。
 
-**分期状态**：①地基已交付；**② 事元接入便捷化本次交付（§24.1）**；③ AI 主动回路（机制 C–F：AI 触发阶段/最小推进回路/验收辅助/schedule 巡检）、④ 知识沉淀出口（事元流折复盘文档入知识库 + 纪要模板）、⑤ 归集分析——见设计 §8。
+**分期状态**：①地基已交付；② 事元接入便捷化已交付（§24.1）；**③ AI 主动回路本次交付 host/面板切片（§24.2）**；④ 知识沉淀出口、⑤ 归集分析——见设计 §8。
 
 **已知偏差**：(a) AGENTS/本档旧文提到的 `bundle/skills/yzj-cli/SKILL.md` 在当前仓库不存在（历史路径）；第一期 agent 教学面由工具 description（立项预填、running 勿打扰、feed 唯一变更通道）与 spec 承载，机器级 skill 的「AI推进」章节待 skill 文件回仓后补。(b) 来源跳转按「可跳则跳」降级：doc 走 web url/知识库域、对话跳对话域、待办跳待办页签，无消息级锚点（CLI 限制，设计 §9-8）。(c) 双写非事务：投影是缓存、流是事实（设计 §9-6，原生后端应服务端折叠）。
 
@@ -607,15 +607,83 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 | 现在反馈 | 看板 kicker「现在反馈」→ `setAdvanceFeedback` + `setWorkbenchDomain('im')`；对话顶非模态事项卡一句话 `sourceType=人工`；取消清卡 | `advance-pane.client.spec.tsx` bus + 切域；`transcript.client.spec.tsx` 卡直写清 bus |
 | 选择器 | `AdvanceFeedPicker`：列事项、presetId 预选、空板禁用、空摘要拦截 | `advance-feed-picker.client.spec.tsx` |
 
-**不做（③期）**：文档/日程工作台行「喂给推进」；AI 主动回路 C–F。agent composer chip 喂入仍走 ①期 `yzj_advance_feed` 确认卡。
+**不做（留给后续切片）**：文档/日程工作台行「喂给推进」；独立巡检 daemon。agent composer chip 喂入仍走 ①期 `yzj_advance_feed` 确认卡。
 
 **已知偏差**：与 §24 (a)(b)(c) 同；另：群房间「喂给推进」是行操作文字链，不是独立 chip 组件（产品文案沿用「喂给推进」，实现是 picker 模态）。
 
-**真机（2026-08-19，rc.7 web profile 新实例）**：编 harness client+web dist → `dsh web :3080` → `dsh plugin --profile web add -w link:<本仓>`。boot 图含 `@dsh-yzj/bundle/ui-yzj`，`/plugins/@dsh-yzj/bundle/ui-yzj/client.js` 200。新鲜 profile 先关掉内测声明/API Key 卡（pitfall-035）后：
+**真机 chrome（2026-08-19，rc.7 web profile 新实例，无 yzj-cli）**：编 harness client+web dist → `dsh web :3080` → `dsh plugin --profile web add -w link:<本仓>`。boot 图含 `@dsh-yzj/bundle/ui-yzj`，`/plugins/@dsh-yzj/bundle/ui-yzj/client.js` 200。新鲜 profile 先关掉内测声明/API Key 卡（pitfall-035）后：
 
 | 脚本 | chrome | 写路径 |
 |---|---|---|
-| `.acceptance/verify-advance-board.mjs` | **PASS** dock / 五页签「对话 待办 日程 知识库 推进」/ `yzj-advance-pane` 挂上（空态「推进看板还没有开通」+「一键开通」） | **SKIP** exit 0：本机无 `yzj-cli`（`spawn yzj-cli ENOENT`），登录卡在 |
-| `.acceptance/verify-advance-feed.mjs` | **PASS** 「推进」页签 + 看板挂上 | 同上；立项 / 「现在反馈」事项卡 / 群房间 hover picker 需已登录 yzj-cli，本轮未跑 |
+| `.acceptance/verify-advance-board.mjs` | **PASS** dock / 五页签「对话 待办 日程 知识库 推进」/ `yzj-advance-pane` 挂上（空态「推进看板还没有开通」+「一键开通」） | **SKIP** exit 0：该环境无 `yzj-cli`（`spawn yzj-cli ENOENT`），登录卡在 |
+| `.acceptance/verify-advance-feed.mjs` | **PASS** 「推进」页签 + 看板挂上 | 同上；立项 / 「现在反馈」/ hover picker 该轮未跑 |
 
-截图（git 忽略 `shots*/`）：`shots-advance/1-tabs.png`、`2-board.png`；`shots-advance-feed/0-advance-tab.png`。写路径要在装了 `yzj-cli auth login` 的机器上重跑同一脚本，不要把 ENOENT 当产品失败。
+截图（git 忽略 `shots*/`）：`shots-advance/1-tabs.png`、`2-board.png`；`shots-advance-feed/0-advance-tab.png`。ENOENT 不是产品失败。
+
+**真机写路径（2026-08-19，本机 Mac，`yzj-cli` 已登录「测试用户」，群 = dsh-2，web GUI 重启加载合入后的 `main`）**：`YZJ_E2E_GROUP=dsh-2 node .acceptance/verify-advance-feed.mjs` → **ALL PASS**（含话题透镜）。最新探针「喂入探针 676347」草稿未改阶段：事项卡「真机口头进度」（人工 · 你的判断）；「现在反馈」预选后 dsh-2 hover picker 文案含「不改阶段」；话题抽屉打开已有话题，锚点「喂给推进」写入「话题透镜喂入」；问助手栏填「不该发给助手」打开 picker 后取消，透镜里没有 followup。时间旅程同时有卡直写、群房间喂入、话题透镜喂入。脚本要点：切回「推进」须点开该探针；picker 无预选会落到队列第一项。
+
+截图：`shots-advance-feed/1-board-feedback.png`、`2-feedback-card.png`、`3-picker.png`、`4-timeline.png`、`5-topic-lens.png`。
+
+## 24.2 AI推进第三期｜主动回路 host/面板切片（2026-08-19，设计随提交）
+
+设计基线 [`ai-advance-design.md`](../spec/ai-advance-design.md) v1.2 §12。不改双表/六态/D9。host 不做 LLM 语义结论（决策 11）；写仍走 `yzj_advance_feed` 确认卡。
+
+| 面 | 交付 | 证据 |
+|---|---|---|
+| inspect | 只读 `yzj_advance_inspect`：摊开 open 事项目标/背景/指标/最近事元/合法下一阶段 + 静默/禁止 completed 纪律；`mode=review` 为验收辅助材料 | `advance.spec.ts`：digest 单测 + fake-store 隐藏 completed |
+| 教学 | feed description 要求先 inspect、无偏差静默、偏差→decision-needed、产物齐→ready-for-review、禁止 completed、话题五步回路 | 工具 description 文本 |
+| 请 AI 验收 | 看板 kicker → 切对话域 + `advance-ask` 草稿进问助手栏；不自动 followup（决策 12） | `advance-pane.client.spec.tsx`；`topic-drawer.client.spec.tsx` asked=[]；真机见下 |
+| F 巡检挂点 | 不往话题 agent 挂 `schedule_create`（决策 13 / pitfall-007）；纪律写在 inspect digest | 文档 |
+
+**不做（本切片）**：文档/日程工作台行「喂给推进」；独立 routines daemon；对话向导独立 UI（看板 decision 三按钮 + 话题五步说话已覆盖 D）。
+
+**已知偏差**：与 §24 (a)(b)(c) 同。F 的真实定时仍需用户在 root 会话里自己 `schedule_create`，本切片只提供 inspect 材料与静默纪律。
+
+**门控线后续收窄见 §24.3。**
+
+**真机（2026-08-19，本机 Mac，GUI 重启加载③期 bundle，`yzj-cli` 已登录「测试用户」，群 = dsh-2）**：`pnpm test` 564 绿；`YZJ_E2E_GROUP=dsh-2 node .acceptance/verify-advance-feed.mjs` → **ALL PASS**。探针 `A-20260819-007`「喂入探针 630752」：②期时间旅程（卡直写 / 群房间 / 话题透镜）仍通；kicker「请 AI 验收」切对话、banner「验收问题已预备」、问助手预填 `yzj_advance_inspect` + `不要 stageTo=completed`、透镜无 followup、零页面错误。截图 `shots-advance-feed/6-ask-banner.png`、`7-ask-draft.png`。
+
+## 24.3 AI推进｜打扰判据 + 确认卡门控线收窄（2026-08-19，设计随提交）
+
+设计基线 [`ai-advance-design.md`](../spec/ai-advance-design.md) **v1.3 §13**，决策 14 / 15。缘起：用户指出「让人确认的必须是 AI 发现的重要事情，进度正常不该要确认」——而此前 `yzj_advance_feed` 在 `WRITE_SPECS` 里是**无条件** standard，一条进度备注也弹卡。不改双表/六态/D9/②期用户直写。
+
+| 面 | 交付 | 证据 |
+|---|---|---|
+| 门控线（host 固定） | `yzj_advance_feed` 由无条件确认改为 `when: rewritesAdvanceBaseline`——只在载荷含非空 `goal`/`metrics`/`targetDate`/`assignee` 时问；纯追加与阶段变化（→`decision-needed`/→`ready-for-review`）静默落。`yzj_advance_create` 不变（立项是新对象）。写门禁仍 27 条（feed 留在表内，改条件） | `guard.spec.ts` +2：四种静默载荷（含空白基准字段）返回 allow 且 `pending` 为空、四个基准字段各 ask；create 无条件 ask |
+| 判据（教学面） | `INSPECT_DISCIPLINE` 与 feed description 补：**打扰判据**六条（基准冲突 / 指标掉头 / 按趋势不可达 / 目标日期受威胁 / 需要取舍或授权 / 路径分叉）、**静默判据**、**抑制**（同判据不重复提、同来源去重、被 ignore 过不再提）、**验收判据**（N/N + 产物齐 + 无未决偏差）、门控线一句 | `advance.spec.ts` digest 断言五条锚点；全量 **566 绿** |
+| 分工 | 「重不重要」由 AI 判断，但只能表达为**阶段**；「要不要过卡」是 host 固定规则，模型不可绕（决策 15） | 设计 §13.5；host 仍不做语义结论（决策 11） |
+
+**为什么阶段变化也不弹卡**：偏差 feed 的落点就是看板「待我决定」，那里本来就要人拍板（确认推进 / 忽略）。此时再弹一张卡＝同一件事问两遍，且第一遍「我能写这条吗」没有信息量。卡留给「改基准」——目标/指标/目标日期/负责人一换，后续所有比对的锚点就换了，人没看过就换，AI 之后的判断无从校验。
+
+**已知偏差 / 代价**：静默 feed 把噪音代价前移到事元表——纪律（§13.2/§13.3）是教学面，host 不强制；v1.4 已把同源去重升为 host 强制（决策 19），频率上限仍观察噪音后再定。真机卡面走查未重跑（本次改的是 ask 与否的判定，`guard.spec` 已覆盖；卡面渲染未变）。
+
+## 24.4 AI推进｜主动发现 scan → inspect → feed（2026-08-19，设计随提交）
+
+设计基线 [`ai-advance-design.md`](../spec/ai-advance-design.md) **v1.4 §14**，决策 16–19。把机制 B/F 从「被召唤时比对」升级为「AI 定时自己发现」。不改双表/六态/D9/决策 10–15。发现通道是 CLI `im message list --type new` 轮询，不是机器人 WS（协议只投 @机器人）。
+
+| 面 | 交付 | 证据 |
+|---|---|---|
+| scan 工具 | 只读 `yzj_advance_scan`（50→51）：`groups` 必填 1–8；首扫 `type=newest` 建基线不回灌；增量 `type=new`；过滤本人/`BOT-`；cursor 写 storage-domain `yzj_advance_scan_cursors` | `advance.spec.ts`：基线 / 静默轮 / 过滤自身 / cursor 持久 / 未知群 |
+| host 去重 | `coreFeedAdvance` 在 `appendEntry` 前：`input.refs` 与已有事元 refs 有交集 → 幂等返回、不加行（空 refs 不去重） | `advance.spec.ts`：同 msgId 二次 feed 不加行；无 refs 仍追加 |
+| 巡检教学 | `INSPECT_DISCIPLINE` + scan/inspect/feed description 含巡检五步；用户说「开启巡检」→ root `schedule_create(every_seconds≥300)` | digest 断言「巡检五步」；scan 不在 `WRITE_SPECS` |
+| schedule 挂载 | bundle `cordis.patch.yml` 加 `id: time-context` / `id: schedule`（与官方 `examples/web-schedule` 同 id，防双挂） | 插件 id 与 overlay 对齐；诚实边界：session-local，GUI 关就停 |
+| 无人值守 | `docs/spec/advance-patrol-routine.yaml` + `docs/spec/headless-yzj.cordis.yml`（只挂 bridge+tool-yzj）。digest 降噪：routines 每轮都投 chatnode，无内容过滤 → 默认只 `file` deliver；无发现输出 `[advance-patrol:quiet]` | 模板头写明 spike 结论 |
+| 看板状态行 | `/yzj advance-scan-state` + 队列头 `data-testid="yzj-advance-scan-status"`（尚未巡检 / 上次巡检 HH:mm · 本轮发现 N 条） | `advance-pane.client.spec.tsx` + `rpc.node.spec.ts` |
+
+**已知偏差**：频率上限未做（决策 19 观察项）。sidecar 扫描走独立 `ScanCursorStore`（内存），不会写 GUI 进程的 cursor domain——看板「上次巡检」只在 GUI 内 `yzj_advance_scan` 之后更新。schedule 仅对新创建的 live root 生效（已有 root 需重开或新会话）。
+
+**真机闭环（2026-08-19 13:22，群 dsh-2 `6a8400d4e4b09a073e3feeaf`）**：sidecar `tsx .acceptance/advance-patrol-driver.ts` 把 cursor 回拨到最新非机器人消息之前 → `yzj_advance_scan` 扫到 1 条真信号 `6a850dc2e4b0b5c46221e6f6`（`[文件]:r29-summary.md`，09:58）→ inspect digest 含该 `<msgId>` → 立项 `A-20260819-008`「巡检闭环 945125」并 feed 进度更新（refs=该 msgId）→ 第二次同 ref feed `idempotent:true`、事元仍 3 条。`E2E_HEADED=1 node .acceptance/verify-advance-patrol.mjs` → **ALL PASS**：看板「我关注的推进」出现该事项，时间旅程第三行「巡检发现：群「dsh-2」[文件]:r29-summary.md」，信息来源「已读取」。截图 `.acceptance/shots-advance-patrol/1-patrol-board.png`。队列头仍「尚未巡检」——scan 跑在 sidecar 进程，不写 GUI 的 cursor domain；要让状态行跳「上次巡检」需在 root 会话里让模型调用 `yzj_advance_scan`。
+
+## 24.5 AI推进｜v1.5 意图线程订阅模型 + MVP→灵基迁移合同（2026-08-19，纯文档，无代码）
+
+出处：0819 14:00 产品方案讨论会（转录 `转录：AI推进产品方案讨论 20260819 1400.txt`，会上确认三概念定型、命名口径、两个待补交付物）+ 用户旅程口述定稿。
+
+| 面 | 交付 |
+|---|---|
+| 设计 | [`ai-advance-design.md`](../spec/ai-advance-design.md) 升 **v1.5**：§15 意图线程订阅模型（两类线程 / `yzj_advance_threads` demo 落位 / 渠道级 cursor 一次取流多事项分发 / Work+Dream 双节奏 / 策略选择文本约定）；决策 20–24 入表；分期表加 ③.2（待排） |
+| 迁移合同 | 新增 [`../migration/advance-lingee-migration.md`](../migration/advance-lingee-migration.md)：MVP↔灵基 = 「合同+证据→重建」；三层拆分（合同/机制形状/脚手架）、五断层、验证清单、「存钱 vs 镀金」取舍原则、灵基需求清单 |
+| 图 | `docs/diagrams/advance-6-journey`（用户旅程按口述重画：意图线程×N 订阅、手动喂/关联两条路径、待我决定/待我验收双出口）。**图集清理**：删 `advance-2-lifecycle`（被 6-journey + 3-gate 覆盖）与 `advance-4-dream`（「巡检唤醒 Dream」触发关系被决策 21 双节奏取代）；`advance-1` 输入改「意图线程订阅」；`advance-7` 补第六块「策略选择结构化」。编号留空号不重排；图集已登记 docs/README.md |
+
+**实现缺口（③.2 待排）**：`yzj_advance_threads` 未实现；面板无「关联渠道」入口；scan 未按订阅分发；决策区未渲染 `选项N`。当前 scan 仍是 `groups` 显式参数形态（决策 17），与订阅模型并存，③.2 落地时以订阅清单为 groups 来源。
+
+**正式开发交付面（同日晚补，已发 测试群；汇报产物不留仓库——用户拍板）**：接口数据契约 v1.0（自 spec v1.5 提炼的三对象字段级 + 状态机 + 门控 + 判据 + 接口面 + 平台需求八条快照）、示例故事线文字版（10 项任务分摊 / AI 自动 7 / 人 4 次判断 / 干预入口 / 节奏边界）、系统架构蓝图 / 产品模块关系图 / 故事线图三张。五件已发群「测试群」（`gid-test`）：文本消息 `msg-out-a`（含外部协助三件事：灵基平台八项排期 / 约同事丙对齐 / AI 速记结构化访问），文件消息 `file-out-a`（架构蓝图 png）/ `file-out-b`（模块关系 png）/ `file-out-c`（故事线 png）/ `file-out-d`（契约 md）/ `file-out-e`（故事线文字版 md），2026-08-19 16:51。**这些文件只存在于群消息，仓库不保留副本**；合同唯一事实源 = spec v1.5 + advance-lingee-migration。

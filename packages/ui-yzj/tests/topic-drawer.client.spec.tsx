@@ -7,10 +7,12 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 import { YzjTopicDrawer } from '../src/client/topic-drawer.tsx'
 import { setAdvanceFeedback } from '../src/client/advance-feedback.ts'
+import { setAdvanceAskDraft } from '../src/client/advance-ask.ts'
 
 describe('YzjTopicDrawer', () => {
   afterEach(() => {
     setAdvanceFeedback(null)
+    setAdvanceAskDraft(null)
   })
 
   it('lists topics and opens a lens without focusing native chat', () => {
@@ -321,6 +323,42 @@ describe('YzjTopicDrawer', () => {
       sourceType: '对话',
       refs: ['m-root'],
     }])
+    act(() => { root.unmount() })
+  })
+
+  it('请 AI 验收 draft fills 问助手 and does not auto-send', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const asked: string[] = []
+    setAdvanceAskDraft({ advanceId: 'A-1', title: '试运行', text: '请验收辅助 A-1' })
+    await act(async () => {
+      root.render(
+        <YzjTopicDrawer
+          groupName="群"
+          topics={[{
+            dshSessionId: 'yzj-topic-1',
+            title: '排期',
+            source: 'dsh',
+            rootMsgId: 'm-root',
+          }]}
+          lensSessionId="yzj-topic-1"
+          onClose={() => undefined}
+          onBack={() => undefined}
+          onOpenLens={() => undefined}
+          onNative={() => undefined}
+          onJumpOrigin={() => undefined}
+          homeTopicAsk={async (_id, text) => {
+            asked.push(text)
+            return { ok: true, value: { ok: true } }
+          }}
+        />,
+      )
+    })
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    const input = container.querySelector('[aria-label="问助手"]') as HTMLInputElement
+    expect(input.value).toBe('请验收辅助 A-1')
+    expect(asked).toEqual([])
     act(() => { root.unmount() })
   })
 })

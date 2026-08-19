@@ -70,6 +70,8 @@ export const YZJ_TOOL_NAMES = [  'yzj_whoami',
   'yzj_todo_complete',
   'yzj_advance_list',
   'yzj_advance_get',
+  'yzj_advance_inspect',
+  'yzj_advance_scan',
   'yzj_advance_create',
   'yzj_advance_feed',
   'memory_observe',
@@ -128,6 +130,8 @@ const FAMILY_TITLES: Record<string, string> = {
   yzj_todo_complete: '完成待办',
   yzj_advance_list: '推进队列',
   yzj_advance_get: '推进详情',
+  yzj_advance_inspect: '比对材料',
+  yzj_advance_scan: '巡检扫描',
   yzj_advance_create: '立项推进事项',
   yzj_advance_feed: '喂入事元',
   memory_observe: '记录观察',
@@ -495,6 +499,43 @@ function AdvanceBody(meta: UnknownRecord, toolName: string, jump: (target: YzjJu
     rowsOut.push(jumpRow('打开推进看板', () => { jump({ kind: 'advance' }) }, 'jump'))
     return <div className={css.rows}>{rowsOut}</div>
   }
+  if (toolName === 'yzj_advance_inspect') {
+    const rowsOut: ReactNode[] = [row(asString(meta.mode) === 'review' ? '验收辅助材料' : '比对材料', asString(meta.signals), 'head')]
+    const list = asArray(meta.list)
+    for (let index = 0; index < Math.min(list.length, 8); index += 1) {
+      const item = asRecord(list[index])
+      const next = asArray(item.next).map(part => asString(part)).filter(part => part !== '').join(' / ')
+      rowsOut.push(row(
+        asString(item.title) === '' ? asString(item.advanceId) : asString(item.title),
+        [stageOf(item.stage), next === '' ? '' : `下一阶段 ${next}`].filter(part => part !== '').join(' · '),
+        `i${index}`,
+      ))
+    }
+    rowsOut.push(jumpRow('打开推进看板', () => { jump({ kind: 'advance' }) }, 'jump'))
+    return <div className={css.rows}>{rowsOut}</div>
+  }
+  if (toolName === 'yzj_advance_scan') {
+    const groups = asArray(meta.groups)
+    const signals = asArray(meta.signals)
+    const rowsOut: ReactNode[] = [
+      row(
+        signals.length === 0 ? '无新信号，静默' : `${signals.length} 条新信号`,
+        groups.map(row => {
+          const group = asRecord(row)
+          if (asString(group.error) !== '') return `${asString(group.groupName)}：${asString(group.error)}`
+          if (group.baseline === true) return `${asString(group.groupName)}：基线`
+          return `${asString(group.groupName)}：${typeof group.newCount === 'number' ? group.newCount : 0} 条`
+        }).join(' · '),
+        'head',
+      ),
+    ]
+    for (let index = 0; index < Math.min(signals.length, 5); index += 1) {
+      const signal = asRecord(signals[index])
+      rowsOut.push(row(asString(signal.groupName), asString(signal.content), `s${index}`))
+    }
+    rowsOut.push(jumpRow('打开推进看板', () => { jump({ kind: 'advance' }) }, 'jump'))
+    return <div className={css.rows}>{rowsOut}</div>
+  }
   // create / feed: friendly single-row summary + board link.
   const rowsOut: ReactNode[] = []
   if (toolName === 'yzj_advance_create') {
@@ -504,6 +545,8 @@ function AdvanceBody(meta: UnknownRecord, toolName: string, jump: (target: YzjJu
       [stageOf(item.stage), asString(item.goal)].filter(part => part !== '').join(' · '),
       'c',
     ))
+  } else if (meta.idempotentHit === true) {
+    rowsOut.push(row(`同源去重：${asString(meta.summary)}`, '未追加事元', 'f'))
   } else {
     const flow = asString(meta.stageFrom) !== '' && asString(meta.stageFrom) !== asString(meta.stageTo)
       ? `${stageOf(meta.stageFrom)} → ${stageOf(meta.stageTo)}`

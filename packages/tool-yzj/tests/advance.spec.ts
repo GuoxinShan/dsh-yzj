@@ -2,7 +2,7 @@
  * advance (AI推进) tool-family tests: pure helpers (stage machine / ids /
  * tones / metrics / sources) plus the four tools and the core operations over
  * a STATEFUL fake bridge — feed→get roundtrips prove the append-only stream
- * is lossless (hard requirement ②). The fake replays the CLI shapes verified
+ * is lossless (hard requirement ②). inspect is read-only 比对材料 (spec §12).
  * by the 2026-08-15 probe: records arrays, `fields` as a JSON string,
  * Equals/Contains filters.
  */
@@ -10,11 +10,14 @@ import { describe, expect, it } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import type { YzjRunResult } from '@dsh-yzj/bridge'
 import {
-  applyAdvanceTools, coreCreateAdvance, coreFeedAdvance, judgeVerb,
+  applyAdvanceTools, coreCreateAdvance, coreFeedAdvance, coreScanAdvance, judgeVerb,
   checkStageTransition, nextSequentialId, toneOf, parseMetrics,
   parseAdvanceItem, parseAdvanceEntry, aggregateSources,
+  buildInspectDigest, buildScanDigest, legalNextStages, INSPECT_DISCIPLINE,
+  isSkippableSender, refsOverlap, MAX_SCAN_GROUPS,
 } from '../src/advance.ts'
-import type { AdvanceCaches, YzjAdvanceEntry } from '../src/advance.ts'
+import type { AdvanceCaches, YzjAdvanceEntry, YzjAdvanceItem } from '../src/advance.ts'
+import { ScanCursorStore, scanStateOf } from '../src/scan-cursors.ts'
 import { todayStr } from '../src/todo.ts'
 import type { YzjToolBudget } from '../src/shared.ts'
 
@@ -27,16 +30,27 @@ interface CapturedTool {
 
 interface Row { id: string; fields: Record<string, unknown> }
 
+interface ImMessage {
+  msgId: string
+  fromOpenId: string
+  content: string
+  sendTime: string
+}
+
 /**
  * Stateful fake backend: one dbt doc with the todo 任务 table plus (optionally
  * pre-provisioned) 事项/事元 tables. Record create/update/list mutate real
- * in-memory rows so multi-step flows behave like the real CLI.
+ * in-memory rows so multi-step flows behave like the real CLI. Optional IM
+ * catalog / messages back the scan tool.
  */
 class FakeStore {
   items: Row[] = []
   entries: Row[] = []
   tableCreates: string[] = []
   provisioned: boolean
+  selfOpenId = ''
+  groups: { groupId: string; groupName: string }[] = []
+  messages: Record<string, ImMessage[]> = {}
   private seq = 0
 
   constructor(provisioned: boolean) {
@@ -72,7 +86,24 @@ class FakeStore {
       this.provisioned = true
       return {}
     }
-    if (key === 'contact user') return { list: [] }
+    if (key === 'contact user') {
+      if (this.selfOpenId === '') return { list: [] }
+      return { list: [{ openId: this.selfOpenId, oId: this.selfOpenId }] }
+    }
+    if (key === 'im group') return { list: this.groups, more: false }
+    if (key === 'im message') {
+      const groupId = command[command.indexOf('--group-id') + 1] ?? ''
+      const type = command[command.indexOf('--type') + 1] ?? 'newest'
+      const limitAt = command.indexOf('--limit')
+      const limit = limitAt === -1 ? 20 : Number(command[limitAt + 1] ?? 20)
+      const msgIdAt = command.indexOf('--msg-id')
+      const cursor = msgIdAt === -1 ? undefined : command[msgIdAt + 1]
+      const rows = this.messages[groupId] ?? []
+      if (type === 'newest') return { list: rows.slice(-Math.max(1, limit)) }
+      const start = rows.findIndex(row => row.msgId === cursor)
+      const after = start === -1 ? rows : rows.slice(start + 1)
+      return { list: after.slice(0, Math.max(1, limit)) }
+    }
     if (key === 'sheet record') {
       const verb = command[2]
       const tableId = command[command.indexOf('--table-id') + 1]
@@ -153,6 +184,36 @@ describe('advance pure helpers', () => {
     expect(checkStageTransition('draft', 'completed')).toMatch(/状态机拒绝/)
     expect(checkStageTransition('running', 'updated')).toMatch(/状态机拒绝/)
     expect(checkStageTransition('draft', 'draft')).toBeNull()
+  })
+
+  it('spreads inspect materials without judging', () => {
+    const item: YzjAdvanceItem = {
+      recordId: 'r1', advanceId: 'A-1', title: '试运行', goal: '进入试运行',
+      assignee: '', assigneeOpenId: '', targetDate: '', stage: 'running',
+      background: '原计划本周', metrics: '覆盖率: 80 / 100', tags: [], latest: '',
+    }
+    const compare = buildInspectDigest({ subjects: [{ item, recent: [] }], signals: '客户改口径', mode: 'compare' })
+    expect(compare).toContain('比对材料')
+    expect(compare).toContain('背景（原来的理解）：原计划本周')
+    expect(compare).toContain('合法下一阶段：decision-needed / ready-for-review / draft')
+    expect(compare).toContain('客户改口径')
+    expect(compare).toContain('禁止 stageTo=completed')
+    expect(compare).toContain(INSPECT_DISCIPLINE.split('\n')[0] ?? '纪律')
+    // §13 判据：打扰 / 静默 / 抑制 / 门控线各留一条可核对的锚点
+    expect(compare).toContain('打扰判据')
+    expect(compare).toContain('朝远离目标移动')
+    expect(compare).toContain('静默判据')
+    expect(compare).toContain('抑制')
+    expect(compare).toContain('确认卡只在改基准')
+    expect(compare).toContain('巡检五步')
+    expect(compare).toContain('yzj_advance_scan')
+    const review = buildInspectDigest({ subjects: [{ item, recent: [] }], signals: '', mode: 'review' })
+    expect(review).toContain('验收辅助材料')
+    expect(review).toContain('不要自动过')
+    const empty = buildInspectDigest({ subjects: [], signals: '', mode: 'compare' })
+    expect(empty).toContain('没有 open 推进事项')
+    expect(empty).toContain('静默')
+    expect(legalNextStages('running')).toEqual(['decision-needed', 'ready-for-review', 'draft'])
   })
 
   it('sequences day-prefixed ids for items and entries', () => {
@@ -311,6 +372,28 @@ describe('yzj_advance_feed', () => {
     const tail = await get.execute({ advanceId: 'A-1' })
     expect(tail.content).toContain('进展 5')
   })
+
+  it('host-dedupes a second feed whose refs overlap an existing 事元 (决策 19)', async () => {
+    const store = new FakeStore(true)
+    store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'running' } })
+    const { tools } = mount(store)
+    const feed = tools.find(tool => tool.name === 'yzj_advance_feed')!
+    const first = await feed.execute({
+      advanceId: 'A-1', summary: '群里一句进度', changeType: '进度更新', refs: ['msg-42'],
+    })
+    expect(first.content).toContain('fed 事元')
+    expect(store.entries).toHaveLength(1)
+    const second = await feed.execute({
+      advanceId: 'A-1', summary: '同一条再喂', changeType: '进度更新', refs: ['msg-42'],
+    })
+    expect(second.content).toContain('同源去重')
+    expect(store.entries).toHaveLength(1)
+    const emptyRefs = await feed.execute({
+      advanceId: 'A-1', summary: '没有 ref 的另一次', changeType: '进度更新',
+    })
+    expect(emptyRefs.content).toContain('fed 事元')
+    expect(store.entries).toHaveLength(2)
+  })
 })
 
 describe('yzj_advance_list', () => {
@@ -339,6 +422,28 @@ describe('yzj_advance_list', () => {
     const result = await list.execute({})
     expect(result.content).toContain('推进看板尚未开通')
     expect(store.tableCreates).toHaveLength(0)
+  })
+})
+
+describe('yzj_advance_inspect', () => {
+  it('spreads open items and hides completed', async () => {
+    const store = new FakeStore(true)
+    store.items.push(
+      { id: 'r1', fields: { advance_id: 'A-1', 名称: '安静推进', 阶段: 'running', 描述: '按期', 任务背景: '原计划' } },
+      { id: 'r2', fields: { advance_id: 'A-2', 名称: '已完成', 阶段: 'completed' } },
+    )
+    const { tools } = mount(store)
+    const inspect = tools.find(tool => tool.name === 'yzj_advance_inspect')!
+    const result = await inspect.execute({ signals: '群里说范围变了' })
+    expect(result.content).toContain('安静推进')
+    expect(result.content).not.toContain('已完成')
+    expect(result.content).toContain('群里说范围变了')
+    expect(result.content).toContain('禁止 stageTo=completed')
+    const review = await inspect.execute({ advanceId: 'A-1', mode: 'review' })
+    expect(review.content).toContain('验收辅助材料')
+    expect(review.content).toContain('不要自动过')
+    const missing = await inspect.execute({ advanceId: 'A-missing' })
+    expect(missing.content).toContain('不存在')
   })
 })
 
@@ -384,5 +489,92 @@ describe('core judge path (panel direct write)', () => {
     })
     expect(result.item.stage).toBe('draft')
     expect(store.entries[0]!.fields['操作者']).toBe('user')
+  })
+})
+
+describe('scan helpers', () => {
+  it('skips self and BOT- senders', () => {
+    expect(isSkippableSender('me', 'me')).toBe(true)
+    expect(isSkippableSender('BOT-r1', 'me')).toBe(true)
+    expect(isSkippableSender('other', 'me')).toBe(false)
+    expect(isSkippableSender('', 'me')).toBe(false)
+  })
+
+  it('treats overlapping refs as a duplicate', () => {
+    expect(refsOverlap(['a', 'b'], ['b', 'c'])).toBe(true)
+    expect(refsOverlap(['a'], ['b'])).toBe(false)
+    expect(refsOverlap([], ['a'])).toBe(false)
+    expect(MAX_SCAN_GROUPS).toBe(8)
+  })
+})
+
+describe('yzj_advance_scan', () => {
+  function seedIm(store: FakeStore): void {
+    store.selfOpenId = 'me-openid'
+    store.groups = [{ groupId: 'g-dsh2', groupName: 'dsh-2' }]
+    store.messages['g-dsh2'] = [
+      { msgId: 'm0', fromOpenId: 'alice', content: '历史消息', sendTime: '2026/08/19 10:00' },
+    ]
+  }
+
+  it('first visit records a baseline and returns no signals', async () => {
+    const store = new FakeStore(true)
+    seedIm(store)
+    const { tools } = mount(store)
+    const scan = tools.find(tool => tool.name === 'yzj_advance_scan')!
+    const result = await scan.execute({ groups: ['dsh-2'] })
+    expect(result.content).toContain('基线已立')
+    expect(result.content).not.toContain('历史消息')
+    expect(result.content).toContain('新信号：（无）')
+    const data = result.data as { signals: unknown[] }
+    expect(data.signals).toEqual([])
+  })
+
+  it('second visit with no new messages is silent; a later human message is a signal', async () => {
+    const store = new FakeStore(true)
+    seedIm(store)
+    const { tools } = mount(store)
+    const scan = tools.find(tool => tool.name === 'yzj_advance_scan')!
+    await scan.execute({ groups: ['dsh-2'] })
+    const quiet = await scan.execute({ groups: ['dsh-2'] })
+    expect(quiet.content).toContain('无新消息，静默')
+    store.messages['g-dsh2']!.push(
+      { msgId: 'm-bot', fromOpenId: 'BOT-r', content: '机器人回帖', sendTime: '2026/08/19 10:05' },
+      { msgId: 'm-me', fromOpenId: 'me-openid', content: '我自己说的', sendTime: '2026/08/19 10:06' },
+      { msgId: 'm-new', fromOpenId: 'alice', content: '进度正常，覆盖率到 80', sendTime: '2026/08/19 10:07' },
+    )
+    const found = await scan.execute({ groups: ['dsh-2'] })
+    expect(found.content).toContain('1 条新信号')
+    expect(found.content).toContain('进度正常，覆盖率到 80')
+    expect(found.content).toContain('<m-new>')
+    expect(found.content).not.toContain('机器人回帖')
+    expect(found.content).not.toContain('我自己说的')
+    expect(found.content).toContain('把新信号交给 yzj_advance_inspect')
+  })
+
+  it('persists the cursor across tool calls and names unknown groups', async () => {
+    const store = new FakeStore(true)
+    seedIm(store)
+    const cursors = new ScanCursorStore()
+    const { ctx } = mount(store)
+    const first = await coreScanAdvance(ctx, BUDGET, {}, freshCaches(), cursors, ['dsh-2'])
+    expect(first.groups[0]?.baseline).toBe(true)
+    expect(cursors.get('g-dsh2')?.lastMsgId).toBe('m0')
+    store.messages['g-dsh2']!.push(
+      { msgId: 'm1', fromOpenId: 'alice', content: '新一句', sendTime: '2026/08/19 11:00' },
+    )
+    const second = await coreScanAdvance(ctx, BUDGET, {}, freshCaches(), cursors, ['g-dsh2'])
+    expect(second.signals.map(row => row.msgId)).toEqual(['m1'])
+    expect(cursors.get('g-dsh2')?.lastMsgId).toBe('m1')
+    expect(scanStateOf(cursors).found).toBe(1)
+    const missing = await coreScanAdvance(ctx, BUDGET, {}, freshCaches(), cursors, ['不存在的群'])
+    expect(missing.groups[0]?.error).toMatch(/找不到群/)
+    const digest = buildScanDigest(second)
+    expect(digest).toContain('巡检扫描')
+    expect(digest).toContain('<m1>')
+    const state = scanStateOf(cursors)
+    expect(state.found).toBe(0)
+    expect(state.scannedAt).not.toBeNull()
+    expect(state.groups[0]?.groupId).toBe('g-dsh2')
   })
 })

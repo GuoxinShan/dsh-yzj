@@ -70,6 +70,8 @@ export interface YzjPanelInject {
   advanceJudge: (advanceId: string, action: 'confirm_condition' | 'confirm_advance' | 'accept' | 'reject' | 'ignore', note?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** One-click provision of the 事项/事元 tables (empty-state action). */
   advanceEnsure: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Last patrol wave for the board status line (spec §14.5). */
+  advanceScanState: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** User-direct 事元 feed (D9, no confirm card; no stageTo). */
   advanceFeed: (input: { advanceId: string; summary: string; sourceType?: string; refs?: string[] }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** One write-confirmation record for a tool call (undefined when not gated). */
@@ -238,6 +240,7 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
       ...(note === undefined || note === '' ? {} : { note }),
     }),
     advanceEnsure: () => call('advance-ensure', {}),
+    advanceScanState: () => call('advance-scan-state', {}),
     advanceFeed: (input) => call('advance-feed', {
       advanceId: input.advanceId,
       summary: input.summary,

@@ -27,6 +27,7 @@ import {
   nowStamp, todayStr, parseAssignee,
 } from './todo.ts'
 import type { TodoBinding, TodoBindingHolder, TodoConfig } from './todo.ts'
+import { ScanCursorStore, scanStateOf, type AdvanceScanState, type ScanCursorStoreFace } from './scan-cursors.ts'
 
 // ---------------------------------------------------------------------------
 // Schema constants (single source of truth for both tables)
@@ -70,6 +71,16 @@ export const ADVANCE_STAGES: readonly AdvanceStage[] = [
   'draft', 'running', 'decision-needed', 'updated', 'ready-for-review', 'completed',
 ]
 
+/** Legal next stages from each node (same table as {@link checkStageTransition}). */
+export const STAGE_NEXT: Record<AdvanceStage, readonly AdvanceStage[]> = {
+  draft: ['running'],
+  running: ['decision-needed', 'ready-for-review', 'draft'],
+  'decision-needed': ['running', 'updated'],
+  updated: ['running', 'ready-for-review'],
+  'ready-for-review': ['completed', 'running'],
+  completed: ['running'],
+}
+
 /** 事元 source types (工作现场 provenance). */
 export const SOURCE_TYPES = ['对话', '待办', '文档', '会议', '日程', '数据', '人工'] as const
 
@@ -80,6 +91,11 @@ export const CHANGE_TYPES = ['目标更新', '进度更新', '偏差', '决策�
 // Pure helpers (exported for tests)
 // ---------------------------------------------------------------------------
 
+export function legalNextStages(from: string): readonly string[] {
+  if (!ADVANCE_STAGES.includes(from as AdvanceStage)) return []
+  return STAGE_NEXT[from as AdvanceStage]
+}
+
 /**
  * Validate a stage transition; returns an error message or null.
  * running is the quiet steady state; decision-needed→updated is the minimal
@@ -87,17 +103,297 @@ export const CHANGE_TYPES = ['目标更新', '进度更新', '偏差', '决策�
  */
 export function checkStageTransition(from: string, to: string): string | null {
   if (from === to) return null
-  const allowed: Record<string, string[]> = {
-    'draft': ['running'],
-    'running': ['decision-needed', 'ready-for-review', 'draft'],
-    'decision-needed': ['running', 'updated'],
-    'updated': ['running', 'ready-for-review'],
-    'ready-for-review': ['completed', 'running'],
-    'completed': ['running'],
-  }
-  const targets = allowed[from] ?? []
-  if (targets.includes(to)) return null
+  if (legalNextStages(from).includes(to)) return null
   return `状态机拒绝 ${from} → ${to}：合法流转为 draft→running→(decision-needed→updated)*→ready-for-review→completed；ready-for-review/decision-needed 可打回 running，completed 可重开 running`
+}
+
+/** Inspect discipline pasted into every yzj_advance_inspect digest (spec §12). */
+export const INSPECT_DISCIPLINE = [
+  '纪律：running 无偏差则不要 feed（静默）。已记录事实的复述连事元都不写。',
+  '打扰判据（命中任一条才 stageTo=decision-needed）：① 新信号与任务背景的前提矛盾；② 任一成功指标由达标转未达标或朝远离目标移动；③ 按当前速度在目标日期前补不上差距；④ 出现明确阻塞威胁目标日期；⑤ 继续推进须砍范围/加资源/改优先级或越红线；⑥ 两条以上都合理且会改变后续基准的路径分叉。',
+  '静默判据：信号与目标一致且指标不变或朝目标移动；纯过程信息（谁在做/做到哪/附了什么产物）。',
+  '抑制：同判据已在 decision-needed 未处理则补进现有决策请求、不新起；同一来源（msgId/docId）已喂过则 host 强制去重；被用户 ignore 过的判据除非指标进一步恶化不再提。',
+  '偏差成立 → yzj_advance_feed changeType=偏差 stageTo=decision-needed。',
+  '产物齐且指标 N/N 达标且无未决偏差 → changeType=验收请求 stageTo=ready-for-review。',
+  '确认卡只在改基准（goal/metrics/targetDate/assignee）时出现；纯追加与阶段变化静默落，人在看板队列被找到。',
+  '禁止 stageTo=completed；验收通过只由用户在看板点「确认达到目标」。',
+  '巡检五步：到点 → yzj_advance_scan(groups=…) → 无新消息则静默结束 → 有新信号则 yzj_advance_inspect → 按打扰判据行动（进度正常静默挂上；命中则 stageTo=decision-needed；禁止 completed）。用户说「开启巡检」时在 root 会话 schedule_create(every_seconds≥300，prompt 含群清单)。',
+  '最小回路：核心变量对比（原来的理解 vs 现在的约束）→ 建议（AI建议+备选+自定义）→ 用户选择 → 复述影响 → 确认后才 feed。',
+].join('\n')
+
+/** One inspect subject: item projection + recent 事元 window. */
+export interface InspectSubject {
+  readonly item: YzjAdvanceItem
+  readonly recent: readonly YzjAdvanceEntry[]
+}
+
+/**
+ * Model-facing inspect digest. Host does not judge semantics (spec §12 / 决策 11).
+ */
+export function buildInspectDigest(args: {
+  subjects: readonly InspectSubject[]
+  signals: string
+  mode: 'compare' | 'review'
+}): string {
+  const head = args.mode === 'review'
+    ? '验收辅助材料（对照成功指标给一句话结论，不要自动过）'
+    : '比对材料（核心变量：原来的理解 vs 新信号）'
+  if (args.subjects.length === 0) {
+    return [head, '没有 open 推进事项。无偏差，静默。', INSPECT_DISCIPLINE].join('\n')
+  }
+  const signal = args.signals.trim() === ''
+    ? '新信号：（无，巡检请先拉近期群消息/纪要再比对）'
+    : `新信号：${args.signals.trim()}`
+  const blocks = args.subjects.map(({ item, recent }) => {
+    const next = legalNextStages(item.stage).join(' / ') || '（无）'
+    const rec = recent.length === 0
+      ? '（暂无事元）'
+      : recent.map(entry => `${entry.at} ${entry.changeType} ${entry.summary}`).join('\n  ')
+    return [
+      `${item.advanceId} · ${item.title} [${item.stage}]`,
+      item.goal === '' ? '目标：（空）' : `目标：${item.goal}`,
+      item.background === '' ? '背景（原来的理解）：（空）' : `背景（原来的理解）：${item.background}`,
+      item.metrics === '' ? '成功指标：（空）' : `成功指标：${item.metrics.split('\n').join('；')}`,
+      `合法下一阶段：${next}`,
+      `最近事元：\n  ${rec}`,
+    ].join('\n')
+  })
+  return [head, signal, ...blocks, INSPECT_DISCIPLINE].join('\n---\n')
+}
+
+/** Max groups one scan call accepts (spec §14 / 决策 17). */
+export const MAX_SCAN_GROUPS = 8
+
+/** Self or robot sender — skip to avoid self-reinforcing the patrol. */
+export function isSkippableSender(fromOpenId: string, selfOpenId: string): boolean {
+  if (fromOpenId === '') return false
+  if (selfOpenId !== '' && fromOpenId === selfOpenId) return true
+  return fromOpenId.startsWith('BOT-')
+}
+
+/** True when any incoming ref is already on the item's stream (决策 19). */
+export function refsOverlap(incoming: readonly string[], existing: readonly string[]): boolean {
+  if (incoming.length === 0) return false
+  const have = new Set(existing.filter(token => token !== ''))
+  return incoming.some(token => token !== '' && have.has(token))
+}
+
+/** One IM signal surfaced by a scan. */
+export interface ScanSignal {
+  readonly groupId: string
+  readonly groupName: string
+  readonly msgId: string
+  readonly fromOpenId: string
+  readonly content: string
+  readonly sendTime: string
+}
+
+/** One group's scan outcome. */
+export interface ScanGroupResult {
+  readonly groupId: string
+  readonly groupName: string
+  readonly baseline: boolean
+  readonly newCount: number
+  readonly error?: string
+}
+
+/** Result of {@link coreScanAdvance}. */
+export interface AdvanceScanResult {
+  readonly signals: readonly ScanSignal[]
+  readonly groups: readonly ScanGroupResult[]
+  readonly openItems: readonly { advanceId: string; title: string; stage: string }[]
+}
+
+function imMessageLine(signal: ScanSignal): string {
+  const time = signal.sendTime.length >= 16 ? signal.sendTime.slice(5, 16) : signal.sendTime
+  const who = signal.fromOpenId === '' ? '(unknown)' : signal.fromOpenId
+  const body = signal.content === '' ? '(message)' : signal.content.replace(/\s+/g, ' ').slice(0, 80)
+  return `[${time}] ${signal.groupName} ${who} ${body} <${signal.msgId}>`
+}
+
+/** Model-facing scan digest (spec §14.2). */
+export function buildScanDigest(result: AdvanceScanResult): string {
+  const groupLines = result.groups.map((group) => {
+    if (group.error !== undefined) return `${group.groupName}（${group.groupId}）：${group.error}`
+    if (group.baseline) return `${group.groupName}：基线已立（不回灌历史）`
+    if (group.newCount === 0) return `${group.groupName}：无新消息，静默`
+    return `${group.groupName}：${group.newCount} 条新信号`
+  })
+  const signalLines = result.signals.length === 0
+    ? ['新信号：（无）']
+    : ['新信号：', ...result.signals.map(imMessageLine)]
+  const items = result.openItems.length === 0
+    ? 'open 事项：（无）'
+    : `open 事项：${result.openItems.map(item => `${item.advanceId} · ${item.title} [${item.stage}]`).join('；')}`
+  const next = result.signals.length === 0
+    ? '下一步：静默结束本轮。'
+    : '下一步：把新信号交给 yzj_advance_inspect（signals=上列），再按纪律决定是否 feed。'
+  return ['巡检扫描', ...groupLines, ...signalLines, items, next, INSPECT_DISCIPLINE].join('\n')
+}
+
+function parseImMessage(record: unknown): { msgId: string; fromOpenId: string; content: string; sendTime: string } {
+  const message = asRecord(record)
+  const fromUser = asRecord(message.fromUser)
+  return {
+    msgId: asString(message.msgId ?? message.id),
+    fromOpenId: asString(message.fromOpenId ?? fromUser.openId ?? fromUser.oId),
+    content: asString(message.content),
+    sendTime: asString(message.sendTime),
+  }
+}
+
+async function whoamiOpenId(ctx: Context, budget: YzjToolBudget): Promise<string> {
+  const ran = await runJson(ctx, budget, 'contact user get', ['contact', 'user', 'get'])
+  if (!ran.ok) return ''
+  const root = asRecord(ran.json)
+  const list = asArray(root.list)
+  const first = list.length > 0 ? asRecord(list[0]) : root
+  return asString(first.openId ?? first.oId)
+}
+
+async function listRecentGroups(ctx: Context, budget: YzjToolBudget): Promise<{ groupId: string; groupName: string }[]> {
+  const out: { groupId: string; groupName: string }[] = []
+  for (const page of [1, 2, 3]) {
+    const ran = await runJson(ctx, budget, 'im group recent', [
+      'im', 'group', 'recent', '--limit', '20', '--page', String(page),
+    ])
+    if (!ran.ok) break
+    const payload = asRecord(ran.json)
+    const rows = asArray(payload.list)
+    for (const row of rows) {
+      const group = asRecord(row)
+      const groupId = asString(group.groupId)
+      if (groupId === '') continue
+      out.push({ groupId, groupName: asString(group.groupName) || groupId })
+    }
+    if (payload.more !== true || rows.length === 0) break
+  }
+  return out
+}
+
+function resolveGroupToken(
+  token: string,
+  catalog: readonly { groupId: string; groupName: string }[],
+): { groupId: string; groupName: string } | undefined {
+  const trimmed = token.trim()
+  if (trimmed === '') return undefined
+  const exactId = catalog.find(row => row.groupId === trimmed)
+  if (exactId !== undefined) return exactId
+  const exactName = catalog.filter(row => row.groupName === trimmed)
+  if (exactName.length === 1) return exactName[0]
+  const partial = catalog.filter(row => row.groupName.includes(trimmed))
+  if (partial.length === 1) return partial[0]
+  return undefined
+}
+
+async function listImMessages(
+  ctx: Context,
+  budget: YzjToolBudget,
+  groupId: string,
+  type: 'newest' | 'new',
+  msgId: string | undefined,
+  limit: number,
+): Promise<unknown[]> {
+  const command = ['im', 'message', 'list', '--group-id', groupId, '--type', type, '--limit', String(limit)]
+  if (msgId !== undefined) command.push('--msg-id', msgId)
+  const ran = await runJson(ctx, budget, 'im message list', command)
+  if (!ran.ok) throw new Error(ran.content)
+  return asArray(asRecord(ran.json).list)
+}
+
+function newestMsgId(rows: readonly { msgId: string; sendTime: string }[]): string {
+  let best = ''
+  let bestTime = ''
+  for (const row of rows) {
+    if (row.msgId === '') continue
+    if (best === '' || row.sendTime >= bestTime) {
+      best = row.msgId
+      bestTime = row.sendTime
+    }
+  }
+  return best
+}
+
+/**
+ * Incremental IM scan for the patrol loop (spec §14). First visit of a
+ * group records a baseline cursor and returns no signals; later visits
+ * return messages after the cursor, minus self/robot.
+ */
+export async function coreScanAdvance(
+  ctx: Context,
+  budget: YzjToolBudget,
+  config: TodoConfig,
+  caches: AdvanceCaches,
+  cursors: ScanCursorStoreFace,
+  groups: readonly string[],
+  limit = 20,
+  holder?: TodoBindingHolder,
+): Promise<AdvanceScanResult> {
+  if (groups.length === 0) throw new Error('advance scan: groups must not be empty')
+  if (groups.length > MAX_SCAN_GROUPS) throw new Error(`advance scan: at most ${MAX_SCAN_GROUPS} groups`)
+  const pageSize = !Number.isInteger(limit) || limit < 1 || limit > 20 ? 20 : limit
+  const selfOpenId = await whoamiOpenId(ctx, budget)
+  const catalog = await listRecentGroups(ctx, budget)
+  const signals: ScanSignal[] = []
+  const groupResults: ScanGroupResult[] = []
+  const now = Date.now()
+  for (const token of groups) {
+    const resolved = resolveGroupToken(token, catalog)
+    if (resolved === undefined) {
+      groupResults.push({
+        groupId: token, groupName: token, baseline: false, newCount: 0,
+        error: `找不到群「${token}」；用 yzj_im_group_recent 核对 id/名`,
+      })
+      continue
+    }
+    const prior = cursors.get(resolved.groupId)
+    try {
+      if (prior === undefined) {
+        const rows = (await listImMessages(ctx, budget, resolved.groupId, 'newest', undefined, pageSize)).map(parseImMessage)
+        const lastMsgId = newestMsgId(rows)
+        if (lastMsgId !== '') {
+          await cursors.put(resolved.groupId, { lastMsgId, scannedAt: now, groupName: resolved.groupName })
+        }
+        groupResults.push({ groupId: resolved.groupId, groupName: resolved.groupName, baseline: true, newCount: 0 })
+        continue
+      }
+      const rows = (await listImMessages(ctx, budget, resolved.groupId, 'new', prior.lastMsgId, pageSize)).map(parseImMessage)
+      const fresh = rows.filter(row => row.msgId !== '' && row.msgId !== prior.lastMsgId)
+      const lastMsgId = newestMsgId(fresh) || prior.lastMsgId
+      const accepted = fresh.filter(row => !isSkippableSender(row.fromOpenId, selfOpenId))
+      for (const row of accepted) {
+        signals.push({
+          groupId: resolved.groupId,
+          groupName: resolved.groupName,
+          msgId: row.msgId,
+          fromOpenId: row.fromOpenId,
+          content: row.content,
+          sendTime: row.sendTime,
+        })
+      }
+      await cursors.put(resolved.groupId, { lastMsgId, scannedAt: now, groupName: resolved.groupName })
+      groupResults.push({
+        groupId: resolved.groupId, groupName: resolved.groupName, baseline: false, newCount: accepted.length,
+      })
+    } catch (error) {
+      groupResults.push({
+        groupId: resolved.groupId, groupName: resolved.groupName, baseline: false, newCount: 0,
+        error: String((error as Error).message),
+      })
+    }
+  }
+  await cursors.recordPatrol(signals.length, now)
+  let openItems: { advanceId: string; title: string; stage: string }[] = []
+  try {
+    const binding = await resolveAdvance(ctx, budget, config, caches, false, holder)
+    const items = await fetchItems(ctx, budget, binding)
+    openItems = items.filter(item => item.stage !== 'completed').map(item => ({
+      advanceId: item.advanceId, title: item.title, stage: item.stage,
+    }))
+  } catch {
+    openItems = []
+  }
+  return { signals, groups: groupResults, openItems }
 }
 
 /** Timeline tone of one entry (PRD §5.3.4: 蓝=推进 绿=达标 红=偏差决策). */
@@ -721,6 +1017,8 @@ export interface AdvanceFeedResult {
   stageFrom: AdvanceStage
   stageChanged: boolean
   binding: AdvanceBinding
+  /** True when a matching ref was already on the stream (决策 19). */
+  idempotent: boolean
 }
 
 /**
@@ -742,6 +1040,14 @@ export async function coreFeedAdvance(
   const item = await fetchItemById(ctx, budget, binding, input.advanceId)
   if (item === undefined) {
     throw new Error(`advance: 事项 ${input.advanceId} 不存在；先用 yzj_advance_list 查真实 id，不要猜测`)
+  }
+  const incomingRefs = (input.refs ?? []).filter(token => token.trim() !== '')
+  if (incomingRefs.length > 0) {
+    const existing = await fetchEntries(ctx, budget, binding, input.advanceId)
+    const hit = existing.find(entry => refsOverlap(incomingRefs, entry.refs))
+    if (hit !== undefined) {
+      return { item, entry: hit, stageFrom: item.stage, stageChanged: false, binding, idempotent: true }
+    }
   }
   const diffs: string[] = []
   const projection: Record<string, unknown> = {}
@@ -802,7 +1108,7 @@ export async function coreFeedAdvance(
     assigneeOpenId: projection[ITEM_F.assignee] === undefined ? item.assigneeOpenId : parseAssignee(asString(projection[ITEM_F.assignee])).openId,
     latest: asString(projection[ITEM_F.latest]),
   }
-  return { item: updated, entry, stageFrom: item.stage, stageChanged, binding }
+  return { item: updated, entry, stageFrom: item.stage, stageChanged, binding, idempotent: false }
 }
 
 // ---------------------------------------------------------------------------
@@ -905,12 +1211,20 @@ export class YzjAdvanceService extends Service {
   private readonly caches: AdvanceCaches = { lib: {}, adv: {} }
   /** Shared with the todo family so both boards follow the active library. */
   private readonly holder: TodoBindingHolder
+  private readonly cursors: ScanCursorStoreFace
 
-  constructor(ctx: Context, budget: YzjToolBudget, config: TodoConfig, holder: TodoBindingHolder) {
+  constructor(
+    ctx: Context,
+    budget: YzjToolBudget,
+    config: TodoConfig,
+    holder: TodoBindingHolder,
+    cursors: ScanCursorStoreFace = new ScanCursorStore(),
+  ) {
     super(ctx, 'yzjAdvance')
     this.budget = budget
     this.config = config
     this.holder = holder
+    this.cursors = cursors
   }
 
   /** Board snapshot; `ready` false = tables not provisioned yet. */
@@ -981,6 +1295,23 @@ export class YzjAdvanceService extends Service {
     }, this.holder)
     return itemViewOf(result.item)
   }
+
+  /** Last patrol wave for the board status line (spec §14.5). */
+  scanState(): AdvanceScanState {
+    return scanStateOf(this.cursors)
+  }
+
+  /** Open the scan-cursor domain once the storage hub is ready. */
+  async openNow(): Promise<void> {
+    if (!(this.cursors instanceof ScanCursorStore)) return
+    const facility = this.ctx.get('storageDomain')
+    if (facility === undefined) return
+    try {
+      await this.cursors.open(facility as never)
+    } catch (error) {
+      this.ctx.logger.warn(`yzjAdvance: scan cursor store failed to open: ${String(error)}`)
+    }
+  }
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -994,8 +1325,14 @@ declare module '@deepseek-ai/cordis' {
 // Tool registration
 // ---------------------------------------------------------------------------
 
-/** Register the yzj_advance_* tool family (list/get/create/feed). */
-export function applyAdvanceTools(ctx: Context, budget: YzjToolBudget, config: TodoConfig, holder?: TodoBindingHolder): void {
+/** Register the yzj_advance_* tool family (list/get/inspect/scan/create/feed). */
+export function applyAdvanceTools(
+  ctx: Context,
+  budget: YzjToolBudget,
+  config: TodoConfig,
+  holder?: TodoBindingHolder,
+  cursors: ScanCursorStoreFace = new ScanCursorStore(),
+): void {
   const caches: AdvanceCaches = { lib: {}, adv: {} }
 
   const bindingMeta = (binding: AdvanceBinding): JsonValue =>
@@ -1115,6 +1452,108 @@ export function applyAdvanceTools(ctx: Context, budget: YzjToolBudget, config: T
   }))
 
   ctx.tools.register(defineTool({
+    name: 'yzj_advance_inspect',
+    description: 'Read-only 比对材料 for AI推进 (spec §12). Spreads open items\' goal/background/metrics/recent 事元/legal next stages plus the interrupt / silence / suppression criteria (spec §13). Host does NOT judge semantics — you do, then yzj_advance_feed. mode=review is the 验收辅助 checklist. Patrol five steps: on a schedule wake call yzj_advance_scan(groups=…) first; no new messages → stay silent and stop; new signals → call this with signals=the scan digest, then act per §13 (progress-normal silent feed; interrupt criterion → stageTo=decision-needed; never completed). Never stageTo completed.',
+    parameters: {
+      advanceId: { type: 'string', description: 'Inspect one item; omit to spread every open (not completed) item.' },
+      signals: { type: 'string', description: 'New information to contrast (group messages / minutes excerpt). Empty = scheduled patrol with no new signal yet.' },
+      mode: { type: 'string', enum: ['compare', 'review'], description: 'compare = 核心变量对比 (default); review = 验收辅助, still must not auto-accept.' },
+    },
+    output: yzjToolOutput,
+    timeoutMs: budget.timeoutMs * 3,
+    isConcurrencySafe: () => true,
+    async execute(args) {
+      let binding: AdvanceBinding
+      try {
+        binding = await resolveAdvance(ctx, budget, config, caches, false, holder)
+      } catch (error) {
+        return { content: `(推进看板未开通) ${String((error as Error).message)}`, truncated: false, data: { kind: 'advance-inspect', ready: false } }
+      }
+      let items: YzjAdvanceItem[]
+      try {
+        items = await fetchItems(ctx, budget, binding)
+      } catch (error) {
+        return { content: `yzj advance inspect failed: ${String((error as Error).message)}`, truncated: false, data: {} }
+      }
+      const wanted = (args.advanceId ?? '').trim()
+      const mode = args.mode === 'review' ? 'review' : 'compare'
+      const scoped = wanted === ''
+        ? items.filter(item => item.stage !== 'completed')
+        : items.filter(item => item.advanceId === wanted)
+      if (wanted !== '' && scoped.length === 0) {
+        return { content: `advance: 事项 ${wanted} 不存在；先用 yzj_advance_list 查真实 id，不要猜测`, truncated: false, data: {} }
+      }
+      const subjects: InspectSubject[] = []
+      for (const item of scoped) {
+        let recent: YzjAdvanceEntry[] = []
+        try {
+          const entries = await fetchEntries(ctx, budget, binding, item.advanceId)
+          recent = entries.slice(Math.max(0, entries.length - 5))
+        } catch {
+          recent = []
+        }
+        subjects.push({ item, recent })
+      }
+      const content = buildInspectDigest({ subjects, signals: args.signals ?? '', mode })
+      return {
+        content,
+        truncated: false,
+        data: {
+          kind: 'advance-inspect',
+          ready: true,
+          mode,
+          signals: args.signals ?? '',
+          list: clipJson(subjects.map(row => ({
+            advanceId: row.item.advanceId,
+            title: row.item.title,
+            stage: row.item.stage,
+            next: [...legalNextStages(row.item.stage)],
+          })), { maxChars: budget.maxMetaChars }),
+          library: bindingMeta(binding),
+        } as unknown as JsonValue,
+      }
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'yzj_advance_scan',
+    description: 'Read-only incremental IM scan for AI推进 auto-discovery (spec §14). Host owns the per-group cursor (storage-domain); the model must not pass or invent a msgId cursor. First visit of a group records a baseline and returns no history. Later visits return messages after the cursor, minus self and BOT- senders. Patrol five steps: schedule wake → this tool → no new messages stay silent → new signals → yzj_advance_inspect → feed per §13 (progress-normal silent; interrupt → decision-needed; never completed). groups is required and capped at 8. When the user says 开启巡检, create a root-session schedule_create(every_seconds≥300) whose prompt lists the groups.',
+    parameters: {
+      groups: { type: 'array', required: true, items: { type: 'string' }, description: 'Group ids or names to watch (1–8). Names resolve through im group recent.' },
+      limit: { type: 'number', description: 'Per-group page size 1–20, default 20.' },
+    },
+    output: yzjToolOutput,
+    timeoutMs: budget.timeoutMs * 6,
+    isConcurrencySafe: () => true,
+    async execute(args) {
+      const groups = (args.groups ?? []).map((token: unknown) => String(token).trim()).filter((token: string) => token !== '')
+      if (groups.length === 0) {
+        return { content: 'advance scan: groups must not be empty', truncated: false, data: { kind: 'advance-scan', ready: false } }
+      }
+      if (groups.length > MAX_SCAN_GROUPS) {
+        return { content: `advance scan: at most ${MAX_SCAN_GROUPS} groups`, truncated: false, data: { kind: 'advance-scan', ready: false } }
+      }
+      let result: AdvanceScanResult
+      try {
+        result = await coreScanAdvance(ctx, budget, config, caches, cursors, groups, args.limit, holder)
+      } catch (error) {
+        return { content: `yzj advance scan failed: ${String((error as Error).message)}`, truncated: false, data: {} }
+      }
+      return {
+        content: buildScanDigest(result),
+        truncated: false,
+        data: {
+          kind: 'advance-scan',
+          ready: true,
+          signals: clipJson(result.signals, { maxChars: budget.maxMetaChars }),
+          groups: clipJson(result.groups, { maxChars: budget.maxMetaChars }),
+          openItems: clipJson(result.openItems, { maxChars: budget.maxMetaChars }),
+        } as unknown as JsonValue,
+      }
+    },
+  }))
+
+  ctx.tools.register(defineTool({
     name: 'yzj_advance_create',
     description: 'Create one advancement item (推进事项) on the AI推进 board (auto-provisions the 事项/事元 tables on first use). Prefill the 7 fields from the conversation so the user only confirms (AI 预填). Idempotent: pass advanceId to adopt an existing item. Starts at stage draft; move it with yzj_advance_feed.',
     parameters: {
@@ -1178,7 +1617,7 @@ export function applyAdvanceTools(ctx: Context, budget: YzjToolBudget, config: T
 
   ctx.tools.register(defineTool({
     name: 'yzj_advance_feed',
-    description: 'Feed one 事元 (source unit) into an advancement item — the ONLY mutation channel: goal updates, progress, deviations, decision requests, and stage moves are all append-only entries with host-generated 原值→新值 diffs; the item projection is refolded. Stage moves obey the six-stage machine (draft→running→(decision-needed→updated)*→ready-for-review→completed). running items stay quiet; raise decision-needed only when a real deviation needs the user.',
+    description: 'Feed one 事元 (source unit) into an advancement item — the ONLY mutation channel: goal updates, progress, deviations, decision requests, and stage moves are all append-only entries with host-generated 原值→新值 diffs; the item projection is refolded. Stage moves obey the six-stage machine (draft→running→(decision-needed→updated)*→ready-for-review→completed). Patrol: yzj_advance_scan then yzj_advance_inspect, then this tool. Host forcibly dedupes the same ref/msgId (决策 19) — a second feed with an overlapping refs token returns the existing 事元 and appends nothing. running items stay quiet — do not feed when there is no deviation, and never re-state a fact already on the timeline. Interrupt the user (changeType 偏差 + stageTo decision-needed) only when a criterion fires: the signal contradicts 任务背景, a metric flips off-target or moves away from it, the gap cannot close before the target date, a blocker threatens that date, continuing needs scope/resource/priority trade-offs or crosses a stated red line, or two+ viable paths would change the baseline. Deliverables complete AND metrics N/N AND no open deviation → 验收请求 + ready-for-review. Never stageTo completed (the user taps 确认达到目标). The confirmation card appears ONLY when you rewrite the baseline (goal/metrics/targetDate/assignee) — plain appends and stage moves land silently, the board queue is where the user is found. Min-loop in the topic: contrast 原来的理解 vs 现在的约束, propose options, wait, restate impact, then feed.',
     parameters: {
       advanceId: { type: 'string', required: true, description: 'Stable item id (from yzj_advance_list).' },
       summary: { type: 'string', required: true, description: 'Event description — what happened (timeline row text).' },
@@ -1214,6 +1653,23 @@ export function applyAdvanceTools(ctx: Context, budget: YzjToolBudget, config: T
         }, holder)
       } catch (error) {
         return { content: `yzj advance feed failed: ${String((error as Error).message)}`, truncated: false, data: {} }
+      }
+      if (result.idempotent) {
+        return {
+          content: `同源去重（未追加）：事元 ${result.entry.entryId} → ${result.item.advanceId} 已含 ${result.entry.refs.join(' ')}`,
+          truncated: false,
+          data: {
+            kind: 'advance-feed',
+            idempotentHit: true,
+            advanceId: result.item.advanceId,
+            entryId: result.entry.entryId,
+            changeType: result.entry.changeType,
+            summary: result.entry.summary,
+            refs: result.entry.refs,
+            item: clipJson(itemViewOf(result.item), { maxChars: budget.maxMetaChars }),
+            library: bindingMeta(result.binding),
+          } as unknown as JsonValue,
+        }
       }
       const stageNote = result.stageChanged ? `（阶段 ${result.stageFrom}→${result.item.stage}）` : ''
       const content = [

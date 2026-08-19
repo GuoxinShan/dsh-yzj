@@ -8,9 +8,10 @@
 import { act } from 'react-dom/test-utils'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
-import { YzjAdvancePane, queuesOf, STAGE_LABEL } from '../src/client/advance-pane.tsx'
+import { YzjAdvancePane, queuesOf, STAGE_LABEL, formatScanStatus } from '../src/client/advance-pane.tsx'
 import type { AdvancePaneProps } from '../src/client/advance-pane.tsx'
 import { getAdvanceFeedback, setAdvanceFeedback } from '../src/client/advance-feedback.ts'
+import { getAdvanceAskDraft, setAdvanceAskDraft } from '../src/client/advance-ask.ts'
 import { getWorkbenchDomain, setWorkbenchDomain } from '../src/client/workbench-domain.ts'
 
 type Rpc = { ok: true; value: unknown } | { ok: false; error: { message: string } }
@@ -42,6 +43,7 @@ function mountPane(config: {
   ready?: boolean
   items?: Record<string, unknown>[]
   detail?: { item: Record<string, unknown>; entries: Record<string, unknown>[]; entryTotal?: number; sources?: Record<string, unknown>[] }
+  scan?: { scannedAt: number | null; found: number }
 }): Face {
   const container = document.createElement('div')
   document.body.appendChild(container)
@@ -88,6 +90,10 @@ function mountPane(config: {
         ensured.count += 1
         return { ok: true, value: { ready: true, library: { link: 'https://example/board' }, items: [] } } as Rpc
       },
+      advanceScanState: async () => ({
+        ok: true,
+        value: config.scan ?? { scannedAt: null, found: 0 },
+      }) as Rpc,
     },
   }
   act(() => {
@@ -125,9 +131,17 @@ describe('queuesOf', () => {
   })
 })
 
+describe('formatScanStatus', () => {
+  it('renders 尚未巡检 until a patrol has run', () => {
+    expect(formatScanStatus(null, 0)).toBe('尚未巡检')
+    expect(formatScanStatus(Date.parse('2026-08-19T12:34:00+08:00'), 3)).toMatch(/上次巡检 \d{2}:\d{2} · 本轮发现 3 条/)
+  })
+})
+
 describe('YzjAdvancePane', () => {
   afterEach(() => {
     setAdvanceFeedback(null)
+    setAdvanceAskDraft(null)
     setWorkbenchDomain('im')
   })
 
@@ -152,6 +166,24 @@ describe('YzjAdvancePane', () => {
     expect(face.container.querySelector('[data-testid="yzj-advance-queue-review"]')?.textContent).toContain('只有业务标准满足后才进入这里')
     expect(face.container.querySelector('[data-testid="yzj-advance-queue-watch"]')?.textContent).toContain('安静推进')
     act(() => { face.root.unmount() })
+  })
+
+  it('shows the patrol status line on the queue head', async () => {
+    const empty = mountPane({
+      items: [item({ advanceId: 'A-3', stage: 'running', title: '安静推进' })],
+      detail: { item: item({ advanceId: 'A-3', stage: 'running' }), entries: [] },
+    })
+    await settle()
+    expect(empty.container.querySelector('[data-testid="yzj-advance-scan-status"]')?.textContent).toBe('尚未巡检')
+    act(() => { empty.root.unmount() })
+    const found = mountPane({
+      items: [item({ advanceId: 'A-3', stage: 'running', title: '安静推进' })],
+      detail: { item: item({ advanceId: 'A-3', stage: 'running' }), entries: [] },
+      scan: { scannedAt: Date.parse('2026-08-19T12:34:00+08:00'), found: 2 },
+    })
+    await settle()
+    expect(found.container.querySelector('[data-testid="yzj-advance-scan-status"]')?.textContent).toMatch(/上次巡检 \d{2}:\d{2} · 本轮发现 2 条/)
+    act(() => { found.root.unmount() })
   })
 
   it('selects the decision item first and shows the decision area with judge verbs', async () => {
@@ -274,6 +306,25 @@ describe('YzjAdvancePane', () => {
       goal: '进入试运行',
       stage: 'running',
     })
+    act(() => { face.root.unmount() })
+  })
+
+  it('请 AI 验收 writes the ask draft and switches to 对话 without sending', async () => {
+    setWorkbenchDomain('advance')
+    const face = mountPane({
+      items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行', goal: '进入试运行' })],
+      detail: { item: item({ advanceId: 'A-1', stage: 'running', title: '试运行', goal: '进入试运行' }), entries: [] },
+    })
+    await settle()
+    const button = face.container.querySelector('[data-testid="yzj-advance-review"]') as HTMLButtonElement
+    expect(button).not.toBeNull()
+    await act(async () => { button.click(); await Promise.resolve() })
+    expect(getWorkbenchDomain()).toBe('im')
+    const draft = getAdvanceAskDraft()
+    expect(draft?.advanceId).toBe('A-1')
+    expect(draft?.title).toBe('试运行')
+    expect(draft?.text).toContain('yzj_advance_inspect')
+    expect(draft?.text).toContain('不要 stageTo=completed')
     act(() => { face.root.unmount() })
   })
 })

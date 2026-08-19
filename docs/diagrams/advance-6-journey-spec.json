@@ -1,0 +1,214 @@
+{
+  "layout": "graph",
+  "style": "paper",
+  "animation": "flow",
+  "canvas": {
+    "fps": 20,
+    "frames": 41
+  },
+  "signature": "@dsh-yzj",
+  "title": {
+    "prefix": "AI推进 ·",
+    "highlight": "用户旅程",
+    "subtitle": "@灵基 → 弹卡立项 → 意图线程订阅 → 每日 Dream 筛事元 → 偏差提示到验收"
+  },
+  "direction": "down",
+  "footer": "意图线程 = 推进订阅的数据源（群/知识库/纪要/待办/AI产物，可多条） · 事元 = 线程上被采纳的 event · completed 只经用户验收",
+  "nodes": [
+    {
+      "id": "u1",
+      "label": "群里 @灵基",
+      "body": "帮我分析总结\n最近的聊天记录",
+      "icon": "message",
+      "x": 600,
+      "y": 180
+    },
+    {
+      "id": "a1",
+      "label": "灵基读上下文",
+      "body": "看到 PRD / 文件\n识别出可跟踪的事",
+      "icon": "scan",
+      "x": 600,
+      "y": 370
+    },
+    {
+      "id": "d1",
+      "label": "创建推进?",
+      "kind": "decision",
+      "body": "弹出卡片询问",
+      "x": 600,
+      "y": 560
+    },
+    {
+      "id": "no",
+      "label": "不建",
+      "kind": "terminal",
+      "body": "",
+      "icon": "wait",
+      "accent": "muted",
+      "x": 280,
+      "y": 560
+    },
+    {
+      "id": "c1",
+      "label": "创建推进",
+      "body": "事项进看板\n本群自动挂为线程①",
+      "icon": "plan",
+      "accent": "green",
+      "x": 880,
+      "y": 700
+    },
+    {
+      "id": "m1",
+      "label": "手动喂 / 关联",
+      "body": "关联渠道=订阅\n单条直喂=事元",
+      "icon": "ingest",
+      "x": 940,
+      "y": 920
+    },
+    {
+      "id": "threads",
+      "label": "意图线程 ×N",
+      "body": "订阅的数据源\n每源一条线程",
+      "icon": "queue",
+      "x": 600,
+      "y": 920
+    },
+    {
+      "id": "dream",
+      "label": "每日 Dream",
+      "body": "取各线程新消息\nLLM+规则筛有价值",
+      "icon": "brain",
+      "accent": "purple",
+      "x": 600,
+      "y": 1120
+    },
+    {
+      "id": "e1",
+      "label": "事元 Ledger",
+      "body": "被采纳的 event\nappend-only 可溯源",
+      "icon": "db",
+      "x": 600,
+      "y": 1320
+    },
+    {
+      "id": "d2",
+      "label": "偏差 / 产物齐?",
+      "kind": "decision",
+      "body": "对照目标与指标",
+      "x": 600,
+      "y": 1510
+    },
+    {
+      "id": "quiet",
+      "label": "静默继续",
+      "kind": "terminal",
+      "body": "",
+      "icon": "wait",
+      "accent": "muted",
+      "x": 320,
+      "y": 1650
+    },
+    {
+      "id": "n1",
+      "label": "建议提示用户",
+      "body": "待我决定 / 待我验收\n+ IM 卡片",
+      "icon": "emit",
+      "accent": "amber",
+      "x": 880,
+      "y": 1650
+    },
+    {
+      "id": "u2",
+      "label": "用户拍板",
+      "body": "确认 / 修改 / 忽略\n判断也记事元",
+      "icon": "human",
+      "x": 600,
+      "y": 1810
+    },
+    {
+      "id": "end",
+      "label": "完成验收",
+      "kind": "terminal",
+      "icon": "success",
+      "accent": "green",
+      "x": 600,
+      "y": 1980
+    }
+  ],
+  "edges": [
+    {
+      "from": "u1",
+      "to": "a1"
+    },
+    {
+      "from": "a1",
+      "to": "d1"
+    },
+    {
+      "from": "d1",
+      "to": "c1",
+      "label": "确认创建"
+    },
+    {
+      "from": "d1",
+      "to": "no",
+      "label": "算了"
+    },
+    {
+      "from": "c1",
+      "to": "threads",
+      "label": "线程① = 本群"
+    },
+    {
+      "from": "m1",
+      "to": "threads",
+      "label": "关联渠道"
+    },
+    {
+      "from": "m1",
+      "to": "e1",
+      "label": "单条直喂"
+    },
+    {
+      "from": "threads",
+      "to": "dream",
+      "label": "每日取增量"
+    },
+    {
+      "from": "dream",
+      "to": "e1",
+      "label": "有价值 → 事元"
+    },
+    {
+      "from": "e1",
+      "to": "d2",
+      "label": "基于事元出建议"
+    },
+    {
+      "from": "d2",
+      "to": "quiet",
+      "label": "无偏差"
+    },
+    {
+      "from": "d2",
+      "to": "n1",
+      "label": "命中判据 / 产物齐"
+    },
+    {
+      "from": "n1",
+      "to": "u2"
+    },
+    {
+      "from": "u2",
+      "to": "e1",
+      "kind": "loop",
+      "label": "判断回流事元"
+    },
+    {
+      "from": "u2",
+      "to": "end",
+      "label": "确认达到目标"
+    }
+  ]
+}

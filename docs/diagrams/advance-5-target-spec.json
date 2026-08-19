@@ -1,0 +1,228 @@
+{
+  "layout": "swimlane",
+  "style": "paper",
+  "animation": "flow",
+  "title": {
+    "prefix": "灵基终态 ·",
+    "highlight": "推进 + Event Loop",
+    "subtitle": "dsh-yzj 是 MVP 原型；我们做推进、Brain、IM 打通，其余骑灵基已有"
+  },
+  "signature": "@dsh-yzj",
+  "lanes": [
+    {
+      "title": "灵基 · 已有",
+      "subtitle": "平台提供 · 不重做",
+      "accent": "green",
+      "steps": [
+        {
+          "id": "im",
+          "title": "IM 群/话题",
+          "icon": "message",
+          "icon_style": "illustrated"
+        },
+        {
+          "id": "facts",
+          "title": "工作现场事实",
+          "icon": "clipboard",
+          "icon_style": "illustrated"
+        },
+        {
+          "id": "assistant",
+          "title": "工作台·助手",
+          "icon": "eye",
+          "icon_style": "illustrated"
+        }
+      ]
+    },
+    {
+      "title": "IM↔灵基 打通 · 做",
+      "subtitle": "robot 通道 · ack-then-push",
+      "steps": [
+        {
+          "id": "inbound",
+          "title": "入站 WS",
+          "icon": "receive",
+          "icon_style": "illustrated"
+        },
+        {
+          "id": "outbound",
+          "title": "出站推送",
+          "icon": "emit",
+          "icon_style": "illustrated"
+        },
+        {
+          "id": "card25",
+          "title": "type-25 确认",
+          "icon": "check",
+          "icon_style": "illustrated"
+        },
+        {
+          "id": "deeplink",
+          "title": "cloudhub 跳回",
+          "icon": "globe",
+          "icon_style": "illustrated"
+        }
+      ]
+    },
+    {
+      "title": "AI 推进 · 做",
+      "subtitle": "event-sourced 推进事项",
+      "steps": [
+        {
+          "id": "ledger",
+          "title": "事元 Ledger",
+          "icon": "db",
+          "icon_style": "illustrated"
+        },
+        {
+          "id": "stage",
+          "title": "六态·增量感应门",
+          "icon": "decision",
+          "icon_style": "illustrated"
+        },
+        {
+          "id": "gate",
+          "title": "确认卡门禁",
+          "icon": "shield",
+          "icon_style": "illustrated"
+        },
+        {
+          "id": "board",
+          "title": "推进看板",
+          "icon": "queue",
+          "icon_style": "illustrated"
+        }
+      ]
+    },
+    {
+      "title": "Brain · 做",
+      "subtitle": "双态引擎 Work/Dream",
+      "steps": [
+        {
+          "id": "rules",
+          "title": "Signal Rules",
+          "icon": "dispatch",
+          "icon_style": "illustrated"
+        },
+        {
+          "id": "eu",
+          "title": "EU·Scheduler",
+          "icon": "gear",
+          "icon_style": "illustrated"
+        },
+        {
+          "id": "lanes",
+          "title": "Work/Dream",
+          "icon": "brain",
+          "icon_style": "illustrated"
+        },
+        {
+          "id": "memory",
+          "title": "记忆索引",
+          "icon": "vector-db",
+          "icon_style": "illustrated"
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "im",
+      "to": "inbound",
+      "label": "消息即信号"
+    },
+    {
+      "from": "inbound",
+      "to": "ledger",
+      "label": "登记事元"
+    },
+    {
+      "from": "facts",
+      "to": "ledger",
+      "label": "事件总线"
+    },
+    {
+      "from": "assistant",
+      "to": "lanes",
+      "label": "召唤"
+    },
+    {
+      "from": "ledger",
+      "to": "rules",
+      "label": "取出来比对"
+    },
+    {
+      "from": "rules",
+      "to": "eu",
+      "label": "fan-out"
+    },
+    {
+      "from": "eu",
+      "to": "lanes",
+      "label": "双节奏"
+    },
+    {
+      "from": "lanes",
+      "to": "memory",
+      "label": "固化·④取材"
+    },
+    {
+      "from": "memory",
+      "to": "rules",
+      "label": "召回注入",
+      "accent": "purple"
+    },
+    {
+      "from": "lanes",
+      "to": "stage",
+      "label": "阶段"
+    },
+    {
+      "from": "stage",
+      "to": "gate",
+      "label": "改基准才卡"
+    },
+    {
+      "from": "gate",
+      "to": "ledger",
+      "label": "回流 · loop",
+      "accent": "purple"
+    },
+    {
+      "from": "ledger",
+      "to": "board",
+      "label": "投影折叠"
+    },
+    {
+      "from": "board",
+      "to": "card25",
+      "label": "按钮进群"
+    },
+    {
+      "from": "card25",
+      "to": "im",
+      "label": "人在 IM 批准"
+    },
+    {
+      "from": "lanes",
+      "to": "outbound",
+      "label": "建议推群"
+    },
+    {
+      "from": "outbound",
+      "to": "im",
+      "label": "推进卡推送"
+    },
+    {
+      "from": "board",
+      "to": "deeplink",
+      "label": "来源跳转"
+    },
+    {
+      "from": "deeplink",
+      "to": "facts",
+      "label": "跳回原文"
+    }
+  ],
+  "footer": "MVP 映射：bridge→开放API直连 · tool-yzj→推进域服务 · ui-yzj页签→灵基推进页 · memory-yzj→记忆服务 · harness schedule→Brain Scheduler · robot-yzj→IM打通层"
+}
