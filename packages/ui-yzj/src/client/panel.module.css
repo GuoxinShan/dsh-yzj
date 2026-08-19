@@ -408,14 +408,6 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-.item[draggable='true'] {
-  cursor: grab;
-}
-
-.item[draggable='true']:active {
-  cursor: grabbing;
-}
-
 .itemTitle {
   display: flex;
   align-items: center;
@@ -486,7 +478,7 @@
 
 /* ── Reference-style IM list (prototype overlay.html) ────────────────── */
 
-/* One message row: [grip] [avatar] [meta + content] — no bubbles. */
+/* One message row: [avatar] [meta + content] — no bubbles. */
 .msgRow {
   position: relative;
   display: flex;
@@ -499,10 +491,6 @@
 
 .msgRow:hover {
   background: var(--dsw-alias-interactive-bg-hover);
-}
-
-.msgRow[draggable='true'] {
-  cursor: grab;
 }
 
 .msgRowSystem {
@@ -995,23 +983,7 @@
   justify-content: center;
 }
 
-/* ── Message grip + anchor toast ─────────────────────────────────────── */
-
-.grip {
-  position: absolute;
-  left: 6px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--dsw-alias-label-tertiary);
-  cursor: grab;
-  display: inline-flex;
-  opacity: 0;
-  transition: opacity 120ms var(--ds-ease-in-out, ease);
-}
-
-.msgItem:hover .grip {
-  opacity: 1;
-}
+/* ── Anchor toast ────────────────────────────────────────────────────── */
 
 .panelToast {
   margin: 2px 4px 6px;
@@ -1022,61 +994,6 @@
   text-align: center;
   padding: 8px 12px;
   border-radius: 999px;
-}
-
-/* Transient "已插入到输入框" confirmation after a panel-wide drop. */
-.dropToast {
-  position: absolute;
-  left: 50%;
-  bottom: 14px;
-  transform: translateX(-50%);
-  z-index: 210;
-  background: var(--dsw-static-neutral-bluish-850);
-  color: var(--dsw-alias-label-primary-foreground);
-  font-size: 12px;
-  line-height: 18px;
-  padding: 6px 14px;
-  border-radius: 999px;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 0.2);
-  white-space: nowrap;
-  animation: bandIn 150ms var(--ds-ease-out, ease-out);
-}
-
-/* Drop decoration while a yzj drag is in flight (official pattern:
-   pointer-inert — the drop is handled at the document level, so nothing on
-   the page is blocked and the chat panel stays fully interactive). */
-.dropOverlay {
-  position: fixed;
-  inset: 0;
-  z-index: 500;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgb(46 111 242 / 0.06);
-  pointer-events: none;
-}
-
-.dropOverlay::before {
-  content: '';
-  position: absolute;
-  inset: 14px;
-  border: 2px dashed var(--dsw-static-deepseek-500);
-  border-radius: 14px;
-  pointer-events: none;
-}
-
-.dropOverlayHint {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 22px;
-  border-radius: 999px;
-  background: var(--dsw-alias-bg-base);
-  color: var(--dsw-static-deepseek-600);
-  font-size: 14px;
-  font-weight: 600;
-  box-shadow: 0 12px 32px rgb(0 0 0 / 0.18);
 }
 
 /* ── Complete IM: avatars, senders, media, link cards ────────────────── */

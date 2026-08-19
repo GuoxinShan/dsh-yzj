@@ -1,7 +1,9 @@
 /**
  * Align the harness conversation tab ring with v2.0 views.
- * Group room occupies the pane (select 「群房间」, hide the ring).
- * Topic / private chats keep official Chat and hide the unused 群房间 tab.
+ * Group room occupies the pane (select 「群聊」, hide the ring).
+ * Topic / private / ordinary chats must select 「对话」 (writes view=chat)
+ * and hide the unused 群聊 tab. Hiding the tab alone leaves a persisted
+ * `view=yzj-home` mounted (pitfall-022).
  *
  * pitfall-018: harness `.tabs { display:flex }` beats `[hidden]`; hide with
  * `display:none !important` and re-run when the tablist mounts late.
@@ -9,9 +11,21 @@
 
 export type YzjViewKind = 'room' | 'topic' | 'unbound'
 
+/** View kind follows the session-id prefix only — binding cannot promote. */
+export function yzjViewKindFromSessionId(sessionId: string): YzjViewKind {
+  if (sessionId.startsWith('yzj-home-')) return 'room'
+  if (sessionId.startsWith('yzj-topic-')) return 'topic'
+  return 'unbound'
+}
+
 function roomTabOf(root: ParentNode): HTMLElement | undefined {
   return [...root.querySelectorAll<HTMLElement>('[role="tab"]')]
-    .find(tab => tab.textContent?.trim() === '群房间')
+    .find(tab => tab.textContent?.trim() === '群聊')
+}
+
+function chatTabOf(root: ParentNode): HTMLElement | undefined {
+  return [...root.querySelectorAll<HTMLElement>('[role="tab"]')]
+    .find(tab => tab.textContent?.trim() === '对话')
 }
 
 function hideTablist(tablist: HTMLElement | null | undefined): void {
@@ -32,11 +46,13 @@ function showTablist(tablist: HTMLElement | null | undefined): void {
 
 /**
  * Sync the visible conversation tab ring to `kind`. Safe to call often:
- * clicks only when the room tab is not already selected.
+ * clicks only when the target tab is not already selected.
  */
 export function syncYzjViewRing(kind: YzjViewKind): void {
   const roomTab = roomTabOf(document)
+  const chatTab = chatTabOf(document)
   const tablist = roomTab?.closest<HTMLElement>('[role="tablist"]')
+    ?? chatTab?.closest<HTMLElement>('[role="tablist"]')
   if (kind === 'room') {
     if (roomTab !== undefined && roomTab.getAttribute('aria-selected') !== 'true') {
       roomTab.click()
@@ -47,6 +63,9 @@ export function syncYzjViewRing(kind: YzjViewKind): void {
   }
   showTablist(tablist)
   if (roomTab !== undefined) roomTab.hidden = true
+  if (chatTab !== undefined && chatTab.getAttribute('aria-selected') !== 'true') {
+    chatTab.click()
+  }
 }
 
 /**

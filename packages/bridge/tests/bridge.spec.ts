@@ -104,6 +104,25 @@ describe('yzjBridge.run', () => {
       await expect(bridge.check(5_000)).resolves.toBe(true)
     },
   )
+
+  it('start() returns immediately and a second identical argv is a no-op', async () => {
+    const bridge = bridgeWith()
+    const began = Date.now()
+    try {
+      const first = await bridge.start(fakeArgs(['slow']), { timeoutMs: 5_000 })
+      expect(first.alreadyRunning).toBe(false)
+      expect(Date.now() - began).toBeLessThan(1_000)
+      const second = await bridge.start(fakeArgs(['slow']), { timeoutMs: 5_000 })
+      expect(second.alreadyRunning).toBe(true)
+    } finally {
+      bridge.stopAll()
+    }
+  })
+
+  it('start() rejects with YzjSpawnError when the binary cannot be launched', async () => {
+    const bridge = new YzjBridge(new Context(), { binary: '/nonexistent/yzj-cli' })
+    await expect(bridge.start(['auth', 'login'])).rejects.toBeInstanceOf(YzjSpawnError)
+  })
 })
 
 describe('resolveNpmLauncher', () => {

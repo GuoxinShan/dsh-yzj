@@ -103,7 +103,15 @@ describe('YzjTopicDrawer', () => {
           onJumpOrigin={() => undefined}
           homeTopicLens={async () => ({
             ok: true,
-            value: { bubbles: [{ id: 'h0', role: 'user', text: '旧问题', time: 1 }, { id: 't0', role: 'assistant', text: '旧回答', time: 2 }] },
+            value: {
+              bubbles: [
+                { id: 'h0', role: 'user', text: '旧问题', time: 1 },
+                {
+                  id: 't0', role: 'assistant', text: '旧回答', time: 2,
+                  artifacts: [{ type: 'DOC', name: '纪要.md' }],
+                },
+              ],
+            },
           })}
           homeTopicAsk={async (_id, text) => {
             asked.push(text)
@@ -115,6 +123,8 @@ describe('YzjTopicDrawer', () => {
     await act(async () => { await Promise.resolve() })
     expect(container.textContent).toContain('旧问题')
     expect(container.textContent).toContain('旧回答')
+    expect(container.textContent).toContain('纪要.md')
+    expect(container.querySelector('[data-testid="yzj-lens-artifact-纪要.md"]')).not.toBeNull()
     expect(container.textContent).not.toContain('透镜只作对照')
     const input = container.querySelector('[aria-label="问助手"]') as HTMLInputElement
     const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set

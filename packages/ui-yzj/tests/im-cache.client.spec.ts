@@ -4,7 +4,9 @@
  * the live `/yzj contact-get` answers `{ list: [...] }`, not a bare array.
  */
 import { describe, expect, it } from 'vitest'
-import { resolveSenders, senderNameOf, senderPhotoOf } from '../src/client/im-cache.ts'
+import {
+  clearFileDataCache, peekFileData, resolveFileData, resolveSenders, senderNameOf, senderPhotoOf,
+} from '../src/client/im-cache.ts'
 
 const ok = (value: unknown): { ok: true; value: unknown } => ({ ok: true, value })
 
@@ -36,5 +38,22 @@ describe('resolveSenders', () => {
     })
     expect(found).toEqual({})
     expect(senderNameOf('env-u3')).toBe('')
+  })
+})
+
+describe('peekFileData', () => {
+  it('returns the in-session data URL after resolveFileData', async () => {
+    clearFileDataCache()
+    expect(peekFileData('fid-1')).toBeUndefined()
+    const dataUrl = 'data:image/png;base64,abc'
+    await resolveFileData('fid-1', {
+      fetchFileData: async () => ({ ok: true, value: { dataUrl } }),
+    })
+    expect(peekFileData('fid-1')).toBe(dataUrl)
+    const again = await resolveFileData('fid-1', {
+      fetchFileData: async () => ({ ok: true, value: { dataUrl: 'data:image/png;base64,other' } }),
+    })
+    expect(again).toBe(dataUrl)
+    clearFileDataCache()
   })
 })

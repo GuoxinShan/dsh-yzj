@@ -12,13 +12,16 @@ import type { ConnectionRpcHandler } from '@deepseek-ai/dsh-client-connection'
 import type {} from '@dsh-yzj/bridge'
 import type {} from '@dsh-yzj/tool-yzj'
 import { applyWriteGate, type YzjWriteRecord } from './write-gate.ts'
-import { openBoundHome, openTopicHome, type HomeOpenFace } from './home-open.ts'
+import { openBoundHome, openTopicHome, isPlaceholderRoomTitle, topicAgentRoute, topicAgentComposition, type HomeOpenFace } from './home-open.ts'
 import {
-  backfillBoundLog, fusedSnapshot, groupSpaceSnapshot, handoffToGroup, homeIoFrom, parseImSend, roomSnapshot, sendImAndLog,
+  backfillBoundLog, fusedSnapshot, groupSpaceSnapshot, handoffToGroup, homeIoFrom, parseImSend, roomSnapshot, roomSnapshotForGroup, sendImAndLog,
   sessionEventsOf, topicLensBubbles, askTopicAssistant,
 } from './bound-io.ts'
 import { digestCandidates } from './handoff-digest.ts'
 import { attachYzjSession, ensureYzjHostWorkspace } from './yzj-cwd.ts'
+import { applyTopicDeliver } from './topic-deliver.ts'
+import { parseContactUser } from './contact-parse.ts'
+import { collectCalendarEvents } from '@dsh-yzj/tool-yzj/src/calendar-range.ts'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -60,6 +63,49 @@ function stringField(payload: unknown, key: string): string | undefined {
   return typeof value === 'string' && value !== '' ? value : undefined
 }
 
+/** Cached groupId → name map from `im group recent` (60s TTL; the client polls home-nav every 2s). */
+let recentNamesCache: { at: number; map: Map<string, string> } | undefined
+
+/** Test helper: drop the recent-names cache so specs start cold. */
+export function clearRecentNamesCache(): void {
+  recentNamesCache = undefined
+}
+
+/**
+ * Page `im group recent` (CLI caps --limit at 20) into a name map. Robot-bound
+ * rooms created outside this profile never pinned a `session/title` here, so
+ * the workbench list fell back to identical 「群聊」 ghost rows — this fills
+ * their real names. Best-effort: bridge failures keep the stale cache.
+ */
+async function recentGroupNames(ctx: Context): Promise<Map<string, string>> {
+  if (recentNamesCache !== undefined && Date.now() - recentNamesCache.at < 60_000) return recentNamesCache.map
+  const map = new Map(recentNamesCache?.map ?? [])
+  for (let page = 1; page <= 5; page += 1) {
+    let result
+    try {
+      result = await ctx.yzjBridge.run(['im', 'group', 'recent', '--limit', '20', '--page', String(page)])
+    } catch {
+      break
+    }
+    if (!result.ok) break
+    const json = result.json
+    const rows = Array.isArray(json) ? json : (() => {
+      const rec = typeof json === 'object' && json !== null ? json as Record<string, unknown> : {}
+      const inner = typeof rec.data === 'object' && rec.data !== null ? rec.data as Record<string, unknown> : {}
+      return [rec.list, rec.data, inner.list].find(Array.isArray) ?? []
+    })()
+    for (const row of rows) {
+      const rec = typeof row === 'object' && row !== null ? row as Record<string, unknown> : {}
+      const id = typeof rec.groupId === 'string' ? rec.groupId : ''
+      const name = typeof rec.groupName === 'string' ? rec.groupName.trim() : ''
+      if (id !== '' && name !== '') map.set(id, name)
+    }
+    if (rows.length < 20) break
+  }
+  recentNamesCache = { at: Date.now(), map }
+  return map
+}
+
 /** Validate a non-negative integer field of an RPC payload. */
 function numberField(payload: unknown, key: string): number | undefined {
   const value = typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>)[key] : undefined
@@ -74,6 +120,8 @@ function clampLimit(value: unknown): number | undefined {
 
 /** Hard CLI cap for im `--limit` (verified against yzj-cli 0.x). */
 const CLI_LIMIT_MAX = 20
+/** Keep `yzj-cli auth login` alive long enough for the browser OAuth. */
+const AUTH_LOGIN_TIMEOUT_MS = 600_000
 
 /** Structural agents face for home-open / handoff (never import dsh-session). */
 function agentsFace(ctx: Context): {
@@ -82,21 +130,45 @@ function agentsFace(ctx: Context): {
     inject?: (message: unknown) => void
     followup?: (message: unknown) => void
   } | undefined
-  resume: (opts: { resumeSessionId: string }) => Promise<unknown>
-  create: (opts: { sessionId: string; meta?: { cwd: string } }) => Promise<unknown>
+  resume: (opts: {
+    resumeSessionId: string
+    agentOptions?: { provider: string; model: string }
+    setup?: (agentCtx: unknown) => void | Promise<void>
+  }) => Promise<unknown>
+  create: (opts: {
+    sessionId: string
+    meta?: { cwd: string; agentPreset?: string }
+    agentOptions?: { provider: string; model: string }
+    setup?: (agentCtx: unknown) => void | Promise<void>
+  }) => Promise<unknown>
 } | undefined {
   const agentsRaw = ctx.get('agents') as {
     get: (id: never) => unknown
-    resume: (opts: { resumeSessionId: never }) => Promise<unknown>
-    create: (opts: { sessionId: never; meta?: { cwd: string } }) => Promise<unknown>
+    resume: (opts: {
+      resumeSessionId: never
+      agentOptions?: { provider: string; model: string }
+      setup?: (agentCtx: unknown) => void | Promise<void>
+    }) => Promise<unknown>
+    create: (opts: {
+      sessionId: never
+      meta?: { cwd: string; agentPreset?: string }
+      agentOptions?: { provider: string; model: string }
+      setup?: (agentCtx: unknown) => void | Promise<void>
+    }) => Promise<unknown>
   } | undefined
   if (agentsRaw === undefined) return undefined
   return {
     get: id => agentsRaw.get(id as never) as ReturnType<NonNullable<ReturnType<typeof agentsFace>>['get']>,
-    resume: opts => agentsRaw.resume({ resumeSessionId: opts.resumeSessionId as never }),
+    resume: opts => agentsRaw.resume({
+      resumeSessionId: opts.resumeSessionId as never,
+      ...(opts.agentOptions === undefined ? {} : { agentOptions: opts.agentOptions }),
+      ...(opts.setup === undefined ? {} : { setup: opts.setup }),
+    }),
     create: opts => agentsRaw.create({
       sessionId: opts.sessionId as never,
       ...(opts.meta === undefined ? {} : { meta: opts.meta }),
+      ...(opts.agentOptions === undefined ? {} : { agentOptions: opts.agentOptions }),
+      ...(opts.setup === undefined ? {} : { setup: opts.setup }),
     }),
   }
 }
@@ -189,7 +261,7 @@ export interface YzjWriteGateFace {
 
 /**
  * Build the `/yzj` RPC handler: `workspaces`, `docs`, `events`, `groups`,
- * `messages`, `whoami`, `search`, `doc-get`, `doc-blocks`, `sheet-get`,
+ * `messages`, `whoami`, `auth-status`, `auth-login`, `search`, `doc-get`, `doc-blocks`, `sheet-get`,
  * `workspace-get`, `event-get`, `contact-get`, `write-list`, and
  * `write-decide`, `home-open` / `home-send` / `home-fused` / `home-nav` / `home-handoff` /
  * `home-topic-lens` / `home-topic-ask`
@@ -219,7 +291,26 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
         const start = stringField(payload, 'start')
         const end = stringField(payload, 'end')
         if (start === undefined || end === undefined) return internalError('events endpoint requires start and end payloads')
-        return bridgeResult(ctx, 'calendar event list', ['calendar', 'event', 'list', '--start', start, '--end', end])
+        const collected = await collectCalendarEvents(start, end, async (from, to) => {
+          let result
+          try {
+            result = await ctx.yzjBridge.run(['calendar', 'event', 'list', '--start', from, '--end', to])
+          } catch (error) {
+            return {
+              ok: false,
+              errorText: `calendar event list failed: ${String(error)}；请确认已安装 yzj-cli 并完成 \`yzj-cli auth login\``,
+            }
+          }
+          if (!result.ok) {
+            const detail = result.stderr.trim() === ''
+              ? `calendar event list failed (exit ${result.exitCode})`
+              : result.stderr.trim()
+            return { ok: false, errorText: detail }
+          }
+          return result.json === undefined ? { ok: true } : { ok: true, json: result.json }
+        })
+        if (!collected.ok) return internalError(collected.errorText)
+        return { ok: true, value: collected.events }
       }
       case 'groups': {
         const command = ['im', 'group', 'recent']
@@ -247,6 +338,40 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
       }
       case 'whoami': {
         return bridgeResult(ctx, 'contact user get', ['contact', 'user', 'get'])
+      }
+      case 'auth-status': {
+        // Always 200: logged-out is a state, not an RPC failure. The workbench
+        // banner keys off `loggedIn` rather than matching stderr strings.
+        let result
+        try {
+          result = await ctx.yzjBridge.run(['contact', 'user', 'get'], { timeoutMs: 10_000 })
+        } catch (error) {
+          return {
+            ok: true,
+            value: { loggedIn: false, name: '', openId: '', reason: String(error) },
+          }
+        }
+        if (!result.ok) {
+          const reason = result.stderr.trim() === ''
+            ? `contact user get failed (exit ${result.exitCode})`
+            : result.stderr.trim()
+          return { ok: true, value: { loggedIn: false, name: '', openId: '', reason } }
+        }
+        const user = parseContactUser(result.json)
+        return { ok: true, value: { loggedIn: true, name: user.name, openId: user.openId, reason: '' } }
+      }
+      case 'auth-login': {
+        // User-clicked: spawn `yzj-cli auth login` and return immediately so
+        // the CLI can open the system browser. Tokens stay in the OS keychain.
+        if (typeof ctx.yzjBridge.start !== 'function') {
+          return internalError('auth-login: yzjBridge.start 不可用')
+        }
+        try {
+          const handle = await ctx.yzjBridge.start(['auth', 'login'], { timeoutMs: AUTH_LOGIN_TIMEOUT_MS })
+          return { ok: true, value: { started: true, alreadyRunning: handle.alreadyRunning } }
+        } catch (error) {
+          return internalError(`打开 yzj-cli 登录失败: ${String(error)}；请确认已安装 yzj-cli`)
+        }
       }
       case 'doc-get': {
         const id = stringField(payload, 'id')
@@ -447,6 +572,80 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
           return { ok: true, value: await todo.toggle(todoId) }
         } catch (error) {
           return internalError(`todo-toggle failed: ${String(error)}`)
+        }
+      }
+      case 'advance-state': {
+        // AI推进 board snapshot over the shared yzjAdvance core (tool-yzj).
+        const advance = ctx.get('yzjAdvance')
+        if (advance === undefined) return internalError('advance-state: yzjAdvance 服务不可用（tool-yzj 未挂载）')
+        try {
+          return { ok: true, value: await advance.state() }
+        } catch (error) {
+          return internalError(`advance-state failed: ${String(error)}`)
+        }
+      }
+      case 'advance-get': {
+        const advance = ctx.get('yzjAdvance')
+        if (advance === undefined) return internalError('advance-get: yzjAdvance 服务不可用（tool-yzj 未挂载）')
+        const advanceId = stringField(payload, 'advanceId')
+        if (advanceId === undefined) return internalError('advance-get endpoint requires an advanceId payload')
+        try {
+          return { ok: true, value: await advance.get(advanceId, numberField(payload, 'entryOffset'), numberField(payload, 'entryLimit')) }
+        } catch (error) {
+          return internalError(`advance-get failed: ${String(error)}`)
+        }
+      }
+      case 'advance-create': {
+        // Start-modal direct write = the user's own will (D9): no confirm card.
+        const advance = ctx.get('yzjAdvance')
+        if (advance === undefined) return internalError('advance-create: yzjAdvance 服务不可用（tool-yzj 未挂载）')
+        const title = stringField(payload, 'title')
+        if (title === undefined) return internalError('advance-create endpoint requires a title payload')
+        const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
+        const rawTags = record.tags
+        const tags = Array.isArray(rawTags)
+          ? rawTags.filter((item): item is string => typeof item === 'string')
+          : []
+        try {
+          return {
+            ok: true,
+            value: await advance.create({
+              title,
+              goal: stringField(payload, 'goal'),
+              background: stringField(payload, 'background'),
+              metrics: stringField(payload, 'metrics'),
+              assignee: stringField(payload, 'assignee'),
+              targetDate: stringField(payload, 'targetDate'),
+              tags,
+            }),
+          }
+        } catch (error) {
+          return internalError(`advance-create failed: ${String(error)}`)
+        }
+      }
+      case 'advance-judge': {
+        // Panel judge verbs = user-direct writes landing as user 事元 (D9).
+        const advance = ctx.get('yzjAdvance')
+        if (advance === undefined) return internalError('advance-judge: yzjAdvance 服务不可用（tool-yzj 未挂载）')
+        const advanceId = stringField(payload, 'advanceId')
+        const action = stringField(payload, 'action')
+        if (advanceId === undefined || action === undefined) return internalError('advance-judge endpoint requires advanceId and action payloads')
+        if (!['confirm_condition', 'confirm_advance', 'accept', 'reject', 'ignore'].includes(action)) {
+          return internalError(`advance-judge: unknown action ${action}`)
+        }
+        try {
+          return { ok: true, value: await advance.judge(advanceId, action as Parameters<typeof advance.judge>[1], stringField(payload, 'note')) }
+        } catch (error) {
+          return internalError(`advance-judge failed: ${String(error)}`)
+        }
+      }
+      case 'advance-ensure': {
+        const advance = ctx.get('yzjAdvance')
+        if (advance === undefined) return internalError('advance-ensure: yzjAdvance 服务不可用（tool-yzj 未挂载）')
+        try {
+          return { ok: true, value: await advance.ensure() }
+        } catch (error) {
+          return internalError(`advance-ensure failed: ${String(error)}`)
         }
       }
       case 'write-list': {
@@ -755,17 +954,23 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
         const agents = agentsFace(ctx)
         if (agents === undefined) return internalError('home-open: agents 服务不可用')
         try {
-          const title = stringField(payload, 'title')
+          // Title fallback: resolve the real group name so a re-materialized
+          // room never pins the 群房间 placeholder (pitfall-021 cleanup path).
+          const title = stringField(payload, 'title') ?? (await recentGroupNames(ctx)).get(groupId)
           const cwd = await ensureYzjHostWorkspace(ctx)
+          const route = topicAgentRoute(ctx)
+          const composition = await topicAgentComposition(ctx)
           const value = await openBoundHome({
             home,
             agents,
             yzjConversationId: groupId,
             cwd,
             ...(title === undefined ? {} : { title }),
+            ...(route === undefined ? {} : { agentOptions: route }),
+            ...composition,
           })
-          void attachYzjSession(ctx, value.sessionId)
-          if (value.legacyTopicSessionId !== undefined) void attachYzjSession(ctx, value.legacyTopicSessionId)
+          await attachYzjSession(ctx, value.sessionId)
+          if (value.legacyTopicSessionId !== undefined) await attachYzjSession(ctx, value.legacyTopicSessionId)
           const io = homeIoFrom(home)
           if (io !== undefined) {
             void backfillBoundLog(ctx, io, groupId).catch(() => undefined)
@@ -807,8 +1012,12 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
       case 'home-fused': {
         const io = homeIoFrom(ctx.get('yzjHome'))
         if (io === undefined) return internalError('home-fused: yzjHome 服务不可用（tool-yzj 未挂载）')
+        const groupId = stringField(payload, 'groupId')
+        if (groupId !== undefined) {
+          return { ok: true, value: { ...roomSnapshotForGroup(io, groupId), candidates: [] } }
+        }
         const sessionId = stringField(payload, 'sessionId')
-        if (sessionId === undefined) return internalError('home-fused endpoint requires a sessionId payload')
+        if (sessionId === undefined) return internalError('home-fused endpoint requires a groupId or sessionId payload')
         const agents = agentsFace(ctx)
         const writes = writeGate.list(sessionId)
         return { ok: true, value: { ...fusedSnapshot(io, sessionId, agents?.get(sessionId), writes), ...roomSnapshot(io, sessionId) } }
@@ -816,7 +1025,15 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
       case 'home-nav': {
         const io = homeIoFrom(ctx.get('yzjHome'))
         if (io === undefined) return internalError('home-nav: yzjHome 服务不可用（tool-yzj 未挂载）')
-        return { ok: true, value: groupSpaceSnapshot(io, agentsFace(ctx)) }
+        const snap = groupSpaceSnapshot(io, agentsFace(ctx))
+        const names = await recentGroupNames(ctx)
+        const rooms = snap.rooms.map((room) => {
+          const resolved = names.get(room.groupId)
+          return resolved !== undefined && isPlaceholderRoomTitle(room.groupName)
+            ? { ...room, groupName: resolved }
+            : room
+        })
+        return { ok: true, value: { rooms } }
       }
       case 'home-topic-open': {
         const home = ctx.get('yzjHome') as HomeOpenFace | undefined
@@ -832,6 +1049,8 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
           const title = stringField(payload, 'title')
           const groupName = stringField(payload, 'groupName')
           const cwd = await ensureYzjHostWorkspace(ctx)
+          const route = topicAgentRoute(ctx)
+          const composition = await topicAgentComposition(ctx)
           const value = await openTopicHome({
             home,
             agents,
@@ -843,8 +1062,10 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
             ...(originText === undefined ? {} : { originText }),
             ...(title === undefined ? {} : { title }),
             ...(groupName === undefined ? {} : { groupName }),
+            ...(route === undefined ? {} : { agentOptions: route }),
+            ...composition,
           })
-          void attachYzjSession(ctx, value.sessionId)
+          await attachYzjSession(ctx, value.sessionId)
           const io = homeIoFrom(home)
           if (io !== undefined) void backfillBoundLog(ctx, io, groupId).catch(() => undefined)
           return { ok: true, value }
@@ -872,9 +1093,19 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
         const agents = agentsFace(ctx)
         if (agents === undefined) return internalError('home-topic-ask: agents 服务不可用')
         const cwd = await ensureYzjHostWorkspace(ctx)
-        const result = await askTopicAssistant({ home: io, agents, cwd, topicSessionId: sessionId, text })
+        const route = topicAgentRoute(ctx)
+        const composition = await topicAgentComposition(ctx)
+        const result = await askTopicAssistant({
+          home: io,
+          agents,
+          cwd,
+          topicSessionId: sessionId,
+          text,
+          ...(route === undefined ? {} : { agentOptions: route }),
+          ...composition,
+        })
         if ('error' in result) return internalError(result.error)
-        void attachYzjSession(ctx, sessionId)
+        await attachYzjSession(ctx, sessionId)
         return { ok: true, value: result }
       }
       case 'home-backfill': {
@@ -932,9 +1163,9 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
         const cwd = await ensureYzjHostWorkspace(ctx)
         const result = await handoffToGroup({ ctx, home: io, agents, groupId, digest, cwd })
         if ('error' in result) return internalError(result.error)
-        if ('sessionId' in result) void attachYzjSession(ctx, result.sessionId)
+        if ('sessionId' in result) await attachYzjSession(ctx, result.sessionId)
         const topicId = 'topicSessionId' in result ? result.topicSessionId : undefined
-        if (typeof topicId === 'string' && topicId !== '') void attachYzjSession(ctx, topicId)
+        if (typeof topicId === 'string' && topicId !== '') await attachYzjSession(ctx, topicId)
         void backfillBoundLog(ctx, io, groupId).catch(() => undefined)
         return { ok: true, value: result }
       }
@@ -953,4 +1184,5 @@ export function apply(ctx: Context): void {
   const handler = createRpcHandler(ctx, writeGate)
   ctx.connection.rpc.handle('/yzj', handler, { authority: 'loopback' })
   void ensureYzjHostWorkspace(ctx).catch(() => undefined)
+  applyTopicDeliver(ctx, writeGate)
 }

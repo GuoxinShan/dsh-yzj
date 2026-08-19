@@ -3,6 +3,7 @@
  * same-sender clustering, date separators, reply-count chips, assistant
  * artifact cards. Pure — no React.
  */
+import { artifactBadgeOf } from '../artifact-badge.ts'
 
 /** Minimal IM row the layout pass needs. */
 export interface LayoutImEntry {
@@ -107,24 +108,25 @@ export function topicReplyCount(
 }
 
 /**
- * Typed deliverable under an assistant bubble. Only robot-outbound file
- * posts (CLI `msgType=file` or a `param.name`) become a card.
+ * Typed deliverable under an assistant bubble. Robot-outbound file posts
+ * and DSH job-done file posts (CLI `msgType=file` or a `param.name`) become
+ * a card.
  */
 export function artifactOf(entry: LayoutImEntry): ArtifactCard | undefined {
-  if (entry.origin !== 'robot-outbound') return undefined
+  const fromRobot = entry.origin === 'robot-outbound'
+  const fromTopicDeliver = entry.origin === 'dsh-send' && entry.topicSessionId !== undefined
+  if (!fromRobot && !fromTopicDeliver) return undefined
   const param = entry.param ?? {}
   const name = asString(param.name)
   const msgType = entry.msgType ?? ''
   if (msgType !== 'file' && name === '') return undefined
-  const ext = (asString(param.ext) || name.split('.').pop() || '').toUpperCase()
-  const type = /^(MD|TXT|DOC|DOCX)$/.test(ext) ? 'DOC'
-    : /^(XLS|XLSX|CSV)$/.test(ext) ? 'XLS'
-      : ext === 'PDF' ? 'PDF'
-        : ext === '' ? 'FILE'
-          : ext
+  const display = name === '' ? (entry.content.replace(/^\[文件\]:?\s*/, '').trim() || '文件') : name
+  const ext = asString(param.ext)
+  const typed = ext === '' || display.includes('.') ? display : `${display}.${ext}`
+  const badge = artifactBadgeOf(typed)
   return {
-    type,
-    name: name === '' ? (entry.content.replace(/^\[文件\]:?\s*/, '').trim() || '文件') : name,
+    type: badge.type,
+    name: display,
     note: '已发进群 · 点开查看',
   }
 }

@@ -12,10 +12,16 @@ import {
   type YzjBoundMessageLog, type YzjLogEntry, type YzjLogMsgType,
 } from '@dsh-yzj/tool-yzj/src/bound-log.ts'
 import { parseContactUser } from './contact-parse.ts'
-import { digestCandidates, type DigestCandidate } from './handoff-digest.ts'
-import { openBoundHome, openTopicHome, lastSessionTitle, isPlaceholderRoomTitle, type HomeOpenAgents, type HomeOpenFace } from './home-open.ts'
+import { digestCandidates, textOfSessionEvent, type DigestCandidate } from './handoff-digest.ts'
+import { artifactBadgeOf, writeFileNameOf, type ArtifactBadge } from './artifact-badge.ts'
+import {
+  openBoundHome, openTopicHome, lastSessionTitle, isPlaceholderRoomTitle, identifiedUserMessage, topicAgentRoute,
+  topicAgentComposition,
+  type HomeOpenAgents, type HomeOpenFace, type TopicAgentRoute, type TopicAgentSetup,
+} from './home-open.ts'
 import type { YzjWriteRecord } from './write-gate.ts'
 import type { TopicEnsureInput, TopicEnsureResult, TopicRecord } from '@dsh-yzj/tool-yzj/src/topics.ts'
+import { sessionHasSummonWindow } from '@dsh-yzj/tool-yzj/src/index.ts'
 
 /** CLI `--limit` cap for `im message list` (measured). */
 export const CLI_LIST_PAGE = 20
@@ -51,6 +57,8 @@ export interface HomeIoFace extends HomeOpenFace {
   getTopicByOutbound?(msgId: string): TopicRecord | undefined
   listTopics?(yzjConversationId: string): TopicRecord[]
   setTopicStatus?(dshSessionId: string, status: NonNullable<TopicRecord['status']>): Promise<void>
+  /** Register an outbound post so reply chains continue this topic (R4 / R29). */
+  registerTopicOutbound?(msgId: string, dshSessionId: string): Promise<void>
   /** Every group-room binding (workbench session list / L1 merge). */
   listBindings?(): { dshSessionId: string; yzjConversationId: string; yzjKind: 'group' | 'dm' }[]
 }
@@ -66,6 +74,8 @@ export interface ImSendInput {
   readonly replyMsgId?: string
   readonly atOpenIds: readonly string[]
   readonly atAll: boolean
+  /** Stamp the log row so topic reply chips count this post (R29). */
+  readonly topicSessionId?: string
 }
 
 /** Result of one user-direct send (no confirm card, no DSH user-turn). */
@@ -246,6 +256,7 @@ export async function sendImAndLog(ctx: Context, home: HomeIoFace | undefined, i
       isSelf: true,
       status: 'pending',
       ...(input.replyMsgId === undefined ? {} : { replyMsgId: input.replyMsgId }),
+      ...(input.topicSessionId === undefined ? {} : { topicSessionId: input.topicSessionId }),
       ...(sendParam === undefined ? {} : { param: sendParam }),
     }
     try {
@@ -465,17 +476,126 @@ export function roomSnapshot(
   }
 }
 
+/**
+ * IM snapshot keyed by Yunzhijia group id (R24). Does not need a live
+ * agent — the plugin log is the timeline. Missing binding still returns a
+ * room row so the workbench can paint before ensureBound.
+ */
+export function roomSnapshotForGroup(
+  home: HomeIoFace,
+  groupId: string,
+): {
+  bound: boolean
+  kind: 'room'
+  binding: { dshSessionId: string; yzjConversationId: string; yzjKind: 'group' | 'dm' }
+  topics: TopicRecord[]
+  items: FusedItem[]
+} {
+  const binding = home.getByConversation(groupId)
+  const log = home.getLog(groupId)
+  const items: FusedItem[] = (log?.entries ?? []).map(entry => ({
+    kind: 'im' as const,
+    time: entry.sentAt,
+    entry,
+  }))
+  const yzjKind = groupId.startsWith('BOT-') ? 'dm' : 'group'
+  return {
+    bound: true,
+    kind: 'room',
+    binding: binding ?? { dshSessionId: '', yzjConversationId: groupId, yzjKind },
+    topics: home.listTopics?.(groupId) ?? [],
+    items,
+  }
+}
+
+/** One file card under a topic-lens assistant bubble (DSH-local, not IM). */
+export type TopicLensArtifact = ArtifactBadge
+
 /** One bubble in the topic-drawer IM lens (plugin followups omitted). */
 export interface TopicLensBubble {
   readonly id: string
   readonly role: 'user' | 'assistant'
   readonly text: string
   readonly time: number
+  readonly artifacts?: readonly TopicLensArtifact[]
+}
+
+const LENS_MAX_ARTIFACTS = 8
+
+function uniqueWriteNames(names: readonly string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const name of names) {
+    if (seen.has(name)) continue
+    seen.add(name)
+    out.push(name)
+    if (out.length >= LENS_MAX_ARTIFACTS) break
+  }
+  return out
+}
+
+function badgesOf(names: readonly string[]): TopicLensArtifact[] {
+  return uniqueWriteNames(names).map(name => artifactBadgeOf(name))
+}
+
+/**
+ * Walk one session's events into lens bubbles. `write`/`edit` files ride
+ * the next assistant bubble (leftover names attach to the last assistant).
+ */
+function lensBubblesFromEvents(
+  events: readonly FusedSessionEvent[],
+  idPrefix: string,
+): TopicLensBubble[] {
+  const out: TopicLensBubble[] = []
+  let pending: string[] = []
+  const flushWrites = (bubble: TopicLensBubble): TopicLensBubble => {
+    if (pending.length === 0) return bubble
+    const extras = badgesOf(pending)
+    pending = []
+    const prior = bubble.artifacts ?? []
+    return { ...bubble, artifacts: [...prior, ...extras] }
+  }
+  for (const event of events) {
+    if (event.type === 'tool/call') {
+      const name = writeFileNameOf(event.data)
+      if (name !== undefined) pending.push(name)
+      continue
+    }
+    const text = textOfSessionEvent(event)
+    if (text === '') continue
+    const role: 'user' | 'assistant' = event.type === 'assistant/message' ? 'assistant' : 'user'
+    let bubble: TopicLensBubble = {
+      id: `${idPrefix}${out.length}`,
+      role,
+      text,
+      time: event.time,
+    }
+    if (role === 'assistant') bubble = flushWrites(bubble)
+    out.push(bubble)
+  }
+  if (pending.length === 0) return out
+  for (let index = out.length - 1; index >= 0; index -= 1) {
+    const row = out[index]
+    if (row?.role !== 'assistant') continue
+    out[index] = flushWrites(row)
+    return out
+  }
+  out.push({
+    id: `${idPrefix}${out.length}`,
+    role: 'assistant',
+    text: '产物',
+    time: events[events.length - 1]?.time ?? 0,
+    artifacts: badgesOf(pending),
+  })
+  return out
 }
 
 /**
  * Lens stream: topic session events, plus leftover host ③④ when this is
  * the H9 「历史对话」 topic (`fromSessionId`). Plugin injects stay hidden.
+ * Write/edit files appear on the assistant bubble (R30) as DSH-local
+ * cards. Job-done (R29) still uploads and posts the same files to the
+ * group; the lens does not replace that send.
  */
 export function topicLensBubbles(
   topic: TopicRecord,
@@ -483,33 +603,21 @@ export function topicLensBubbles(
 ): TopicLensBubble[] {
   const fromHost = topic.fromSessionId === undefined || topic.fromSessionId === ''
     ? []
-    : digestCandidates(sessionEventsOf(agents.get(topic.fromSessionId))).map((row, index) => ({
-      ...row,
-      id: `h${index}`,
-    }))
-  const fromTopic = digestCandidates(sessionEventsOf(agents.get(topic.dshSessionId))).map((row, index) => ({
-    ...row,
-    id: `t${index}`,
-  }))
+    : lensBubblesFromEvents(sessionEventsOf(agents.get(topic.fromSessionId)), 'h')
+  const fromTopic = lensBubblesFromEvents(sessionEventsOf(agents.get(topic.dshSessionId)), 't')
   return [...fromHost, ...fromTopic].sort((a, b) => a.time - b.time)
 }
 
-/** User-authored followup (drawer 「问助手」). Visible in the lens. */
-function userTurn(text: string): {
-  role: 'user'
-  content: { type: 'text'; text: string }[]
-  source: { kind: 'user' }
-} {
-  return {
-    role: 'user',
-    content: [{ type: 'text', text }],
-    source: { kind: 'user' },
-  }
+/** User-authored followup (drawer 「问助手」). Visible in the lens. Must carry `id`. */
+function userTurn(text: string): ReturnType<typeof identifiedUserMessage> {
+  return identifiedUserMessage(text, { kind: 'user' })
 }
 
 /**
  * Ask the topic agent without focusing native Chat. Resume-or-create the
- * topic session, then `followup` a user turn (H18).
+ * topic session, plant the summon window once as a plugin inject, then
+ * `followup` a user turn (H18 / pitfall-031). Opening the topic does not
+ * start a turn.
  */
 export async function askTopicAssistant(options: {
   readonly home: HomeIoFace
@@ -519,6 +627,9 @@ export async function askTopicAssistant(options: {
   readonly cwd: string
   readonly topicSessionId: string
   readonly text: string
+  readonly agentOptions?: TopicAgentRoute
+  readonly agentPreset?: string
+  readonly setup?: TopicAgentSetup
 }): Promise<{ ok: true } | { error: string }> {
   const text = options.text.trim()
   if (text === '') return { error: 'home-topic-ask: text is empty' }
@@ -526,13 +637,35 @@ export async function askTopicAssistant(options: {
   if (topic === undefined) return { error: 'home-topic-ask: not a topic session' }
   if (options.agents.get(options.topicSessionId) === undefined) {
     try {
-      await options.agents.resume({ resumeSessionId: options.topicSessionId })
+      await options.agents.resume({
+        resumeSessionId: options.topicSessionId,
+        ...(options.agentOptions === undefined ? {} : { agentOptions: options.agentOptions }),
+        ...(options.setup === undefined ? {} : { setup: options.setup }),
+      })
     } catch {
-      await options.agents.create({ sessionId: options.topicSessionId, meta: { cwd: options.cwd } })
+      await options.agents.create({
+        sessionId: options.topicSessionId,
+        meta: {
+          cwd: options.cwd,
+          ...(options.agentPreset === undefined ? {} : { agentPreset: options.agentPreset }),
+        },
+        ...(options.agentOptions === undefined ? {} : { agentOptions: options.agentOptions }),
+        ...(options.setup === undefined ? {} : { setup: options.setup }),
+      })
     }
   }
-  const live = options.agents.get(options.topicSessionId)
+  const live = options.agents.get(options.topicSessionId) as
+    | {
+      followup?: (message: unknown) => void
+      inject?: (message: unknown) => void
+      session?: { events?: readonly { type: string; data: unknown }[] }
+    }
+    | undefined
   if (live?.followup === undefined) return { error: 'home-topic-ask: agent followup unavailable' }
+  const window = options.home.formatSummonWindow(topic.yzjConversationId, undefined, options.topicSessionId)
+  if (window !== '' && !sessionHasSummonWindow(live.session?.events ?? [])) {
+    live.inject?.(pluginTurn(window))
+  }
   live.followup(userTurn(text))
   if (topic.rootMsgId !== undefined && topic.rootMsgId !== '' && options.home.ensureTopic !== undefined) {
     await options.home.ensureTopic({
@@ -601,13 +734,9 @@ export function groupSpaceSnapshot(
   return { rooms }
 }
 
-/** Structural plugin user-turn (ui-yzj must not import dsh-llm — dual-face tsconfig). */
-function pluginTurn(text: string): { role: 'user'; content: { type: 'text'; text: string }[]; source: { kind: 'plugin'; plugin: string } } {
-  return {
-    role: 'user',
-    content: [{ type: 'text', text }],
-    source: { kind: 'plugin', plugin: 'ui-yzj' },
-  }
+/** Structural plugin user-turn (no dsh-llm import — dual-face tsconfig). */
+function pluginTurn(text: string): ReturnType<typeof identifiedUserMessage> {
+  return identifiedUserMessage(text, { kind: 'plugin', plugin: 'ui-yzj' })
 }
 
 /**
@@ -651,6 +780,8 @@ export async function handoffToGroup(options: {
   if (!sent.ok) return { error: sent.error }
   let topicSessionId: string | undefined
   try {
+    const route = topicAgentRoute(options.ctx)
+    const composition = await topicAgentComposition(options.ctx)
     const topic = await openTopicHome({
       home: options.home,
       agents: options.agents,
@@ -659,6 +790,8 @@ export async function handoffToGroup(options: {
       source: 'handoff',
       originText: options.digest,
       title: '丢进群交接',
+      ...(route === undefined ? {} : { agentOptions: route }),
+      ...composition,
     })
     topicSessionId = topic.sessionId
     const live = options.agents.get(topic.sessionId)

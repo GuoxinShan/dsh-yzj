@@ -2,7 +2,7 @@
  * Group-room VIEW (docs/spec/group-room-topics.md R2/R7).
  * Identity/media share the floating-panel renderer; layout follows the
  * canvas prototype (self right, others left). Agent work lives on yzj-topic-*.
- * Registered as conversation.view「群房间」— not a Session.append event type.
+ * Registered as conversation.view「群聊」— not a Session.append event type.
  */
 import { useEffect, useRef, useState } from 'react'
 import { resolveSenders, senderNameOf } from './im-cache.ts'
@@ -53,8 +53,10 @@ export interface FusedImEntry extends LayoutImEntry {
 /** Injected RPC + backfill + topic-open verbs. */
 export interface YzjFusedInjected {
   readonly sessionId: string
-  homeFused: (sessionId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
-  homeBackfill: (sessionId: string, opts?: { beforeMsgId?: string; limit?: number }) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
+  /** When set, the timeline follows this group (R24) instead of the hanger session. */
+  readonly groupId?: string
+  homeFused: (sessionId: string, groupId?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
+  homeBackfill: (sessionId: string, opts?: { beforeMsgId?: string; limit?: number; groupId?: string }) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   homeTopicOpen?: (input: {
     groupId: string
     rootMsgId?: string
@@ -81,7 +83,9 @@ function clock(ms: number): string {
 
 /**
  * Visible sender label. Never uses 「群消息」 as a person name.
- * Empty → directory result → openId tail → 「未知」.
+ * Empty → directory result → BOT- senders 「机器人」 → openId tail → 「未知」.
+ * Robot openIds are `BOT-` prefixed and never resolve via the contact
+ * directory; without the branch they rendered as a raw id tail (543b4d).
  */
 export function displayNameOf(entry: FusedImEntry, resolved?: string): string {
   if (entry.origin === 'robot-outbound') {
@@ -92,8 +96,26 @@ export function displayNameOf(entry: FusedImEntry, resolved?: string): string {
   if (resolved !== undefined && resolved !== '') return resolved
   if (entry.fromName !== '') return entry.fromName
   const openId = entry.fromOpenId ?? ''
+  if (openId.startsWith('BOT-')) return '机器人'
   if (openId !== '') return openId.length > 6 ? openId.slice(-6) : openId
   return '未知'
+}
+
+/** Robot/assistant text posts longer than this collapse to a clamped digest. */
+export const AGENT_CLAMP_CHARS = 240
+
+/**
+ * True when the row is a robot/assistant wall-of-text worth clamping (R7: the
+ * IM timeline is not a markdown canvas — long agent posts fold to 4 lines
+ * with 「展开全文」). Images/files/cards stay untouched.
+ */
+export function agentClampOf(entry: FusedImEntry): boolean {
+  if (entry.isSelf) return false
+  const robotish = entry.origin === 'robot-outbound' || (entry.fromOpenId ?? '').startsWith('BOT-')
+  if (!robotish) return false
+  const msgType = entry.msgType ?? 'text'
+  if (msgType !== 'text' && msgType !== 'other') return false
+  return entry.content.length > AGENT_CLAMP_CHARS
 }
 
 function parseTopics(raw: unknown): RoomTopic[] {
@@ -177,15 +199,33 @@ type Phase = 'loading' | 'bound' | 'unbound'
 
 const fusedCache = new Map<string, FusedViewValue>()
 
-function remember(sessionId: string, next: FusedViewValue): FusedViewValue {
-  fusedCache.set(sessionId, next)
+function cacheKeyOf(sessionId: string, groupId?: string): string {
+  return groupId !== undefined && groupId !== '' ? `g:${groupId}` : sessionId
+}
+
+function remember(key: string, next: FusedViewValue): FusedViewValue {
+  fusedCache.set(key, next)
   return next
+}
+
+/** Group id last fused for this room session, if the module cache still has it. */
+export function cachedRoomGroupId(sessionId: string): string {
+  const id = fusedCache.get(sessionId)?.binding?.yzjConversationId
+  return id === undefined ? '' : id
+}
+
+/** True when the timeline is following the latest message (within slack px). */
+export function streamAtBottom(
+  el: Pick<HTMLElement, 'scrollHeight' | 'scrollTop' | 'clientHeight'>,
+  slack = 40,
+): boolean {
+  return el.scrollHeight - el.scrollTop - el.clientHeight < slack
 }
 
 function phaseOf(cached: FusedViewValue | undefined): Phase {
   if (cached === undefined) return 'loading'
-  if (cached.bound === true && cached.kind !== 'unbound') return 'bound'
-  if (cached.kind === 'unbound' || cached.bound === false) return 'unbound'
+  if (cached.kind === 'room' && cached.bound === true) return 'bound'
+  if (cached.kind === 'unbound' || cached.kind === 'topic' || cached.bound === false) return 'unbound'
   return 'loading'
 }
 
@@ -194,44 +234,86 @@ function phaseOf(cached: FusedViewValue | undefined): Phase {
  * fused confirms it. Cache-miss shows 「加载群消息…」 (pitfall-013).
  */
 export function YzjFusedView(props: YzjFusedInjected) {
-  const cached = fusedCache.get(props.sessionId)
+  const viewKey = cacheKeyOf(props.sessionId, props.groupId)
+  const cached = fusedCache.get(viewKey)
   const [held, setHeld] = useState<{ sessionId: string; value: FusedViewValue; phase: Phase }>(() => ({
-    sessionId: props.sessionId,
+    sessionId: viewKey,
     value: cached ?? { bound: false, items: [] },
     phase: phaseOf(cached),
   }))
-  const value = held.sessionId === props.sessionId ? held.value : (cached ?? { bound: false, items: [] })
-  const phase = held.sessionId === props.sessionId ? held.phase : phaseOf(cached)
+  const value = held.sessionId === viewKey ? held.value : (cached ?? { bound: false, items: [] })
+  const phase = held.sessionId === viewKey ? held.phase : phaseOf(cached)
   const [error, setError] = useState('')
   const [busyId, setBusyId] = useState('')
   const [more, setMore] = useState(true)
   const [loadingOlder, setLoadingOlder] = useState(false)
-  const [names, setNames] = useState<Record<string, string>>({})
+  const [names, setNames] = useState<Record<string, string>>(() => seedNames(cached?.items ?? []))
   const [lightbox, setLightbox] = useState<{ src: string; kind: 'image' | 'pdf' } | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [lensId, setLensId] = useState('')
   const [highlightMsgId, setHighlightMsgId] = useState('')
   const [optimistic, setOptimistic] = useState<RoomTopic[]>([])
+  const [unclamped, setUnclamped] = useState<ReadonlySet<string>>(() => new Set())
   const highlightRef = useRef<HTMLDivElement | null>(null)
+  const streamRef = useRef<HTMLDivElement | null>(null)
+  const followBottomRef = useRef(true)
+  const scrollRestoreRef = useRef<{ height: number; top: number } | null>(null)
+  /** scrollHeight at the last stick; growth-driven scroll events are not user intent. */
+  const stuckHeightRef = useRef(0)
+  const streamContentRef = useRef<HTMLDivElement | null>(null)
+  /** Set by wheel/touch: only a user-steered scroll may disengage follow-bottom. */
+  const userSteerRef = useRef(false)
 
   useEffect(() => {
-    const hit = fusedCache.get(props.sessionId)
+    const hit = fusedCache.get(viewKey)
+    followBottomRef.current = true
+    userSteerRef.current = false
+    scrollRestoreRef.current = null
     setHeld({
-      sessionId: props.sessionId,
+      sessionId: viewKey,
       value: hit ?? { bound: false, items: [] },
       phase: phaseOf(hit),
     })
+    setNames(seedNames(hit?.items ?? []))
     setDrawerOpen(false)
     setLensId('')
     setHighlightMsgId('')
     setOptimistic([])
+    setUnclamped(new Set())
     setError('')
-  }, [props.sessionId])
+  }, [viewKey])
 
   useEffect(() => {
     if (highlightMsgId === '') return
+    followBottomRef.current = false
     highlightRef.current?.scrollIntoView({ block: 'center' })
   }, [highlightMsgId, value.items])
+
+  useEffect(() => {
+    const el = streamRef.current
+    const content = streamContentRef.current
+    if (el === null) return
+    const stick = (): void => {
+      const restore = scrollRestoreRef.current
+      if (restore !== null) {
+        const delta = el.scrollHeight - restore.height
+        if (delta > 0) el.scrollTop = restore.top + delta
+        scrollRestoreRef.current = null
+        stuckHeightRef.current = el.scrollHeight
+        return
+      }
+      if (followBottomRef.current) el.scrollTop = el.scrollHeight
+      stuckHeightRef.current = el.scrollHeight
+    }
+    stick()
+    if (typeof ResizeObserver === 'undefined') return
+    // Observe the CONTENT box, not the scroller: the scroller's own height is
+    // flex-fixed, so late-loading images grow the content without ever firing
+    // a scroller ResizeObserver (pitfall-020 follow-up).
+    const observer = new ResizeObserver(() => { stick() })
+    if (content !== null) observer.observe(content)
+    return () => observer.disconnect()
+  }, [value.items, viewKey, phase])
 
   const applyFused = (raw: Record<string, unknown>): FusedViewValue => {
     const items = parseItems(raw.items)
@@ -241,7 +323,7 @@ export function YzjFusedView(props: YzjFusedInjected) {
     const kind = raw.kind === 'room' || raw.kind === 'topic' || raw.kind === 'unbound'
       ? raw.kind
       : raw.bound === true ? 'room' : 'unbound'
-    const next = remember(props.sessionId, {
+    const next = remember(viewKey, {
       bound: raw.bound === true,
       kind,
       items,
@@ -249,15 +331,15 @@ export function YzjFusedView(props: YzjFusedInjected) {
       ...(binding === undefined ? {} : { binding }),
       ...(typeof raw.groupName === 'string' && raw.groupName !== '' ? { groupName: raw.groupName } : {}),
     })
-    const nextPhase: Phase = next.kind === 'unbound' || next.bound !== true ? 'unbound' : 'bound'
-    setHeld({ sessionId: props.sessionId, value: next, phase: nextPhase })
+    const nextPhase: Phase = next.kind === 'room' && next.bound === true ? 'bound' : 'unbound'
+    setHeld({ sessionId: viewKey, value: next, phase: nextPhase })
     return next
   }
 
   useEffect(() => {
     let cancelled = false
     const load = async (backfill: boolean): Promise<void> => {
-      const fused = await props.homeFused(props.sessionId)
+      const fused = await props.homeFused(props.sessionId, props.groupId)
       if (cancelled) return
       if (!fused.ok) {
         setError(fused.error.message)
@@ -268,12 +350,14 @@ export function YzjFusedView(props: YzjFusedInjected) {
       const seeded = seedNames(next.items)
       if (Object.keys(seeded).length > 0) setNames(prev => ({ ...seeded, ...prev }))
       if (backfill) {
-        const stats = await props.homeBackfill(props.sessionId)
+        const stats = await props.homeBackfill(props.sessionId, props.groupId === undefined || props.groupId === ''
+          ? undefined
+          : { groupId: props.groupId })
         if (cancelled) return
         if (stats.ok) {
           const raw = asRecord(stats.value)
           if (raw.more === false) setMore(false)
-          const again = await props.homeFused(props.sessionId)
+          const again = await props.homeFused(props.sessionId, props.groupId)
           if (!cancelled && again.ok) applyFused(asRecord(again.value))
         }
       }
@@ -291,7 +375,7 @@ export function YzjFusedView(props: YzjFusedInjected) {
       window.clearInterval(timer)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.sessionId])
+  }, [viewKey])
 
   const openTopic = async (entry: FusedImEntry): Promise<void> => {
     const groupId = value.binding?.yzjConversationId
@@ -336,8 +420,17 @@ export function YzjFusedView(props: YzjFusedInjected) {
       setMore(false)
       return
     }
+    const el = streamRef.current
+    if (el !== null) {
+      scrollRestoreRef.current = { height: el.scrollHeight, top: el.scrollTop }
+      followBottomRef.current = false
+    }
     setLoadingOlder(true)
-    const stats = await props.homeBackfill(props.sessionId, { beforeMsgId, limit: 20 })
+    const stats = await props.homeBackfill(props.sessionId, {
+      beforeMsgId,
+      limit: 20,
+      ...(props.groupId === undefined || props.groupId === '' ? {} : { groupId: props.groupId }),
+    })
     setLoadingOlder(false)
     if (!stats.ok) {
       setError(stats.error.message)
@@ -345,31 +438,21 @@ export function YzjFusedView(props: YzjFusedInjected) {
     }
     const raw = asRecord(stats.value)
     if (raw.more === false) setMore(false)
-    const result = await props.homeFused(props.sessionId)
+    const result = await props.homeFused(props.sessionId, props.groupId)
     if (!result.ok) return
     const next = applyFused(asRecord(result.value))
     const seeded = seedNames(next.items)
     if (Object.keys(seeded).length > 0) setNames(prev => ({ ...seeded, ...prev }))
   }
 
-  if (phase === 'unbound') {
-    return (
-      <div className={css.unbound} data-testid="yzj-fused-stream">
-        这是私密会话：没有群消息流。下方发送只给助手。
-        要用「丢进群」把可见摘要交到群房间。
-      </div>
-    )
-  }
-
-  if (phase === 'loading' && value.items.length === 0) {
-    return (
-      <div className={css.unbound} data-testid="yzj-fused-stream">
-        <div className={css.hint}>{error !== '' ? error : '加载群消息…'}</div>
-      </div>
-    )
-  }
-
+  // Topic snapshots are agent sessions: never paint the IM timeline
+  // even if this view is still mounted (R22 / pitfall-022).
   if (value.kind === 'topic') return null
+
+  // Cache-miss / empty still use the room column so `#yzj-room-composer-host`
+  // stays mounted. An early return here unregisters the portal and the official
+  // InputBar flashes (pitfall-024 follow-up).
+  const emptyPhase = phase === 'unbound' || (phase === 'loading' && value.items.length === 0)
 
   const serverTopics = value.topics ?? []
   const topics = [
@@ -394,9 +477,9 @@ export function YzjFusedView(props: YzjFusedInjected) {
 
   return (
     <div className={css.roomMain}>
-      {error !== '' && <div className={css.hint} role="alert">{error}</div>}
-      {isGroup && (
-        <div className={css.roomMainHead}>
+      {error !== '' && !emptyPhase && <div className={css.hint} role="alert">{error}</div>}
+      <div className={css.roomMainHead}>
+        {isGroup && !emptyPhase && (
           <button
             type="button"
             className={css.topicToggle}
@@ -416,11 +499,46 @@ export function YzjFusedView(props: YzjFusedInjected) {
               <span className={css.topicToggleBadge} data-testid="yzj-topic-badge">{topicBadge.confirmCount}</span>
             )}
           </button>
-        </div>
-      )}
+        )}
+      </div>
       <div className={css.roomStage}>
         <div className={css.roomTimeline}>
+        {emptyPhase ? (
         <div className={css.stream} data-testid="yzj-fused-stream">
+          <div className={css.unbound}>
+            {phase === 'unbound' ? '还没有对话。' : (
+              <div className={css.hint}>{error !== '' ? error : '加载群消息…'}</div>
+            )}
+          </div>
+        </div>
+        ) : (
+        <div
+          className={css.stream}
+          data-testid="yzj-fused-stream"
+          ref={streamRef}
+          onWheel={() => { userSteerRef.current = true }}
+          onTouchMove={() => { userSteerRef.current = true }}
+          onScroll={() => {
+            const el = streamRef.current
+            if (el === null) return
+            // Content growth fires scroll events too (the stick effect re-seats
+            // scrollTop); only a scroll at a stable height can steer. Even then,
+            // programmatic scrollIntoView (harness focus management) is
+            // indistinguishable from a user drag — so only wheel/touch-marked
+            // scrolls may disengage follow-bottom; landing at the bottom
+            // re-engages from any source (pitfall-020 follow-up).
+            if (el.scrollHeight !== stuckHeightRef.current) return
+            if (streamAtBottom(el)) {
+              followBottomRef.current = true
+              userSteerRef.current = false
+              return
+            }
+            if (!userSteerRef.current) return
+            userSteerRef.current = false
+            followBottomRef.current = false
+          }}
+        >
+          <div className={css.streamContent} ref={streamContentRef}>
           {more && (
             <button type="button" className={css.streamMore} onClick={() => { void loadOlder() }} disabled={loadingOlder}>
               {loadingOlder ? '加载中…' : '加载更早消息'}
@@ -443,6 +561,8 @@ export function YzjFusedView(props: YzjFusedInjected) {
               : topicBySession.get(entry.topicSessionId)
             const openId = entry.fromOpenId ?? ''
             const sender = displayNameOf(entry, openId !== '' ? names[openId] : undefined)
+            const clamped = agentClampOf(entry) && !unclamped.has(entry.msgId)
+            const clampable = agentClampOf(entry)
             const highlighted = highlightMsgId === entry.msgId
             const artifact = artifactOf(entry)
             const hideFileBody = artifact !== undefined && entry.msgType === 'file'
@@ -482,12 +602,41 @@ export function YzjFusedView(props: YzjFusedInjected) {
                   )}
                   <span className={bubbleClass}>
                     {!hideFileBody && (
-                      <MessageBody
-                        message={messageRecord(entry)}
-                        onOpenImage={(src) => setLightbox({ src, kind: 'image' })}
-                        onOpenPdf={(src) => setLightbox({ src, kind: 'pdf' })}
-                        inject={fileInject}
-                      />
+                      clamped
+                        ? (
+                          <span className={css.roomClamp}>
+                            <MessageBody
+                              message={messageRecord(entry)}
+                              onOpenImage={(src) => setLightbox({ src, kind: 'image' })}
+                              onOpenPdf={(src) => setLightbox({ src, kind: 'pdf' })}
+                              inject={fileInject}
+                            />
+                          </span>
+                        )
+                        : (
+                          <MessageBody
+                            message={messageRecord(entry)}
+                            onOpenImage={(src) => setLightbox({ src, kind: 'image' })}
+                            onOpenPdf={(src) => setLightbox({ src, kind: 'pdf' })}
+                            inject={fileInject}
+                          />
+                        )
+                    )}
+                    {clampable && (
+                      <button
+                        type="button"
+                        className={css.roomClampToggle}
+                        onClick={() => {
+                          setUnclamped((prev) => {
+                            const next = new Set(prev)
+                            if (next.has(entry.msgId)) next.delete(entry.msgId)
+                            else next.add(entry.msgId)
+                            return next
+                          })
+                        }}
+                      >
+                        {clamped ? '展开全文' : '收起'}
+                      </button>
                     )}
                     {artifact !== undefined && (
                       <span className={css.artifactCard} data-testid={`yzj-artifact-${entry.msgId}`}>
@@ -541,8 +690,11 @@ export function YzjFusedView(props: YzjFusedInjected) {
               </div>
             )
           })}
+          </div>
         </div>
+        )}
         <div
+          key={ROOM_COMPOSER_HOST_ID}
           ref={registerRoomComposerHost}
           id={ROOM_COMPOSER_HOST_ID}
           className={css.roomComposerHost}

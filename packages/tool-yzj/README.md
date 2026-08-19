@@ -12,6 +12,8 @@ Model-facing Yunzhijia tools over `ctx.yzjBridge`. This package owns tool schema
 | calendar | `yzj_calendar_event_list/get/create/update/delete/participants`, `yzj_calendar_room_find` |
 | im | `yzj_im_message_send/list`, `yzj_im_group_recent` |
 | file | `yzj_file_upload`, `yzj_file_download` |
+| todo | `yzj_todo_list/create/update/complete` (semantic todo core, demo-stage sheet backend; see `ctx.yzjTodo`) |
+| advance | `yzj_advance_list/get/create/feed` (AI推进 board; see `ctx.yzjAdvance`) |
 
 Every tool returns `{ content, truncated, data }`:
 
@@ -22,11 +24,15 @@ Every tool returns `{ content, truncated, data }`:
 
 Durable group-room table: one Yunzhijia conversation (group or DM) ↔ one DSH host session (`yzj-home-*`) plus 0..N topic sessions (`yzj-topic-*`). Shared by robot inbound `followup()` and the workbench pick-group path (`/yzj home-open`). Domain `yzj_home_bindings` (storage-domain); a second open is focus (`created: false`), never a parallel row. `TopicAnchorStore` keys `(conversation, rootMsgId)` and stores `lastActivity` / `status` (`running` | `confirm` | `done`).
 
-**Bound message log** (domain `yzj_home_logs`, keyed by `yzjConversationId`): inbound ① and DSH「发进群」② live here — never as harness `Session.append` events. Rows keep a clipped CLI `param` snapshot (`file_id` / `desc` / reply) so the group-room view can reuse the floating-panel renderer (avatars, emoticons, images). `formatSummonWindow` is the shared digest both summon paths call (`agent.inject` on 云之家 @机器人, `systemPrompt.context` `yzj-bound-window` on DSH「发给助手」). The digest always pins `groupId` and per-line `msgId` (topic sessions also pin the anchor `msgId`) so the model can call `yzj_im_message_send` / `replyMsgId`. See `docs/spec/dsh-home-transcript.md` §5.2.
+**Bound message log** (domain `yzj_home_logs`, keyed by `yzjConversationId`): inbound ① and DSH「发进群」② live here — never as harness `Session.append` events. Rows keep a clipped CLI `param` snapshot (`file_id` / `desc` / reply) so the group-room view can reuse the floating-panel renderer (avatars, emoticons, images). `formatSummonWindow` is the shared digest. The window is planted **once** as a plugin user message (`agent.inject` / `agent/pre-step`, `plugin: yzj-summon-window`) — it is not a `systemPrompt.context` snapshot section (pitfall-031). Topics prefer the reply chain around the anchor. Memory stays on the `yzj-memory` snapshot. File rows print `fileId=` (`param.file_id`, never msgId). The digest always pins `groupId` and per-line `msgId` (topic sessions also pin the anchor `msgId`) so the model can call `yzj_im_message_send` / `replyMsgId`. See `docs/spec/dsh-home-transcript.md` §5.2 and pitfall-027 / 029.
+
+## Advancement board (`ctx.yzjAdvance`)
+
+Event-sourced AI推进 core (docs/spec/ai-advance-design.md): one advancement item (推进事项) is the fold of an append-only 事元 stream stored in two tables (「事项」/「事元」) inside the same 待办任务库 dbt as the todo family — the panel library switcher moves both. `yzj_advance_feed` is the ONLY mutation channel: goal updates, progress, deviations, decision requests, and six-stage moves (`draft→running→(decision-needed→updated)*→ready-for-review→completed`) are all entries with host-generated `原值→新值` diffs and traceable refs; the item row only caches the projection. The stream is never truncated storage-side (knowledge-sedimentation source); digests and panel first-screens window it. The service backs the `/yzj` RPC endpoints (`advance-state/get/create/judge/ensure`); panel judge verbs (confirm/accept/reject/ignore) are user-direct writes landing as `操作者=user` entries.
 
 ## Approval guard
 
-`tools/pre-execute` returns `{ kind: 'ask', reason }` for operations that must never run unconfirmed: `yzj_doc_delete`, `yzj_doc_move`, `yzj_doc_block_delete`, `yzj_sheet_table_delete`, `yzj_sheet_record_delete`, `yzj_calendar_event_delete`, `yzj_im_message_send`, `yzj_file_upload`, `yzj_file_download` with `overwrite: true`, todo writes, `robot_share_write`, and **bound-home** `robot_notify` / `robot_continue` (D9 group push; the unbound operator console stays ungated). The composed ApprovalService routes the ask to the GUI approval panel (or the in-group suggestion card on inbound homes) and audits the pair on the session log.
+`tools/pre-execute` returns `{ kind: 'ask', reason }` for operations that must never run unconfirmed: `yzj_doc_delete`, `yzj_doc_move`, `yzj_doc_block_delete`, `yzj_sheet_table_delete`, `yzj_sheet_record_delete`, `yzj_calendar_event_delete`, `yzj_im_message_send`, `yzj_file_upload`, `yzj_file_download` with `overwrite: true`, todo writes, advance writes (`yzj_advance_create/feed`), `robot_share_write`, and **bound-home** `robot_notify` / `robot_continue` (D9 group push; the unbound operator console stays ungated). The composed ApprovalService routes the ask to the GUI approval panel (or the in-group suggestion card on inbound homes) and audits the pair on the session log.
 
 ## Config
 
@@ -43,6 +49,8 @@ Durable group-room table: one Yunzhijia conversation (group or DM) ↔ one DSH h
 ## Model Experience
 
 Read tools return one digest line per record with stable formats (`- [类型] 标题 (id) · 更新时间`); write tools return the operation summary plus the doc link (`https://www.yunzhijia.com/knowledge/lingee/#/store/doc/<DOC_ID>`) per the yzj-cli contract. Bridge failures render as `yzj <label> failed (exit N): <stderr>`. Results append as tool-result content and never alter the request prefix (KV-cache independent).
+
+`yzj_calendar_event_list` week-stripes the window and two-pointer-scans each stripe (peek remaining suffix, keep the earliest day, skip empty tails). A multi-day `calendar event list` otherwise keeps only the first instance of a recurring series (pitfall-032).
 
 ## Known Limitations and Deferred Work
 

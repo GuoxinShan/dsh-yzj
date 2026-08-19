@@ -20,9 +20,9 @@ import { applyFileTools } from './file.ts'
 import { applyTodoTools } from './todo.ts'
 import { YzjTodoService } from './todo.ts'
 import type { TodoConfig } from './todo.ts'
+import { applyAdvanceTools, YzjAdvanceService } from './advance.ts'
 import { YzjHomeService } from './home.ts'
 import { applyApprovalGuard } from './guard.ts'
-import { latestUserSourceKind } from './bound-log.ts'
 import type { YzjToolBudget } from './shared.ts'
 
 /** Cordis plugin name used by loader diagnostics. */
@@ -87,6 +87,10 @@ export function apply(ctx: Context, config: Config): void {
   // backs the ui-yzj RPC channel. Needs a real Cordis context.
   const todoService = new YzjTodoService(ctx, budget, config.todo ?? {})
   applyTodoTools(ctx, budget, config.todo ?? {}, todoService.holder)
+  // The advance (AI推进) board shares the active-library holder: the panel
+  // switcher moves both the todo tab and the advance board to the same doc.
+  new YzjAdvanceService(ctx, budget, config.todo ?? {}, todoService.holder)
+  applyAdvanceTools(ctx, budget, config.todo ?? {}, todoService.holder)
   // Product-home binding table (dsh-home-session): one Yunzhijia
   // conversation ↔ one DSH session. Shared by robot inbound and UI pick-group.
   const home = new YzjHomeService(ctx, {
@@ -98,40 +102,163 @@ export function apply(ctx: Context, config: Config): void {
   ctx.inject(['storageDomain'], () => {
     void home.openNow()
   })
-  // systemPrompt is a harness core service; wait for it so ops-less profiles
-  // skip injection and web/gui profiles do not miss the provider.
-  ctx.inject(['systemPrompt'], () => {
-    applySummonWindow(ctx, home)
-  })
+  // Window is a one-shot plugin inject (not a snapshot section). Register
+  // on the host so official Chat and drawer turns both see it (events bubble).
+  applySummonOncePreStep(ctx as never, home)
   applyApprovalGuard(ctx)
 }
 
+/** Room + topic lookup used by T5 (pitfall-027). */
+export interface SummonHomeFace {
+  getBySession(sessionId: string): { yzjConversationId: string } | undefined
+  getTopicBySession(sessionId: string): { yzjConversationId: string } | undefined
+  formatSummonWindow(yzjConversationId: string, excludeMsgId?: string, sessionId?: string): string
+}
+
 /**
- * DSH「发给助手」summon window (T5): opportunistic systemPrompt.context.
- * Returns the bound log window only when this assembly's latest user message
- * is a real GUI turn (not a plugin followup — those inject via agent.inject).
+ * Snapshot path is retired: the window is a one-shot plugin inject.
+ * Kept so older tests / callers still resolve; always empty.
  */
-function applySummonWindow(ctx: Context, home: YzjHomeService): void {
-  const systemPrompt = ctx.get('systemPrompt') as {
-    context(entry: { name: string; order: number; text: (assemble?: AssembleFace) => string }): () => void
-  } | undefined
-  if (systemPrompt === undefined) return
-  ctx.effect(() => systemPrompt.context({
-    name: 'yzj-bound-window',
-    order: 40,
-    text: (assemble) => {
-      const sessionId = sessionIdFromAssemble(assemble)
-      if (sessionId === undefined) return ''
-      const conversationId = home.getBySession(sessionId)?.yzjConversationId
-        ?? home.getTopicBySession(sessionId)?.yzjConversationId
-      if (conversationId === undefined) return ''
-      const events = eventsFromAssemble(assemble)
-      // Only GUI「发给助手」turns. Plugin followups already agent.inject()
-      // the same digest. Empty logs still return the groupId header.
-      if (latestUserSourceKind(events) !== 'user') return ''
-      return home.formatSummonWindow(conversationId, undefined, sessionId)
-    },
-  }))
+export function summonWindowText(_home: SummonHomeFace, _assemble: AssembleFace | undefined): string {
+  return ''
+}
+
+const WINDOW_MARK = '［本群最近消息'
+
+function userMessageData(event: { type: string; data: unknown }): Record<string, unknown> | undefined {
+  if (event.type !== 'user/message') return undefined
+  return typeof event.data === 'object' && event.data !== null
+    ? event.data as Record<string, unknown>
+    : undefined
+}
+
+function sourceOf(data: Record<string, unknown>): Record<string, unknown> {
+  return typeof data.source === 'object' && data.source !== null
+    ? data.source as Record<string, unknown>
+    : {}
+}
+
+function textOfUserMessage(data: Record<string, unknown>): string {
+  const content = data.content
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  return content.map((part) => {
+    if (typeof part === 'string') return part
+    if (typeof part === 'object' && part !== null) {
+      const text = (part as Record<string, unknown>).text
+      return typeof text === 'string' ? text : ''
+    }
+    return ''
+  }).join('')
+}
+
+function isRuntimeSnapshot(source: Record<string, unknown>): boolean {
+  return source.form === 'snapshot'
+}
+
+function snapshotHasBoundWindow(source: Record<string, unknown>): boolean {
+  if (!isRuntimeSnapshot(source)) return false
+  const sections = Array.isArray(source.sections) ? source.sections : []
+  return sections.some((section) => {
+    if (typeof section !== 'object' || section === null) return false
+    return (section as Record<string, unknown>).name === 'yzj-bound-window'
+  })
+}
+
+function isPluginWindowInject(data: Record<string, unknown>): boolean {
+  const source = sourceOf(data)
+  if (source.kind !== 'plugin' || isRuntimeSnapshot(source)) return false
+  if (source.plugin === 'yzj-summon-window') return true
+  return textOfUserMessage(data).includes(WINDOW_MARK)
+}
+
+function latestNonSnapshotUserKind(
+  events: readonly { type: string; data: unknown }[],
+): 'user' | 'plugin' | 'none' {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event === undefined) continue
+    const data = userMessageData(event)
+    if (data === undefined) continue
+    const source = sourceOf(data)
+    if (isRuntimeSnapshot(source) || source.form === 'catalog') continue
+    return source.kind === 'plugin' ? 'plugin' : 'user'
+  }
+  return 'none'
+}
+
+function snapshotHasBoundWindowIn(
+  events: readonly { type: string; data: unknown }[],
+): boolean {
+  return events.some((event) => {
+    const data = userMessageData(event)
+    return data !== undefined && snapshotHasBoundWindow(sourceOf(data))
+  })
+}
+
+function pluginInjectedWindowIn(
+  events: readonly { type: string; data: unknown }[],
+): boolean {
+  return events.some((event) => {
+    const data = userMessageData(event)
+    return data !== undefined && isPluginWindowInject(data)
+  })
+}
+
+/** True when this session already has a summon-window plugin line or old snapshot section. */
+export function sessionHasSummonWindow(
+  events: readonly { type: string; data: unknown }[],
+): boolean {
+  return pluginInjectedWindowIn(events) || snapshotHasBoundWindowIn(events)
+}
+
+function messagesHaveSummonWindow(messages: readonly unknown[]): boolean {
+  return messages.some((message) => {
+    if (typeof message !== 'object' || message === null) return false
+    return isPluginWindowInject(message as Record<string, unknown>)
+      || snapshotHasBoundWindow(sourceOf(message as Record<string, unknown>))
+  })
+}
+
+/**
+ * First user turn on a yzj room/topic: prepend one plugin window message.
+ * Later turns no-op. Official Chat and drawer share this (pitfall-031).
+ */
+export function applySummonOncePreStep(
+  ctx: { on: (name: string, listener: (...args: never[]) => unknown) => unknown },
+  home: SummonHomeFace,
+): void {
+  ctx.on('agent/pre-step', (async (payload: {
+    agent?: { session?: { id?: string; events?: readonly { type: string; data: unknown }[] } }
+    messages?: unknown[]
+  }, next: () => Promise<{ kind: string; messages?: unknown[] }>) => {
+    const decision = await next()
+    if (decision.kind !== 'enter') return decision
+    const sessionId = payload.agent?.session?.id
+    if (sessionId === undefined || sessionId === '') return decision
+    const events = payload.agent?.session?.events ?? []
+    const incoming = decision.messages ?? payload.messages ?? []
+    if (sessionHasSummonWindow(events) || messagesHaveSummonWindow(incoming)) return decision
+    const conversationId = home.getBySession(sessionId)?.yzjConversationId
+      ?? home.getTopicBySession(sessionId)?.yzjConversationId
+    if (conversationId === undefined) return decision
+    const text = home.formatSummonWindow(conversationId, undefined, sessionId)
+    if (text === '') return decision
+    const planted = {
+      id: crypto.randomUUID(),
+      role: 'user' as const,
+      content: [{ type: 'text' as const, text }],
+      source: { kind: 'plugin' as const, plugin: 'yzj-summon-window' },
+    }
+    return { kind: 'enter', messages: [planted, ...incoming] }
+  }) as never)
+}
+
+/** @deprecated Window no longer lives in the snapshot; prefer sessionHasSummonWindow. */
+export function shouldAttachSummonWindow(
+  events: readonly { type: string; data: unknown }[],
+): boolean {
+  return !sessionHasSummonWindow(events) && latestNonSnapshotUserKind(events) !== 'plugin'
 }
 
 /** Structural AssembleContext (harness `assembleContextFor` sets agent + scope = Agent). */
@@ -159,16 +286,6 @@ export function sessionIdFromAssemble(assemble: AssembleFace | undefined): strin
   return undefined
 }
 
-function eventsFromAssemble(assemble: AssembleFace | undefined): readonly { type: string; data: unknown }[] {
-  const fromAgent = assemble?.agent?.session?.events
-  if (fromAgent !== undefined) return fromAgent
-  if (assemble?.scope !== undefined && typeof assemble.scope === 'object' && assemble.scope !== null) {
-    const scoped = assemble.scope as { session?: { events?: readonly { type: string; data: unknown }[] } }
-    if (scoped.session?.events !== undefined) return scoped.session.events
-  }
-  return []
-}
-
 export {
   HomeBindingStore, conversationKindOf, homeSessionId, yzjHomeDomainSpec,
 } from './home.ts'
@@ -176,7 +293,7 @@ export {
   TopicAnchorStore, topicSessionId, topicAnchorKey, yzjTopicDomainSpec,
 } from './topics.ts'
 export {
-  BoundLogStore, applyAppend, ackLocalEntry, failLocalEntry, formatSummonWindow,
+  BoundLogStore, applyAppend, ackLocalEntry, failLocalEntry, formatSummonWindow, threadEntries,
   mergeFused, cliMessageToEntry, cliMessageList, extractSendMsgId, localMsgId,
   robotOutboundEntry, isPluginFollowup, latestUserSourceKind, DEFAULT_BOUND_LOG_LIMITS, yzjHomeLogDomainSpec,
   clipLogParam,

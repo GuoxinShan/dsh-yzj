@@ -115,6 +115,8 @@ describe('TodoPane', () => {
     expect(text).toContain('今天到期的活')
     expect(text).toContain('待办')
     expect(text).toContain('以后的活')
+    expect(face.container.querySelectorAll('[draggable="true"]').length).toBe(0)
+    expect(text).not.toContain('拖入')
   })
 
   it('aggregates tag chips and filters on click', () => {

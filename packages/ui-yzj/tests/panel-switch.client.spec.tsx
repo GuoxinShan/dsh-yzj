@@ -92,6 +92,8 @@ describe('YzjPanel conversation switch', () => {
     clickNamed(container, '群A')
     await flush()
     expect(container.textContent).toContain('A的话')
+    expect(container.querySelectorAll('[draggable="true"]').length).toBe(0)
+    expect(container.textContent).not.toContain('松开以插入')
     clickNamed(container, '群B')
     expect(container.textContent).toContain('群B')
     expect(container.textContent).not.toContain('A的话')

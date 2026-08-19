@@ -62,7 +62,7 @@ describe('room-layout', () => {
     expect(topicReplyCount(topic, items)).toBe(2)
   })
 
-  it('builds an artifact card only for robot-outbound files', () => {
+  it('builds an artifact card for robot-outbound and dsh-send files', () => {
     expect(artifactOf(im({ msgId: 't', origin: 'robot-outbound', content: '已排好' }))).toBeUndefined()
     expect(artifactOf(im({
       msgId: 'f',
@@ -71,5 +71,22 @@ describe('room-layout', () => {
       param: { name: '排期.md', ext: 'md' },
       content: '[文件] 排期.md',
     }))).toEqual({ type: 'DOC', name: '排期.md', note: '已发进群 · 点开查看' })
+    expect(artifactOf(im({
+      msgId: 'd',
+      origin: 'dsh-send',
+      isSelf: true,
+      topicSessionId: 'yzj-topic-1',
+      msgType: 'file',
+      param: { name: '纪要.md', ext: 'md' },
+      content: '[文件] 纪要.md',
+    }))).toEqual({ type: 'DOC', name: '纪要.md', note: '已发进群 · 点开查看' })
+    expect(artifactOf(im({
+      msgId: 'me',
+      origin: 'dsh-send',
+      isSelf: true,
+      msgType: 'file',
+      param: { name: '随便.pdf', ext: 'pdf' },
+      content: '[文件] 随便.pdf',
+    }))).toBeUndefined()
   })
 })

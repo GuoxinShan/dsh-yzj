@@ -22,7 +22,10 @@ and bounded prompt injection. Design and contracts:
 - **Injection** (opportunistic, via `ctx.get('systemPrompt')`): the
   `yzj-memory` dynamic context renders `injectScopes`' projections on every
   assembly, capped per scope by that scope's `sections.yaml`
-  `inject_char_cap`. Empty vault ⇒ empty text ⇒ no contribution.
+  `inject_char_cap`. Empty vault ⇒ empty text ⇒ no contribution. The
+  harness only *emits* a new runtime snapshot when the joined text
+  changes; a flickering `yzj-bound-window` used to force memory to
+  resend (pitfall-029). This package does not gate “once per session”.
 
 None of the tools enter the yzj WRITE_SPECS confirmation gate: the vault is
 local, human-auditable storage, not a Yunzhijia-side write (design §3/D4).

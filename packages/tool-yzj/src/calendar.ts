@@ -6,10 +6,11 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import {
-  runValue, yzjToolOutput,
+  runValue, yzjToolOutput, linesOf,
   asRecord, asArray, asString, asNumber, clipJson,
 } from './shared.ts'
 import type { YzjToolBudget } from './shared.ts'
+import { collectCalendarEvents } from './calendar-range.ts'
 
 /** Format an epoch-ms timestamp as `MM-DD HH:mm` in local time. */
 function clockTime(ms: unknown): string {
@@ -18,6 +19,17 @@ function clockTime(ms: unknown): string {
   const date = new Date(value)
   const pad = (n: number): string => String(n).padStart(2, '0')
   return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+/** Slim list row for the card payload (full CLI blobs overflow the meta cap). */
+function eventCard(record: unknown): Record<string, unknown> {
+  const event = asRecord(record)
+  const out: Record<string, unknown> = {}
+  for (const key of ['id', 'title', 'startDate', 'endDate', 'personName', 'meetingPlace', 'content', 'meetingStatus'] as const) {
+    const value = event[key]
+    if (value !== undefined && value !== null && value !== '') out[key] = value
+  }
+  return out
 }
 
 /** One event line for list digests. */
@@ -41,7 +53,7 @@ function eventLine(record: unknown): string {
 export function applyCalendarTools(ctx: Context, budget: YzjToolBudget): void {
   ctx.tools.register(defineTool({
     name: 'yzj_calendar_event_list',
-    description: 'List calendar events in a time window (pure dates or datetimes; windows over 30 days are split and deduplicated by the CLI). Returns one line per event.',
+    description: 'List calendar events in a time window (pure dates or datetimes). Multi-day windows are scanned with a two-pointer walk so recurring instances are not collapsed to the first occurrence. Returns one line per event.',
     parameters: {
       start: { type: 'string', required: true, description: 'Start: "YYYY-MM-DD", "YYYY-MM-DDTHH:mm:ss", with timezone, or unix seconds/ms.' },
       end: { type: 'string', required: true, description: 'End (same formats).' },
@@ -50,14 +62,36 @@ export function applyCalendarTools(ctx: Context, budget: YzjToolBudget): void {
     timeoutMs: budget.timeoutMs,
     isConcurrencySafe: () => true,
     async execute(args) {
-      return runValue(ctx, budget, 'calendar event list',
-        ['calendar', 'event', 'list', '--start', args.start, '--end', args.end],
-        (json) => {
-          const events = asArray(json)
-          const lines = events.map(eventLine)
-          const content = lines.length === 0 ? '(no events)' : lines.join('\n')
-          return { content, data: { list: clipJson(events, { maxChars: budget.maxMetaChars }) } }
-        })
+      const collected = await collectCalendarEvents(args.start, args.end, async (start, end) => {
+        const result = await ctx.yzjBridge.run(
+          ['calendar', 'event', 'list', '--start', start, '--end', end],
+          { timeoutMs: budget.timeoutMs },
+        )
+        if (!result.ok) {
+          const detail = result.stderr.trim() === ''
+            ? `exit ${result.exitCode ?? 'killed'}`
+            : result.stderr.trim()
+          return { ok: false, errorText: detail }
+        }
+        return result.json === undefined ? { ok: true } : { ok: true, json: result.json }
+      })
+      if (!collected.ok) {
+        return {
+          content: `yzj calendar event list failed: ${collected.errorText}`,
+          truncated: false,
+          data: {},
+        }
+      }
+      const events = collected.events
+      if (events.length === 0) {
+        return { content: '(no events)', truncated: false, data: { list: clipJson([], { maxChars: budget.maxMetaChars }) } }
+      }
+      const digest = linesOf(events.map(eventLine), budget.maxRenderChars)
+      return {
+        content: digest.content,
+        truncated: digest.truncated,
+        data: { list: clipJson(events.map(eventCard), { maxChars: budget.maxMetaChars }) },
+      }
     },
   }))
 

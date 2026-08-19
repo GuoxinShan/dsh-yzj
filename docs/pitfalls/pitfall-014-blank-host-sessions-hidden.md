@@ -19,11 +19,15 @@ harness `sessionBlank` = 日志里没有 `turn/start`。侧栏 `sessionVisible` 
 
 ## 解法（Fix）
 
-`publishHostSession`（`packages/ui-yzj/src/home-open.ts`）：create/resume 之后若还没有 `turn/start`，追加一次已关闭空 turn（`turn/start` + `turn/end` reason completed）并钉 `session/title`（群名，`source.kind=user`）。不调用模型、不写 ①②。已有真实回合的宿主只补标题、不再写第二轮空 turn。
+房间必须写一次已关闭空 turn + `session/title`，否则是 blank「新会话」：侧栏点走会藏，但主面没有 tab ring，`conversation.view`（群聊工作台）挂不上。v1.8 试过停写空 turn，真机点「对话」`yzj-room-shell` 为 0，并出现 `Maximum call stack size exceeded`。
+
+R20 房间不 attach「云之家」，该工作区「新建会话」不会复用挂钩。侧栏「未分组」那一行是画布税，不是产品要的群聊 session。
+
+话题禁止套空 turn（pitfall-025 / R25）。
 
 产品法见 `docs/spec/group-room-topics.md` R14。
 
 ## 回归覆盖（Regression coverage）
 
-- `packages/ui-yzj/tests/home-open.spec.ts`：create 后事件序 `turn/start` / `turn/end` / `session/title`；已有 `turn/start` 不重复。
-- `.acceptance/verify-group-room-e2e.mjs`：侧栏能搜到群名（需 GUI 加载新 host）。
+- `packages/ui-yzj/tests/home-open.spec.ts`：房间 create 后 `turn/start` / `turn/end` / `session/title`。
+- `.acceptance/verify-dock-chat.mjs`：点「对话」必须挂上 `yzj-room-shell`。

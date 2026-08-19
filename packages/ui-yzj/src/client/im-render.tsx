@@ -5,7 +5,7 @@
  */
 import { useEffect, useState, type ReactNode } from 'react'
 import type { YzjPanelInject } from './rpc.ts'
-import { formatSize, resolveFileData, senderPhotoOf } from './im-cache.ts'
+import { formatSize, peekFileData, resolveFileData, senderPhotoOf } from './im-cache.ts'
 import css from './panel.module.css'
 
 type UnknownRecord = Record<string, unknown>
@@ -75,9 +75,17 @@ export function ProxyImage({ fileId, alt, onOpen, inject }: {
   onOpen: (src: string) => void
   inject: Pick<YzjPanelInject, 'fetchFileData'>
 }) {
-  const [src, setSrc] = useState<string | null>(null)
+  const [src, setSrc] = useState<string | null>(() => peekFileData(fileId) ?? null)
   const [failed, setFailed] = useState(false)
   useEffect(() => {
+    const hit = peekFileData(fileId)
+    if (hit !== undefined) {
+      setSrc(hit)
+      setFailed(false)
+      return
+    }
+    setSrc(null)
+    setFailed(false)
     let alive = true
     void resolveFileData(fileId, inject).then(dataUrl => {
       if (!alive) return
