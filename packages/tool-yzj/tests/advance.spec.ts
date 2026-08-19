@@ -7,6 +7,7 @@
  * Equals/Contains filters.
  */
 import { describe, expect, it } from 'vitest'
+import { Context as LiveContext } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
 import type { YzjRunResult } from '@dsh-yzj/bridge'
 import {
@@ -14,10 +15,12 @@ import {
   checkStageTransition, nextSequentialId, toneOf, parseMetrics,
   parseAdvanceItem, parseAdvanceEntry, aggregateSources,
   buildInspectDigest, buildScanDigest, legalNextStages, INSPECT_DISCIPLINE,
-  isSkippableSender, refsOverlap, MAX_SCAN_GROUPS,
+  isSkippableSender, refsOverlap, MAX_SCAN_GROUPS, YzjAdvanceService,
+  documentThreadEntryInput,
 } from '../src/advance.ts'
 import type { AdvanceCaches, YzjAdvanceEntry, YzjAdvanceItem } from '../src/advance.ts'
 import { ScanCursorStore, scanStateOf } from '../src/scan-cursors.ts'
+import { AdvanceThreadStore, parseThreadToken, threadKindOf, sourceTypeOfThread } from '../src/advance-threads.ts'
 import { todayStr } from '../src/todo.ts'
 import type { YzjToolBudget } from '../src/shared.ts'
 
@@ -165,6 +168,32 @@ function mount(store: FakeStore): { ctx: Context; tools: CapturedTool[]; calls: 
     },
   } as unknown as Context
   applyAdvanceTools(ctx, BUDGET, {})
+  return { ctx, tools, calls }
+}
+
+/** Mount with an explicit thread registry so subscription flows can assert on it. */
+function mountWithThreads(store: FakeStore, threads: AdvanceThreadStore): { ctx: Context; tools: CapturedTool[]; calls: string[][] } {
+  const tools: CapturedTool[] = []
+  const calls: string[][] = []
+  const ctx = {
+    tools: {
+      register(def: { name: string; execute: CapturedTool['execute'] }): void {
+        tools.push({ name: def.name, execute: def.execute })
+      },
+    },
+    yzjBridge: {
+      async run(command: string[]): Promise<YzjRunResult> {
+        calls.push(command)
+        try {
+          const json = store.handle(command)
+          return { ok: true, exitCode: 0, timedOut: false, stdout: '', stderr: '', json }
+        } catch (error) {
+          return { ok: false, exitCode: 1, timedOut: false, stdout: '', stderr: String((error as Error).message), json: undefined }
+        }
+      },
+    },
+  } as unknown as Context
+  applyAdvanceTools(ctx, BUDGET, {}, undefined, new ScanCursorStore(), threads)
   return { ctx, tools, calls }
 }
 
@@ -508,6 +537,31 @@ describe('scan helpers', () => {
   })
 })
 
+describe('thread token grammar (spec §15.2)', () => {
+  it('accepts the five literal prefixes and nothing else', () => {
+    expect(parseThreadToken('im:g-1')).toEqual({ prefix: 'im', id: 'g-1' })
+    expect(parseThreadToken('doc:abc_123')).toEqual({ prefix: 'doc', id: 'abc_123' })
+    expect(parseThreadToken('todo:t1')).toEqual({ prefix: 'todo', id: 't1' })
+    expect(parseThreadToken('event:e1')).toEqual({ prefix: 'event', id: 'e1' })
+    expect(parseThreadToken('file:f1')).toEqual({ prefix: 'file', id: 'f1' })
+    expect(parseThreadToken('msg:m1')).toBeUndefined()
+    expect(parseThreadToken('im:')).toBeUndefined()
+    expect(parseThreadToken('im:g 1')).toBeUndefined()
+    expect(parseThreadToken('')).toBeUndefined()
+  })
+
+  it('maps prefixes to thread kinds and 事元 source types', () => {
+    expect(threadKindOf('im')).toBe('persistent')
+    expect(threadKindOf('doc')).toBe('document')
+    expect(threadKindOf('file')).toBe('document')
+    expect(threadKindOf('msg')).toBeUndefined()
+    expect(sourceTypeOfThread('doc')).toBe('文档')
+    expect(sourceTypeOfThread('file')).toBe('文档')
+    expect(sourceTypeOfThread('todo')).toBe('待办')
+    expect(sourceTypeOfThread('event')).toBe('日程')
+  })
+})
+
 describe('yzj_advance_scan', () => {
   function seedIm(store: FakeStore): void {
     store.selfOpenId = 'me-openid'
@@ -576,5 +630,153 @@ describe('yzj_advance_scan', () => {
     expect(state.found).toBe(0)
     expect(state.scannedAt).not.toBeNull()
     expect(state.groups[0]?.groupId).toBe('g-dsh2')
+  })
+})
+
+describe('intent threads (spec §15 / ③.2)', () => {
+  it('create with threads subscribes 线程①; invalid tokens are skipped', async () => {
+    const store = new FakeStore(true)
+    store.groups = [{ groupId: 'g-dsh2', groupName: 'dsh-2' }]
+    const threads = new AdvanceThreadStore()
+    const { tools } = mountWithThreads(store, threads)
+    const create = tools.find(tool => tool.name === 'yzj_advance_create')!
+    const result = await create.execute({
+      title: '带订阅立项',
+      threads: ['im:g-dsh2', 'bogus-token'],
+    })
+    expect(result.content).toContain('created 推进事项')
+    expect(result.content).toContain('已订阅线程：im:g-dsh2')
+    const advanceId = String(store.items[0]!.fields['advance_id'])
+    const rows = threads.threadsOf(advanceId)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ token: 'im:g-dsh2', kind: 'persistent', label: 'dsh-2', addedBy: 'agent' })
+  })
+
+  it('one group subscribed by two items: one fetch, cursor advances once, digest lists subscriptions', async () => {
+    const store = new FakeStore(true)
+    store.selfOpenId = 'me-openid'
+    store.groups = [{ groupId: 'g-dsh2', groupName: 'dsh-2' }]
+    store.messages['g-dsh2'] = [
+      { msgId: 'm0', fromOpenId: 'alice', content: '历史消息', sendTime: '2026/08/19 10:00' },
+    ]
+    store.items.push(
+      { id: 'r1', fields: { advance_id: 'A-1', 名称: '事项甲', 阶段: 'running' } },
+      { id: 'r2', fields: { advance_id: 'A-2', 名称: '事项乙', 阶段: 'running' } },
+      { id: 'r3', fields: { advance_id: 'A-3', 名称: '已完成', 阶段: 'completed' } },
+    )
+    const threads = new AdvanceThreadStore()
+    await threads.add('A-1', { token: 'im:g-dsh2', kind: 'persistent', label: 'dsh-2', addedBy: 'agent', addedAt: 1 })
+    await threads.add('A-2', { token: 'im:g-dsh2', kind: 'persistent', label: 'dsh-2', addedBy: 'user', addedAt: 2 })
+    await threads.add('A-2', { token: 'doc:d1', kind: 'document', label: '纪要', addedBy: 'user', addedAt: 3 })
+    // completed 事项的订阅不进扫描集合
+    await threads.add('A-3', { token: 'im:g-other', kind: 'persistent', label: '别的群', addedBy: 'agent', addedAt: 4 })
+    const cursors = new ScanCursorStore()
+    const { ctx, calls } = mountWithThreads(store, threads)
+    const first = await coreScanAdvance(ctx, BUDGET, {}, freshCaches(), cursors, [], 20, undefined, threads)
+    expect(first.groups).toHaveLength(1)
+    expect(first.groups[0]?.baseline).toBe(true)
+    store.messages['g-dsh2']!.push(
+      { msgId: 'm1', fromOpenId: 'alice', content: '新进度一句', sendTime: '2026/08/19 11:00' },
+    )
+    calls.length = 0
+    const second = await coreScanAdvance(ctx, BUDGET, {}, freshCaches(), cursors, [], 20, undefined, threads)
+    // 同一渠道一次取流（im message list 恰好一次），cursor 只前进一次
+    expect(calls.filter(command => command[0] === 'im' && command[1] === 'message')).toHaveLength(1)
+    expect(second.signals.map(signal => signal.msgId)).toEqual(['m1'])
+    expect(cursors.get('g-dsh2')?.lastMsgId).toBe('m1')
+    // 分发材料：每个 open 事项的订阅清单（completed 不列）
+    expect(second.subscriptions.map(row => row.advanceId)).toEqual(['A-1', 'A-2'])
+    expect(second.subscriptions[1]?.tokens).toEqual(['im:g-dsh2', 'doc:d1'])
+    const digest = buildScanDigest(second)
+    expect(digest).toContain('订阅清单（分发按线程 + 语义相关）')
+    expect(digest).toContain('A-2 · 事项乙 [running] → im:g-dsh2，doc:d1')
+    expect(digest).not.toContain('g-other')
+  })
+
+  it('scan without groups errors with guidance when nothing is subscribed', async () => {
+    const store = new FakeStore(true)
+    store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '事项甲', 阶段: 'running' } })
+    const threads = new AdvanceThreadStore()
+    const { tools } = mountWithThreads(store, threads)
+    const scan = tools.find(tool => tool.name === 'yzj_advance_scan')!
+    const result = await scan.execute({})
+    expect(result.content).toContain('没有 open 事项订阅 im: 渠道')
+  })
+
+  it('document-source association lands one 备注 事元; repeat is idempotent', async () => {
+    const store = new FakeStore(true)
+    store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'running' } })
+    const threads = new AdvanceThreadStore()
+    const ctx = new LiveContext()
+    ;(ctx as unknown as { yzjBridge: { run: (command: string[]) => Promise<YzjRunResult> } }).yzjBridge = {
+      async run(command: string[]): Promise<YzjRunResult> {
+        try {
+          const json = store.handle(command)
+          return { ok: true, exitCode: 0, timedOut: false, stdout: '', stderr: '', json }
+        } catch (error) {
+          return { ok: false, exitCode: 1, timedOut: false, stdout: '', stderr: String((error as Error).message), json: undefined }
+        }
+      },
+    }
+    const service = new YzjAdvanceService(ctx, BUDGET, {}, {}, new ScanCursorStore(), threads)
+    const first = await service.threadAdd('A-1', 'doc:d-123', '范围说明')
+    expect(first.entryAppended).toBe(true)
+    expect(first.threads[0]).toMatchObject({ token: 'doc:d-123', kind: 'document', label: '范围说明', addedBy: 'user' })
+    expect(store.entries).toHaveLength(1)
+    expect(store.entries[0]!.fields['来源类型']).toBe('文档')
+    expect(store.entries[0]!.fields['变化类型']).toBe('备注')
+    expect(store.entries[0]!.fields['引用']).toBe('doc:d-123')
+    expect(store.entries[0]!.fields['操作者']).toBe('user')
+    // 重复关联：注册表与事元双重幂等
+    const again = await service.threadAdd('A-1', 'doc:d-123', '范围说明')
+    expect(again.entryAppended).toBe(false)
+    expect(store.entries).toHaveLength(1)
+    expect(threads.threadsOf('A-1')).toHaveLength(1)
+    // detail 折叠了 threads 字段
+    const detail = await service.get('A-1')
+    expect(detail.threads).toHaveLength(1)
+    expect(detail.threads[0]?.token).toBe('doc:d-123')
+    // 解除只删注册表行，已产事元不动
+    const removed = await service.threadRemove('A-1', 'doc:d-123')
+    expect(removed).toEqual([])
+    expect(store.entries).toHaveLength(1)
+    const afterRemove = await service.get('A-1')
+    expect(afterRemove.threads).toEqual([])
+    expect(afterRemove.entries.map(entry => entry.summary)).toContain('关联渠道：范围说明')
+  })
+
+  it('im association registers only (no entry); invalid token and missing item are rejected', async () => {
+    const store = new FakeStore(true)
+    store.groups = [{ groupId: 'g-dsh2', groupName: 'dsh-2' }]
+    store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'running' } })
+    const threads = new AdvanceThreadStore()
+    const ctx = new LiveContext()
+    ;(ctx as unknown as { yzjBridge: { run: (command: string[]) => Promise<YzjRunResult> } }).yzjBridge = {
+      async run(command: string[]): Promise<YzjRunResult> {
+        try {
+          const json = store.handle(command)
+          return { ok: true, exitCode: 0, timedOut: false, stdout: '', stderr: '', json }
+        } catch (error) {
+          return { ok: false, exitCode: 1, timedOut: false, stdout: '', stderr: String((error as Error).message), json: undefined }
+        }
+      },
+    }
+    const service = new YzjAdvanceService(ctx, BUDGET, {}, {}, new ScanCursorStore(), threads)
+    const im = await service.threadAdd('A-1', 'im:g-dsh2')
+    expect(im.entryAppended).toBe(false)
+    expect(im.threads[0]?.label).toBe('dsh-2')
+    expect(store.entries).toHaveLength(0)
+    await expect(service.threadAdd('A-1', 'msg:xx')).rejects.toThrow(/非法线程 token/)
+    await expect(service.threadAdd('A-404', 'doc:d1')).rejects.toThrow(/不存在/)
+    await expect(service.threadRemove('A-1', 'bogus')).rejects.toThrow(/非法线程 token/)
+  })
+
+  it('documentThreadEntryInput maps token prefixes to source types', () => {
+    const docEntry = documentThreadEntryInput('A-1', 'doc:d1', '纪要')
+    expect(docEntry).toMatchObject({ sourceType: '文档', changeType: '备注', refs: ['doc:d1'], actor: 'user' })
+    expect(docEntry.summary).toBe('关联渠道：纪要')
+    expect(documentThreadEntryInput('A-1', 'todo:t1', '待办').sourceType).toBe('待办')
+    expect(documentThreadEntryInput('A-1', 'event:e1', '日程').sourceType).toBe('日程')
+    expect(documentThreadEntryInput('A-1', 'file:f1', '文件').sourceType).toBe('文档')
   })
 })

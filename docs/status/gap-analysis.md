@@ -684,6 +684,24 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 | 迁移合同 | 新增 [`../migration/advance-lingee-migration.md`](../migration/advance-lingee-migration.md)：MVP↔灵基 = 「合同+证据→重建」；三层拆分（合同/机制形状/脚手架）、五断层、验证清单、「存钱 vs 镀金」取舍原则、灵基需求清单 |
 | 图 | `docs/diagrams/advance-6-journey`（用户旅程按口述重画：意图线程×N 订阅、手动喂/关联两条路径、待我决定/待我验收双出口）。**图集清理**：删 `advance-2-lifecycle`（被 6-journey + 3-gate 覆盖）与 `advance-4-dream`（「巡检唤醒 Dream」触发关系被决策 21 双节奏取代）；`advance-1` 输入改「意图线程订阅」；`advance-7` 补第六块「策略选择结构化」。编号留空号不重排；图集已登记 docs/README.md |
 
-**实现缺口（③.2 待排）**：`yzj_advance_threads` 未实现；面板无「关联渠道」入口；scan 未按订阅分发；决策区未渲染 `选项N`。当前 scan 仍是 `groups` 显式参数形态（决策 17），与订阅模型并存，③.2 落地时以订阅清单为 groups 来源。
+**实现缺口（③.2，已于 §24.7 落地）**：`yzj_advance_threads`、面板「关联渠道」入口、scan 按订阅取流分发、决策区 `选项N` 渲染均已实现；feed 带 `subscribe` 与单文档源内容更新监测仍后置（见 §24.7 已知偏差）。
 
 **正式开发交付面（同日晚补，已发 830 群；汇报产物不留仓库——用户拍板）**：接口数据契约 v1.0（自 spec v1.5 提炼的三对象字段级 + 状态机 + 门控 + 判据 + 接口面 + 平台需求八条快照）、中国新网故事线文字版（10 项任务分摊 / AI 自动 7 / 人 4 次判断 / 干预入口 / 节奏边界）、系统架构蓝图 / 产品模块关系图 / 故事线图三张。五件已发群「830 项目【登顶计划】」（`6a605c7ce4b0772a6279295e`）：文本消息 `6a856f0ce4b08c3f7f34d036`（含外部协助三件事：灵基平台八项排期 / 约王健对齐 / AI 速记结构化访问），文件消息 `6a856f0ee4b0892254769fbe`（架构蓝图 png）/ `6a856f0fe4b0e1cfb89cc528`（模块关系 png）/ `6a856f11e4b0e01177c0c896`（故事线 png）/ `6a856f12e4b00a134059b32e`（契约 md）/ `6a856f12e4b0a35e3fd4b583`（故事线文字版 md），2026-08-19 16:51。**这些文件只存在于群消息，仓库不保留副本**；合同唯一事实源 = spec v1.5 + advance-lingee-migration。
+
+## 24.7 AI推进｜③.2 意图线程订阅（2026-08-19，设计随提交）
+
+设计基线 [`ai-advance-design.md`](../spec/ai-advance-design.md) **v1.5 §15**，决策 20 / 21 / 23。不改双表 schema / 六态 / 门控线 / feed 唯一变更通道；订阅承载在 host storage-domain，写路径只有两条：agent 立项参数（既有卡）+ 面板直写（D9 无卡）。
+
+| 面 | 交付 | 证据 |
+|---|---|---|
+| 订阅注册表 | `tool-yzj/src/advance-threads.ts`：storage-domain `yzj_advance_threads`（v0）`advanceId → [{ token, kind, label, addedBy, addedAt }]`；token 字面量正则 `im:/doc:/todo:/event:/file:`；`im:` = persistent，其余 = document；内存垫底直到 `open()`（同 scan-cursors 范式） | `advance.spec.ts`：token 语法 / kind / 来源类型映射单测 |
+| create 挂线程① | `yzj_advance_create` 新增可选 `threads` 参数（schema 字面量，pitfall-009）；非法 token 跳过；im: 标签写入时经群目录解析一次；digest 回报「已订阅线程」。`WRITE_SPECS` 不变（create 本就标准卡） | `advance.spec.ts`：带 threads 立项 → 注册表行（addedBy=agent、label=群名）；bogus token 被丢弃 |
+| scan 聚合订阅 | `yzj_advance_scan` 的 `groups` 改为可选：缺省时聚合全部 open 事项的 `im:` 线程去重（completed 事项不进集合）；超过 8 个渠道报错提示分批（决策 17 刚性，不悄悄截断）；无订阅时报错带指引；digest 新增「订阅清单」行（每事项 token 列表）供模型分发；cursor 机制零改动（渠道级共享） | `advance.spec.ts`：同一群被两事项订阅 → `im message list` 恰好一次、cursor 只前进一次、两事项各自出现在订阅清单；completed 的订阅不进扫描集合；无订阅报错指引 |
+| 单文档源关联 | `advance-thread-add` 对 document 类追加一条 `备注` 事元（来源类型按 token 映射：doc/file→文档、todo→待办、event→日程；refs=[token]）；重复关联被注册表 + 决策 19 同源去重双重幂等挡住 | `advance.spec.ts`：关联 doc → 一条 user 备注事元；重复关联不加行；解除只删注册表行、事元不动 |
+| 服务面 + RPC | `ctx.yzjAdvance` 新增 `threadsOf` / `threadAdd` / `threadRemove`；`/yzj` +2 端点 `advance-thread-add` / `advance-thread-remove`（用户直写，无卡）；线程清单折进 `advance-get` 响应的 `threads` 字段，不另开读端点；`openNow` 同时打开两个 domain | `rpc.node.spec.ts`：两端点缺服务/缺载荷/服务报错/透传四类契约 + advance-get threads 折叠 |
+| 面板 | 详情右栏顶部「订阅渠道」区：线程 chips（`data-testid="yzj-advance-threads"`，群/文/待/日/附图标 + 你关联/AI 关联 + × 解除）+「关联渠道」弹层（群 picker 复用 groups RPC + 手输 token 兜底）；决策区解析最新决策请求事元的 `选项N` 行渲染按钮（点击 = judge confirm_advance 带 note=选项全文），`影响` 行单独展示，无选项行时既有三动词原样 | `advance-pane.client.spec.tsx`：chips 渲染/解除、弹层群 picker/手输 token、选项按钮落 note、无选项回归 + `parseDecisionOptions` 单测 |
+| 教学面 | `INSPECT_DISCIPLINE` 补订阅分发一句；create description 写「在群话题里立项时带 threads=[im:<groupId>]」；scan description 写 groups 可选 + 订阅聚合语义 | 工具 description 文本；digest 断言「订阅清单」 |
+
+**真机（2026-08-19，本机 Mac，GUI 重启加载 worktree bundle，`yzj-cli` 已登录）**：`pnpm test` **592 绿**（基线 575 + 新增 17）。`node .acceptance/verify-advance-threads.mjs` → **ALL PASS**：sidecar 探针 `A-20260819-001`「线程探针 910289」走到 decision-needed → 决策区渲染 选项1/选项2 按钮 + 影响行、既有三动词仍在 → 点选项2 落 user 事元「确认推进：目标日期顺延两周」（你的判断）→ 关联渠道弹层群 picker（10 群）关联后 chip 出现、× 解除 → 手输 `doc:e2e-probe-doc` 落一条备注事元「关联渠道：e2e-probe-doc」。零页面错误。截图 `.acceptance/shots-advance-threads/1-decision-options.png` — `4-doc-thread.png`。**既有 E2E 回归**：`YZJ_E2E_GROUP=dsh-2 node .acceptance/verify-advance-feed.mjs` → ALL PASS（②③期现在反馈/事项卡/群房间喂入/picker 全通；话题步骤自跳过，见 pitfall-036：dsh-2 当前无话题锚点，属数据态非回归）；另以有话题的 830 群走查话题链路（抽屉 → 透镜 → 喂给推进 picker → 问助手预填不 followup）全绿。
+
+**已知偏差**：(a) agent 在 feed 里带 `subscribe` 意图（§15.2 提及）本切片未做，订阅写路径只有 create 参数 + 面板直写两条（计划内排除）；(b) 单文档源只做「关联即一条事元」，内容更新监测未排期（计划内排除，spec §15.1 已注）；(c) Dream 每日节奏未落地（④期配套，本切片只保证 scan 聚合可被任何节奏调用）；(d) 浏览器验收的线程①演示走用户关联路径（storage-domain 注册表是 GUI 进程私有的，sidecar 写入对 GUI 不可见，同 §24.4 sidecar cursor 局限）——立项挂线程①与「同群两事项一次取流」由 fake CLI 单测覆盖；(e) 线程 chip 未展示「最近取流时间」（§15.2 投影句的可选细节，cursor domain 未按线程反查，后置）；(f) vitest client 测试的 harness 源 alias 在无兄弟 checkout的 worktree 下回退到 `~/dev/deepseek-harness`（`DSH_HARNESS_ROOT` 可覆盖）——环境适配，不改变「兄弟 checkout 是唯一事实源」语义。

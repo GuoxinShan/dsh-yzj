@@ -364,6 +364,151 @@
   cursor: default;
 }
 
+/* --- decision options (spec §15.4 / 决策 23) ---------------------------------- */
+
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.optionBtn {
+  text-align: left;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 7px 10px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.optionBtn:hover {
+  border-color: var(--dsw-static-deepseek-500);
+  background: var(--dsw-static-deepseek-100);
+}
+
+.optionBtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.impact {
+  margin: 0;
+  font-size: 11.5px;
+  color: #e8a33d;
+}
+
+/* --- subscribed threads (spec §15.2) ------------------------------------------- */
+
+.linkBtn {
+  border: none;
+  background: none;
+  color: var(--dsw-static-deepseek-500);
+  font-size: 11.5px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.linkBtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.threads {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.threadChip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-base);
+  padding: 3px 6px 3px 4px;
+}
+
+.threadIcon {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-style: normal;
+  font-size: 10px;
+  background: var(--dsw-static-deepseek-100);
+  color: var(--dsw-static-deepseek-500);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.threadChip b {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.threadChip em {
+  flex: 0 0 auto;
+  font-style: normal;
+  font-size: 10px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.threadChip button {
+  flex: 0 0 auto;
+  border: none;
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 1;
+  padding: 2px 4px;
+  cursor: pointer;
+  border-radius: 999px;
+}
+
+.threadChip button:hover {
+  color: #e5484d;
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.threadGroupList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.threadGroupList button {
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-size: 11.5px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.threadGroupList button:hover {
+  border-color: var(--dsw-static-deepseek-500);
+}
+
+.threadGroupList button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 /* --- timeline ---------------------------------------------------------------- */
 
 .timeline {

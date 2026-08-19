@@ -22,6 +22,7 @@ import { YzjTodoService } from './todo.ts'
 import type { TodoConfig } from './todo.ts'
 import { applyAdvanceTools, YzjAdvanceService } from './advance.ts'
 import { ScanCursorStore } from './scan-cursors.ts'
+import { AdvanceThreadStore } from './advance-threads.ts'
 import { YzjHomeService } from './home.ts'
 import { applyApprovalGuard } from './guard.ts'
 import type { YzjToolBudget } from './shared.ts'
@@ -91,10 +92,13 @@ export function apply(ctx: Context, config: Config): void {
   // The advance (AI推进) board shares the active-library holder: the panel
   // switcher moves both the todo tab and the advance board to the same doc.
   // Scan cursors are a host-owned storage-domain (决策 18) shared by the
-  // scan tool and the board status RPC.
+  // scan tool and the board status RPC; intent-thread subscriptions are a
+  // second host-owned storage-domain (决策 20, spec §15.2) shared by the
+  // create/scan tools and the panel thread RPC.
   const scanCursors = new ScanCursorStore()
-  const advanceService = new YzjAdvanceService(ctx, budget, config.todo ?? {}, todoService.holder, scanCursors)
-  applyAdvanceTools(ctx, budget, config.todo ?? {}, todoService.holder, scanCursors)
+  const advanceThreads = new AdvanceThreadStore()
+  const advanceService = new YzjAdvanceService(ctx, budget, config.todo ?? {}, todoService.holder, scanCursors, advanceThreads)
+  applyAdvanceTools(ctx, budget, config.todo ?? {}, todoService.holder, scanCursors, advanceThreads)
   // Product-home binding table (dsh-home-session): one Yunzhijia
   // conversation ↔ one DSH session. Shared by robot inbound and UI pick-group.
   const home = new YzjHomeService(ctx, {
@@ -297,6 +301,10 @@ export {
 export {
   TopicAnchorStore, topicSessionId, topicAnchorKey, yzjTopicDomainSpec,
 } from './topics.ts'
+export {
+  AdvanceThreadStore, parseThreadToken, threadKindOf, sourceTypeOfThread, yzjAdvanceThreadsDomainSpec,
+} from './advance-threads.ts'
+export type { AdvanceThread, AdvanceThreadKind, AdvanceThreadStoreFace } from './advance-threads.ts'
 export {
   BoundLogStore, applyAppend, ackLocalEntry, failLocalEntry, formatSummonWindow, threadEntries,
   mergeFused, cliMessageToEntry, cliMessageList, extractSendMsgId, localMsgId,
