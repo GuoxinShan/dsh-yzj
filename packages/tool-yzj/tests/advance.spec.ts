@@ -90,8 +90,9 @@ class FakeStore {
       return {}
     }
     if (key === 'contact user') {
-      if (this.selfOpenId === '') return { list: [] }
-      return { list: [{ openId: this.selfOpenId, oId: this.selfOpenId }] }
+      // 真实 CLI 返回顶层数组(2026-08-19 实测;旧 {list} 形状曾掩盖 whoami 解析 bug)
+      if (this.selfOpenId === '') return []
+      return [{ openId: this.selfOpenId, oId: this.selfOpenId }]
     }
     if (key === 'im group') return { list: this.groups, more: false }
     if (key === 'im message') {

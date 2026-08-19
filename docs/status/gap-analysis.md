@@ -717,6 +717,12 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 
 **修复闭环（同日晚，决策 25）**：去重口径收窄为「refs 集合完全相等 + 同一 changeType 才算重放」（`isRefReplay`），部分重叠正常追加并返回 `overlappedRefs` 提示（`overlappedRefsOf`）；feed description 与 spec 决策 19/25、§13.3/§15.3、tool-yzj README 同步。单测 +3（830 回归用例：子集重叠追加带提示 / 同 refs 异 changeType 追加 / 超集追加 / 完全重放仍幂等；纯函数 `isRefReplay`/`overlappedRefsOf` 断言），全量 578 绿。真机回归（`advance-830-regression.mjs`）：巡检会话重放同一组 7 refs + 同 changeType → 幂等返回、事元仍 5 条（E-20260819-018 唯一承载），全程无确认卡（截图 `regression-idem.png`）。判定 9 的「3 张卡」维持历史事实不改写；若重跑第 1 波，③ 场景下应为恰好 2 张。
 
+**同一晚的连环修正（诚实记录）**：
+
+1. **回归证据当时无效**：上述真机回归实际跑在 worktree 旧 bundle 上——web profile 的 `@dsh-yzj/bundle` link 被③.2 开发切到 `~/.qoder/worktree/…` 未归位（新坑 [pitfall-038](../pitfalls/pitfall-038-profile-bundle-link-stale.md)）。完全重放在新旧语义下都幂等，故结论巧合成立；决策 25 的有效真机证据 = 单测 3 用例 + 下文过滤修复验证。link 已归位主 checkout。
+2. **判定 7 的 digest 层真相**：scan 的本人过滤（`whoamiOpenId`）因 `contact user get` 返回顶层裸数组而解析失配，selfOpenId 恒空——**digest 一直含本人消息**，判定 7 的 PASS 只证明了 refs 层（模型抑制纪律兜底），③.2 走查时模型把本人 19:22 报告当信号分析而暴露（pitfall-003 增补实例：mock 形状照错误假设写，单测绿真机挂）。已修：解析层裸数组优先兼容 `{list}`，fake store 改实测形状形成回归保护；真机验证（`advance-830-self-filter.mjs`，cursor 回拨 18:11 重扫）：本人 19:22/19:23 两条不再出现在 digest，19:42 非本人图片正常进入，ALL PASS。
+3. **遗留观察（limit 截断）**：第 2 波 scan limit=20 一轮覆盖 27 条候选时，17:18–18:11 的 5 条晚到信号（同事乙「工作现场」补充等）疑似未被任何一轮 feed/显式抑制——模型未触发第二轮 scan（§5 允许的「再扫一轮」依赖模型自报增量）。此为主动回路的覆盖度边界，记入③.2 后续观察。
+
 **遗留观察**：实验期间看板出现非本实验的探针事项（「线程探针 910289」18:05、「喂入探针 532538/928101/187603」18:16–18:27，为并行走查产物），不影响判定；实验现场（A-20260819-002 与「830实验·共识」目录）按 §9.1.4 保留，清理由 Guoxin Shan 决定。
 
 **结果同步（§9.2.1，19:22–19:23）**：实验报告 + 看板最终态图已发 测试群（文本 `6a8591fee4b0f812dd4eda8c` / 图 `6a85921ae4b098e1531d3d4a`），兑现 16:51 预告的「跑通后出实验报告」。

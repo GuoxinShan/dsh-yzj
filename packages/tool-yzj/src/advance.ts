@@ -297,9 +297,12 @@ function parseImMessage(record: unknown): { msgId: string; fromOpenId: string; c
 async function whoamiOpenId(ctx: Context, budget: YzjToolBudget): Promise<string> {
   const ran = await runJson(ctx, budget, 'contact user get', ['contact', 'user', 'get'])
   if (!ran.ok) return ''
-  const root = asRecord(ran.json)
-  const list = asArray(root.list)
-  const first = list.length > 0 ? asRecord(list[0]) : root
+  // The CLI prints a bare top-level array (verified against the real CLI on
+  // 2026-08-19 — the fake-store `{list:[...]}` shape masked this for months);
+  // tolerate both shapes.
+  const direct = asArray(ran.json)
+  const list = direct.length > 0 ? direct : asArray(asRecord(ran.json).list)
+  const first = list.length > 0 ? asRecord(list[0]) : asRecord(ran.json)
   return asString(first.openId ?? first.oId)
 }
 
