@@ -137,23 +137,25 @@ async function settle(): Promise<void> {
 }
 
 describe('queuesOf', () => {
-  it('groups the three queues by stage', () => {
+  it('groups the three queues by stage, terminals excluded (决策 26/27)', () => {
     const items = [
       item({ advanceId: 'A-1', stage: 'decision-needed' }),
       item({ advanceId: 'A-2', stage: 'ready-for-review' }),
       item({ advanceId: 'A-3', stage: 'running' }),
       item({ advanceId: 'A-4', stage: 'completed' }),
+      item({ advanceId: 'A-5', stage: 'cancelled' }),
     ]
     const queues = queuesOf(items)
     expect(queues.decide.map(i => i.advanceId)).toEqual(['A-1'])
     expect(queues.review.map(i => i.advanceId)).toEqual(['A-2'])
-    expect(queues.watch.map(i => i.advanceId)).toEqual(['A-3', 'A-4'])
+    expect(queues.watch.map(i => i.advanceId)).toEqual(['A-3'])
   })
 
-  it('labels all six stages in Chinese', () => {
-    for (const stage of ['draft', 'running', 'decision-needed', 'updated', 'ready-for-review', 'completed']) {
+  it('labels all seven stages in Chinese', () => {
+    for (const stage of ['draft', 'running', 'decision-needed', 'updated', 'ready-for-review', 'completed', 'cancelled']) {
       expect(STAGE_LABEL[stage]).toBeTruthy()
     }
+    expect(STAGE_LABEL['cancelled']).toBe('已中止')
   })
 })
 
@@ -369,6 +371,54 @@ describe('YzjAdvancePane', () => {
     expect(draft?.title).toBe('试运行')
     expect(draft?.text).toContain('yzj_advance_inspect')
     expect(draft?.text).toContain('不要 stageTo=completed')
+    act(() => { face.root.unmount() })
+  })
+
+  it('terminal stages render 沉淀复盘 entry and write the export draft (决策 26)', async () => {
+    setWorkbenchDomain('advance')
+    // 终局提示的语义是「收口当刻」:judge 后 activeId 仍是该事项、detail 重拉为终局
+    // (队列已排除终局,事后进入靠口述主路径——决策 26)。用例模拟当刻。
+    const face = mountPane({
+      items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行' })],
+      detail: { item: item({ advanceId: 'A-1', stage: 'completed', title: '试运行' }), entries: [] },
+    })
+    await settle()
+    const terminal = face.container.querySelector('[data-testid="yzj-advance-terminal"]')
+    expect(terminal?.textContent).toContain('已经完成')
+    const button = face.container.querySelector('[data-testid="yzj-advance-export-review"]') as HTMLButtonElement
+    expect(button).not.toBeNull()
+    await act(async () => { button.click(); await Promise.resolve() })
+    expect(getWorkbenchDomain()).toBe('im')
+    const draft = getAdvanceAskDraft()
+    expect(draft?.text).toContain('终局复盘沉淀')
+    expect(draft?.text).toContain('yzj_advance_get')
+    act(() => { face.root.unmount() })
+  })
+
+  it('cancelled shows 已中止 copy; 中止推进 needs a second tap (决策 27)', async () => {
+    const cancelledFace = mountPane({
+      items: [item({ advanceId: 'A-9', stage: 'running', title: '黄了' })],
+      detail: { item: item({ advanceId: 'A-9', stage: 'cancelled', title: '黄了' }), entries: [] },
+    })
+    await settle()
+    const terminal = cancelledFace.container.querySelector('[data-testid="yzj-advance-terminal"]')
+    expect(terminal?.textContent).toContain('已中止')
+    expect(cancelledFace.container.querySelector('[data-testid="yzj-advance-judge-cancel"]')).toBeNull()
+    act(() => { cancelledFace.root.unmount() })
+
+    setWorkbenchDomain('advance')
+    const face = mountPane({
+      items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行' })],
+      detail: { item: item({ advanceId: 'A-1', stage: 'running', title: '试运行' }), entries: [] },
+    })
+    await settle()
+    const cancel = face.container.querySelector('[data-testid="yzj-advance-judge-cancel"]') as HTMLButtonElement
+    expect(cancel.textContent).toContain('中止推进')
+    await act(async () => { cancel.click(); await Promise.resolve() })
+    expect(face.judged).toEqual([])
+    expect(cancel.textContent).toContain('再点一次')
+    await act(async () => { cancel.click(); await Promise.resolve() })
+    expect(face.judged).toEqual([{ advanceId: 'A-1', action: 'cancel' }])
     act(() => { face.root.unmount() })
   })
 

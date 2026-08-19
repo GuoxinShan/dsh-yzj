@@ -16,7 +16,7 @@ import {
   parseAdvanceItem, parseAdvanceEntry, aggregateSources,
   buildInspectDigest, buildScanDigest, legalNextStages, INSPECT_DISCIPLINE,
   isSkippableSender, refsOverlap, isRefReplay, overlappedRefsOf, MAX_SCAN_GROUPS, YzjAdvanceService,
-  documentThreadEntryInput,
+  documentThreadEntryInput, ADVANCE_STAGES,
 } from '../src/advance.ts'
 import type { AdvanceCaches, YzjAdvanceEntry, YzjAdvanceItem } from '../src/advance.ts'
 import { ScanCursorStore, scanStateOf } from '../src/scan-cursors.ts'
@@ -60,18 +60,26 @@ class FakeStore {
     this.provisioned = provisioned
   }
 
+  /** Simulates a pre-v1.6 推进库 whose 阶段 SingleSelect lacks the cancelled option. */
+  legacyStageOptions = false
+
   private nextRecordId(): string {
     this.seq += 1
     return `r${this.seq}`
   }
 
   sheets(): unknown[] {
+    // 阶段 SingleSelect 选项:data.items(与真实 CLI 同形,2026-08-19 实测);
+    // legacyStageOptions 模拟 v1.6 前的存量库(缺 cancelled)。
+    const stageValues = this.legacyStageOptions
+      ? ['draft', 'running', 'decision-needed', 'updated', 'ready-for-review', 'completed']
+      : [...ADVANCE_STAGES]
     const tables: unknown[] = [
       { id: 4, name: '任务', fields: [{ name: 'todo_id' }, { name: '标题' }] },
     ]
     if (this.provisioned) {
       tables.push(
-        { id: 7, name: '事项', fields: [{ name: 'advance_id' }, { name: '名称' }, { name: '阶段' }] },
+        { id: 7, name: '事项', fields: [{ name: 'advance_id' }, { name: '名称' }, { name: '阶段', data: { items: stageValues.map(value => ({ value })) } }] },
         { id: 8, name: '事元', fields: [{ name: 'entry_id' }, { name: 'advance_id' }] },
       )
     }
@@ -243,7 +251,7 @@ describe('advance pure helpers', () => {
     const empty = buildInspectDigest({ subjects: [], signals: '', mode: 'compare' })
     expect(empty).toContain('没有 open 推进事项')
     expect(empty).toContain('静默')
-    expect(legalNextStages('running')).toEqual(['decision-needed', 'ready-for-review', 'draft'])
+    expect(legalNextStages('running')).toEqual(['decision-needed', 'ready-for-review', 'draft', 'cancelled'])
   })
 
   it('sequences day-prefixed ids for items and entries', () => {
@@ -375,7 +383,8 @@ describe('yzj_advance_feed', () => {
     store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'draft' } })
     const { tools } = mount(store)
     const feed = tools.find(tool => tool.name === 'yzj_advance_feed')!
-    const result = await feed.execute({ advanceId: 'A-1', summary: '直接完成', stageTo: 'completed' })
+    // draft→ready-for-review 是非终局的非法跳变(终局拦截由「agent feed can never enter terminal stages」专项覆盖)
+    const result = await feed.execute({ advanceId: 'A-1', summary: '直接送验收', stageTo: 'ready-for-review' })
     expect(result.content).toContain('状态机拒绝')
     expect(store.entries).toHaveLength(0)
     expect(store.items[0]!.fields['阶段']).toBe('draft')
@@ -560,6 +569,89 @@ describe('core judge path (panel direct write)', () => {
     })
     expect(result.item.stage).toBe('draft')
     expect(store.entries[0]!.fields['操作者']).toBe('user')
+  })
+
+  it('cancel lands cancelled as a user 事元 (决策 27: 失败/黄了的体面收口)', async () => {
+    const store = new FakeStore(true)
+    store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'running' } })
+    const ctx = coreCtx(store)
+    const verb = judgeVerb('cancel', '方向变了')
+    const result = await coreFeedAdvance(ctx, BUDGET, {}, freshCaches(), {
+      advanceId: 'A-1',
+      summary: verb.summary,
+      changeType: verb.changeType,
+      stageTo: verb.stageTo,
+      actor: 'user',
+    })
+    expect(result.item.stage).toBe('cancelled')
+    expect(store.entries[0]!.fields['操作者']).toBe('user')
+    expect(String(store.entries[0]!.fields['摘要'])).toContain('中止推进：方向变了')
+    // cancelled → running 可重启
+    const reopen = await coreFeedAdvance(ctx, BUDGET, {}, freshCaches(), {
+      advanceId: 'A-1', summary: '重启', stageTo: 'running', actor: 'user',
+    })
+    expect(reopen.item.stage).toBe('running')
+  })
+
+  it('legacy 库缺 cancelled 选项时 judge cancel 明示报错(不静默丢)', async () => {
+    const store = new FakeStore(true)
+    store.legacyStageOptions = true
+    store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'running' } })
+    const ctx = coreCtx(store)
+    const verb = judgeVerb('cancel')
+    await expect(coreFeedAdvance(ctx, BUDGET, {}, freshCaches(), {
+      advanceId: 'A-1',
+      summary: verb.summary,
+      changeType: verb.changeType,
+      stageTo: verb.stageTo,
+      actor: 'user',
+    })).rejects.toThrow(/缺.*cancelled.*选项/)
+    expect(store.entries).toHaveLength(0)
+  })
+
+  it('agent feed can never enter terminal stages (spec §13.5 host-enforced, 决策 27)', async () => {
+    const store = new FakeStore(true)
+    store.items.push(
+      { id: 'r1', fields: { advance_id: 'A-1', 名称: '待验收', 阶段: 'ready-for-review' } },
+      { id: 'r2', fields: { advance_id: 'A-2', 名称: '进行中', 阶段: 'running' } },
+    )
+    const ctx = coreCtx(store)
+    await expect(coreFeedAdvance(ctx, BUDGET, {}, freshCaches(), {
+      advanceId: 'A-1', summary: 'agent 试图验收', stageTo: 'completed', actor: 'agent',
+    })).rejects.toThrow(/终局.*只由用户/)
+    await expect(coreFeedAdvance(ctx, BUDGET, {}, freshCaches(), {
+      advanceId: 'A-2', summary: 'agent 试图中止', stageTo: 'cancelled', actor: 'agent',
+    })).rejects.toThrow(/终局.*只由用户/)
+    expect(store.entries).toHaveLength(0)
+  })
+})
+
+describe('cancelled stage machine (决策 26/27)', () => {
+  it('allows non-terminal → cancelled and cancelled → running; forbids completed → cancelled', () => {
+    expect(checkStageTransition('running', 'cancelled')).toBeNull()
+    expect(checkStageTransition('draft', 'cancelled')).toBeNull()
+    expect(checkStageTransition('decision-needed', 'cancelled')).toBeNull()
+    expect(checkStageTransition('ready-for-review', 'cancelled')).toBeNull()
+    expect(checkStageTransition('cancelled', 'running')).toBeNull()
+    expect(checkStageTransition('completed', 'cancelled')).not.toBeNull()
+    expect(checkStageTransition('cancelled', 'completed')).not.toBeNull()
+  })
+
+  it('list open excludes cancelled (same as completed)', async () => {
+    const store = new FakeStore(true)
+    store.items.push(
+      { id: 'r1', fields: { advance_id: 'A-1', 名称: '跑着', 阶段: 'running' } },
+      { id: 'r2', fields: { advance_id: 'A-2', 名称: '黄了', 阶段: 'cancelled' } },
+      { id: 'r3', fields: { advance_id: 'A-3', 名称: '成了', 阶段: 'completed' } },
+    )
+    const { tools } = mount(store)
+    const list = tools.find(tool => tool.name === 'yzj_advance_list')!
+    const result = await list.execute({})
+    expect(result.content).toContain('跑着')
+    expect(result.content).not.toContain('黄了')
+    expect(result.content).not.toContain('成了')
+    const cancelledOnly = await list.execute({ stage: 'cancelled' })
+    expect(cancelledOnly.content).toContain('黄了')
   })
 })
 
