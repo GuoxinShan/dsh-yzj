@@ -631,7 +631,7 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
         const advanceId = stringField(payload, 'advanceId')
         const action = stringField(payload, 'action')
         if (advanceId === undefined || action === undefined) return internalError('advance-judge endpoint requires advanceId and action payloads')
-        if (!['confirm_condition', 'confirm_advance', 'accept', 'reject', 'ignore'].includes(action)) {
+        if (!['confirm_condition', 'confirm_advance', 'accept', 'reject', 'ignore', 'cancel'].includes(action)) {
           return internalError(`advance-judge: unknown action ${action}`)
         }
         try {

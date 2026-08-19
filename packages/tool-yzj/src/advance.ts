@@ -68,21 +68,30 @@ export const ENTRY_F = {
 const ITEM_TABLE = '事项'
 const ENTRY_TABLE = '事元'
 
-/** Six-stage machine of one advancement item (PRD §5.1.2). */
-export type AdvanceStage = 'draft' | 'running' | 'decision-needed' | 'updated' | 'ready-for-review' | 'completed'
+/** Stage machine of one advancement item (PRD §5.1.2 六态 + v1.6 第七态 cancelled 终局,决策 27). */
+export type AdvanceStage = 'draft' | 'running' | 'decision-needed' | 'updated' | 'ready-for-review' | 'completed' | 'cancelled'
 
 export const ADVANCE_STAGES: readonly AdvanceStage[] = [
-  'draft', 'running', 'decision-needed', 'updated', 'ready-for-review', 'completed',
+  'draft', 'running', 'decision-needed', 'updated', 'ready-for-review', 'completed', 'cancelled',
 ]
+
+/** Terminal stages the agent may never stageTo — the user enters them via panel judge (决策 27; spec §13.5, host-enforced). */
+export const USER_ONLY_STAGES: readonly AdvanceStage[] = ['completed', 'cancelled']
+
+/** Open = neither terminal (completed/cancelled) — the queue/digest/scan-subscription scope. */
+export function isOpenStage(stage: string): boolean {
+  return stage !== 'completed' && stage !== 'cancelled'
+}
 
 /** Legal next stages from each node (same table as {@link checkStageTransition}). */
 export const STAGE_NEXT: Record<AdvanceStage, readonly AdvanceStage[]> = {
-  draft: ['running'],
-  running: ['decision-needed', 'ready-for-review', 'draft'],
-  'decision-needed': ['running', 'updated'],
-  updated: ['running', 'ready-for-review'],
-  'ready-for-review': ['completed', 'running'],
+  draft: ['running', 'cancelled'],
+  running: ['decision-needed', 'ready-for-review', 'draft', 'cancelled'],
+  'decision-needed': ['running', 'updated', 'cancelled'],
+  updated: ['running', 'ready-for-review', 'cancelled'],
+  'ready-for-review': ['completed', 'running', 'cancelled'],
   completed: ['running'],
+  cancelled: ['running'],
 }
 
 /** 事元 source types (工作现场 provenance). */
@@ -108,7 +117,7 @@ export function legalNextStages(from: string): readonly string[] {
 export function checkStageTransition(from: string, to: string): string | null {
   if (from === to) return null
   if (legalNextStages(from).includes(to)) return null
-  return `状态机拒绝 ${from} → ${to}：合法流转为 draft→running→(decision-needed→updated)*→ready-for-review→completed；ready-for-review/decision-needed 可打回 running，completed 可重开 running`
+  return `状态机拒绝 ${from} → ${to}：合法流转为 draft→running→(decision-needed→updated)*→ready-for-review→completed；ready-for-review/decision-needed 可打回 running，completed/cancelled 可重开 running；非终态可中止 cancelled`
 }
 
 /** Inspect discipline pasted into every yzj_advance_inspect digest (spec §12). */
@@ -120,10 +129,11 @@ export const INSPECT_DISCIPLINE = [
   '偏差成立 → yzj_advance_feed changeType=偏差 stageTo=decision-needed。',
   '产物齐且指标 N/N 达标且无未决偏差 → changeType=验收请求 stageTo=ready-for-review。',
   '确认卡只在改基准（goal/metrics/targetDate/assignee）时出现；纯追加与阶段变化静默落，人在看板队列被找到。',
-  '禁止 stageTo=completed；验收通过只由用户在看板点「确认达到目标」。',
+  '禁止 stageTo=completed/cancelled；终局只由用户在看板拍板（确认达到目标/中止推进）。',
   '巡检五步：到点 → yzj_advance_scan(groups=…) → 无新消息则静默结束 → 有新信号则 yzj_advance_inspect → 按打扰判据行动（进度正常静默挂上；命中则 stageTo=decision-needed；禁止 completed）。用户说「开启巡检」时在 root 会话 schedule_create(every_seconds≥300，prompt 含群清单)。',
   '订阅分发：scan digest 的「订阅清单」列出每个 open 事项订阅了哪些线程（groups 缺省时 scan 也按它取流）；分发是你的职责——信号属于哪个事项的线程且语义相关才 feed 给谁，否则不喂。',
   '最小回路：核心变量对比（原来的理解 vs 现在的约束）→ 建议（AI建议+备选+自定义）→ 用户选择 → 复述影响 → 确认后才 feed。',
+  '终局沉淀：事项进 completed/cancelled 后，用户可能说「复盘一下」——沉淀四步：yzj_advance_get 翻页读全量事元 → 按复盘模板（docs/spec/advance-review-template.md：目标演化/关键决策/偏差与证据链/下一步/事元索引）写 markdown → yzj_doc_import 入「我的知识/推进复盘/<事项名>」→ 回链 feed 一条产物事元（refs=[复盘 docId]，纯追加静默）。会议纪要出口同理（纪要四步：读转录 → 金蝶四段式目标/内容/共识/下一步 → 入库 → 下一步挂事项回链 refs）。',
 ].join('\n')
 
 /** One inspect subject: item projection + recent 事元 window. */
@@ -394,7 +404,7 @@ export async function coreScanAdvance(
     if (threads === undefined) throw new Error('advance scan: groups must not be empty (no thread registry)')
     const binding = await resolveAdvance(ctx, budget, config, caches, false, holder)
     const items = await fetchItems(ctx, budget, binding)
-    preItems = items.filter(item => item.stage !== 'completed').map(item => ({
+    preItems = items.filter(item => isOpenStage(item.stage)).map(item => ({
       advanceId: item.advanceId, title: item.title, stage: item.stage,
     }))
     const openIds = new Set(preItems.map(item => item.advanceId))
@@ -475,7 +485,7 @@ export async function coreScanAdvance(
     try {
       const binding = await resolveAdvance(ctx, budget, config, caches, false, holder)
       const items = await fetchItems(ctx, budget, binding)
-      openItems = items.filter(item => item.stage !== 'completed').map(item => ({
+      openItems = items.filter(item => isOpenStage(item.stage)).map(item => ({
         advanceId: item.advanceId, title: item.title, stage: item.stage,
       }))
     } catch {
@@ -772,6 +782,34 @@ async function advanceTablesOf(
     itemTableId,
     entryTableId,
     link: `https://www.yunzhijia.com/knowledge/lingee/#/store/doc/${docId}`,
+  }
+}
+
+/**
+ * v1.6 cancelled option guard: SingleSelect options are pre-registered only at
+ * table-create time;存量推进库缺 cancelled 选项,写入未注册值会被静默丢弃
+ * (迁移文档 §3 事实 5 / pitfall-003)——写前校验,缺则明示引导,不静默丢。
+ * 实测形状(2026-08-19):sheet get → sheets[].fields[].data.items[].value。
+ */
+async function assertStageOption(
+  ctx: Context,
+  budget: YzjToolBudget,
+  binding: AdvanceBinding,
+  value: string,
+): Promise<void> {
+  const ran = await runJson(ctx, budget, 'sheet get', ['sheet', 'get', '--id', binding.docId])
+  if (!ran.ok) return // schema 读不到时不在此拦,写路径自会暴露
+  for (const table of asArray(asRecord(ran.json).sheets)) {
+    if (asString(asRecord(table).name) !== ITEM_TABLE) continue
+    for (const field of asArray(asRecord(table).fields)) {
+      const f = asRecord(field)
+      if (asString(f.name) !== ITEM_F.stage) continue
+      const values = new Set(asArray(asRecord(f.data).items).map(item => asString(asRecord(item).value)))
+      if (!values.has(value)) {
+        throw new Error(`advance: 推进库「事项」表的阶段字段缺「${value}」选项(v1.6 新增);请在多维表格给该字段补加选项 ${value} 后重试(写入未注册选项会被静默丢弃)`)
+      }
+      return
+    }
   }
 }
 
@@ -1187,8 +1225,16 @@ export async function coreFeedAdvance(
     if (!ADVANCE_STAGES.includes(input.stageTo as AdvanceStage)) {
       throw new Error(`advance: 未知阶段 ${input.stageTo}；合法值 ${ADVANCE_STAGES.join('/')}`)
     }
+    // 终局是人的主权(决策 27;spec §13.5 host 强制):completed/cancelled 只能由用户
+    // judge(actor=user)进入;agent 最多把事项送到 ready-for-review / decision-needed。
+    if (USER_ONLY_STAGES.includes(input.stageTo as AdvanceStage) && input.actor !== 'user') {
+      throw new Error(`advance: 终局(${USER_ONLY_STAGES.join('/')})只由用户在看板拍板;agent 请 stageTo=ready-for-review 或用决策请求说明理由`)
+    }
     const violation = checkStageTransition(item.stage, input.stageTo)
     if (violation !== null) throw new Error(`advance: ${violation}`)
+    // cancelled 是 v1.6 新增 SingleSelect 选项:存量推进库建表时未预注册,写入会被
+    // 静默丢弃(迁移文档 §3 事实 5)——写前校验,缺选项则明示引导,不静默丢。
+    if (input.stageTo === 'cancelled') await assertStageOption(ctx, budget, binding, 'cancelled')
     diffs.push(`阶段 ${item.stage}→${input.stageTo}`)
     projection[ITEM_F.stage] = input.stageTo
     stageChanged = true
@@ -1326,7 +1372,7 @@ export function documentThreadEntryInput(advanceId: string, token: string, label
 }
 
 /** Panel judge verbs (user-direct writes; each lands as one user 事元). */
-export type AdvanceJudgeAction = 'confirm_condition' | 'confirm_advance' | 'accept' | 'reject' | 'ignore'
+export type AdvanceJudgeAction = 'confirm_condition' | 'confirm_advance' | 'accept' | 'reject' | 'ignore' | 'cancel'
 
 /** Pure verb → entry/stage mapping behind the panel judge path. */
 export function judgeVerb(action: AdvanceJudgeAction, note?: string): { summary: string; stageTo?: AdvanceStage; changeType: string } {
@@ -1337,6 +1383,7 @@ export function judgeVerb(action: AdvanceJudgeAction, note?: string): { summary:
     accept: { summary: `验收通过${suffix}`, stageTo: 'completed', changeType: '阶段变化' },
     reject: { summary: `打回补充${suffix}`, stageTo: 'running', changeType: '阶段变化' },
     ignore: { summary: `忽略本次评估，不构成新约束${suffix}`, stageTo: 'running', changeType: '备注' },
+    cancel: { summary: `中止推进${suffix}`, stageTo: 'cancelled', changeType: '阶段变化' },
   }
   return spec[action]
 }
@@ -1577,7 +1624,7 @@ export function applyAdvanceTools(
     name: 'yzj_advance_list',
     description: 'List advancement items (推进事项) from the AI推进 board: each item is an event-sourced aggregate of traceable 事元 (IM/todo/doc/minutes/calendar signals). Filter by stage (six-stage machine), tag, or assignee. The board queue groups decision-needed (待我决定) / ready-for-review (待我验收) / other open items (我关注的推进).',
     parameters: {
-      stage: { type: 'string', enum: [...ADVANCE_STAGES, 'open', 'all'], description: 'open = not completed (default); or one exact stage.' },
+      stage: { type: 'string', enum: [...ADVANCE_STAGES, 'open', 'all'], description: 'open = not completed/cancelled (default); or one exact stage.' },
       tag: { type: 'string', description: 'Only items carrying this tag (no # prefix needed).' },
       assignee: { type: 'string', description: 'Only items whose 负责人 name matches (substring).' },
       limit: { type: 'number', description: 'Max rows in the digest, 1-100, default 50.' },
@@ -1602,14 +1649,14 @@ export function applyAdvanceTools(
       const tag = args.tag === undefined ? '' : args.tag.replace(/^#+/, '').trim()
       const assignee = (args.assignee ?? '').trim()
       const filtered = items.filter(item => {
-        if (stage === 'open' && item.stage === 'completed') return false
+        if (stage === 'open' && !isOpenStage(item.stage)) return false
         if (ADVANCE_STAGES.includes(stage as AdvanceStage) && item.stage !== stage) return false
         if (tag !== '' && !item.tags.includes(tag)) return false
         if (assignee !== '' && !item.assignee.includes(assignee)) return false
         return true
       })
       const rank: Record<AdvanceStage, number> = {
-        'decision-needed': 0, 'ready-for-review': 1, 'updated': 2, 'running': 3, 'draft': 4, 'completed': 5,
+        'decision-needed': 0, 'ready-for-review': 1, 'updated': 2, 'running': 3, 'draft': 4, 'completed': 5, 'cancelled': 6,
       }
       const sorted = filtered.sort((a, b) =>
         rank[a.stage] === rank[b.stage] ? (a.advanceId < b.advanceId ? -1 : 1) : rank[a.stage] - rank[b.stage])
@@ -1690,7 +1737,7 @@ export function applyAdvanceTools(
     name: 'yzj_advance_inspect',
     description: 'Read-only 比对材料 for AI推进 (spec §12). Spreads open items\' goal/background/metrics/recent 事元/legal next stages plus the interrupt / silence / suppression criteria (spec §13). Host does NOT judge semantics — you do, then yzj_advance_feed. mode=review is the 验收辅助 checklist. Patrol five steps: on a schedule wake call yzj_advance_scan(groups=…) first; no new messages → stay silent and stop; new signals → call this with signals=the scan digest, then act per §13 (progress-normal silent feed; interrupt criterion → stageTo=decision-needed; never completed). Never stageTo completed.',
     parameters: {
-      advanceId: { type: 'string', description: 'Inspect one item; omit to spread every open (not completed) item.' },
+      advanceId: { type: 'string', description: 'Inspect one item; omit to spread every open (not completed/cancelled) item.' },
       signals: { type: 'string', description: 'New information to contrast (group messages / minutes excerpt). Empty = scheduled patrol with no new signal yet.' },
       mode: { type: 'string', enum: ['compare', 'review'], description: 'compare = 核心变量对比 (default); review = 验收辅助, still must not auto-accept.' },
     },
@@ -1713,7 +1760,7 @@ export function applyAdvanceTools(
       const wanted = (args.advanceId ?? '').trim()
       const mode = args.mode === 'review' ? 'review' : 'compare'
       const scoped = wanted === ''
-        ? items.filter(item => item.stage !== 'completed')
+        ? items.filter(item => isOpenStage(item.stage))
         : items.filter(item => item.advanceId === wanted)
       if (wanted !== '' && scoped.length === 0) {
         return { content: `advance: 事项 ${wanted} 不存在；先用 yzj_advance_list 查真实 id，不要猜测`, truncated: false, data: {} }
@@ -1855,7 +1902,7 @@ export function applyAdvanceTools(
 
   ctx.tools.register(defineTool({
     name: 'yzj_advance_feed',
-    description: 'Feed one 事元 (source unit) into an advancement item — the ONLY mutation channel: goal updates, progress, deviations, decision requests, and stage moves are all append-only entries with host-generated 原值→新值 diffs; the item projection is refolded. Stage moves obey the six-stage machine (draft→running→(decision-needed→updated)*→ready-for-review→completed). Patrol: yzj_advance_scan then yzj_advance_inspect, then this tool. Host forcibly dedupes only an exact replay — the same refs set AND the same changeType (决策 25): a genuine re-feed returns the existing 事元 and appends nothing; a partial refs overlap appends normally and returns an overlappedRefs hint, so distinct entries may cite the same document. running items stay quiet — do not feed when there is no deviation, and never re-state a fact already on the timeline. Interrupt the user (changeType 偏差 + stageTo decision-needed) only when a criterion fires: the signal contradicts 任务背景, a metric flips off-target or moves away from it, the gap cannot close before the target date, a blocker threatens that date, continuing needs scope/resource/priority trade-offs or crosses a stated red line, or two+ viable paths would change the baseline. Deliverables complete AND metrics N/N AND no open deviation → 验收请求 + ready-for-review. Never stageTo completed (the user taps 确认达到目标). The confirmation card appears ONLY when you rewrite the baseline (goal/metrics/targetDate/assignee) — plain appends and stage moves land silently, the board queue is where the user is found. Min-loop in the topic: contrast 原来的理解 vs 现在的约束, propose options, wait, restate impact, then feed.',
+    description: 'Feed one 事元 (source unit) into an advancement item — the ONLY mutation channel: goal updates, progress, deviations, decision requests, and stage moves are all append-only entries with host-generated 原值→新值 diffs; the item projection is refolded. Stage moves obey the seven-stage machine (draft→running→(decision-needed→updated)*→ready-for-review→completed; any non-terminal → cancelled; terminal → running reopens). Patrol: yzj_advance_scan then yzj_advance_inspect, then this tool. Host forcibly dedupes only an exact replay — the same refs set AND the same changeType (决策 25): a genuine re-feed returns the existing 事元 and appends nothing; a partial refs overlap appends normally and returns an overlappedRefs hint, so distinct entries may cite the same document. running items stay quiet — do not feed when there is no deviation, and never re-state a fact already on the timeline. Interrupt the user (changeType 偏差 + stageTo decision-needed) only when a criterion fires: the signal contradicts 任务背景, a metric flips off-target or moves away from it, the gap cannot close before the target date, a blocker threatens that date, continuing needs scope/resource/priority trade-offs or crosses a stated red line, or two+ viable paths would change the baseline. Deliverables complete AND metrics N/N AND no open deviation → 验收请求 + ready-for-review. Never stageTo completed/cancelled — terminal stages are user-only (the user taps 确认达到目标 / 中止推进; host rejects agent terminal stage moves outright). The confirmation card appears ONLY when you rewrite the baseline (goal/metrics/targetDate/assignee) — plain appends and stage moves land silently, the board queue is where the user is found. Min-loop in the topic: contrast 原来的理解 vs 现在的约束, propose options, wait, restate impact, then feed. Knowledge export (spec §16): when the user asks for 复盘, read the full stream with yzj_advance_get (page to the end), write the five-section review per docs/spec/advance-review-template.md, yzj_doc_import into 「我的知识/推进复盘/<事项名>」, then feed one silent 产物 entry with refs=[that docId]; meeting minutes follow the same loop with the four-section 金蝶 template (docs/spec/meeting-minutes-template.md).',
     parameters: {
       advanceId: { type: 'string', required: true, description: 'Stable item id (from yzj_advance_list).' },
       summary: { type: 'string', required: true, description: 'Event description — what happened (timeline row text).' },

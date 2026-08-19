@@ -13,7 +13,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { YzjPanelInject } from './rpc.ts'
 import { setWorkbenchDomain } from './workbench-domain.ts'
 import { setAdvanceFeedback } from './advance-feedback.ts'
-import { setAdvanceAskDraft, reviewAskText } from './advance-ask.ts'
+import { setAdvanceAskDraft, reviewAskText, exportReviewAskText } from './advance-ask.ts'
 import css from './advance-pane.module.css'
 
 type UnknownRecord = Record<string, unknown>
@@ -30,7 +30,7 @@ function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : []
 }
 
-/** Chinese stage labels (six-stage machine). */
+/** Chinese stage labels (seven-stage machine, v1.6 +cancelled). */
 export const STAGE_LABEL: Record<string, string> = {
   'draft': '草稿',
   'running': '推进中',
@@ -38,21 +38,23 @@ export const STAGE_LABEL: Record<string, string> = {
   'updated': '已按方案更新',
   'ready-for-review': '待你验收',
   'completed': '已完成',
+  'cancelled': '已中止',
 }
 
 /** Queue grouping of the board items (spec §7 / PRD §5.3.2). */
 export function queuesOf(items: readonly UnknownRecord[]): { decide: UnknownRecord[]; review: UnknownRecord[]; watch: UnknownRecord[] } {
+  const isTerminal = (stage: string): boolean => stage === 'completed' || stage === 'cancelled'
   const decide = items.filter(item => asString(item.stage) === 'decision-needed')
   const review = items.filter(item => asString(item.stage) === 'ready-for-review')
-  const watch = items.filter(item => asString(item.stage) !== 'decision-needed' && asString(item.stage) !== 'ready-for-review')
+  const watch = items.filter(item => asString(item.stage) !== 'decision-needed' && asString(item.stage) !== 'ready-for-review' && !isTerminal(asString(item.stage)))
   return { decide, review, watch }
 }
 
-/** Queue dot tone per stage (prototype: 红=待决定 蓝=推进 绿=完成 灰=草稿). */
+/** Queue dot tone per stage (prototype: 红=待决定 蓝=推进 绿=完成 灰=草稿/中止). */
 function dotToneOf(stage: string): 'red' | 'blue' | 'green' | 'gray' {
   if (stage === 'decision-needed') return 'red'
   if (stage === 'completed') return 'green'
-  if (stage === 'draft') return 'gray'
+  if (stage === 'draft' || stage === 'cancelled') return 'gray'
   return 'blue'
 }
 
@@ -146,6 +148,8 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
   const [showAll, setShowAll] = useState(false)
   const [busy, setBusy] = useState(false)
   const [startOpen, setStartOpen] = useState(false)
+  /** Two-tap confirm for the terminal 中止推进 verb (cancelled is a 终局, 决策 27). */
+  const [cancelArmed, setCancelArmed] = useState(false)
   const [draft, setDraft] = useState({ title: '', goal: '', metrics: '', assignee: '', targetDate: '', background: '' })
   const [error, setError] = useState('')
   const [scanLine, setScanLine] = useState('尚未巡检')
@@ -227,7 +231,7 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
 
   const queues = useMemo(() => queuesOf(board.items), [board.items])
 
-  const judge = async (action: 'confirm_condition' | 'confirm_advance' | 'accept' | 'reject' | 'ignore', note?: string): Promise<void> => {
+  const judge = async (action: 'confirm_condition' | 'confirm_advance' | 'accept' | 'reject' | 'ignore' | 'cancel', note?: string): Promise<void> => {
     if (busy || activeId === '') return
     setBusy(true)
     setError('')
@@ -553,8 +557,49 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                   {(stage === 'running' || stage === 'updated' || stage === 'draft') && (
                     <p className={css.quiet}>AI 正在跟进，当前不需要你处理；有目标变化或材料不足时会再提醒。</p>
                   )}
-                  {stage === 'completed' && (
-                    <p className={css.quiet}>这次推进已经完成。确认后的决定和经验可以回到共享知识库。</p>
+                  {(stage === 'completed' || stage === 'cancelled') && (
+                    <div className={css.decision} data-testid="yzj-advance-terminal">
+                      <p className={css.quiet}>
+                        {stage === 'completed'
+                          ? '这次推进已经完成。'
+                          : '这次推进已中止。'}
+                        复盘可以沉淀回知识库：目标演化、关键决策、偏差与证据链。
+                      </p>
+                      <div className={css.verbs}>
+                        <button
+                          type="button"
+                          data-testid="yzj-advance-export-review"
+                          disabled={busy}
+                          onClick={() => {
+                            const advanceId = asString(detail.item.advanceId)
+                            const title = asString(detail.item.title)
+                            setAdvanceAskDraft({ advanceId, title, text: exportReviewAskText(advanceId, title) })
+                            setWorkbenchDomain('im')
+                          }}
+                        >
+                          沉淀复盘
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {stage !== 'completed' && stage !== 'cancelled' && (
+                    <div className={css.verbs}>
+                      <button
+                        type="button"
+                        data-testid="yzj-advance-judge-cancel"
+                        disabled={busy}
+                        onClick={() => {
+                          if (!cancelArmed) {
+                            setCancelArmed(true)
+                            return
+                          }
+                          setCancelArmed(false)
+                          void judge('cancel')
+                        }}
+                      >
+                        {cancelArmed ? '确认中止？再点一次' : '中止推进'}
+                      </button>
+                    </div>
                   )}
                 </section>
 

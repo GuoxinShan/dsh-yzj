@@ -66,8 +66,8 @@ export interface YzjPanelInject {
   advanceGet: (advanceId: string, entryOffset?: number, entryLimit?: number) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Start-modal direct write: create one advancement item (user's own will). */
   advanceCreate: (input: { title: string; goal?: string; background?: string; metrics?: string; assignee?: string; targetDate?: string; tags?: string[] }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Panel judge verbs (user-direct; each lands as one user 事元). */
-  advanceJudge: (advanceId: string, action: 'confirm_condition' | 'confirm_advance' | 'accept' | 'reject' | 'ignore', note?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Panel judge verbs (user-direct; each lands as one user 事元; cancel = 中止终局, v1.6). */
+  advanceJudge: (advanceId: string, action: 'confirm_condition' | 'confirm_advance' | 'accept' | 'reject' | 'ignore' | 'cancel', note?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** One-click provision of the 事项/事元 tables (empty-state action). */
   advanceEnsure: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Last patrol wave for the board status line (spec §14.5). */
