@@ -157,6 +157,16 @@ describe('queuesOf', () => {
     }
     expect(STAGE_LABEL['cancelled']).toBe('已中止')
   })
+
+  it('keeps terminals in closed (已结束折叠区), not the watch queue', () => {
+    const queues = queuesOf([
+      item({ advanceId: 'A-1', stage: 'running' }),
+      item({ advanceId: 'A-2', stage: 'completed' }),
+      item({ advanceId: 'A-3', stage: 'cancelled' }),
+    ])
+    expect(queues.watch.map(i => i.advanceId)).toEqual(['A-1'])
+    expect(queues.closed.map(i => i.advanceId)).toEqual(['A-2', 'A-3'])
+  })
 })
 
 describe('formatScanStatus', () => {
@@ -419,6 +429,66 @@ describe('YzjAdvancePane', () => {
     expect(cancel.textContent).toContain('再点一次')
     await act(async () => { cancel.click(); await Promise.resolve() })
     expect(face.judged).toEqual([{ advanceId: 'A-1', action: 'cancel' }])
+    act(() => { face.root.unmount() })
+  })
+
+  it('ref chips are clickable: doc refs deep-link, msg refs switch domain (v1.7 UX)', async () => {
+    const face = mountPane({
+      items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行' })],
+      detail: {
+        item: item({ advanceId: 'A-1', stage: 'running', title: '试运行' }),
+        entries: [
+          { entryId: 'E-1', at: '2026/08/19 18:11', sourceType: '文档', changeType: '进度更新', summary: '纪要入库', detail: '', refs: ['yzj:6a85774aecd3fb103b859f8a'], actor: 'agent' },
+          { entryId: 'E-2', at: '2026/08/19 18:28', sourceType: '对话', changeType: '进度更新', summary: '群信号', detail: '', refs: ['6a842792e4b08c3f7ebf8521'], actor: 'agent' },
+        ],
+      },
+    })
+    await settle()
+    const docChip = face.container.querySelector('[data-testid="yzj-advance-ref-6a85774aecd3fb103b859f8a"]') as HTMLAnchorElement
+    expect(docChip.tagName).toBe('A')
+    expect(docChip.href).toContain('/store/doc/6a85774aecd3fb103b859f8a')
+    const msgChip = face.container.querySelector('[data-testid="yzj-advance-ref-6a842792e4b08c3f7ebf8521"]') as HTMLButtonElement
+    expect(msgChip.tagName).toBe('BUTTON')
+    await act(async () => { msgChip.click(); await Promise.resolve() })
+    expect(getWorkbenchDomain()).toBe('im')
+    act(() => { face.root.unmount() })
+  })
+
+  it('已结束折叠区:toggle 展开终局事项并可点进详情(终局提示事后可达)', async () => {
+    const face = mountPane({
+      items: [
+        item({ advanceId: 'A-1', stage: 'running', title: '跑着' }),
+        item({ advanceId: 'A-2', stage: 'completed', title: '成了' }),
+        item({ advanceId: 'A-3', stage: 'cancelled', title: '黄了' }),
+      ],
+      detail: { item: item({ advanceId: 'A-2', stage: 'completed', title: '成了' }), entries: [] },
+    })
+    await settle()
+    const toggle = face.container.querySelector('[data-testid="yzj-advance-closed-toggle"]') as HTMLButtonElement
+    expect(toggle.textContent).toContain('已结束 2')
+    expect(face.container.querySelector('[data-testid="yzj-advance-item-A-2"]')).toBeNull()
+    await act(async () => { toggle.click(); await Promise.resolve() })
+    const closedItem = face.container.querySelector('[data-testid="yzj-advance-item-A-2"]') as HTMLButtonElement
+    expect(closedItem).not.toBeNull()
+    await act(async () => { closedItem.click(); await Promise.resolve() })
+    await settle()
+    expect(face.container.querySelector('[data-testid="yzj-advance-terminal"]')).not.toBeNull()
+    act(() => { face.root.unmount() })
+  })
+
+  it('立即巡检 writes a patrol ask draft (kind=patrol) and switches to 对话', async () => {
+    setWorkbenchDomain('advance')
+    const face = mountPane({
+      items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行' })],
+      detail: { item: item({ advanceId: 'A-1', stage: 'running', title: '试运行' }), entries: [] },
+    })
+    await settle()
+    const patrol = face.container.querySelector('[data-testid="yzj-advance-patrol-now"]') as HTMLButtonElement
+    await act(async () => { patrol.click(); await Promise.resolve() })
+    expect(getWorkbenchDomain()).toBe('im')
+    const draft = getAdvanceAskDraft()
+    expect(draft?.kind).toBe('patrol')
+    expect(draft?.text).toContain('yzj_advance_scan')
     act(() => { face.root.unmount() })
   })
 

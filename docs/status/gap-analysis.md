@@ -761,3 +761,15 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 **存量库升级（同日晚，用户拍板「删掉重新加」）**：CLI 无补选项口子（实测：运行期写未注册值回读为空串，静默丢弃今日仍成立；`sheets/update` 端点仅供 rename）→ 对推进库做**备份→删「事项」表→按最新 itemFieldsJson 七态重建→导回**：事项 7 条字段级零差异、事元 24 条未动、阶段选项含 cancelled。备份留 `/tmp/yzj-advance-backup/`。升级后重跑 `verify-advance-terminal.mjs` → **ALL PASS**：探针中止 → 已中止 → 终局提示「沉淀复盘」→ 队列排除 → 跳对话域 banner「复盘沉淀已预备」。截图 `shots-advance-terminal/4-cancelled.png`、`5-export-review.png`。
 
 **已知边界（计划内）**：(a) ~~存量推进库需手工补 cancelled 选项~~ 已由备份-重建-导回完成（见上）；(b) 终局事项从队列排除后详情不可再打开，「沉淀复盘」提示只在收口当刻可见（决策 26：主路径是用户口述）；(c) 复盘/纪要的批量落待办（决策 28）与面板直写一键沉淀（决策 26 明确不做）均未实现，属教学面口径。(d) 面板 judge 区「中止推进」按钮本期无单测覆盖 busy 态（二次确认已覆盖）。(e) banner 文案按 draft kind 区分（验收/复盘）——复用 bus 时记得带 kind，否则误导（本日走查抓到，已修）。
+## 24.9 AI推进｜面板 UX 打磨（2026-08-20，v1.6 续）
+
+缘起：用户走查后点名「事元溯源点击跳转做好一点、缺按钮、不合理设计都看看」。布局锚点用户现场确认：中栏=推进时间线、右栏=意图线程（订阅渠道）+事元（信息来源/产物）——本次未动布局结构。
+
+| 面 | 交付 | 证据 |
+|---|---|---|
+| refs 溯源可点化 | 时间旅程 refs 从裸文本（`yzj:6a85…` 长串、不可点）改为 chips：剥 `yzj:` 前缀（模型按工具 description 字面误加的前缀）+ 类型图标（文/聊/待/程）+ 短 id；**doc → 知识库 web 直跳**（`window.open` 真链接，hover 见全 id），msg/todo/event → 跳对应域（无消息级锚点，决策 8 诚实降级）；同值去重（巡检合并 feed 的重复 ref 只渲一次）。sources 区与已有产物区条目同样可点 | `advance-pane.client.spec.tsx` +1（doc chip 是 <a> 含 docId 直跳、msg chip 点击切 im 域）；真机 `shots-advance-ux/audit-1-top.png` |
+| 已结束折叠区 | 队列底部「▸ 已结束 N」：终局（completed/cancelled）事项不再蒸发，展开可点进详情——④期边界 (b)「终局提示只在收口当刻可见」就此补上（事后可达）；终局条目弱化显示 | 单测 +1（toggle 展开→点进→终局提示出现）；真机 `audit-3-closed.png` / `audit-4-closed-detail.png` |
+| 立即巡检入口 | 队列头状态行旁「巡检」按钮 → 跳对话域预填巡检 prompt（复用 ask bus，新 kind='patrol'）——巡检不再只能靠 schedule/口述全文 | 单测 +1（draft kind=patrol、切 im 域） |
+| banner 文案分流 | ask banner 按 kind 区分「验收问题已预备 / 复盘沉淀已预备 / 巡检请求已预备」；patrol 无事项时不显示空括号 | 走查抓到文案写死后修复 |
+
+全量 606 绿。观察（未动代码）：「已有产物」区是「当前判断来自哪里」的文档类子集，两区条目重复——语义本不同（判断依据流 vs 文档沉淀），但若后续觉得冗余，产物区可考虑只列「回链产物事元」（refs 指向入库文档的事元）而非全部文档类来源。

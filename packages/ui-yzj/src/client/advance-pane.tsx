@@ -13,7 +13,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { YzjPanelInject } from './rpc.ts'
 import { setWorkbenchDomain } from './workbench-domain.ts'
 import { setAdvanceFeedback } from './advance-feedback.ts'
-import { setAdvanceAskDraft, reviewAskText, exportReviewAskText } from './advance-ask.ts'
+import { setAdvanceAskDraft, reviewAskText, exportReviewAskText, patrolAskText } from './advance-ask.ts'
 import css from './advance-pane.module.css'
 
 type UnknownRecord = Record<string, unknown>
@@ -41,13 +41,36 @@ export const STAGE_LABEL: Record<string, string> = {
   'cancelled': '已中止',
 }
 
-/** Queue grouping of the board items (spec §7 / PRD §5.3.2). */
-export function queuesOf(items: readonly UnknownRecord[]): { decide: UnknownRecord[]; review: UnknownRecord[]; watch: UnknownRecord[] } {
+/** Queue grouping of the board items (spec §7 / PRD §5.3.2); terminals land in closed (「已结束」折叠区). */
+export function queuesOf(items: readonly UnknownRecord[]): { decide: UnknownRecord[]; review: UnknownRecord[]; watch: UnknownRecord[]; closed: UnknownRecord[] } {
   const isTerminal = (stage: string): boolean => stage === 'completed' || stage === 'cancelled'
   const decide = items.filter(item => asString(item.stage) === 'decision-needed')
   const review = items.filter(item => asString(item.stage) === 'ready-for-review')
   const watch = items.filter(item => asString(item.stage) !== 'decision-needed' && asString(item.stage) !== 'ready-for-review' && !isTerminal(asString(item.stage)))
-  return { decide, review, watch }
+  const closed = items.filter(item => isTerminal(asString(item.stage)))
+  return { decide, review, watch, closed }
+}
+
+/** Ref kind inferred from the entry's sourceType (refs carry bare ids). */
+function refKindOf(sourceType: string): 'doc' | 'msg' | 'todo' | 'event' | 'other' {
+  if (sourceType === '文档' || sourceType === '会议') return 'doc'
+  if (sourceType === '对话') return 'msg'
+  if (sourceType === '待办') return 'todo'
+  if (sourceType === '日程') return 'event'
+  return 'other'
+}
+
+/** Strip the literal `yzj:` prefix models sometimes add per the tool description (yzj:{json} chip encoding never lands on entry refs). */
+function stripRefPrefix(raw: string): string {
+  return raw.startsWith('yzj:') && !raw.startsWith('yzj:{') ? raw.slice(4) : raw
+}
+
+const REF_ICON: Record<string, string> = { doc: '文', msg: '聊', todo: '待', event: '程', other: '源' }
+
+/** Doc deep link(知识库 web);其他类型跳域(无消息级锚点,spec 决策 8 诚实降级)。 */
+function refHref(kind: string, id: string): string | null {
+  if (kind === 'doc' && id !== '') return `https://www.yunzhijia.com/knowledge/lingee/#/store/doc/${id}`
+  return null
 }
 
 /** Queue dot tone per stage (prototype: 红=待决定 蓝=推进 绿=完成 灰=草稿/中止). */
@@ -150,6 +173,8 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
   const [startOpen, setStartOpen] = useState(false)
   /** Two-tap confirm for the terminal 中止推进 verb (cancelled is a 终局, 决策 27). */
   const [cancelArmed, setCancelArmed] = useState(false)
+  /** 「已结束」折叠区(completed/cancelled 事项,终局提示事后可达)。 */
+  const [showClosed, setShowClosed] = useState(false)
   const [draft, setDraft] = useState({ title: '', goal: '', metrics: '', assignee: '', targetDate: '', background: '' })
   const [error, setError] = useState('')
   const [scanLine, setScanLine] = useState('尚未巡检')
@@ -413,10 +438,52 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
         <div className={css.queueHead}>
           <b>我的推进</b>
           <span data-testid="yzj-advance-scan-status">{scanLine}</span>
+          <button
+            type="button"
+            className={css.patrolBtn}
+            data-testid="yzj-advance-patrol-now"
+            title="立即巡检一轮订阅渠道"
+            onClick={() => {
+              setAdvanceAskDraft({ advanceId: '', title: '全部订阅渠道', text: patrolAskText(), kind: 'patrol' })
+              setWorkbenchDomain('im')
+            }}
+          >
+            巡检
+          </button>
         </div>
         {queueGroup('decide', '待我决定', queues.decide, '当前没有待决定事项', 'AI 会在需要你的权限时再提醒')}
         {queueGroup('review', '待我验收', queues.review, '暂无待验收结果', '只有业务标准满足后才进入这里')}
         {queueGroup('watch', '我关注的推进', queues.watch, '还没有推进事项', '先从真实工作目标开始')}
+        {queues.closed.length > 0 && (
+          <div className={css.closedZone}>
+            <button
+              type="button"
+              className={css.closedToggle}
+              data-testid="yzj-advance-closed-toggle"
+              onClick={() => { setShowClosed(!showClosed) }}
+            >
+              {showClosed ? '▾' : '▸'} 已结束 {queues.closed.length}
+            </button>
+            {showClosed && queues.closed.map((item) => {
+              const id = asString(item.advanceId)
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  className={activeId === id ? `${css.queueItem} ${css.queueItemOn}` : css.queueItem}
+                  data-testid={`yzj-advance-item-${id}`}
+                  onClick={() => { setShowAll(false); setActiveId(id) }}
+                >
+                  <span className={css.queueTitle}>
+                    <i className={`${css.dot} ${css[`dot_${dotToneOf(asString(item.stage))}`]}`} />
+                    <b>{asString(item.title) === '' ? '(无标题)' : asString(item.title)}</b>
+                  </span>
+                  <p>{STAGE_LABEL[asString(item.stage)] ?? asString(item.stage)}{asString(item.latest) === '' ? '' : ` · ${asString(item.latest)}`}</p>
+                </button>
+              )
+            })}
+          </div>
+        )}
         <button type="button" className={css.primary} data-testid="yzj-advance-start" onClick={() => { setStartOpen(true) }}>
           发起推进
         </button>
@@ -625,7 +692,23 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                               <div className={css.timeMeta}>
                                 <span>{asString(entry.sourceType)}{asString(entry.actor) === 'user' ? ' · 你的判断' : ''}</span>
                                 {asArray(entry.refs).length > 0 && (
-                                  <span className={css.refs}>{asArray(entry.refs).map(ref => asString(ref)).filter(ref => ref !== '').join(' ')}</span>
+                                  <span className={css.refs}>
+                                    {[...new Set(asArray(entry.refs).map(ref => asString(ref)).filter(ref => ref !== ''))].map((raw) => {
+                                      const id = stripRefPrefix(raw)
+                                      const kind = refKindOf(asString(entry.sourceType))
+                                      const href = refHref(kind, id)
+                                      const short = id.length > 12 ? `${id.slice(0, 8)}…` : id
+                                      const label = `${REF_ICON[kind] ?? '源'} ${short}`
+                                      if (href !== null) {
+                                        return <a key={raw} className={css.refChip} href={href} target="_blank" rel="noreferrer" title={raw} data-testid={`yzj-advance-ref-${id}`}>{label}</a>
+                                      }
+                                      const domain = kind === 'msg' ? 'im' : kind === 'todo' ? 'todo' : kind === 'event' ? 'calendar' : null
+                                      if (domain !== null) {
+                                        return <button key={raw} type="button" className={css.refChip} title={raw} data-testid={`yzj-advance-ref-${id}`} onClick={() => { setWorkbenchDomain(domain) }}>{label}</button>
+                                      }
+                                      return <span key={raw} className={css.refChip} title={raw}>{label}</span>
+                                    })}
+                                  </span>
                                 )}
                                 {jumpDomain !== null && (
                                   <button type="button" className={css.jump} onClick={() => { setWorkbenchDomain(jumpDomain) }}>
@@ -688,16 +771,25 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                     <p className={css.quiet}>暂无信息来源。</p>
                   ) : (
                     <div className={css.sourceList}>
-                      {detail.sources.map((source, index) => (
-                        <div key={`s${index}`} className={css.source}>
-                          <span className={css.sourceIcon}>{SOURCE_ICON[asString(source.sourceType)] ?? '源'}</span>
-                          <span className={css.sourceCopy}>
-                            <b>{asString(source.label)}</b>
-                            <span>{asString(source.at)}</span>
-                          </span>
-                          <em className={`${css.sourceState} ${css[`state_${asString(source.status)}`] ?? ''}`}>{asString(source.status)}</em>
-                        </div>
-                      ))}
+                      {detail.sources.map((source, index) => {
+                        const sourceRef = stripRefPrefix(asString(source.ref))
+                        const sourceKind = refKindOf(asString(source.sourceType))
+                        const sourceHref = refHref(sourceKind, sourceRef)
+                        return (
+                          <div key={`s${index}`} className={css.source}>
+                            <span className={css.sourceIcon}>{SOURCE_ICON[asString(source.sourceType)] ?? '源'}</span>
+                            <span className={css.sourceCopy}>
+                              {sourceHref !== null ? (
+                                <a href={sourceHref} target="_blank" rel="noreferrer" title={sourceRef}><b>{asString(source.label)}</b></a>
+                              ) : (
+                                <b>{asString(source.label)}</b>
+                              )}
+                              <span>{asString(source.at)}</span>
+                            </span>
+                            <em className={`${css.sourceState} ${css[`state_${asString(source.status)}`] ?? ''}`}>{asString(source.status)}</em>
+                          </div>
+                        )
+                      })}
                     </div>
                   )}
                   <p className={css.sideNote}>AI 推进不建立新的文件库，而是解释这些工作事实为什么支持或不支持当前目标。</p>
@@ -709,12 +801,22 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                       <small>仍在产物管理</small>
                     </div>
                     <div className={css.sourceList}>
-                      {detail.sources.filter(source => asString(source.sourceType) === '文档').map((source, index) => (
-                        <div key={`p${index}`} className={css.source}>
-                          <span className={css.sourceIcon}>文</span>
-                          <span className={css.sourceCopy}><b>{asString(source.label)}</b></span>
-                        </div>
-                      ))}
+                      {detail.sources.filter(source => asString(source.sourceType) === '文档').map((source, index) => {
+                        const productRef = stripRefPrefix(asString(source.ref))
+                        const productHref = refHref('doc', productRef)
+                        return (
+                          <div key={`p${index}`} className={css.source}>
+                            <span className={css.sourceIcon}>文</span>
+                            <span className={css.sourceCopy}>
+                              {productHref !== null ? (
+                                <a href={productHref} target="_blank" rel="noreferrer" title={productRef}><b>{asString(source.label)}</b></a>
+                              ) : (
+                                <b>{asString(source.label)}</b>
+                              )}
+                            </span>
+                          </div>
+                        )
+                      })}
                     </div>
                   </section>
                 )}

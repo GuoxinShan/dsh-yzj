@@ -11,8 +11,8 @@ export interface AdvanceAskDraft {
   readonly advanceId: string
   readonly title: string
   readonly text: string
-  /** Which flow produced the draft — drives the banner copy (验收 vs 复盘). */
-  readonly kind: 'review' | 'export'
+  /** Which flow produced the draft — drives the banner copy (验收 vs 复盘 vs 巡检). */
+  readonly kind: 'review' | 'export' | 'patrol'
 }
 
 let current: AdvanceAskDraft | null = null
@@ -50,4 +50,9 @@ export function reviewAskText(advanceId: string, title: string): string {
 /** Topic 问助手 prefill for 终局复盘沉淀 (spec §16, 决策 26: 复盘=终局收口). */
 export function exportReviewAskText(advanceId: string, title: string): string {
   return `请对推进事项 ${advanceId}「${title}」做终局复盘沉淀:先用 yzj_advance_get 翻页读全量事元,再按复盘模板(docs/spec/advance-review-template.md:目标演化/关键决策/偏差与证据链/下一步/事元全量索引)写出复盘 markdown,然后用 yzj_doc_import 入「我的知识/推进复盘/${title}」(父目录不存在就先 doc create 依次建「推进复盘」与事项目录),最后回链 yzj_advance_feed 一条产物事元(refs=[入库 docId],纯追加静默)。入库的确认卡我来点。`
+}
+
+/** Topic 问助手 prefill for 手动触发一轮巡检(队列头「立即巡检」入口)。 */
+export function patrolAskText(): string {
+  return '请做一次推进巡检:调用 yzj_advance_scan(不提群名,按订阅聚合),有新信号则交 yzj_advance_inspect 比对,按巡检纪律处理(进度正常静默 feed,命中打扰判据才 stageTo=decision-needed,无关信号不写)。直接连续调用工具完成,不要询问我。'
 }
