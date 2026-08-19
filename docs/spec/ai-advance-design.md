@@ -1,6 +1,6 @@
 # AI推进：事元流驱动的「推进事项」
 
-> 版本：v1.5（①②③ + ③.1 已落地；**v1.5 = 意图线程一等化（订阅模型，§15）+ 0819 产品会决策 20–24**；v1.4 = 主动发现 scan → inspect → feed 巡检回路，见 §14；v1.3 = 打扰判据 + 确认卡门控线收窄，见 §13）
+> 版本：v1.5（①②③ + ③.1 + ③.2 已落地；**v1.5 = 意图线程一等化（订阅模型，§15）+ 0819 产品会决策 20–24**；v1.4 = 主动发现 scan → inspect → feed 巡检回路，见 §14；v1.3 = 打扰判据 + 确认卡门控线收窄，见 §13）
 > 日期：2026-08-19（v1.5 / v1.4 / v1.3 / v1.2 同日）
 > 决策人：Guoxin Shan
 > MVP↔灵基终态关系（合同 vs 脚手架）：[`../migration/advance-lingee-migration.md`](../migration/advance-lingee-migration.md)——本文是合同文本，该文件回答哪些条款迁移、哪些是 demo 落位。
@@ -173,7 +173,7 @@ guard `WRITE_SPECS` +2：`yzj_advance_create` 一律标准确认；`yzj_advance_
 | ② 事元接入便捷化 | 话题/群房间把 IM 消息一句话喂给事项（用户直写 feed）；「现在反馈」跳对话域带事项卡。文档/日程 chip 仍走 agent `yzj_advance_feed`（①期已通） | ✅ 已落地（gap §24.1） |
 | ③ AI 主动回路（机制 C–F） | 语义比对 → 核心变量对比 → 建议 → 复述影响 → 确认落 feed；AI 触发阶段；验收辅助；schedule 巡检 | ✅ 已落地（gap §24.2）；**v1.3 补打扰判据 + 门控线**（§13，gap §24.3） |
 | ③.1 主动发现 | `yzj_advance_scan` + host cursor + host 强制同源去重 + root `schedule_create` 巡检五步；可选 dsh-routines / 看板巡检状态行 | ✅ 已落地（§14，gap §24.4） |
-| ③.2 意图线程订阅 | 事项 ↔ 线程订阅承载（§15.2）+ 面板「关联渠道」入口 + scan 按订阅取流分发 + 策略选择结构化（§15.4） | 待排（v1.5 定稿设计） |
+| ③.2 意图线程订阅 | 事项 ↔ 线程订阅承载（§15.2）+ 面板「关联渠道」入口 + scan 按订阅取流分发 + 策略选择结构化（§15.4） | ✅ 已落地（§15，gap §24.7） |
 | ④ 知识沉淀出口 | 完整事元流折成复盘文档入知识库；金蝶标准纪要模板；共识入库、下一步生成待办/日程（自动回链为事元）；供 memory-yzj dream 取材 | 待排 |
 | ⑤ 同类纪要/推进归集分析 | 后置 | 待排 |
 
@@ -426,11 +426,15 @@ host storage-domain **`yzj_advance_threads`**：`advanceId → [{ token, kind, l
 - **agent 关联** = 订阅影响后续采集范围但不改基准 → 随 `yzj_advance_create`（立项群自动线程①）或 feed 时带 `subscribe` 意图；不单独弹卡（与 `stageTo` 同级：看板可见即注意力面）。
 - 投影：详情「信息来源」面板顶部列线程清单（渠道 + 最近取流时间），与既有按 refs 反推的来源条目并列——线程是订阅关系，来源条目是已采纳证据，两者不合并。
 
+> ③.2 实现落点：注册表 = `tool-yzj/src/advance-threads.ts`（domain `yzj_advance_threads`，token 字面量正则校验）；用户写路径 = `/yzj advance-thread-add` / `advance-thread-remove`（`ui-yzj`）；agent 写路径 = `yzj_advance_create` 的 `threads` 参数；单文档源关联即追加一条 `备注` 事元（refs=[token]，重复关联被注册表 + 决策 19 双重幂等挡住）；解除只删注册表行，事元不删（时间线无损）。feed 带 `subscribe` 后置未做（见 gap §24.7）。
+
 ### 15.3 采集与分发（决策 21）
 
 - cursor 保持**渠道级**（`yzj_advance_scan_cursors` 不变）：同一渠道被多个事项订阅时一次取流。
 - 分发是模型职责：scan digest 列出新信号 + 各 open 事项的订阅清单，inspect 按「信号 ∈ 哪个事项的线程 + 语义相关」决定喂给谁；host 不做语义判断（决策 11），同源去重兜底（决策 19/25）。
 - 双节奏：**Work**（被召唤 / schedule 唤醒，实时比对，§12/§14 既有）+ **Dream**（每日一次，按订阅全量取增量、筛有价值落事元、折叠摘要/建议/偏差提示；无偏差静默）。巡检频率的既有口径（≥300s）适用于 Work 触发；Dream 是低频大预算轮。
+
+> ③.2 实现落点：`yzj_advance_scan` 的 `groups` 改为可选——缺省时从注册表聚合全部 open 事项的 `im:` 线程去重取流（超过 8 个渠道报错提示分批，不悄悄截断，决策 17 刚性保持）；digest 新增「订阅清单」行供模型分发。Dream 仅定合同，未落地（④期配套）。
 
 ### 15.4 策略选择（决策 23）
 
@@ -444,6 +448,8 @@ decision-needed 的决策请求事元在 `变化内容` 里按行写备选：
 ```
 
 决策区把 `选项N` 行渲染成可选项（既有「确认推进 / 忽略」动词之上）；用户选定 → judge `confirm_advance` 带 note=选定项 → 落 user 事元。MVP 文本约定；原生结构化记迁移需求（断层 4）。
+
+> ③.2 实现落点：`advance-pane.tsx` 的 `parseDecisionOptions` 解析最新决策请求事元 `变化内容` 的 `选项N` / `影响` 行——选项渲染为按钮（点击 = `advance-judge { action: confirm_advance, note: 选项全文 }`），影响行单独展示，其余行照旧；无 `选项N` 行时既有三动词原样渲染。
 
 ### 15.5 验收口径（③.2 实现时）
 
