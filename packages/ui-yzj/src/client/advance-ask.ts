@@ -11,6 +11,8 @@ export interface AdvanceAskDraft {
   readonly advanceId: string
   readonly title: string
   readonly text: string
+  /** Which flow produced the draft — drives the banner copy (验收 vs 复盘). */
+  readonly kind: 'review' | 'export'
 }
 
 let current: AdvanceAskDraft | null = null
