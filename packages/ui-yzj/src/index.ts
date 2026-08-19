@@ -658,6 +658,16 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
           return internalError(`advance-scan-state failed: ${String(error)}`)
         }
       }
+      case 'advance-dream-state': {
+        // Dream-pool watermark for the board queue head (spec §17.3).
+        const advance = ctx.get('yzjAdvance')
+        if (advance === undefined) return internalError('advance-dream-state: yzjAdvance 服务不可用（tool-yzj 未挂载）')
+        try {
+          return { ok: true, value: advance.dreamState() }
+        } catch (error) {
+          return internalError(`advance-dream-state failed: ${String(error)}`)
+        }
+      }
       case 'advance-thread-add': {
         // 面板「关联渠道」 = user-direct write (D9, spec §15.2): registry row
         // + one 备注 事元 for single-document sources; no confirmation card.

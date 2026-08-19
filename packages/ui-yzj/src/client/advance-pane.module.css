@@ -578,6 +578,15 @@
   margin: 10px 0 4px;
 }
 
+.dreamLine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  margin-top: 2px;
+}
+
 /* --- refs chips / closed zone / patrol (v1.7 UX polish) ---------------------------------- */
 
 .refs {

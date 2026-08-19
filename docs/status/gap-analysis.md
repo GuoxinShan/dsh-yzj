@@ -777,3 +777,10 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 **事元来源区窗口化（同日续）**：「当前判断来自哪里」默认只显示最近 3 条 +「展开全部 N 条 / 收起」（与时间旅程「查看全部」同型）；意图线程的加（关联渠道弹层）/去（chip ×）为既有能力，真机确认在位。607 绿。
 
 **目录级订阅（同日续，决策 32，用户拍板「知识库一整个才能自动获取增量」）**：token 词汇加 **`dir:<docId>`**（知识库目录节点；整库=库根目录 `dir:<kbId>`），kind=persistent 进持续渠道——scan 聚合时按 `doc list --parent-id` 取增量（首扫快照 docId→updateTime 建基线不回灌；增量=新增/更新文档，信号 refs=<docId>、sourceType=文档）；cursor 存 scan domain 新 `dirs` 表。关联弹层**去掉手输 token**（开发者界面不是用户界面）：只留 IM 群 picker + 知识库目录 picker（「我的知识（整库）」+ 一层 hasChildren 目录）；chip 图标加「库」。单测 +3（dir 扫描全生命周期：基线/新增/更新/静默；弹层无手输+目录 picker+dir 关联；threadKindOf dir=persistent）；真机：弹层关联「830实验·共识」ALL PASS（`audit-5/6`），scan digest 含目录基线行（`audit-7`）。608 绿。存量 doc:/todo:/event:/file: 单文档源保留（关联即事元，静态引用）。
+## 24.10 AI推进｜Dream 蓄水池落地 + scan 截断修复（2026-08-20，决策 33/34）
+
+**Dream 蓄水池（spec §17）**：`yzj_advance_dreampool` storage-domain（pool + meta 两表）；Work scan 的每个 accepted 信号（IM + dir）copy 入池 pending，Work 即时处理不受影响。工具面：`yzj_advance_dream_status`（pending 清单+水位+lastDreamAt，description 内嵌抽取流程教学）+ `yzj_advance_dream_mark`（标记 done，host 内部状态不进 WRITE_SPECS）。服务面 `dreamState()` + RPC `advance-dream-state`。面板队列头水位行「池中 N 条待抽取 · 上次抽取 HH:mm」+「Dream 抽取」按钮（ask bus kind='dream'，banner「Dream 抽取已预备」）。触发三径：手动（演示主路径）+ 水位提示 + 定时 schedule（沿用既有机制）；host 自动唤起 agent 会话后置（迁移文档）。
+
+**scan 截断修复**：830 实验观察项 3 落地——单页 20 条截断丢晚到信号；改 `listImMessagesAll` 自动翻页取完增量（`MAX_SCAN_MESSAGES=200` 防爆上限）。回归用例：基线后涌入 25 条 → 一次 scan 全收（25 条新信号）。
+
+**验证**：单测 610 绿（+dream 水位行用例 +dir 全生命周期 +翻页回归）；真机 `advance-dream-demo.mjs` ALL PASS：cursor 回拨→巡检入池→看板「池中 1 条待抽取」+「Dream 抽取」→banner 预备（`audit-8/9`）。明天演示路径=看板「巡检」→ 回看板看水位 → 「Dream 抽取」。

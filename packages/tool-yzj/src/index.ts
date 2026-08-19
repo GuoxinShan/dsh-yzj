@@ -23,6 +23,7 @@ import type { TodoConfig } from './todo.ts'
 import { applyAdvanceTools, YzjAdvanceService } from './advance.ts'
 import { ScanCursorStore } from './scan-cursors.ts'
 import { AdvanceThreadStore } from './advance-threads.ts'
+import { DreamPoolStore } from './advance-dreampool.ts'
 import { YzjHomeService } from './home.ts'
 import { applyApprovalGuard } from './guard.ts'
 import type { YzjToolBudget } from './shared.ts'
@@ -97,8 +98,10 @@ export function apply(ctx: Context, config: Config): void {
   // create/scan tools and the panel thread RPC.
   const scanCursors = new ScanCursorStore()
   const advanceThreads = new AdvanceThreadStore()
-  const advanceService = new YzjAdvanceService(ctx, budget, config.todo ?? {}, todoService.holder, scanCursors, advanceThreads)
-  applyAdvanceTools(ctx, budget, config.todo ?? {}, todoService.holder, scanCursors, advanceThreads)
+  // Dream 蓄水池(spec §17,决策 33):scan 信号 copy 入池,Dream 抽取统一提炼。
+  const dreamPool = new DreamPoolStore()
+  const advanceService = new YzjAdvanceService(ctx, budget, config.todo ?? {}, todoService.holder, scanCursors, advanceThreads, dreamPool)
+  applyAdvanceTools(ctx, budget, config.todo ?? {}, todoService.holder, scanCursors, advanceThreads, dreamPool)
   // Product-home binding table (dsh-home-session): one Yunzhijia
   // conversation ↔ one DSH session. Shared by robot inbound and UI pick-group.
   const home = new YzjHomeService(ctx, {
