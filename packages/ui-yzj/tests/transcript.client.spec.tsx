@@ -4,9 +4,10 @@
  */
 import { act } from 'react-dom/test-utils'
 import { createRoot } from 'react-dom/client'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { agentClampOf, displayNameOf, streamAtBottom, YzjFusedView } from '../src/client/transcript.tsx'
 import { subscribeRoomComposerHost } from '../src/client/composer-host.ts'
+import { getAdvanceFeedback, setAdvanceFeedback } from '../src/client/advance-feedback.ts'
 
 type Rpc = { ok: true; value: unknown } | { ok: false; error: { message: string } }
 
@@ -16,6 +17,8 @@ function renderView(
     backfill?: Rpc
     homeTopicOpen?: (input: { groupId: string; rootMsgId?: string }) => Promise<Rpc>
     focused?: string[]
+    advanceState?: () => Promise<Rpc>
+    advanceFeed?: (input: { advanceId: string; summary: string; sourceType?: string; refs?: string[] }) => Promise<Rpc>
   } = {},
 ): HTMLDivElement {
   const container = document.createElement('div')
@@ -30,6 +33,8 @@ function renderView(
         homeBackfill={async () => backfill}
         {...(extra.homeTopicOpen === undefined ? {} : { homeTopicOpen: extra.homeTopicOpen })}
         {...(extra.focused === undefined ? {} : { focusBoundSession: (id) => extra.focused?.push(id) })}
+        {...(extra.advanceState === undefined ? {} : { advanceState: extra.advanceState })}
+        {...(extra.advanceFeed === undefined ? {} : { advanceFeed: extra.advanceFeed })}
       />,
     )
   })
@@ -44,7 +49,22 @@ async function flush(): Promise<void> {
   })
 }
 
+const roomFused = (items: unknown[]): Rpc => ({
+  ok: true,
+  value: {
+    bound: true,
+    kind: 'room',
+    binding: { yzjConversationId: 'g-a', dshSessionId: 'yzj-home-g-a', yzjKind: 'group' },
+    topics: [],
+    items,
+  },
+})
+
 describe('YzjFusedView', () => {
+  afterEach(() => {
+    setAdvanceFeedback(null)
+  })
+
   it('renders the group room as IM plus 交给助手, not a fused agent stream', async () => {
     const fused: Rpc = {
       ok: true,
@@ -74,6 +94,7 @@ describe('YzjFusedView', () => {
     expect(text).not.toContain('发给助手')
     expect(text).not.toContain('助手回答一句')
     expect(text).not.toContain('本群话题')
+    expect(text).not.toContain('喂给推进')
     expect(container.querySelector('[data-testid="yzj-room-composer-host"]')).not.toBeNull()
   })
 
@@ -493,6 +514,75 @@ describe('YzjFusedView', () => {
     expect(container.querySelector('[data-testid="yzj-fused-stream"]')).toBeNull()
     expect(container.querySelector('[data-testid="yzj-room-composer-host"]')).toBeNull()
     act(() => { root.unmount() })
+  })
+
+  it('喂给推进 opens the picker and feeds with refs=msgId, sourceType 对话', async () => {
+    const fed: Record<string, unknown>[] = []
+    const fused = roomFused([
+      { kind: 'im', time: 1, entry: { msgId: 'm1', sentAt: 1, fromName: '同事', content: '群里一句进度', origin: 'inbound', isSelf: false, status: 'acked' } },
+      { kind: 'im', time: 2, entry: { msgId: 'bot-1', sentAt: 2, fromName: '助手', content: '已排好', origin: 'robot-outbound', isSelf: false, status: 'acked' } },
+    ])
+    const container = renderView(fused, {
+      advanceState: async () => ({
+        ok: true,
+        value: { ready: true, items: [{ advanceId: 'A-1', title: '试运行', stage: 'running', latest: '' }] },
+      }),
+      advanceFeed: async (input) => {
+        fed.push(input as Record<string, unknown>)
+        return { ok: true, value: { advanceId: input.advanceId } }
+      },
+    })
+    await flush()
+    expect(container.querySelector('[data-testid="yzj-advance-feed-m1"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="yzj-advance-feed-bot-1"]')).toBeNull()
+    await act(async () => {
+      (container.querySelector('[data-testid="yzj-advance-feed-m1"]') as HTMLButtonElement).click()
+      await Promise.resolve()
+    })
+    await flush()
+    expect(container.querySelector('[data-testid="yzj-advance-feed-picker"]')).not.toBeNull()
+    expect((container.querySelector('[data-testid="yzj-advance-feed-summary"]') as HTMLTextAreaElement).value).toBe('群里一句进度')
+    await act(async () => {
+      (container.querySelector('[data-testid="yzj-advance-feed-submit"]') as HTMLButtonElement).click()
+      await Promise.resolve()
+    })
+    await flush()
+    expect(fed).toEqual([{
+      advanceId: 'A-1',
+      summary: '群里一句进度',
+      sourceType: '对话',
+      refs: ['m1'],
+    }])
+  })
+
+  it('现在反馈 card one-line feed uses sourceType 人工 and clears the bus', async () => {
+    setAdvanceFeedback({ advanceId: 'A-1', title: '试运行', goal: '进入试运行', stage: 'running' })
+    const fed: Record<string, unknown>[] = []
+    const fused = roomFused([
+      { kind: 'im', time: 1, entry: { msgId: 'm1', sentAt: 1, fromName: '同事', content: '群里一句', origin: 'inbound', isSelf: false, status: 'acked' } },
+    ])
+    const container = renderView(fused, {
+      advanceFeed: async (input) => {
+        fed.push(input as Record<string, unknown>)
+        return { ok: true, value: { advanceId: input.advanceId } }
+      },
+    })
+    await flush()
+    expect(container.querySelector('[data-testid="yzj-advance-feedback-card"]')?.textContent).toContain('正在反馈 · 试运行')
+    const input = container.querySelector('[data-testid="yzj-advance-feedback-summary"]') as HTMLInputElement
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+      setter.call(input, '口头进度')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => {
+      (container.querySelector('[data-testid="yzj-advance-feedback-send"]') as HTMLButtonElement).click()
+      await Promise.resolve()
+    })
+    await flush()
+    expect(fed).toEqual([{ advanceId: 'A-1', summary: '口头进度', sourceType: '人工' }])
+    expect(getAdvanceFeedback()).toBeNull()
+    expect(container.querySelector('[data-testid="yzj-advance-feedback-card"]')).toBeNull()
   })
 })
 

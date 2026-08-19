@@ -15,9 +15,12 @@ const OUT = join(dirname(fileURLToPath(import.meta.url)), 'shots-advance')
 mkdirSync(OUT, { recursive: true })
 const BASE = process.env.DSH_GUI ?? 'http://127.0.0.1:3080/'
 const CHROME = [
+  '/usr/bin/google-chrome-stable',
+  '/usr/bin/google-chrome',
+  '/opt/google/chrome/chrome',
+  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
   'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
   'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
 ].find(path => existsSync(path))
 
 let failures = 0
@@ -30,18 +33,46 @@ const browser = await chromium.launch({
   ...(CHROME === undefined ? {} : { executablePath: CHROME }),
   headless: true,
 })
-const page = await browser.newPage({ viewport: { width: 1560, height: 940 } })
+const page = await browser.newPage({ viewport: { width: 1560, height: 940 }, locale: 'zh-CN' })
 const pageErrors = []
 page.on('pageerror', (error) => { pageErrors.push(String(error).slice(0, 200)) })
 
+const skip = async (reason) => {
+  console.log(`SKIP  ${reason}`)
+  await page.screenshot({ path: join(OUT, 'skip.png') }).catch(() => {})
+  await browser.close()
+  process.exit(0)
+}
+
+/** Fresh web profiles paint the harness welcome + API-key cards over #root (pitfall-035). */
+const dismissFirstRun = async () => {
+  for (let step = 0; step < 4; step += 1) {
+    const welcome = page.getByRole('dialog', { name: /内测声明|Internal Testing Notice/ })
+    if (await welcome.isVisible().catch(() => false)) {
+      await welcome.getByRole('button', { name: /继续|Continue/ }).click()
+      await page.waitForTimeout(800)
+      continue
+    }
+    const credential = page.getByRole('dialog', { name: /添加一个 API Key|Add an API key/ })
+    if (await credential.isVisible().catch(() => false)) {
+      await credential.getByRole('button', { name: /稍后配置|Configure later/ }).click()
+      await page.waitForTimeout(800)
+      continue
+    }
+    break
+  }
+}
+
 await page.goto(BASE, { waitUntil: 'domcontentloaded' })
 await page.waitForTimeout(5000)
+await dismissFirstRun()
 
 // --- 1. single sidebar entry opens the overlay; five tabs incl 推进 ---
 const dock = page.getByTestId('yzj-group-space')
 await dock.waitFor({ state: 'visible', timeout: 25000 })
 ok('dock visible', await dock.isVisible())
-await page.getByTestId('yzj-dock-home').click()
+const home = page.getByTestId('yzj-dock-home')
+await home.click({ timeout: 8000 }).catch(() => home.click({ force: true }))
 await page.waitForTimeout(2000)
 
 const tabs = page.getByTestId('yzj-workbench-tabs')
@@ -58,6 +89,9 @@ await pane.waitFor({ state: 'visible', timeout: 20000 }).catch(() => {})
 ok('advance pane mounted', await pane.count().then(n => n > 0))
 let paneText = await pane.innerText().catch(() => '')
 await page.screenshot({ path: join(OUT, '2-board.png') })
+if (await page.getByTestId('yzj-login-banner').count() > 0) {
+  await skip('yzj-cli not logged in on this machine — chrome OK, write-path skipped')
+}
 
 // --- 3. provision on demand when the hero shows ---
 if (paneText.includes('推进看板还没有开通')) {

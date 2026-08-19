@@ -42,6 +42,8 @@
 | 31 | 近窗进 snapshot 会和记忆糊成一段；要用独立 plugin inject | T5 召唤窗 / 记忆 | [pitfall-031-summon-window-is-inject.md](pitfall-031-summon-window-is-inject.md) |
 | 32 | `calendar event list` 跨天窗口只留循环日程第一次 | 工作台日程 / `yzj_calendar_event_list` | [pitfall-032-calendar-list-collapses-recurrence.md](pitfall-032-calendar-list-collapses-recurrence.md) |
 | 33 | yzj-cli `msg-type file` 不能带 `--reply-msg-id`，产物文件进不了回复链 | ui-yzj 话题 job-done / `parseImSend` / `yzj_im_message_send` | [pitfall-033-cli-file-cannot-reply.md](pitfall-033-cli-file-cannot-reply.md) |
+| 34 | rc.7：`tool.call.toolview` 要 type-import merge；SessionId branded；禁止 `/src/` 深路径 | ui-yzj browser half / 根包 registry 对齐 | [pitfall-034-rc7-slot-merge-and-sessionid.md](pitfall-034-rc7-slot-merge-and-sessionid.md) |
+| 35 | 新鲜 web profile 的内测声明 / API Key 卡挡住云之家 dock | `.acceptance` 真机脚本 / 空 web profile 首启 | [pitfall-035-first-run-onboarding-masks-dock.md](pitfall-035-first-run-onboarding-masks-dock.md) |
 
 ## 维护规则
 

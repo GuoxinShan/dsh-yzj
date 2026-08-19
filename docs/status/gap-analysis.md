@@ -391,7 +391,7 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 | 🟡 外部依赖 | Adaptive 确认卡 / checklist 原地更新（S2/R3） | 协议依据已锁定，等开放平台协调 |
 | ⚪ 可选 | 标准确认同会话合并 / chip 快照标注 / @同事起草入口 / chip 灰化 / 灰 chip | 设计标注可选，未实现 |
 | 🔒 受限 | yzj.write 持久化事件族 / 通知卡按钮 / 多 chip 批量序列化 / 自定义 session 事件 / 确认卡进程内存态 | harness/协议边界，已备案 |
-| 🧹 发布 | 对外 git 安装走根 `@dsh-yzj/bundle` registry 依赖；workspace 六包保留 `link:` 兄弟 checkout（开发事实源） | ✅ 关闭（2026-08-18）：根 `dependencies` 已是 `^0.1.0-rc.6`，无 `link:`；tag `v0.1.0` / `v0.1.1` 已打。**不要**把 workspace `link:` 换成 registry——会拆掉 vitest alias / 类型闭环。AGENTS.md Pre-release 段已删，口径见 `docs/release.md` |
+| 🧹 发布 | 对外 git 安装走根 `@dsh-yzj/bundle` registry 依赖；workspace 六包保留 `link:` 兄弟 checkout（开发事实源） | ✅ 关闭（2026-08-18 起；**2026-08-19 升 rc.7**）：根 `dependencies` 已是 `^0.1.0-rc.7`，无 `link:`；tag `v0.1.0` / `v0.1.1` 已打。**不要**把 workspace `link:` 换成 registry——会拆掉 vitest alias / 类型闭环。browser half 须 `import type {} from '@deepseek-ai/dsh-client-ui-tool/client'` 才能 merge `tool.call.toolview`；session 槽 `inject` / overlay hanger 用 branded `SessionId`（pitfall-034）。口径见 `docs/release.md` |
 | 🧹 业务 | routine 内容为 demo 巡检，真实定时任务未定义 | 待用户提供 |
 
 **文档修正（同提交）**：`robot-channel-plan.md` §3.6.4 对齐表 C5 原标 ✅ 与 §20.5「!fork 未做」矛盾——已改标 ⚠️ 观察项；R2.10 `!fork` 落地后改回 ✅（含 !configure/!feedback/会话 deep link 降级实现）。
@@ -591,6 +591,31 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 
 **同日旁路真机（发群指定 dsh-2 `6a8400d4e4b09a073e3feeaf`）**：`topic-deliver` live job-done 绿（锚点「【验收】话题 job-done 锚点（R29）」+ 总结回帖 + `r29-summary.md` 跟发时间线）。群房间 e2e `YZJ_E2E_GROUP=dsh-2`：**发进群直写成功**（`【群房间e2e】01:38:12 5zpd`、无确认卡、交给助手开抽屉）；旧断言「composer 文案含发进群」FAIL——现行 placeholder 是 `发到 {群名}…`、发送钮是 aria「发进群」图标（`room-composer.tsx`）；回复 chip / 幂等「N 条回复」8s 内未出现。`verify-room-layout.mjs` 对 dsh-2：有界三栏 / 触底 / composer 可见 PASS；机器人折叠与抽屉 chip 依赖「测试群」的 BOT 历史，dsh-2 上 0 行属预期。
 
-**分期状态**：①地基本次交付；② 事元接入便捷化、③ AI 主动回路（机制 C–F：AI 触发阶段/最小推进回路/验收辅助/schedule 巡检）、④ 知识沉淀出口（事元流折复盘文档入知识库 + 纪要模板）、⑤ 归集分析——见设计 §8。
+**分期状态**：①地基已交付；**② 事元接入便捷化本次交付（§24.1）**；③ AI 主动回路（机制 C–F：AI 触发阶段/最小推进回路/验收辅助/schedule 巡检）、④ 知识沉淀出口（事元流折复盘文档入知识库 + 纪要模板）、⑤ 归集分析——见设计 §8。
 
 **已知偏差**：(a) AGENTS/本档旧文提到的 `bundle/skills/yzj-cli/SKILL.md` 在当前仓库不存在（历史路径）；第一期 agent 教学面由工具 description（立项预填、running 勿打扰、feed 唯一变更通道）与 spec 承载，机器级 skill 的「AI推进」章节待 skill 文件回仓后补。(b) 来源跳转按「可跳则跳」降级：doc 走 web url/知识库域、对话跳对话域、待办跳待办页签，无消息级锚点（CLI 限制，设计 §9-8）。(c) 双写非事务：投影是缓存、流是事实（设计 §9-6，原生后端应服务端折叠）。
+
+## 24.1 AI推进第二期｜事元接入便捷化（2026-08-19，设计随提交）
+
+设计基线 [`ai-advance-design.md`](../spec/ai-advance-design.md) v1.1 §11。不改双表/六态/确认卡；补「人在工作现场把一条信号挂上事项」的用户直写入口。
+
+| 面 | 交付 | 证据 |
+|---|---|---|
+| RPC | `/yzj advance-feed`：`actor=user`、`changeType` 固定「进度更新」；**拒绝** `stageTo` / `goal` / `metrics` / `targetDate` / `assignee`（决策 10）；有 refs 默认 `sourceType=对话`，否则「人工」 | `rpc.node.spec.ts`：无服务失败闭合；带 stageTo/goal 零调用；refs 过滤空串 |
+| 群房间 | 消息 hover「喂给推进」（助手帖除外）→ 事项选择器 + 一句话（默认消息前 80 字）→ `refs=[msgId]`、`sourceType=对话`；无 inject 不露按钮 | `transcript.client.spec.tsx`：picker 提交载荷；无 inject 不含「喂给推进」；助手行无按钮 |
+| 话题透镜 | 锚点旁 / 问助手栏「喂给推进」；草稿作 summary；`legacy-host` 不当 ref；问助手栏仍只 `followup`，两按钮不混 | `topic-drawer.client.spec.tsx`：锚点 feed refs=`m-root`；legacy 无锚点按钮；草稿 feed 且 asked=[] |
+| 现在反馈 | 看板 kicker「现在反馈」→ `setAdvanceFeedback` + `setWorkbenchDomain('im')`；对话顶非模态事项卡一句话 `sourceType=人工`；取消清卡 | `advance-pane.client.spec.tsx` bus + 切域；`transcript.client.spec.tsx` 卡直写清 bus |
+| 选择器 | `AdvanceFeedPicker`：列事项、presetId 预选、空板禁用、空摘要拦截 | `advance-feed-picker.client.spec.tsx` |
+
+**不做（③期）**：文档/日程工作台行「喂给推进」；AI 主动回路 C–F。agent composer chip 喂入仍走 ①期 `yzj_advance_feed` 确认卡。
+
+**已知偏差**：与 §24 (a)(b)(c) 同；另：群房间「喂给推进」是行操作文字链，不是独立 chip 组件（产品文案沿用「喂给推进」，实现是 picker 模态）。
+
+**真机（2026-08-19，rc.7 web profile 新实例）**：编 harness client+web dist → `dsh web :3080` → `dsh plugin --profile web add -w link:<本仓>`。boot 图含 `@dsh-yzj/bundle/ui-yzj`，`/plugins/@dsh-yzj/bundle/ui-yzj/client.js` 200。新鲜 profile 先关掉内测声明/API Key 卡（pitfall-035）后：
+
+| 脚本 | chrome | 写路径 |
+|---|---|---|
+| `.acceptance/verify-advance-board.mjs` | **PASS** dock / 五页签「对话 待办 日程 知识库 推进」/ `yzj-advance-pane` 挂上（空态「推进看板还没有开通」+「一键开通」） | **SKIP** exit 0：本机无 `yzj-cli`（`spawn yzj-cli ENOENT`），登录卡在 |
+| `.acceptance/verify-advance-feed.mjs` | **PASS** 「推进」页签 + 看板挂上 | 同上；立项 / 「现在反馈」事项卡 / 群房间 hover picker 需已登录 yzj-cli，本轮未跑 |
+
+截图（git 忽略 `shots*/`）：`shots-advance/1-tabs.png`、`2-board.png`；`shots-advance-feed/0-advance-tab.png`。写路径要在装了 `yzj-cli auth login` 的机器上重跑同一脚本，不要把 ENOENT 当产品失败。

@@ -162,8 +162,8 @@ web profile (web-app + robot-yzj 机器人模式)
   - `routines-cli` 保留（`dsh --profile ops routines list/run/…` 从这里跑）。
 - **peers 必须 link: 到 harness checkout**：profile 模板的 `pnpm-workspace.yaml`
   写死 `autoInstallPeers: false`，bundle 的 `@deepseek-ai/*` peer 不会装；手动开
-  `autoInstallPeers: true` 会从 registry 装 rc.6，与 harness 本体的 rc.5 双份并存
-  （Service 单例分裂风险）。生产做法：在 profile 里 `pnpm add link:<harness 包
+  `autoInstallPeers: true` 会从 registry 装当时的 rc.6，与 harness 本体的 rc.5 双份并存
+  （Service 单例分裂风险；现行对外口径是 `^0.1.0-rc.7`，peers 仍须 `link:` 到兄弟 checkout，不要再装一份 registry）。生产做法：在 profile 里 `pnpm add link:<harness 包
   路径>`（cordis/timer/schemastery 在 `vendor/`，agent/session 在
   `packages/core/`，jobs/llm 在 `packages/{jobs,llm}/{jobs,llm}`，cmdline 在
   `packages/boot/cmdline`）——与 `@dsh-yzj/*` 的 link: 依赖同一模式，解析全部

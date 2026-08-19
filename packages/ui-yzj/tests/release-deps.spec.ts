@@ -18,6 +18,10 @@ describe('bundle publish dependencies', () => {
     expect(pkg.name).toBe('@dsh-yzj/bundle')
     const linked = Object.entries(pkg.dependencies).filter(([, spec]) => spec.startsWith('link:'))
     expect(linked).toEqual([])
-    expect(pkg.dependencies['@deepseek-ai/dsh-session']).toMatch(/^\^?0\.1\.0-rc\./)
+    const dsh = Object.entries(pkg.dependencies).filter(([name]) => name.startsWith('@deepseek-ai/dsh-'))
+    expect(dsh.length).toBeGreaterThan(0)
+    for (const [, spec] of dsh) {
+      expect(spec).toBe('^0.1.0-rc.7')
+    }
   })
 })
