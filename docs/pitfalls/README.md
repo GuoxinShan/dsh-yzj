@@ -46,6 +46,7 @@
 | 35 | 新鲜 web profile 的内测声明 / API Key 卡挡住云之家 dock | `.acceptance`  真机脚本 / 空 web profile 首启 | [pitfall-035-first-run-onboarding-masks-dock.md](pitfall-035-first-run-onboarding-masks-dock.md) |
 | 36 | GUI「Full access」档位 approval=never,yzj 写工具 ask 自动转 deny、确认卡 不弹 | `.acceptance` 确认卡实验 / 任何依赖弹卡的 GUI 会话 | [pitfall-036-full-access-disables-approval.md](pitfall-036-full-access-disables-approval.md) |
 | 37 | 验收脚本的话题步骤对「目标群有没有话题锚点」敏感：数据态差异被误读成代码 回归 | `.acceptance/verify-advance-feed.mjs` / 任何以话题为前置的走查 | [pitfall-037-acceptance-topic-data-precondition.md](pitfall-037-acceptance-topic-data-precondition.md) |
+| 38 | web profile bundle link 被切到 worktree 不归位：主 checkout build 与 GUI 加载 脱节 | 真机验收 / 实验环境前置 | [pitfall-038-profile-bundle-link-stale.md](pitfall-038-profile-bundle-link-stale.md) |
 
 ## 维护规则
 

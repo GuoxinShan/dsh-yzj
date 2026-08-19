@@ -9,7 +9,7 @@ CLI 0.1.3 的 JSON 输出**没有统一信封**，同一条命令族里混着三
 
 | 形态 | 命令示例 | 样子 |
 |---|---|---|
-| 裸数组 | `doc workspace list`、`doc list` | `[{id, name, …}, …]` |
+| 裸数组 | `doc workspace list`、`doc list`、`contact user get` | `[{id, name, …}, …]` |
 | data 信封 | `doc block list`、`sheet get` | `{success, data: {blocks/sheets: […]}, error}` |
 | fields 为 JSON 字符串 | `sheet record list/create/update` | `records[].fields` 是**字符串** `"{\"姓名\":\"张明\"}"`，不是嵌套对象 |
 
@@ -35,3 +35,5 @@ CLI 0.1.3 的 JSON 输出**没有统一信封**，同一条命令族里混着三
 ## 教训
 
 CLI 无源码可读、无 schema 可查——**实测输出是唯一事实源**；「静默丢弃」类失败（select 选项）没有报错路径，只有回读校验能发现。
+
+2026-08-19 增补实例：`contact user get` 返回顶层裸数组，而 `advance.ts` 的 `whoamiOpenId` 按 `{list:[…]}` 解析 → selfOpenId 永远为 `""` → scan 的本人过滤（`isSkippableSender`）从未生效，digest 一直含本人消息，靠模型抑制纪律兜底（830 实验 P2 走查时模型把本人 19:22 报告当信号分析才暴露）。更深一层的坑：**fake store 的 mock 形状也是照错误假设写的**（`{list:[…]}`），单测绿而真机挂。修法双管齐下：解析层改「裸数组优先、`{list}` 兼容」，fake 改实测形状——后者让「过滤自身」用例成为真回归保护。教训追加：mock 的形状也必须实测，不能照解析代码的假设写。
