@@ -11,7 +11,7 @@
   "title": {
     "prefix": "AI推进 ·",
     "highlight": "架构与环路",
-    "subtitle": "事元流绕环一周 = 一次推进回合"
+    "subtitle": "事元流绕环一周 = 一次推进回合（v1.7：蓄水池 + 七态 + 目录订阅）"
   },
   "input_title": "Event Sources",
   "inputs": [
@@ -19,7 +19,8 @@
       "label": "意图线程订阅",
       "icon": "message",
       "color": "#2a9d8f",
-      "icon_style": "illustrated"
+      "icon_style": "illustrated",
+      "note": "IM 群 + 知识库目录(dir:)"
     },
     {
       "label": "待办·文档·日程",
@@ -51,6 +52,12 @@
         "icon_style": "illustrated"
       },
       {
+        "title": "蓄水池",
+        "body": "DreamPool · 信号入池\n水位/手动/定时触发抽取",
+        "icon": "queue",
+        "icon_style": "illustrated"
+      },
+      {
         "title": "判断该干啥",
         "body": "inspect · 确定性\n无 LLM",
         "icon": "dispatch",
@@ -72,13 +79,13 @@
   },
   "decision": {
     "title": "两种节奏",
-    "body": "Work 实时\nDream 静默"
+    "body": "Work 实时\nDream 蓄水池抽取"
   },
   "output": {
     "label": "推进看板",
     "icon": "eye"
   },
-  "loop_label": "Dream 反哺：摘要·建议落卡回流 Ledger",
+  "loop_label": "Dream 抽取：pending 出池 → 建议卡回流 Ledger",
   "retry_label": "无偏差静默 · dead_letter",
   "left_panel": {
     "title": "数据层 · tool-yzj",
@@ -145,13 +152,13 @@
       },
       {
         "title": "推进页签",
-        "body": "三栏+旅程\n信息来源",
+        "body": "三栏+旅程+终局区\n水位行·Dream 抽取",
         "icon": "eye",
         "icon_style": "illustrated"
       },
       {
         "title": "judge 直写",
-        "body": "五动词无卡\n/yzj RPC",
+        "body": "六动词无卡\n含中止(cancelled)",
         "icon": "user",
         "icon_style": "illustrated"
       }

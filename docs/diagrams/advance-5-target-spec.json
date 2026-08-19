@@ -5,7 +5,7 @@
   "title": {
     "prefix": "灵基终态 ·",
     "highlight": "推进 + Event Loop",
-    "subtitle": "dsh-yzj 是 MVP 原型；我们做推进、Brain、IM 打通，其余骑灵基已有"
+    "subtitle": "dsh-yzj 是 MVP 原型；我们做推进、Brain、IM 打通，其余骑灵基已有（v1.7：蓄水池/七态/目录订阅映射）"
   },
   "signature": "@dsh-yzj",
   "lanes": [
@@ -24,7 +24,8 @@
           "id": "facts",
           "title": "工作现场事实",
           "icon": "clipboard",
-          "icon_style": "illustrated"
+          "icon_style": "illustrated",
+          "note": "IM 消息 + 知识库目录(dir:)增量"
         },
         {
           "id": "assistant",
@@ -76,9 +77,10 @@
         },
         {
           "id": "stage",
-          "title": "六态·增量感应门",
+          "title": "七态·增量感应门",
           "icon": "decision",
-          "icon_style": "illustrated"
+          "icon_style": "illustrated",
+          "note": "含 cancelled 终局(中止)"
         },
         {
           "id": "gate",
@@ -109,6 +111,13 @@
           "title": "EU·Scheduler",
           "icon": "gear",
           "icon_style": "illustrated"
+        },
+        {
+          "id": "pool",
+          "title": "Signal Pool",
+          "icon": "queue",
+          "icon_style": "illustrated",
+          "note": "蓄水池·水位/手动/定时触发"
         },
         {
           "id": "lanes",
@@ -149,7 +158,17 @@
     {
       "from": "ledger",
       "to": "rules",
-      "label": "取出来比对"
+      "label": "Work 即时比对"
+    },
+    {
+      "from": "ledger",
+      "to": "pool",
+      "label": "信号入池"
+    },
+    {
+      "from": "pool",
+      "to": "rules",
+      "label": "触发抽取"
     },
     {
       "from": "rules",
