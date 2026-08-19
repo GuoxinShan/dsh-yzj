@@ -1221,12 +1221,19 @@
   white-space: nowrap;
 }
 
+.topicAnchorWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 8px 4px;
+}
+
 .topicAnchorBar {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
-  margin: 8px;
+  margin: 0;
   padding: 8px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 8px;

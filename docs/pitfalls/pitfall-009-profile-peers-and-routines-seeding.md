@@ -11,8 +11,9 @@
 **根因**：
 - profile 模板的 `pnpm-workspace.yaml` 写死 `autoInstallPeers: false`（
   `packages/boot/app-boot` 的 profile 初始化模板），peers 一律不装；
-- 手动改 `autoInstallPeers: true` 后 pnpm 从 registry 装 peers（rc.6），与
-  harness 本体的 rc.5 **双份并存**——Cordis `Service` 单例身份分裂风险；
+- 手动改 `autoInstallPeers: true` 后 pnpm 从 registry 装 peers（当时 rc.6），与
+  harness 本体的 rc.5 **双份并存**——Cordis `Service` 单例身份分裂风险
+  （现行对外口径是 `^0.1.0-rc.7`；解法仍是 peers `link:` 到兄弟 checkout，不跟 registry 再装一份）；
 - 裸 `pnpm add link:<harness 包>` 装 @dsh-yzj/robot-yzj 时报
   `ERR_PNPM_EPERM`：pnpm 把 link 目标的依赖树往 **junction 目标（harness
   checkout 目录）里**装，被沙箱/权限拒绝，且失败后 package.json 回滚。

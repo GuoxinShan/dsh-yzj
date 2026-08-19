@@ -18,7 +18,7 @@ dsh-yzj 是 DeepSeek Harness 的独立插件 bundle 仓库：`yzj-cli` 桥接、
 
 ## 发布依赖口径
 
-workspace 六包对 `@deepseek-ai/*` 的 `link:../../../deepseek-harness/...` **保留**（兄弟 checkout 是唯一事实源；vitest alias / 类型闭环依赖它）。对外安装走根 `@dsh-yzj/bundle`，其 `dependencies` 已是 registry `^0.1.0-rc.6`，无 `link:`。tag `v0.1.0` / `v0.1.1` 已打。**不要**把 workspace `link:` 换成 registry。流程见 [docs/release.md](docs/release.md)。
+workspace 六包对 `@deepseek-ai/*` 的 `link:../../../deepseek-harness/...` **保留**（兄弟 checkout 是唯一事实源；vitest alias / 类型闭环依赖它）。对外安装走根 `@dsh-yzj/bundle`，其 `dependencies` 已是 registry `^0.1.0-rc.7`，无 `link:`。tag `v0.1.0` / `v0.1.1` 已打。**不要**把 workspace `link:` 换成 registry。流程见 [docs/release.md](docs/release.md)。
 
 ## Repository layout
 

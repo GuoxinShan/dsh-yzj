@@ -648,6 +648,45 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
           return internalError(`advance-ensure failed: ${String(error)}`)
         }
       }
+      case 'advance-feed': {
+        // User-direct chip/sentence feed (D9): no confirm card. Stage stays
+        // on agent yzj_advance_feed or panel judge (spec §11 / 决策 10).
+        const advance = ctx.get('yzjAdvance')
+        if (advance === undefined) return internalError('advance-feed: yzjAdvance 服务不可用（tool-yzj 未挂载）')
+        if (stringField(payload, 'stageTo') !== undefined
+          || stringField(payload, 'goal') !== undefined
+          || stringField(payload, 'metrics') !== undefined
+          || stringField(payload, 'targetDate') !== undefined
+          || stringField(payload, 'assignee') !== undefined) {
+          return internalError('advance-feed: 用户直写不能改阶段或目标字段，请走确认卡或看板判断')
+        }
+        const advanceId = stringField(payload, 'advanceId')
+        const summary = stringField(payload, 'summary')
+        if (advanceId === undefined || summary === undefined) {
+          return internalError('advance-feed endpoint requires advanceId and summary payloads')
+        }
+        const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
+        const rawRefs = record.refs
+        const refs = Array.isArray(rawRefs)
+          ? rawRefs.filter((item): item is string => typeof item === 'string' && item !== '')
+          : []
+        const sourceType = stringField(payload, 'sourceType')
+        try {
+          return {
+            ok: true,
+            value: await advance.feed({
+              advanceId,
+              summary,
+              sourceType: sourceType ?? (refs.length > 0 ? '对话' : '人工'),
+              changeType: '进度更新',
+              ...(refs.length === 0 ? {} : { refs }),
+              actor: 'user',
+            }),
+          }
+        } catch (error) {
+          return internalError(`advance-feed failed: ${String(error)}`)
+        }
+      }
       case 'write-list': {
         const sessionId = stringField(payload, 'sessionId')
         if (sessionId === undefined) return internalError('write-list endpoint requires a sessionId payload')

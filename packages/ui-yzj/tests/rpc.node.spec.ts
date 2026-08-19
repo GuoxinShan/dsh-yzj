@@ -148,6 +148,58 @@ describe('createRpcHandler', () => {
     expect(observed[1]).toEqual({ scope: 'user', content: '长期偏好', source: 'panel', durable: true })
   })
 
+  it('advance-feed is a user-direct write: actor=user, no stageTo, default sourceType', async () => {
+    const gate: YzjWriteGateFace = { list: () => [], decide: () => false }
+    const bare = createRpcHandler(mountBridge({}), gate)
+    expect(await bare('advance-feed', { advanceId: 'A-1', summary: '进度' }, undefined as never)).toEqual({
+      ok: false,
+      error: { code: 'internal', message: 'advance-feed: yzjAdvance 服务不可用（tool-yzj 未挂载）', details: {} },
+    })
+    const ctx = new Context()
+    const fed: Record<string, unknown>[] = []
+    ctx.provide('yzjAdvance', {
+      feed: async (input: Record<string, unknown>) => {
+        fed.push(input)
+        return { advanceId: input.advanceId, stage: 'running' }
+      },
+    })
+    const handler = createRpcHandler(ctx, gate)
+    const blocked = await handler('advance-feed', {
+      advanceId: 'A-1', summary: '偷偷改阶段', stageTo: 'completed',
+    }, undefined as never)
+    expect(blocked.ok).toBe(false)
+    expect(blocked.ok === false && blocked.error.message).toContain('用户直写不能改阶段或目标字段')
+    expect(fed).toEqual([])
+    const goalBlocked = await handler('advance-feed', {
+      advanceId: 'A-1', summary: '改目标', goal: '新目标',
+    }, undefined as never)
+    expect(goalBlocked.ok).toBe(false)
+    expect(fed).toEqual([])
+    const withRefs = await handler('advance-feed', {
+      advanceId: 'A-1', summary: '群里一句', refs: ['m1', ''],
+    }, undefined as never)
+    expect(withRefs.ok).toBe(true)
+    expect(fed[0]).toEqual({
+      advanceId: 'A-1',
+      summary: '群里一句',
+      sourceType: '对话',
+      changeType: '进度更新',
+      refs: ['m1'],
+      actor: 'user',
+    })
+    const noRefs = await handler('advance-feed', {
+      advanceId: 'A-1', summary: '口头反馈', sourceType: '人工',
+    }, undefined as never)
+    expect(noRefs.ok).toBe(true)
+    expect(fed[1]).toEqual({
+      advanceId: 'A-1',
+      summary: '口头反馈',
+      sourceType: '人工',
+      changeType: '进度更新',
+      actor: 'user',
+    })
+  })
+
   it('dream and model-default endpoints project their services', async () => {
     const ctx = new Context()
     const dreamSets: Record<string, unknown>[] = []
