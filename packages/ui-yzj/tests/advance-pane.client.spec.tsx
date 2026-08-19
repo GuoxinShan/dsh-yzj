@@ -307,8 +307,8 @@ describe('YzjAdvancePane', () => {
     expect(sources?.textContent).toContain('当前判断来自哪里')
     expect(sources?.textContent).toContain('未达标')
     expect(sources?.textContent).toContain('AI 推进不建立新的文件库')
-    // 已有产物 aggregates doc sources.
-    expect(sources?.textContent).toContain('已有产物')
+    // 「已有产物」区已于 v1.6 收掉(产物=事元的一部分,随信息来源呈现)
+    expect(sources?.textContent).not.toContain('已有产物')
     const showAll = face.container.querySelector('[data-testid="yzj-advance-show-all"]') as HTMLButtonElement
     expect(showAll).not.toBeNull()
     await act(async () => { showAll.click(); await Promise.resolve() })
