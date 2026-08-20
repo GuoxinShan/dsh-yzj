@@ -838,3 +838,15 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 | 验证 | 609 绿（dbt 测试路径不变）；真机：空板 hero → 创建落库 → seed 后 演示看板完整（截图 sqlite-check/ux-redesign） |
 
 todo 家族仍留 dbt（用户未要求动）；dbt 路径保留作测试与 legacy 回退。
+## 24.15 AI推进｜todo + 缓存同切 SQLite，云 dbt 真机全死（2026-08-20，v1.8，决策 37）
+
+用户拍板：「待办也切到 sqlite，云的直接干掉；消息列表之类的缓存也进 sql」。
+
+| 层 | 改动 |
+|---|---|
+| todo | `todo.ts` 四触点（resolveLibrary/fetchTodos/fetchTodoByTodoId/writeRecords）加 sqlite 分支；`setTodoBackend('sqlite')` 真机启用；测试留 dbt double 零改动 |
+| 缓存 | `im-cache.ts`：localStorage L1 热备 + host SQLite L2 副本（scheduleSave 双写、loadPersisted L1 空时异步回填）；host 新增 `im-cache-get/put` RPC（ui-yzj node half 直开同库） |
+| 存储 | 单库 `yzj_advance.db` 四表：items/entries/todos/im_cache |
+| 验证 | 609 绿；真机 todo 创建落库且列表可见（验收脚本 ux-sqlite-todo.mjs）；im_cache 待真用户开群触发双写 |
+
+云 dbt 残行（探针等）不再是任何路径的事实源；云服务恢复后可一次性物理清理。

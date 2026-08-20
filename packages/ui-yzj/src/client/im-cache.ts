@@ -93,6 +93,18 @@ const PERSIST_KEY = 'dsh.yzj.imcache.v1'
 const PERSIST_WINDOWS_MAX = 8
 const PERSIST_BYTES_MAX = 700_000
 
+
+/** L2 持久化桥（决策 37）：host SQLite 副本。panel 挂载时 bind 一次。 */
+let l2Put: ((key: string, payload: unknown, fetchedAt: number) => void) | null = null
+let l2Get: ((key: string) => Promise<{ payload: unknown; fetchedAt: number } | null>) | null = null
+export function bindImCachePersistence(
+  put: (key: string, payload: unknown, fetchedAt: number) => void,
+  get: (key: string) => Promise<{ payload: unknown; fetchedAt: number } | null>,
+): void {
+  l2Put = put
+  l2Get = get
+}
+
 let loaded = false
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -101,7 +113,24 @@ function loadPersisted(): void {
   loaded = true
   try {
     const raw = window.localStorage.getItem(PERSIST_KEY)
-    if (raw === null) return
+    if (raw === null) {
+      // L1 空 → 异步从 host SQLite (L2) 回填（跨设备/清缓存场景）。
+      if (l2Get !== null) {
+        void l2Get(PERSIST_KEY).then((hit) => {
+          if (hit === null || typeof hit.payload !== 'string') return
+          applyPersisted(hit.payload)
+        }).catch(() => {})
+      }
+      return
+    }
+    applyPersisted(raw)
+  } catch {
+    // Storage unavailable (private mode / sandboxed iframe): stay in-memory.
+  }
+}
+
+function applyPersisted(raw: string): void {
+  try {
     const data = JSON.parse(raw) as {
       readState?: [string, number][]
       senders?: [string, SenderInfo][]
@@ -144,6 +173,8 @@ function scheduleSave(): void {
         text = JSON.stringify(data)
       }
       window.localStorage.setItem(PERSIST_KEY, text)
+      // L2 副本：host SQLite（决策 37）。fire-and-forget。
+      if (l2Put !== null) l2Put(PERSIST_KEY, text, Date.now())
     } catch {
       // Storage full or unavailable: keep caches in-memory only.
     }
