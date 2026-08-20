@@ -486,12 +486,7 @@ describe('YzjAdvancePane', () => {
       },
     })
     await settle()
-    // refs 折叠在「查看详情」里(v1.8 UX):先展开两条事元
-    for (const idx of [0, 1]) {
-      const toggle = face.container.querySelector(`[data-testid="yzj-advance-entry-toggle-${idx}"]`) as HTMLButtonElement
-      expect(toggle.textContent).toContain('查看详情')
-      await act(async () => { toggle.click(); await Promise.resolve() })
-    }
+    // 三层树(决策 39 后续):原始信息默认挂在事元行下,无需展开
     const docChip = face.container.querySelector('[data-testid="yzj-advance-ref-6a85774aecd3fb103b859f8a"]') as HTMLAnchorElement
     expect(docChip.tagName).toBe('A')
     expect(docChip.href).toContain('/store/doc/6a85774aecd3fb103b859f8a')
@@ -620,9 +615,6 @@ describe('YzjAdvancePane', () => {
       },
     })
     await settle()
-    const toggle = face.container.querySelector('[data-testid="yzj-advance-entry-toggle-0"]') as HTMLButtonElement
-    await act(async () => { toggle.click(); await Promise.resolve() })
-    await settle()
     const jump = face.container.querySelector('[data-testid="yzj-advance-ref-im:g1:m9"]') as HTMLButtonElement
     expect(jump).not.toBeNull()
     await act(async () => { jump.click(); await Promise.resolve() })
@@ -644,9 +636,6 @@ describe('YzjAdvancePane', () => {
         contextSources: [{ token: 'im:g2', kind: 'persistent', label: 'dsh-2', addedBy: 'user', addedAt: 1 }],
       },
     })
-    await settle()
-    const toggle = face.container.querySelector('[data-testid="yzj-advance-entry-toggle-0"]') as HTMLButtonElement
-    await act(async () => { toggle.click(); await Promise.resolve() })
     await settle()
     const jump = face.container.querySelector('[data-testid="yzj-advance-ref-m-legacy"]') as HTMLButtonElement
     await act(async () => { jump.click(); await Promise.resolve() })
@@ -673,9 +662,6 @@ describe('YzjAdvancePane', () => {
         })],
       },
     })
-    await settle()
-    const toggle = face.container.querySelector('[data-testid="yzj-advance-entry-toggle-0"]') as HTMLButtonElement
-    await act(async () => { toggle.click(); await Promise.resolve() })
     await settle()
     const eventRow = face.container.querySelector('[data-testid="yzj-advance-ref-im:g1:m9"]')
     expect(eventRow).not.toBeNull()
