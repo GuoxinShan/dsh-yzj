@@ -526,7 +526,34 @@
   max-width: 100%;
 }
 
-/* 事元描述正文(默认可见,变化内容):进度行→事元描述→原始信息 */
+/* 进度节点(连续同 changeType 的事元组):进度更新从多个事元来(用户拍板) */
+
+.entryGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px dashed var(--dsh-alias-border-l2);
+}
+
+.entryGroup:first-child {
+  border-top: none;
+}
+
+.entryGroupHead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--dsh-alias-label-tertiary);
+}
+
+.entryGroupHead b {
+  font-size: 12.5px;
+  color: var(--dsh-alias-label-primary);
+}
+
+/* 事元描述正文(默认可见,变化内容):进度节点→事元描述→原始信息 */
 
 .entryDetail {
   margin: 2px 0 4px;
