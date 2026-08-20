@@ -886,3 +886,5 @@ host 端 `stringField` 空=缺失校验保持原样（校验正确，错在 clie
 | 面板 | 事元 refs chip 与来源列 msg 跳转接 `jumpToSourceMsg`：`im:g:m` 直达群+定位消息；legacy 裸 msgId 回退订阅渠道猜群 |
 | 兼容 | 存量事元裸 msgId refs 降级（跳群不定位）；isRefReplay token 字符串比较不受影响（混格式漏判可接受）；锚点不在首屏窗口时诚实降级（到群，自动翻页后续增强） |
 | 验证 | 616 绿（advance-pane 2 用例：anchor 直达/legacy 回退；room-shell 1 用例：scrollIntoView 落在锚点行）；真机 verify-advance-anchor.mjs 全 PASS（seed `im:<realGroupId>:<realMsgId>` 事元 → 点来源 → 直达 测试群 → 锚点消息行渲染 → 零 page error，seed 已清理） |
+
+**§24.18 续（同日）**：用户追问「不是有 sqlite 缓存吗，总得捞过吧」——核实后补齐最后一段：捞过的消息本体都在 bound log（每群 500 条持久，fused 全量读），锚点在 log 内的定位本就全覆盖；唯一缺口是从未开过的群只 backfill 最近 50 条。transcript 新增锚点自动翻页 effect（viewKey 级有界 10 页，复用 loadOlder；找到/到底/超界即停），room-shell 测试断言自动以最老一条为 beforeMsgId 翻页。真机 verify-advance-anchor.mjs 升级为窗外锚点（newest 20 + old 翻两页取 ~第 60 条）仍全 PASS。617 绿。

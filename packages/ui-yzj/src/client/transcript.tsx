@@ -254,6 +254,9 @@ export function YzjFusedView(props: YzjFusedInjected) {
   const [busyId, setBusyId] = useState('')
   const [more, setMore] = useState(true)
   const [loadingOlder, setLoadingOlder] = useState(false)
+  // Anchor auto-paging budget per viewKey (决策 39 后续): reset when the view swaps.
+  const anchorPagesRef = useRef(0)
+  useEffect(() => { anchorPagesRef.current = 0 }, [viewKey])
   const [names, setNames] = useState<Record<string, string>>(() => seedNames(cached?.items ?? []))
   const [lightbox, setLightbox] = useState<{ src: string; kind: 'image' | 'pdf' } | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -306,6 +309,20 @@ export function YzjFusedView(props: YzjFusedInjected) {
     if (props.anchorMsgId === undefined || props.anchorMsgId === '') return
     setHighlightMsgId(props.anchorMsgId)
   }, [props.anchorMsgId, viewKey])
+
+  // 决策 39 后续:捞过的消息本体都在 bound log(每群 500 条)且 fused 全量读,
+  // 但从未开过的群只 backfill 最近 50 条 — 锚点被新消息顶出窗口时自动翻页
+  // 加载更早(有界,防无限拉;找到或到底即停)。
+  useEffect(() => {
+    if (props.anchorMsgId === undefined || props.anchorMsgId === '') return
+    if (value.items.some(item => item.kind === 'im' && item.entry.msgId === props.anchorMsgId)) return
+    if (!more || loadingOlder || phase !== 'bound') return
+    if (anchorPagesRef.current >= 10) return
+    anchorPagesRef.current += 1
+    void loadOlder()
+    // loadOlder is a stable closure over state refs (same pattern as above).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.anchorMsgId, viewKey, value.items, more, loadingOlder, phase])
 
   useEffect(() => {
     const el = streamRef.current
