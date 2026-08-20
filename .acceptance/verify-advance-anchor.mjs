@@ -40,10 +40,24 @@ try {
   if (target === undefined) throw new Error('no recent groups')
   groupId = String(target.groupId)
   groupName = String(target.groupName ?? '')
-  const messages = runCli(['im', 'message', 'list', '--group-id', groupId, '--type', 'newest', '--limit', '5']).list ?? []
-  const pick = messages.find(m => typeof (m.msgId ?? m.id) === 'string') ?? messages[0]
-  if (pick === undefined) throw new Error('no messages in group')
-  msgId = String(pick.msgId ?? pick.id)
+  // Prefer a message OUTSIDE the first backfill window (~50 newest, CLI page
+  // cap 20) so the run exercises the 决策 39 auto-paging path; fall back to
+  // the newest row when the group is too shallow.
+  const recent = runCli(['im', 'message', 'list', '--group-id', groupId, '--type', 'newest', '--limit', '20']).list ?? []
+  const newest = recent.find(m => typeof (m.msgId ?? m.id) === 'string')
+  if (newest === undefined) throw new Error('no messages in group')
+  msgId = String(newest.msgId ?? newest.id)
+  let cursor = recent[recent.length - 1]
+  if (recent.length >= 20 && cursor !== undefined) {
+    let deep = null
+    for (let page = 0; page < 2; page += 1) {
+      const older = runCli(['im', 'message', 'list', '--group-id', groupId, '--type', 'old', '--msg-id', String(cursor.msgId ?? cursor.id), '--limit', '20']).list ?? []
+      if (older.length === 0) break
+      deep = older[older.length - 1]
+      cursor = deep
+    }
+    if (deep !== null) msgId = String(deep.msgId ?? deep.id)
+  }
 } catch (error) {
   console.log(`SKIP  yzj-cli read failed: ${String(error).slice(0, 120)}`)
   process.exit(0)
@@ -122,11 +136,11 @@ try {
     ok('msg source jump rendered', false, 'no source-jump button on the detail')
   } else {
     await jump.click()
-    await page.waitForTimeout(6000)
+    await page.waitForTimeout(9000)
     const domain = await page.getByTestId('yzj-room-shell').getAttribute('data-workbench-domain').catch(() => '')
     ok('jump lands on the im domain', domain === 'im', `domain=${domain}`)
     const row = page.getByTestId(`yzj-room-row-${msgId}`)
-    ok('anchor message row rendered', await row.count().then(n => n > 0), `row yzj-room-row-${msgId.slice(0, 12)}…`)
+    ok('anchor message row rendered (auto-paged when outside the first window)', await row.count().then(n => n > 0), `row yzj-room-row-${msgId.slice(0, 12)}…`)
     await page.screenshot({ path: join(OUT, '2-anchor-row.png') })
     const bodyText = await page.locator('body').innerText().catch(() => '')
     ok('no home-fused error', !bodyText.includes('requires a groupId or sessionId'))

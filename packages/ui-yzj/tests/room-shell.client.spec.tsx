@@ -310,4 +310,55 @@ describe('YzjRoomShell', () => {
       act(() => { root.unmount() })
     }
   })
+
+  it('anchored jump auto-pages older history when the anchor is outside the first window (决策 39)', async () => {
+    clearImSeat()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const backfills: Array<string | undefined> = []
+    act(() => {
+      root.render(
+        <YzjRoomShell
+          overlay
+          sessionId=""
+          homeFused={async (id, groupId) => ({
+            ok: true,
+            value: {
+              bound: true,
+              kind: 'room',
+              binding: { yzjConversationId: groupId ?? '', dshSessionId: '', yzjKind: 'group' },
+              topics: [],
+              items: [
+                { kind: 'im', time: 1, entry: { msgId: 'm-newest', sentAt: 2, fromName: '同事', content: '最新一条', origin: 'inbound', isSelf: false, status: 'acked' } },
+              ],
+            },
+          })}
+          homeBackfill={async (id, opts) => {
+            backfills.push(opts?.beforeMsgId)
+            // 初次拉取(无 beforeMsgId)云端还有更早;翻页一次后到底。
+            return { ok: true, value: { appended: 0, skipped: 0, more: opts?.beforeMsgId === undefined } }
+          }}
+          homeNav={async () => ({ ok: true, value: { rooms: [] } })}
+          fetchGroups={async () => ({ ok: true, value: { list: [], more: false } })}
+        />,
+      )
+    })
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    act(() => { requestImGroupFocus({ groupId: 'g-deep', anchorMsgId: 'm-deep-old' }) })
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    // 锚点不在首窗 → 自动以最老一条为 beforeMsgId 翻页;more=false 后停。
+    // backfills[0] 是初次 load 的无锚 backfill,自动翻页调用从带 beforeMsgId 的开始。
+    const paged = backfills.filter(id => id !== undefined)
+    expect(paged.length).toBeGreaterThanOrEqual(1)
+    expect(paged[0]).toBe('m-newest')
+    act(() => { root.unmount() })
+  })
 })
