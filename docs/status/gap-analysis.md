@@ -888,3 +888,5 @@ host 端 `stringField` 空=缺失校验保持原样（校验正确，错在 clie
 | 验证 | 616 绿（advance-pane 2 用例：anchor 直达/legacy 回退；room-shell 1 用例：scrollIntoView 落在锚点行）；真机 verify-advance-anchor.mjs 全 PASS（seed `im:<realGroupId>:<realMsgId>` 事元 → 点来源 → 直达 830 群 → 锚点消息行渲染 → 零 page error，seed 已清理） |
 
 **§24.18 续（同日）**：用户追问「不是有 sqlite 缓存吗，总得捞过吧」——核实后补齐最后一段：捞过的消息本体都在 bound log（每群 500 条持久，fused 全量读），锚点在 log 内的定位本就全覆盖；唯一缺口是从未开过的群只 backfill 最近 50 条。transcript 新增锚点自动翻页 effect（viewKey 级有界 10 页，复用 loadOlder；找到/到底/超界即停），room-shell 测试断言自动以最老一条为 beforeMsgId 翻页。真机 verify-advance-anchor.mjs 升级为窗外锚点（newest 20 + old 翻两页取 ~第 60 条）仍全 PASS。617 绿。
+
+**§24.18 再续（同日，三层结构 UI 化）**：用户追问「三层结构为啥 UI 没跟着改」——refs 此前对用户是截断 ID chip，事件层不可读。补齐事件层呈现：host 新 RPC `advance-ref-lookup`（`im:<g>:<m>` → bound log 命中的 谁/何时/说了什么），面板事元展开后 msg ref 命中渲染为可读事件行（点击仍定位消息，未命中降级旧 chip）。真机 verify-advance-anchor.mjs 事件行 PASS（`[08-20 17:06] 代少兵 …`）；调试中发现并修复验收 seed 缺 `entry_id` fields 键被 parse 静默过滤的坑（pitfall-040，此前一轮「锚点 PASS」实为裸 msgId 事元的恰一群路径假阳性，本轮 seed 修复后锚点+事件行才是真验证）。618 绿。

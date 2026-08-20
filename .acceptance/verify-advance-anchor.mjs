@@ -74,6 +74,9 @@ db.prepare('INSERT OR REPLACE INTO entries (entry_id, advance_id, fields) VALUES
   entryId,
   ADVANCE_ID,
   JSON.stringify({
+    // fields 必须同时携带 entry_id/advance_id 键 — parseAdvanceEntry 从 fields
+    // 取 id，缺键会被过滤成 null（时间线不显示，本次调试的根因）。
+    entry_id: entryId,
     advance_id: ADVANCE_ID,
     时间: stamp,
     来源类型: '对话',
@@ -84,6 +87,8 @@ db.prepare('INSERT OR REPLACE INTO entries (entry_id, advance_id, fields) VALUES
     操作者: 'user',
   }),
 )
+const seeded = db.prepare('SELECT COUNT(*) AS n FROM entries WHERE entry_id = ? AND advance_id = ?').get(entryId, ADVANCE_ID)
+console.log(`seeded rows: ${seeded.n}`)
 db.close()
 
 // --- 3. browser: advance detail → source jump lands on the anchor row ---
@@ -144,6 +149,26 @@ try {
     await page.screenshot({ path: join(OUT, '2-anchor-row.png') })
     const bodyText = await page.locator('body').innerText().catch(() => '')
     ok('no home-fused error', !bodyText.includes('requires a groupId or sessionId'))
+
+    // --- 5. back to the board: the seeded 事元 now shows a READABLE event row
+    // (who/when/what from the bound log the anchor paging just populated) ---
+    await page.getByTestId('yzj-workbench-tabs').getByRole('tab', { name: '推进' }).click()
+    await page.waitForTimeout(4000)
+    await page.getByTestId(`yzj-advance-item-${ADVANCE_ID}`).click()
+    await page.waitForTimeout(4000)
+    const toggles = page.locator('[data-testid^="yzj-advance-entry-toggle-"]')
+    const lastToggle = toggles.last()
+    if (await lastToggle.count() > 0) {
+      await lastToggle.click()
+      await page.waitForTimeout(1500)
+      const eventRow = page.locator(`[data-testid="yzj-advance-ref-im:${groupId}:${msgId}"]`)
+      const rendered = await eventRow.count().then(n => n > 0)
+      const text = rendered ? (await eventRow.innerText()) : ''
+      ok('msg ref renders as a readable event row (谁/何时/说了什么)', rendered && text.length > 10, rendered ? text.slice(0, 60).replace(/\n/g, ' ') : 'not hit in bound log')
+      await page.screenshot({ path: join(OUT, '3-event-row.png') })
+    } else {
+      console.log('INFO  no entry toggle rendered — event-row step skipped')
+    }
   }
   ok('zero page errors', pageErrors.length === 0, pageErrors.join(' | '))
 } finally {

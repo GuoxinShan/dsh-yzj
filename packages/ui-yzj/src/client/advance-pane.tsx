@@ -74,6 +74,14 @@ function msgAnchorOf(raw: string): { groupId: string; msgId: string } | null {
   return { groupId: match[1]!, msgId: match[2]! }
 }
 
+/** 事件行时间戳：sentAt(ms) → `MM-DD HH:mm`。 */
+function refStampOf(sentAt: number): string {
+  if (sentAt <= 0) return ''
+  const date = new Date(sentAt)
+  const pad = (value: number): string => String(value).padStart(2, '0')
+  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
 /** Doc deep link(知识库 web);其他类型跳域(无消息级锚点,spec 决策 8 诚实降级)。 */
 function refHref(kind: string, id: string): string | null {
   if (kind === 'doc' && id !== '') return `https://www.yunzhijia.com/knowledge/lingee/#/store/doc/${id}`
@@ -105,7 +113,7 @@ function sourceIconOf(token: string): string {
 
 /** Props: the RPC verbs the board needs (subset of the panel inject). */
 export interface AdvancePaneProps {
-  inject: Pick<YzjPanelInject, 'advanceState' | 'advanceGet' | 'advanceCreate' | 'advanceJudge' | 'advanceEnsure' | 'advanceScanState' | 'advancePatrolNow' | 'advanceSourceAdd' | 'advanceSourceRemove' | 'fetchGroups' | 'fetchWorkspaces' | 'fetchDocs' | 'advanceDreamState' | 'advanceDreamRun' | 'focusBoundSession'>
+  inject: Pick<YzjPanelInject, 'advanceState' | 'advanceGet' | 'advanceCreate' | 'advanceJudge' | 'advanceEnsure' | 'advanceScanState' | 'advancePatrolNow' | 'advanceSourceAdd' | 'advanceSourceRemove' | 'fetchGroups' | 'fetchWorkspaces' | 'fetchDocs' | 'advanceDreamState' | 'advanceDreamRun' | 'advanceRefLookup' | 'focusBoundSession'>
 }
 
 /** Queue-head patrol line (spec §14.5). */
@@ -208,6 +216,8 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
   /** 蓄水池 pending 明细（池查看浮层，决策 38）。 */
   const [dreamEntries, setDreamEntries] = useState<{ id: string; channel: string; refId: string; content: string; sendTime: string }[]>([])
   const [dreamPoolOpen, setDreamPoolOpen] = useState(false)
+  /** msg refs 事件行命中表（决策 39 后续）: token → bound log 消息摘要。 */
+  const [refHits, setRefHits] = useState<Record<string, { fromName: string; content: string; sentAt: number }>>({})
   const [sourceModalOpen, setSourceModalOpen] = useState(false)
   const [groupOptions, setGroupOptions] = useState<UnknownRecord[]>([])
   /** 知识库目录选项(决策 32):整库 + 一层目录。 */
@@ -264,6 +274,32 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
       setBusy(false)
     }
   }
+
+  /** msg refs 事件行可读化: detail 加载后批量把 im:<g>:<m> 解析成谁/何时/说了什么。 */
+  useEffect(() => {
+    if (detail === undefined || detail === null) { setRefHits({}); return }
+    const tokens = [...new Set(detail.entries.flatMap(entry =>
+      (Array.isArray(entry.refs) ? entry.refs : []).map(ref => stripRefPrefix(asString(ref))).filter(ref => ref.startsWith('im:'))))]
+    if (tokens.length === 0) { setRefHits({}); return }
+    let cancelled = false
+    void (async () => {
+      const result = await props.inject.advanceRefLookup(tokens)
+      if (cancelled || !result.ok) return
+      const hits = asRecord(result.value).hits
+      if (!Array.isArray(hits)) return
+      const next: Record<string, { fromName: string; content: string; sentAt: number }> = {}
+      for (const row of hits) {
+        const hit = asRecord(row)
+        next[asString(hit.token)] = {
+          fromName: asString(hit.fromName),
+          content: asString(hit.content),
+          sentAt: typeof hit.sentAt === 'number' ? hit.sentAt : 0,
+        }
+      }
+      if (!cancelled) setRefHits(next)
+    })()
+    return () => { cancelled = true }
+  }, [detail, props.inject])
 
   const loadBoard = async (): Promise<UnknownRecord[]> => {
     const result = await props.inject.advanceState()
@@ -849,6 +885,22 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                                       return <a key={raw} className={css.refChip} href={href} target="_blank" rel="noreferrer" title={raw} data-testid={`yzj-advance-ref-${id}`}>{label}</a>
                                     }
                                     if (kind === 'msg') {
+                                      const hit = refHits[id]
+                                      if (hit !== undefined) {
+                                        return (
+                                          <button
+                                            key={raw}
+                                            type="button"
+                                            className={css.refEvent}
+                                            title={`打开来源群消息 ${raw}`}
+                                            data-testid={`yzj-advance-ref-${id}`}
+                                            onClick={() => { jumpToSourceMsg(id) }}
+                                          >
+                                            <span className={css.refEventMeta}>[{refStampOf(hit.sentAt)}] {hit.fromName === '' ? '群消息' : hit.fromName}</span>
+                                            <span className={css.refEventBody}>{hit.content}</span>
+                                          </button>
+                                        )
+                                      }
                                       return <button key={raw} type="button" className={css.refChip} title={`打开来源群消息 ${raw}`} data-testid={`yzj-advance-ref-${id}`} onClick={() => { jumpToSourceMsg(id) }}>{label}</button>
                                     }
                                     const domain = kind === 'todo' ? 'todo' : kind === 'event' ? 'calendar' : null

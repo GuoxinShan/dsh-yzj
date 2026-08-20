@@ -54,3 +54,4 @@
 1. **一条坑一个文件**：`pitfall-NNN-<slug>.md`，NNN 递增；索引表同步更新。
 2. 记录必须包含：最小复现条件（什么环境/序列才触发）、根因（到代码行为层面，不写猜测）、解法（为什么这个解法而非别的）、回归验证方式（哪个测试/验收脚本覆盖）。
 3. 坑的解法变更时更新条目而非删掉；条目过时（对应代码已删）标注「已失效」并保留历史。
+| 40 | 外部 seed sqlite 事元缺 entry_id fields 键被 parse 静默过滤；早期验证被裸 msgId 事元的恰一群路径假阳性掩盖 | `.acceptance` 直插库脚本 / parseAdvanceEntry | [pitfall-040-seed-fields-need-id-keys.md](pitfall-040-seed-fields-need-id-keys.md) |
