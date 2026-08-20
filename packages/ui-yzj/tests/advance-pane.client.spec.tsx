@@ -12,7 +12,7 @@ import { YzjAdvancePane, queuesOf, STAGE_LABEL, formatScanStatus, parseDecisionO
 import type { AdvancePaneProps } from '../src/client/advance-pane.tsx'
 import { getAdvanceFeedback, setAdvanceFeedback } from '../src/client/advance-feedback.ts'
 import { getAdvanceAskDraft, setAdvanceAskDraft } from '../src/client/advance-ask.ts'
-import { getWorkbenchDomain, setWorkbenchDomain } from '../src/client/workbench-domain.ts'
+import { getWorkbenchDomain, setWorkbenchDomain, subscribeImGroupFocus, type ImFocusTarget } from '../src/client/workbench-domain.ts'
 
 type Rpc = { ok: true; value: unknown } | { ok: false; error: { message: string } }
 
@@ -600,6 +600,49 @@ describe('YzjAdvancePane', () => {
     expect(modal?.textContent).toContain('覆盖率到 80')
     expect(modal?.textContent).toContain('更新文档《范围》')
     expect(modal?.textContent).toContain('im:g1')
+    act(() => { face.root.unmount() })
+  })
+
+  it('msg 来源带渠道 token:跳转直达群并定位到那条消息(决策 39)', async () => {
+    setWorkbenchDomain('advance')
+    const focused: ImFocusTarget[] = []
+    const dispose = subscribeImGroupFocus(target => { focused.push(target) })
+    const face = mountPane({
+      items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行' })],
+      detail: {
+        item: item({ advanceId: 'A-1', stage: 'running', title: '试运行' }),
+        entries: [],
+        sources: [{ sourceType: '对话', label: 'dsh-2 · 覆盖率到 80', ref: 'im:g1:m9', at: '08-20', status: '已读取' }],
+      },
+    })
+    await settle()
+    const jump = face.container.querySelector('[data-testid="yzj-advance-source-jump-0"]') as HTMLButtonElement
+    expect(jump).not.toBeNull()
+    await act(async () => { jump.click(); await Promise.resolve() })
+    expect(focused).toEqual([{ groupId: 'g1', anchorMsgId: 'm9' }])
+    expect(getWorkbenchDomain()).toBe('im')
+    dispose()
+    act(() => { face.root.unmount() })
+  })
+
+  it('msg 来源裸 msgId(legacy):回退订阅渠道猜群不带锚点', async () => {
+    setWorkbenchDomain('advance')
+    const focused: ImFocusTarget[] = []
+    const dispose = subscribeImGroupFocus(target => { focused.push(target) })
+    const face = mountPane({
+      items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行' })],
+      detail: {
+        item: item({ advanceId: 'A-1', stage: 'running', title: '试运行' }),
+        entries: [],
+        sources: [{ sourceType: '对话', label: '旧信号', ref: 'm-legacy', at: '08-19', status: '已读取' }],
+        contextSources: [{ token: 'im:g2', kind: 'persistent', label: 'dsh-2', addedBy: 'user', addedAt: 1 }],
+      },
+    })
+    await settle()
+    const jump = face.container.querySelector('[data-testid="yzj-advance-source-jump-0"]') as HTMLButtonElement
+    await act(async () => { jump.click(); await Promise.resolve() })
+    expect(focused).toEqual([{ groupId: 'g2' }])
+    dispose()
     act(() => { face.root.unmount() })
   })
 

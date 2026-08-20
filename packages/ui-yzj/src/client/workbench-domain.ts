@@ -51,16 +51,24 @@ export function useWorkbenchDomain(): WorkbenchDomain {
 }
 
 /** Cross-component IM group focus bus: the advance board's 事元/source jumps
- * request a group open; the im panel consumes it and switches the timeline. */
-const imFocusListeners = new Set<(groupId: string) => void>()
+ * request a group open; the im panel consumes it and switches the timeline.
+ * 决策 39: the request may carry an anchor message — the timeline scrolls to
+ * and highlights that exact row (事件级定位, not just the group). */
+export interface ImFocusTarget {
+  readonly groupId: string
+  readonly anchorMsgId?: string
+}
 
-/** Ask the im domain to open one group (consumed by the panel). */
-export function requestImGroupFocus(groupId: string): void {
-  for (const listener of imFocusListeners) listener(groupId)
+const imFocusListeners = new Set<(target: ImFocusTarget) => void>()
+
+/** Ask the im domain to open one group, optionally anchored on a message. */
+export function requestImGroupFocus(target: ImFocusTarget | string): void {
+  const resolved: ImFocusTarget = typeof target === 'string' ? { groupId: target } : target
+  for (const listener of imFocusListeners) listener(resolved)
 }
 
 /** Subscribe to group-focus requests. Returns the disposer. */
-export function subscribeImGroupFocus(listener: (groupId: string) => void): () => void {
+export function subscribeImGroupFocus(listener: (target: ImFocusTarget) => void): () => void {
   imFocusListeners.add(listener)
   return () => { imFocusListeners.delete(listener) }
 }

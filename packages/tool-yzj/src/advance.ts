@@ -287,7 +287,9 @@ function imMessageLine(signal: ScanSignal): string {
   const time = signal.sendTime.length >= 16 ? signal.sendTime.slice(5, 16) : signal.sendTime
   const who = signal.fromOpenId === '' ? '(unknown)' : signal.fromOpenId
   const body = signal.content === '' ? '(message)' : signal.content.replace(/\s+/g, ' ').slice(0, 80)
-  return `[${time}] ${signal.groupName} ${who} ${body} <${signal.msgId}>`
+  // 决策 39: msg ref 携带渠道 token（im:<groupId>:<msgId>），模型直接抄进
+  // feed/create refs，面板据此定位到具体群消息而非只到群。
+  return `[${time}] ${signal.groupName} ${who} ${body} <im:${signal.groupId}:${signal.msgId}>`
 }
 
 /** One digest line for a signal; dir signals are document deltas, not chat rows. */
@@ -2143,7 +2145,7 @@ export function applyAdvanceTools(
       assignee: { type: 'string', description: '结果承担者 (name resolved to 姓名(openId) when unique).' },
       targetDate: { type: 'string', description: 'Target date as YYYY-MM-DD or YYYY/MM/DD.' },
       tags: { type: 'array', items: { type: 'string' }, description: 'Tags for aggregation; # prefixes stripped.' },
-      refs: { type: 'array', items: { type: 'string' }, description: 'Traceable ref tokens (yzj:... / msgId / docId) this item originates from; stored on the 立项 entry. Never sent to the CLI.' },
+      refs: { type: 'array', items: { type: 'string' }, description: 'Traceable ref tokens (yzj:... / im:<groupId>:<msgId> for messages — copy verbatim from the scan digest / dream status listing / docId for docs) this item originates from; stored on the 立项 entry. Never sent to the CLI.' },
       sourceType: { type: 'string', enum: [...SOURCE_TYPES], description: 'Provenance of the founding signal (default 人工).' },
       sources: { type: 'array', items: { type: 'string' }, description: 'Intent-thread tokens to subscribe (im:<groupId> / dir:<docId 目录或整库 kbId> / doc:<docId> / todo:<todoId> / event:<eventId> / file:<fileId>). The founding group usually goes here as 来源①; im:/dir: sources drive later yzj_advance_scan aggregation.' },
     },
@@ -2207,7 +2209,7 @@ export function applyAdvanceTools(
       sourceType: { type: 'string', enum: [...SOURCE_TYPES], description: 'Where the signal came from (default 人工).' },
       changeType: { type: 'string', enum: [...CHANGE_TYPES], description: 'What this entry does to the item (default 阶段变化 when stageTo is set, else 备注).' },
       detail: { type: 'string', description: 'Free-form detail appended after the host-generated field diffs.' },
-      refs: { type: 'array', items: { type: 'string' }, description: 'Traceable ref tokens for this signal (yzj:... / msgId / docId / todoId). Never sent to the CLI.' },
+      refs: { type: 'array', items: { type: 'string' }, description: 'Traceable ref tokens for this signal (yzj:... / im:<groupId>:<msgId> for messages — copy verbatim from the scan digest or dream status listing / docId / todoId). Never sent to the CLI.' },
       stageTo: { type: 'string', enum: [...ADVANCE_STAGES], description: 'Stage move (state machine enforced; illegal moves are rejected with the legal paths).' },
       goal: { type: 'string', description: 'New effective goal (goal update; old→new recorded).' },
       metrics: { type: 'string', description: 'New 成功指标 lines (old→new recorded).' },
