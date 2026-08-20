@@ -800,3 +800,16 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 **判据教学面修订提议（待拍板，§9.3 流程）**：`INSPECT_DISCIPLINE` 增补显式噪音例——「与事项目标/指标无显式引用的平行议题讨论（如战略竞争力报告评测线），即使高频出现也不作实质信号；只有显式引用本事项目标/指标/产物的消息才算信号」。理由：模型自由裁量下噪音边界漂移，需把 真机实验观察到的噪音类型固化进教学。拍板后改 spec §13.3 + `advance.ts` 教学字符串。
 
 **复验暴露的非 bug 事实**：复验探针立项时未自动带线程①（driver 立项 prompt 未传 threads），首跑 scan 因「无订阅」全拒——订阅分发纪律（信号 ∈ 事项线程才 feed）按设计工作；手工关联 测试群后复跑即通。演示/真机立项走面板/话题路径时线程①自动挂（create threads 参数），不受影响。
+## 24.12 AI推进｜概念修正：意图线程 → 上下文来源（2026-08-20，v1.8，全量改名含代码）
+
+用户拍板：「意图」属于事项（意图体），渠道只是事项的**上下文来源**——旧命名把意图倒挂到了渠道上。改名深度：文档 + UI 文案 + 代码标识 + storage domain 全量改，含 legacy 存储迁移。
+
+| 层 | 改动 |
+|---|---|
+| 代码标识 | `advance-threads.ts`→`advance-sources.ts`；`AdvanceThread*`→`ContextSource*`；`threadsOf/add/remove`→`sourcesOf/add/remove`；service `threadAdd/Remove`→`sourceAdd/Remove`；create 参数 `threads`→`sources`；RPC `advance-thread-add/remove`→`advance-source-add/remove`；detail 折叠字段 `contextSources`（与事元证据 `sources` 区分） |
+| 存储 | domain `yzj_advance_threads`→`yzj_advance_sources`（表 `sources`）；`ContextSourceStore.open()` 时若新域空且 legacy 域有数据则一次性迁移（best-effort） |
+| UI | 右栏上区「订阅渠道」→「**上下文来源**」（入口「关联来源」），下区「当前判断来自哪里」→「**事元**」；testid `yzj-advance-source-*`；CSS `.subChip/.subSources` |
+| 文档 | spec §15 重写（持续源/静态源二分）+ 术语表/分期/决策 20 同步；migration 三概念加 v1.8 修订注记；README 索引同步；diagrams advance-1/6 重渲染 |
+| 历史节 | §24.5/§24.7 等历史留痕不重写（演进用追加段落，AGENTS.md 规矩） |
+
+**真机验证**：重启 GUI 后 测试事项「上下文来源」区显示迁移过来的两个订阅 chip（测试群 + 830实验·共识 目录）——legacy 迁移成功；下区「事元」正常。610 绿。截图 `shots-advance-ux/ux-redesign.png`。

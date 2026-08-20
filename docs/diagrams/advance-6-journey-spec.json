@@ -10,10 +10,10 @@
   "title": {
     "prefix": "AI推进 ·",
     "highlight": "用户旅程",
-    "subtitle": "@灵基 → 弹卡立项 → 意图线程订阅 → 每日 Dream 筛事元 → 偏差提示到验收"
+    "subtitle": "@灵基 → 弹卡立项 → 上下文来源订阅 → 每日 Dream 筛事元 → 偏差提示到验收"
   },
   "direction": "down",
-  "footer": "意图线程 = 推进订阅的数据源（群/知识库/纪要/待办/AI产物，可多条） · 事元 = 线程上被采纳的 event · completed 只经用户验收",
+  "footer": "上下文来源 = 推进订阅的数据源（群/知识库/纪要/待办/AI产物，可多条） · 事元 = 线程上被采纳的 event · completed 只经用户验收",
   "nodes": [
     {
       "id": "u1",
@@ -68,7 +68,7 @@
     },
     {
       "id": "threads",
-      "label": "意图线程 ×N",
+      "label": "上下文来源 ×N",
       "body": "订阅的数据源\n每源一条线程",
       "icon": "queue",
       "x": 600,

@@ -37,15 +37,15 @@ interface Face {
   created: Record<string, unknown>[]
   ensured: { count: number }
   getRequests: { advanceId: string; entryOffset?: number; entryLimit?: number }[]
-  threadAdds: { advanceId: string; token: string; label?: string }[]
-  threadRemoves: { advanceId: string; token: string }[]
+  sourceAdds: { advanceId: string; token: string; label?: string }[]
+  sourceRemoves: { advanceId: string; token: string }[]
   groupFetches: number
 }
 
 function mountPane(config: {
   ready?: boolean
   items?: Record<string, unknown>[]
-  detail?: { item: Record<string, unknown>; entries: Record<string, unknown>[]; entryTotal?: number; sources?: Record<string, unknown>[]; threads?: Record<string, unknown>[] }
+  detail?: { item: Record<string, unknown>; entries: Record<string, unknown>[]; entryTotal?: number; sources?: Record<string, unknown>[]; contextSources?: Record<string, unknown>[] }
   scan?: { scannedAt: number | null; found: number }
   dream?: { pending: number; lastDreamAt: number | null }
   groups?: Record<string, unknown>[]
@@ -57,8 +57,8 @@ function mountPane(config: {
   const created: Face['created'] = []
   const ensured = { count: 0 }
   const getRequests: Face['getRequests'] = []
-  const threadAdds: Face['threadAdds'] = []
-  const threadRemoves: Face['threadRemoves'] = []
+  const sourceAdds: Face['sourceAdds'] = []
+  const sourceRemoves: Face['sourceRemoves'] = []
   const groupState = { fetches: 0 }
   const items = config.items ?? []
   const props: AdvancePaneProps = {
@@ -83,7 +83,7 @@ function mountPane(config: {
             entryOffset: 0,
             entryTotal: detail.entryTotal ?? detail.entries.length,
             sources: detail.sources ?? [],
-            threads: detail.threads ?? [],
+            contextSources: detail.contextSources ?? [],
           },
         } as Rpc
       },
@@ -107,16 +107,16 @@ function mountPane(config: {
         ok: true,
         value: config.dream ?? { pending: 0, lastDreamAt: null },
       }) as Rpc,
-      advanceThreadAdd: async (advanceId, token, label) => {
+      advanceSourceAdd: async (advanceId, token, label) => {
         if (!/^(im|doc|todo|event|file|dir):[A-Za-z0-9_-]+$/.test(token)) {
-          return { ok: false, error: { message: `advance-thread-add failed: 非法线程 token「${token}」` } } as Rpc
+          return { ok: false, error: { message: `advance-source-add failed: 非法来源 token「${token}」` } } as Rpc
         }
-        threadAdds.push({ advanceId, token, ...(label === undefined ? {} : { label }) })
-        return { ok: true, value: { threads: [], entryAppended: false } } as Rpc
+        sourceAdds.push({ advanceId, token, ...(label === undefined ? {} : { label }) })
+        return { ok: true, value: { sources: [], entryAppended: false } } as Rpc
       },
-      advanceThreadRemove: async (advanceId, token) => {
-        threadRemoves.push({ advanceId, token })
-        return { ok: true, value: { threads: [] } } as Rpc
+      advanceSourceRemove: async (advanceId, token) => {
+        sourceRemoves.push({ advanceId, token })
+        return { ok: true, value: { sources: [] } } as Rpc
       },
       fetchGroups: async () => {
         groupState.fetches += 1
@@ -139,7 +139,7 @@ function mountPane(config: {
     root.render(<YzjAdvancePane {...props} />)
   })
   return {
-    container, root, judged, created, ensured, getRequests, threadAdds, threadRemoves,
+    container, root, judged, created, ensured, getRequests, sourceAdds, sourceRemoves,
     get groupFetches() { return groupState.fetches },
   }
 }
@@ -320,7 +320,7 @@ describe('YzjAdvancePane', () => {
     expect(timeline?.textContent).toContain('从对话中发起')
     expect(timeline?.textContent).toContain('UAT 不达标')
     const sources = face.container.querySelector('[data-testid="yzj-advance-sources"]')
-    expect(sources?.textContent).toContain('当前判断来自哪里')
+    expect(sources?.textContent).toContain('事元')
     expect(sources?.textContent).toContain('未达标')
     expect(sources?.textContent).toContain('AI 推进不建立新的文件库')
     // 「已有产物」区已于 v1.6 收掉(产物=事元的一部分,随信息来源呈现)
@@ -545,28 +545,28 @@ describe('YzjAdvancePane', () => {
     act(() => { face.root.unmount() })
   })
 
-  it('renders subscribed thread chips and unlinks via × (registry only)', async () => {
+  it('renders subscribed source chips and unlinks via × (registry only)', async () => {
     const face = mountPane({
       items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行' })],
       detail: {
         item: item({ advanceId: 'A-1', stage: 'running', title: '试运行' }),
         entries: [],
-        threads: [
+        contextSources: [
           { token: 'im:g1', kind: 'persistent', label: 'dsh-2', addedBy: 'agent', addedAt: 1 },
           { token: 'doc:d1', kind: 'document', label: '范围说明', addedBy: 'user', addedAt: 2 },
         ],
       },
     })
     await settle()
-    const chips = face.container.querySelector('[data-testid="yzj-advance-threads"]')
+    const chips = face.container.querySelector('[data-testid="yzj-advance-sources"]')
     expect(chips?.textContent).toContain('dsh-2')
     expect(chips?.textContent).toContain('范围说明')
     expect(chips?.textContent).toContain('AI 关联')
     expect(chips?.textContent).toContain('你关联')
-    const remove = face.container.querySelector('[data-testid="yzj-advance-thread-remove-1"]') as HTMLButtonElement
+    const remove = face.container.querySelector('[data-testid="yzj-advance-source-remove-1"]') as HTMLButtonElement
     await act(async () => { remove.click(); await Promise.resolve() })
     await settle()
-    expect(face.threadRemoves).toEqual([{ advanceId: 'A-1', token: 'doc:d1' }])
+    expect(face.sourceRemoves).toEqual([{ advanceId: 'A-1', token: 'doc:d1' }])
     act(() => { face.root.unmount() })
   })
 
@@ -577,20 +577,20 @@ describe('YzjAdvancePane', () => {
       groups: [{ groupId: 'g9', groupName: '项目群' }],
     })
     await settle()
-    expect(face.container.textContent).toContain('尚未订阅线程')
-    const open = face.container.querySelector('[data-testid="yzj-advance-thread-add-open"]') as HTMLButtonElement
+    expect(face.container.textContent).toContain('尚未关联来源')
+    const open = face.container.querySelector('[data-testid="yzj-advance-source-add-open"]') as HTMLButtonElement
     await act(async () => { open.click(); await Promise.resolve() })
     await settle()
     expect(face.groupFetches).toBe(1)
-    const modal = face.container.querySelector('[data-testid="yzj-advance-thread-modal"]')
+    const modal = face.container.querySelector('[data-testid="yzj-advance-source-modal"]')
     expect(modal).not.toBeNull()
     expect(modal?.textContent).toContain('关联即订阅，解除不删事元')
-    const groupBtn = face.container.querySelector('[data-testid="yzj-advance-thread-group-g9"]') as HTMLButtonElement
+    const groupBtn = face.container.querySelector('[data-testid="yzj-advance-source-group-g9"]') as HTMLButtonElement
     expect(groupBtn.textContent).toContain('项目群')
     await act(async () => { groupBtn.click(); await Promise.resolve() })
     await settle()
-    expect(face.threadAdds).toEqual([{ advanceId: 'A-1', token: 'im:g9', label: '项目群' }])
-    expect(face.container.querySelector('[data-testid="yzj-advance-thread-modal"]')).toBeNull()
+    expect(face.sourceAdds).toEqual([{ advanceId: 'A-1', token: 'im:g9', label: '项目群' }])
+    expect(face.container.querySelector('[data-testid="yzj-advance-source-modal"]')).toBeNull()
     act(() => { face.root.unmount() })
   })
 
@@ -600,7 +600,7 @@ describe('YzjAdvancePane', () => {
       detail: { item: item({ advanceId: 'A-1', stage: 'running', title: '试运行' }), entries: [] },
     })
     await settle()
-    const open = face.container.querySelector('[data-testid="yzj-advance-thread-add-open"]') as HTMLButtonElement
+    const open = face.container.querySelector('[data-testid="yzj-advance-source-add-open"]') as HTMLButtonElement
     await act(async () => { open.click(); await Promise.resolve() })
     await settle()
     // 手输 token 已移除(决策 32)
@@ -613,7 +613,7 @@ describe('YzjAdvancePane', () => {
     const dirBtn = face.container.querySelector('[data-testid="yzj-advance-thread-dir-dirA"]') as HTMLButtonElement
     await act(async () => { dirBtn.click(); await Promise.resolve() })
     await settle()
-    expect(face.threadAdds).toEqual([{ advanceId: 'A-1', token: 'dir:dirA', label: '830实验·共识' }])
+    expect(face.sourceAdds).toEqual([{ advanceId: 'A-1', token: 'dir:dirA', label: '830实验·共识' }])
     act(() => { face.root.unmount() })
   })
 

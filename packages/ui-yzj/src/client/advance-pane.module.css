@@ -423,13 +423,13 @@
   cursor: default;
 }
 
-.threads {
+.subSources {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.threadChip {
+.subChip {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -440,7 +440,7 @@
   padding: 3px 6px 3px 4px;
 }
 
-.threadIcon {
+.subIcon {
   flex: 0 0 18px;
   width: 18px;
   height: 18px;
@@ -454,7 +454,7 @@
   justify-content: center;
 }
 
-.threadChip b {
+.subChip b {
   flex: 1;
   min-width: 0;
   font-size: 11.5px;
@@ -464,14 +464,14 @@
   white-space: nowrap;
 }
 
-.threadChip em {
+.subChip em {
   flex: 0 0 auto;
   font-style: normal;
   font-size: 10px;
   color: var(--dsw-alias-label-tertiary);
 }
 
-.threadChip button {
+.subChip button {
   flex: 0 0 auto;
   border: none;
   background: none;
@@ -483,12 +483,12 @@
   border-radius: 999px;
 }
 
-.threadChip button:hover {
+.subChip button:hover {
   color: #e5484d;
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-.threadGroupList {
+.subGroupList {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
@@ -496,7 +496,7 @@
   overflow-y: auto;
 }
 
-.threadGroupList button {
+.subGroupList button {
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 999px;
   background: var(--dsw-alias-bg-layer-1);
@@ -506,11 +506,11 @@
   cursor: pointer;
 }
 
-.threadGroupList button:hover {
+.subGroupList button:hover {
   border-color: var(--dsw-static-deepseek-500);
 }
 
-.threadGroupList button:disabled {
+.subGroupList button:disabled {
   opacity: 0.6;
   cursor: default;
 }
@@ -580,7 +580,7 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.threadGroupLabel {
+.subGroupLabel {
   font-size: 11.5px;
   color: var(--dsw-alias-label-tertiary);
   margin: 10px 0 4px;

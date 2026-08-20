@@ -16,7 +16,7 @@
   "input_title": "Event Sources",
   "inputs": [
     {
-      "label": "意图线程订阅",
+      "label": "上下文来源订阅",
       "icon": "message",
       "color": "#2a9d8f",
       "icon_style": "illustrated",

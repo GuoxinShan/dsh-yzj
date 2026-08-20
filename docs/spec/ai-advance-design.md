@@ -23,7 +23,7 @@
 - §5.3.5 增量信息判断开关：任意来源，展示「这次变化改变了什么」+ 来源 + 用户判断。
 - §6.1 任务详情 7 字段（名称/描述/负责人/目标日期/推进状态/任务背景/成功指标），AI 预填 + 字段始终可编辑；成功指标可视化指标卡（指标名/当前值/目标值/达标状态）。
 - §6.3 验收：AI 验收默认手动触发；「现在反馈」跳 IM 注入任务卡。
-- 术语表：推进（从意图走向结果的动态过程）/ 意图线程（**v1.5 升格为一等概念，订阅模型见 §15**：推进事项订阅的数据渠道，可多条；事元 = 线程上被采纳的 event）/ **事源**（上下文的最小单位，内部概念——本文的「事元」即此）。
+- 术语表：推进（从意图走向结果的动态过程）/ **上下文来源**（v1.5 立格、v1.8 改名，订阅模型见 §15：推进事项订阅的数据渠道，可多条；事元 = 来源上被采纳的 event）/ **事源**（上下文的最小单位，内部概念——本文的「事元」即此）。
 - 附录：TAG 聚合模式 MVP 不做。
 
 **原型**：`lingee-ai-advancement-v0-cross-page-2026-08-17.html`，同事乙，同群 fileId `file-proto`。以其中**最新的 lgap17 版「AI 推进」页**为准，函数锚点：`queueHtml`（三栏目队列）/ `detailHtml`（kicker+meta+指标卡+目标+决策+时间线的主详情）/ `metricsHtml`（成功指标卡行）/ `timelineHtml`（三色时间线+空态 hero）/ `decisionHtml`（阶段化决策区）/ `sideHtml`（信息来源+已有产物右栏）/ `startModal`（发起推进弹窗）。UI 复刻口径见 §7。
@@ -176,7 +176,7 @@ guard `WRITE_SPECS` +2：`yzj_advance_create` 一律标准确认；`yzj_advance_
 | ② 事元接入便捷化 | 话题/群房间把 IM 消息一句话喂给事项（用户直写 feed）；「现在反馈」跳对话域带事项卡。文档/日程 chip 仍走 agent `yzj_advance_feed`（①期已通） | ✅ 已落地（gap §24.1） |
 | ③ AI 主动回路（机制 C–F） | 语义比对 → 核心变量对比 → 建议 → 复述影响 → 确认落 feed；AI 触发阶段；验收辅助；schedule 巡检 | ✅ 已落地（gap §24.2）；**v1.3 补打扰判据 + 门控线**（§13，gap §24.3） |
 | ③.1 主动发现 | `yzj_advance_scan` + host cursor + host 强制同源去重 + root `schedule_create` 巡检五步；可选 dsh-routines / 看板巡检状态行 | ✅ 已落地（§14，gap §24.4） |
-| ③.2 意图线程订阅 | 事项 ↔ 线程订阅承载（§15.2）+ 面板「关联渠道」入口 + scan 按订阅取流分发 + 策略选择结构化（§15.4） | ✅ 已落地（§15，gap §24.7） |
+| ③.2 上下文来源订阅 | 事项 ↔ 来源订阅承载（§15.2）+ 面板「关联来源」入口 + scan 按订阅取流分发 + 策略选择结构化（§15.4）；v1.8 改名 threads→sources | ✅ 已落地（§15，gap §24.7） |
 | ④ 知识沉淀出口 | 完整事元流折成复盘文档入知识库；金蝶标准纪要模板；共识入库、下一步生成待办/日程（自动回链为事元）；供 memory-yzj dream 取材 | ✅ 已拍板（§16，决策 26–31） |
 | ⑤ 同类纪要/推进归集分析 | 后置 | 待排 |
 
@@ -203,7 +203,7 @@ guard `WRITE_SPECS` +2：`yzj_advance_create` 一律标准确认；`yzj_advance_
 | 19 | 同源去重谁强制 | **host 强制**（`coreFeedAdvance` 在 append 前判定）。「同源」的判定口径 v1.5 后被决策 25 收窄（原口径=refs 有交集即幂等） | §13.3 原为教学面，自动发现会把同一 msgId 喂两次；升 host 后工具/RPC/服务共用一处 |
 | 14 | agent feed 是否一律弹确认卡 | **不是**（v1.3 收窄）。卡只门控**改基准**（`goal` / `metrics` / `targetDate` / `assignee`）；纯追加事元与阶段变化（→ `decision-needed` / → `ready-for-review`）静默落 | 进度正常弹卡是纯噪音，会训练用户闭眼点「确认」；偏差已经有「待我决定」当注意力面，再弹卡等于同一件事问两遍，而第一遍「我能写这条吗」没有信息量；改基准会替换后续全部比对锚点，人没看过就换，AI 之后的判断无从校验——这才是值得一次打断的事 |
 | 15 | 「重不重要」谁判断、怎么表达 | **AI 判断**，但只能表达为**阶段**（进不进 `decision-needed` / `ready-for-review`），不能表达为「这次要不要过卡」。判据成文见 §13.1–§13.4 | PRD「状态由 AI 判断触发而非用户手动改」；若让模型自选是否过卡，`tools/pre-execute` 这道写门禁就变成模型可绕的软闸（违背「策略只在 pre-execute」）。判据放教学面、门控线放 host 固定规则，两边都不需要 host 做语义判断（决策 11 保持） |
-| 20 | 意图线程订阅存哪（v1.5） | **host storage-domain `yzj_advance_threads`**（advanceId → 线程 tokens），不动 dbt 双表 schema | 存量事项表加列要动已 provision 的表；storage-domain 与 cursor（决策 18）同模式即可落地。**这是 demo 落位不是合同**——终态订阅是事项聚合的原生关系（迁移文档断层 2） |
+| 20 | 上下文来源订阅存哪（v1.5；v1.8 改名） | **host storage-domain `yzj_advance_sources`**（v1.8 前名 `yzj_advance_threads`，open 时 legacy 迁移；advanceId → 来源 tokens），不动 dbt 双表 schema | 存量事项表加列要动已 provision 的表；storage-domain 与 cursor（决策 18）同模式即可落地。**这是 demo 落位不是合同**——终态订阅是事项聚合的原生关系（迁移文档断层 2） |
 | 21 | 采集节奏（v1.5） | **双节奏**：Work = 被召唤 / schedule 唤醒时实时比对（既有 §12/§14）；Dream = 每日一次按订阅取各线程增量、筛有价值落事元、折叠出建议。cursor 保持**渠道级**（决策 18 不变），一次取流按各事项订阅 + 语义分发，不给每个事项建 cursor | 只有每日 Dream 会让偏差提示最长延迟 24h，与「会前材料预置/阻塞及时通知」冲突；只有高频巡检则噪音大。同一渠道可被多个事项订阅（测试群即多线并行），每事项一个 cursor 会重复拉流 |
 | 22 | 对外命名（0819 会议） | 产品名「**AI 推进**」，中性、双向（上对下对齐 + 下对上反馈）；不用「参谋部」（太管理层，产品面向全员）；「战略对齐」被否（单向感） | 0819 14:00 会议对齐结论；品宣名词要短 |
 | 23 | 策略选择的载荷（v1.5） | 决策请求事元的 `变化内容` 按行约定备选（`选项N: 描述`，末行可 `影响: …` 复述）；决策区渲染为可选项，用户选定经 judge `confirm_advance` 带 note 落 user 事元。**MVP 文本约定，终态原生结构化**（迁移文档断层 4） | PRD §5.2.3 最小推进回路要求「AI建议+备选+自定义」；0819 会议演示（私有化 → 加资源/延期/自定义）确认这是显式一步；demo 存储无结构化字段可用 |
@@ -412,42 +412,42 @@ headless profile 挂 yzj **host half**（`docs/spec/headless-yzj.cordis.yml`：b
 5. 看板队列头能读到「尚未巡检」或「上次巡检」。
 6. `pnpm test` 绿。
 
-## 15. 意图线程（订阅模型）
+## 15. 上下文来源（订阅模型）
 
-> v1.5。把 §0 术语表里的「意图线程」升格为一等概念并给出可实现的订阅 schema。出处：0819 14:00 产品会（三概念定型：推进体 / 意图线程 / 推进回路）+ 用户旅程定稿（`../diagrams/advance-6-journey-spec.json`）。不改双表 / 六态 / 门控线 / feed 唯一变更通道。实现属 ③.2 期（§8），本节先定合同。
+> v1.5 立节（原名「意图线程」）；**v1.8 概念修正：意图线程 → 上下文来源**（用户拍板：「意图」属于事项（意图体），渠道只是事项的**上下文来源**，旧命名把意图倒挂到了渠道上）。代码标识全量改名（threads→sources，domain `yzj_advance_sources`，含 legacy 存储迁移）；UI 右栏上区「上下文来源」（订阅的源）、下区「事元」（已采纳证据）。不改双表 / 六态 / 门控线 / feed 唯一变更通道。
 
 ### 15.1 定义
 
-**意图线程 = 推进事项订阅的一个数据渠道**；一个事项可挂 N 条线程；**事元 = 线程上被采纳的 event**（线程是「订阅了什么」，事元是「从订阅里捞到了什么」）。立项时的工作现场（通常是群）自动成为线程①；其余由用户「关联渠道」追加，或 agent 建议关联（写门禁同 feed 改基准？否——见 15.2 写路径）。
+**上下文来源 = 推进事项订阅的一个数据渠道**；一个事项可挂 N 个来源；**事元 = 来源上被采纳的 event**（来源是「订阅了什么」，事元是「从来源里捞到了什么」）。立项时的工作现场（通常是群）自动成为来源①；其余由用户「关联来源」追加，或 agent 建议关联（写门禁同 feed 改基准？否——见 15.2 写路径）。
 
-两类线程，采集语义不同：
+两类来源，采集语义不同：
 
 | 类 | 例 | 增量语义 |
 |---|---|---|
-| **持续渠道** | IM 群 / 话题；**知识库目录**（v1.7 起，`dir:`——含整库根目录） | 有 cursor 概念，每轮取增量（scan 既有机制；目录级按「新增/更新文档」取增量） |
-| **单文档源** | 纪要 / 文档 / AI 产物 / 待办 / 日程 | 关联即产一条事元；此后仅内容更新才算新 event（demo 阶段以更新时间戳判断，够用即可） |
+| **持续源** | IM 群 / 话题；**知识库目录**（v1.7 起，`dir:`——含整库根目录） | 有 cursor 概念，每轮取增量（scan 既有机制；目录级按「新增/更新文档」取增量） |
+| **静态源** | 纪要 / 文档 / AI 产物 / 待办 / 日程 | 关联即产一条事元；此后仅内容更新才算新 event（demo 阶段以更新时间戳判断，够用即可） |
 
-**手动喂 ≠ 手动关联**（旅程图两条边）：单条直喂（②期 UserFeed / agent feed）直接产事元、立即生效，不经线程；关联渠道是订阅，之后靠采集节奏取增量。
+**手动喂 ≠ 手动关联**（旅程图两条边）：单条直喂（②期 UserFeed / agent feed）直接产事元、立即生效，不经来源订阅；关联来源是订阅，之后靠采集节奏取增量。
 
-### 15.2 订阅承载（demo 落位，决策 20）
+### 15.2 订阅承载（demo 落位，决策 20；v1.8 改名 sources）
 
-host storage-domain **`yzj_advance_threads`**：`advanceId → [{ token, kind, label, addedBy, addedAt }]`。token 形态沿 refs 词汇：`im:<groupId>` / `doc:<docId>` / `todo:<todoId>` / `event:<eventId>` / `file:<fileId>`；v1.7 起加 **`dir:<docId>`**（知识库目录节点；整库 = 库根目录）。不动 dbt 双表。
+host storage-domain **`yzj_advance_sources`**（v1.8 前名 `yzj_advance_threads`，open 时 legacy 迁移）：`advanceId → [{ token, kind, label, addedBy, addedAt }]`。token 形态沿 refs 词汇：`im:<groupId>` / `doc:<docId>` / `todo:<todoId>` / `event:<eventId>` / `file:<fileId>`；v1.7 起加 **`dir:<docId>`**（知识库目录节点；整库 = 库根目录）。不动 dbt 双表。
 
 写路径：
-- **用户关联/解除**（面板详情右栏「信息来源」区加「关联渠道」入口）= 用户本人意志 → `/yzj` RPC 直写（D9，同 judge）。
-- **agent 关联** = 订阅影响后续采集范围但不改基准 → 随 `yzj_advance_create`（立项群自动线程①）或 feed 时带 `subscribe` 意图；不单独弹卡（与 `stageTo` 同级：看板可见即注意力面）。
-- 投影：详情「信息来源」面板顶部列线程清单（渠道 + 最近取流时间），与既有按 refs 反推的来源条目并列——线程是订阅关系，来源条目是已采纳证据，两者不合并。
+- **用户关联/解除**（面板详情右栏「上下文来源」区「关联来源」入口）= 用户本人意志 → `/yzj` RPC 直写（D9，同 judge）。
+- **agent 关联** = 订阅影响后续采集范围但不改基准 → 随 `yzj_advance_create`（立项群自动来源①，参数名 `sources`）或 feed 时带 `subscribe` 意图；不单独弹卡（与 `stageTo` 同级：看板可见即注意力面）。
+- 投影：详情右栏上区列来源清单（渠道 + 最近取流时间）；下区「事元」列已采纳证据（按 refs 反推）——订阅关系与已采纳证据两区不合并。
 
-> ③.2 实现落点：注册表 = `tool-yzj/src/advance-threads.ts`（domain `yzj_advance_threads`，token 字面量正则校验）；用户写路径 = `/yzj advance-thread-add` / `advance-thread-remove`（`ui-yzj`）；agent 写路径 = `yzj_advance_create` 的 `threads` 参数；单文档源关联即追加一条 `备注` 事元（refs=[token]，重复关联被注册表 + 决策 19 双重幂等挡住）；解除只删注册表行，事元不删（时间线无损）。feed 带 `subscribe` 后置未做（见 gap §24.7）。
+> ③.2 实现落点（v1.8 改名后）：注册表 = `tool-yzj/src/advance-sources.ts`（domain `yzj_advance_sources`，token 字面量正则校验；open 时若新域空且 legacy `yzj_advance_threads` 有数据则迁移）；用户写路径 = `/yzj advance-source-add` / `advance-source-remove`（`ui-yzj`）；agent 写路径 = `yzj_advance_create` 的 `sources` 参数；静态源关联即追加一条 `备注` 事元（refs=[token]，重复关联被注册表 + 决策 19 双重幂等挡住）；解除只删注册表行，事元不删（时间线无损）。feed 带 `subscribe` 后置未做（见 gap §24.7）。
 
 ### 15.3 采集与分发（决策 21）
 
 - cursor 保持**渠道级**（`yzj_advance_scan_cursors` 不变）：同一渠道被多个事项订阅时一次取流。
-- 分发是模型职责：scan digest 列出新信号 + 各 open 事项的订阅清单，inspect 按「信号 ∈ 哪个事项的线程 + 语义相关」决定喂给谁；host 不做语义判断（决策 11），同源去重兜底（决策 19/25）。
-- **目录线程的增量（v1.7，决策 32）**：`dir:<docId>` 线程按「`doc list --parent-id` 该目录」取增量——首扫建基线（docId→updateTime 快照，不回灌）；增量 = 新增文档或 updateTime 变化，信号 refs=[docId]、sourceType=文档。cursor 存 scan domain 的 `dirs` 表（与群 cursor 同域不同表）。
+- 分发是模型职责：scan digest 列出新信号 + 各 open 事项的订阅清单（上下文来源），inspect 按「信号 ∈ 哪个事项的来源 + 语义相关」决定喂给谁；host 不做语义判断（决策 11），同源去重兜底（决策 19/25）。
+- **目录来源的增量（v1.7，决策 32）**：`dir:<docId>` 来源按「`doc list --parent-id` 该目录」取增量——首扫建基线（docId→updateTime 快照，不回灌）；增量 = 新增文档或 updateTime 变化，信号 refs=[docId]、sourceType=文档。cursor 存 scan domain 的 `dirs` 表（与群 cursor 同域不同表）。
 - 双节奏：**Work**（被召唤 / schedule 唤醒，实时比对，§12/§14 既有）+ **Dream**（每日一次，按订阅全量取增量、筛有价值落事元、折叠摘要/建议/偏差提示；无偏差静默）。巡检频率的既有口径（≥300s）适用于 Work 触发；Dream 是低频大预算轮。
 
-> ③.2 实现落点：`yzj_advance_scan` 的 `groups` 改为可选——缺省时从注册表聚合全部 open 事项的 `im:` 线程去重取流（超过 8 个渠道报错提示分批，不悄悄截断，决策 17 刚性保持）；digest 新增「订阅清单」行供模型分发。Dream 仅定合同，未落地（④期配套）。
+> ③.2 实现落点：`yzj_advance_scan` 的 `groups` 改为可选——缺省时从注册表聚合全部 open 事项的 `im:` 来源去重取流（超过 8 个渠道报错提示分批，不悄悄截断，决策 17 刚性保持）；digest 新增「订阅清单」行供模型分发。Dream 仅定合同，未落地（④期配套）。
 
 ### 15.4 策略选择（决策 23）
 
@@ -466,9 +466,9 @@ decision-needed 的决策请求事元在 `变化内容` 里按行写备选：
 
 ### 15.5 验收口径（③.2 实现时）
 
-1. 立项后 `yzj_advance_threads` 出现线程①（立项群）；面板可关联/解除渠道，落 user 记录。
+1. 立项后 `yzj_advance_sources` 出现来源①（立项群）；面板可关联/解除来源，落 user 记录；legacy `yzj_advance_threads` 数据 open 时自动迁移。
 2. 同一群被两个事项订阅：scan 一次取流，两个事项各自按语义收到分发（或不收），cursor 只前进一次。
-3. 单文档源关联即产一条 `来源类型=文档` 事元；重复关联幂等。
+3. 静态源关联即产一条 `来源类型=文档` 事元；重复关联幂等。
 4. 决策请求事元带 `选项N` 行时决策区渲染选项；选定后事元流出现 user 选择记录。
 5. 双表 schema、六态、门控线、既有 E2E 全部回归绿。
 
