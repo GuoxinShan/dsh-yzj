@@ -76,10 +76,10 @@ export interface YzjPanelInject {
   advanceDreamState: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** User-direct 事元 feed (D9, no confirm card; no stageTo). */
   advanceFeed: (input: { advanceId: string; summary: string; sourceType?: string; refs?: string[] }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Subscribe one intent thread (关联渠道; user-direct, spec §15.2). */
-  advanceThreadAdd: (advanceId: string, token: string, label?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Unsubscribe one intent thread (registry only; entries untouched). */
-  advanceThreadRemove: (advanceId: string, token: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Subscribe one context source (关联来源; user-direct, spec §15.2). */
+  advanceSourceAdd: (advanceId: string, token: string, label?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Unsubscribe one context source (registry only; entries untouched). */
+  advanceSourceRemove: (advanceId: string, token: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** One write-confirmation record for a tool call (undefined when not gated). */
   fetchWrite: (sessionId: string, callId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Settle one pending write-confirmation decision. */
@@ -254,12 +254,12 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
       ...(input.sourceType === undefined || input.sourceType === '' ? {} : { sourceType: input.sourceType }),
       ...(input.refs === undefined || input.refs.length === 0 ? {} : { refs: input.refs }),
     }),
-    advanceThreadAdd: (advanceId, token, label) => call('advance-thread-add', {
+    advanceSourceAdd: (advanceId, token, label) => call('advance-source-add', {
       advanceId,
       token,
       ...(label === undefined || label === '' ? {} : { label }),
     }),
-    advanceThreadRemove: (advanceId, token) => call('advance-thread-remove', { advanceId, token }),
+    advanceSourceRemove: (advanceId, token) => call('advance-source-remove', { advanceId, token }),
     fetchWrite: (sessionId, callId) => call('write-list', { sessionId, callId }),
     decideWrite: (writeId, outcome) => call('write-decide', { writeId, outcome }),
     robotStatus: () => call('robot-status', {}),

@@ -22,7 +22,7 @@ import { YzjTodoService } from './todo.ts'
 import type { TodoConfig } from './todo.ts'
 import { applyAdvanceTools, YzjAdvanceService } from './advance.ts'
 import { ScanCursorStore } from './scan-cursors.ts'
-import { AdvanceThreadStore } from './advance-threads.ts'
+import { ContextSourceStore } from './advance-sources.ts'
 import { DreamPoolStore } from './advance-dreampool.ts'
 import { YzjHomeService } from './home.ts'
 import { applyApprovalGuard } from './guard.ts'
@@ -97,11 +97,11 @@ export function apply(ctx: Context, config: Config): void {
   // second host-owned storage-domain (决策 20, spec §15.2) shared by the
   // create/scan tools and the panel thread RPC.
   const scanCursors = new ScanCursorStore()
-  const advanceThreads = new AdvanceThreadStore()
+  const advanceSources = new ContextSourceStore()
   // Dream 蓄水池(spec §17,决策 33):scan 信号 copy 入池,Dream 抽取统一提炼。
   const dreamPool = new DreamPoolStore()
-  const advanceService = new YzjAdvanceService(ctx, budget, config.todo ?? {}, todoService.holder, scanCursors, advanceThreads, dreamPool)
-  applyAdvanceTools(ctx, budget, config.todo ?? {}, todoService.holder, scanCursors, advanceThreads, dreamPool)
+  const advanceService = new YzjAdvanceService(ctx, budget, config.todo ?? {}, todoService.holder, scanCursors, advanceSources, dreamPool)
+  applyAdvanceTools(ctx, budget, config.todo ?? {}, todoService.holder, scanCursors, advanceSources, dreamPool)
   // Product-home binding table (dsh-home-session): one Yunzhijia
   // conversation ↔ one DSH session. Shared by robot inbound and UI pick-group.
   const home = new YzjHomeService(ctx, {
@@ -305,9 +305,9 @@ export {
   TopicAnchorStore, topicSessionId, topicAnchorKey, yzjTopicDomainSpec,
 } from './topics.ts'
 export {
-  AdvanceThreadStore, parseThreadToken, threadKindOf, sourceTypeOfThread, yzjAdvanceThreadsDomainSpec,
-} from './advance-threads.ts'
-export type { AdvanceThread, AdvanceThreadKind, AdvanceThreadStoreFace } from './advance-threads.ts'
+  ContextSourceStore, parseSourceToken, sourceKindOf, sourceTypeOfToken, yzjAdvanceSourcesDomainSpec,
+} from './advance-sources.ts'
+export type { ContextSource, ContextSourceKind, ContextSourceStoreFace } from './advance-sources.ts'
 export {
   BoundLogStore, applyAppend, ackLocalEntry, failLocalEntry, formatSummonWindow, threadEntries,
   mergeFused, cliMessageToEntry, cliMessageList, extractSendMsgId, localMsgId,

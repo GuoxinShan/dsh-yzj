@@ -265,7 +265,7 @@ export interface YzjWriteGateFace {
  * `workspace-get`, `event-get`, `contact-get`, `write-list`, and
  * `write-decide`, `home-open` / `home-send` / `home-fused` / `home-nav` / `home-handoff` /
  * `home-topic-lens` / `home-topic-ask` / `advance-scan-state` /
- * `advance-thread-add` / `advance-thread-remove`
+ * `advance-source-add` / `advance-source-remove`
  * endpoints, all backed by the yzj-cli bridge, the write-gate, and `ctx.yzjHome`.
  * Endpoint payloads are validated as lossless JSON before use.
  * @param ctx - Cordis context carrying the bridge service.
@@ -668,35 +668,35 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
           return internalError(`advance-dream-state failed: ${String(error)}`)
         }
       }
-      case 'advance-thread-add': {
-        // 面板「关联渠道」 = user-direct write (D9, spec §15.2): registry row
+      case 'advance-source-add': {
+        // 面板「关联来源」 = user-direct write (D9, spec §15.2): registry row
         // + one 备注 事元 for single-document sources; no confirmation card.
         const advance = ctx.get('yzjAdvance')
-        if (advance === undefined) return internalError('advance-thread-add: yzjAdvance 服务不可用（tool-yzj 未挂载）')
+        if (advance === undefined) return internalError('advance-source-add: yzjAdvance 服务不可用（tool-yzj 未挂载）')
         const advanceId = stringField(payload, 'advanceId')
         const token = stringField(payload, 'token')
         if (advanceId === undefined || token === undefined) {
-          return internalError('advance-thread-add endpoint requires advanceId and token payloads')
+          return internalError('advance-source-add endpoint requires advanceId and token payloads')
         }
         try {
-          return { ok: true, value: await advance.threadAdd(advanceId, token, stringField(payload, 'label')) }
+          return { ok: true, value: await advance.sourceAdd(advanceId, token, stringField(payload, 'label')) }
         } catch (error) {
-          return internalError(`advance-thread-add failed: ${String(error)}`)
+          return internalError(`advance-source-add failed: ${String(error)}`)
         }
       }
-      case 'advance-thread-remove': {
+      case 'advance-source-remove': {
         // 解除关联：只删注册表行，已产事元不动（时间线无损不变量）。
         const advance = ctx.get('yzjAdvance')
-        if (advance === undefined) return internalError('advance-thread-remove: yzjAdvance 服务不可用（tool-yzj 未挂载）')
+        if (advance === undefined) return internalError('advance-source-remove: yzjAdvance 服务不可用（tool-yzj 未挂载）')
         const advanceId = stringField(payload, 'advanceId')
         const token = stringField(payload, 'token')
         if (advanceId === undefined || token === undefined) {
-          return internalError('advance-thread-remove endpoint requires advanceId and token payloads')
+          return internalError('advance-source-remove endpoint requires advanceId and token payloads')
         }
         try {
-          return { ok: true, value: { threads: await advance.threadRemove(advanceId, token) } }
+          return { ok: true, value: { sources: await advance.sourceRemove(advanceId, token) } }
         } catch (error) {
-          return internalError(`advance-thread-remove failed: ${String(error)}`)
+          return internalError(`advance-source-remove failed: ${String(error)}`)
         }
       }
       case 'advance-feed': {

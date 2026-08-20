@@ -30,9 +30,9 @@ import type { TodoBinding, TodoBindingHolder, TodoConfig } from './todo.ts'
 import { ScanCursorStore, scanStateOf, type AdvanceScanState, type ScanCursorStoreFace } from './scan-cursors.ts'
 import type { DreamPoolFace } from './advance-dreampool.ts'
 import {
-  AdvanceThreadStore, parseThreadToken, threadKindOf, sourceTypeOfThread,
-} from './advance-threads.ts'
-import type { AdvanceThread, AdvanceThreadStoreFace } from './advance-threads.ts'
+  ContextSourceStore, parseSourceToken, sourceKindOf, sourceTypeOfToken,
+} from './advance-sources.ts'
+import type { ContextSource, ContextSourceStoreFace } from './advance-sources.ts'
 
 // ---------------------------------------------------------------------------
 // Schema constants (single source of truth for both tables)
@@ -515,17 +515,17 @@ export async function coreScanAdvance(
   groups: readonly string[],
   limit = 20,
   holder?: TodoBindingHolder,
-  threads?: AdvanceThreadStoreFace,
+  sources?: ContextSourceStoreFace,
   pool?: DreamPoolFace,
 ): Promise<AdvanceScanResult> {
-  // groups omitted → aggregate the `im:` threads of every open item (spec
+  // groups omitted → aggregate the `im:` sources of every open item (spec
   // §15.3): one fetch per channel, the channel-level cursor advances once
   // no matter how many items subscribe (决策 18/21).
   let effective = groups
   let preItems: { advanceId: string; title: string; stage: string }[] | undefined
   let scanDirs: { id: string; label: string }[] = []
   if (effective.length === 0) {
-    if (threads === undefined) throw new Error('advance scan: groups must not be empty (no thread registry)')
+    if (sources === undefined) throw new Error('advance scan: groups must not be empty (no source registry)')
     const binding = await resolveAdvance(ctx, budget, config, caches, false, holder)
     const items = await fetchItems(ctx, budget, binding)
     preItems = items.filter(item => isOpenStage(item.stage)).map(item => ({
@@ -534,17 +534,17 @@ export async function coreScanAdvance(
     const openIds = new Set(preItems.map(item => item.advanceId))
     const channelIds = new Set<string>()
     const dirIds = new Map<string, string>()
-    for (const [advanceId, rows] of threads.entries()) {
+    for (const [advanceId, rows] of sources.entries()) {
       if (!openIds.has(advanceId)) continue
       for (const row of rows) {
-        const parsed = parseThreadToken(row.token)
+        const parsed = parseSourceToken(row.token)
         if (parsed === undefined) continue
         if (parsed.prefix === 'im') channelIds.add(parsed.id)
         if (parsed.prefix === 'dir') dirIds.set(parsed.id, row.label)
       }
     }
     if (channelIds.size === 0 && dirIds.size === 0) {
-      throw new Error('advance scan: 没有 open 事项订阅 im:/dir: 渠道；先在面板「关联渠道」或 create threads 挂群/目录')
+      throw new Error('advance scan: 没有 open 事项订阅 im:/dir: 来源；先在面板「关联来源」或 create sources 挂群/目录')
     }
     if (channelIds.size > MAX_SCAN_GROUPS) {
       throw new Error(`advance scan: 订阅渠道 ${channelIds.size} 个超过上限 ${MAX_SCAN_GROUPS}（决策 17）；请按事项分批传 groups`)
@@ -625,13 +625,13 @@ export async function coreScanAdvance(
       openItems = []
     }
   }
-  const subscriptions: AdvanceSubscription[] = threads === undefined
+  const subscriptions: AdvanceSubscription[] = sources === undefined
     ? []
     : openItems.map(item => ({
         advanceId: item.advanceId,
         title: item.title,
         stage: item.stage,
-        tokens: threads.threadsOf(item.advanceId).map(row => row.token),
+        tokens: sources.sourcesOf(item.advanceId).map(row => row.token),
       }))
   return { signals, groups: groupResults, openItems, subscriptions }
 }
@@ -1139,8 +1139,8 @@ export interface AdvanceCreateInput {
   refs?: readonly string[] | undefined
   sourceType?: string | undefined
   actor?: string | undefined
-  /** Intent threads attached at 立项 (线程① is the founding group, spec §15). */
-  threads?: readonly string[] | undefined
+  /** Intent sources attached at 立项 (来源① is the founding group, spec §15). */
+  sources?: readonly string[] | undefined
 }
 
 /** Input for feeding one 事元 into an item. */
@@ -1220,7 +1220,7 @@ export async function coreCreateAdvance(
   caches: AdvanceCaches,
   input: AdvanceCreateInput,
   holder?: TodoBindingHolder,
-  threads?: AdvanceThreadStoreFace,
+  sources?: ContextSourceStoreFace,
 ): Promise<AdvanceCreateResult> {
   const title = input.title.trim()
   if (title === '') throw new Error('advance: title must not be empty')
@@ -1278,23 +1278,23 @@ export async function coreCreateAdvance(
     tags,
     latest: asString(fields[ITEM_F.latest]),
   }
-  if (threads !== undefined && input.threads !== undefined && input.threads.length > 0) {
-    // Attach 意图线程 (spec §15.2): the founding group becomes 线程①.
+  if (sources !== undefined && input.sources !== undefined && input.sources.length > 0) {
+    // Attach 意图线程 (spec §15.2): the founding group becomes 来源①.
     // Labels resolve once at write time (im: via the recent-group catalog);
     // they are display text, never live references.
     const actor: 'user' | 'agent' = input.actor === 'user' ? 'user' : 'agent'
     let catalog: { groupId: string; groupName: string }[] | undefined
-    for (const token of input.threads) {
-      const parsed = parseThreadToken(token)
+    for (const token of input.sources) {
+      const parsed = parseSourceToken(token)
       if (parsed === undefined) continue
       let label = parsed.id
       if (parsed.prefix === 'im') {
         if (catalog === undefined) catalog = await listRecentGroups(ctx, budget)
         label = catalog.find(row => row.groupId === parsed.id)?.groupName ?? parsed.id
       }
-      await threads.add(advanceId, {
+      await sources.add(advanceId, {
         token,
-        kind: threadKindOf(parsed.prefix) ?? 'document',
+        kind: sourceKindOf(parsed.prefix) ?? 'document',
         label,
         addedBy: actor,
         addedAt: Date.now(),
@@ -1467,13 +1467,13 @@ export interface YzjAdvanceDetail {
   entryOffset: number
   entryTotal: number
   sources: YzjAdvanceSource[]
-  /** Subscribed intent threads (spec §15.2), folded into `advance-get`. */
-  threads: AdvanceThread[]
+  /** Subscribed context sources (spec §15.2, v1.8 rename), folded into `advance-get`. */
+  contextSources: ContextSource[]
 }
 
 /** Outcome of one panel thread association (user-direct write). */
-export interface AdvanceThreadAddResult {
-  threads: AdvanceThread[]
+export interface ContextSourceAddResult {
+  sources: ContextSource[]
   /** True when a document-source 事元 was appended (关联即一条，决策 20). */
   entryAppended: boolean
 }
@@ -1492,11 +1492,11 @@ export function documentThreadEntryInput(advanceId: string, token: string, label
   refs: string[]
   actor: 'user'
 } {
-  const parsed = parseThreadToken(token)
+  const parsed = parseSourceToken(token)
   return {
     advanceId,
-    summary: `关联渠道：${label}`,
-    sourceType: sourceTypeOfThread(parsed?.prefix ?? 'doc'),
+    summary: `关联来源：${label}`,
+    sourceType: sourceTypeOfToken(parsed?.prefix ?? 'doc'),
     changeType: '备注',
     detail: `订阅单文档源 ${token}（关联即一条事元；内容更新监测未排期）`,
     refs: [token],
@@ -1558,7 +1558,7 @@ export class YzjAdvanceService extends Service {
   /** Shared with the todo family so both boards follow the active library. */
   private readonly holder: TodoBindingHolder
   private readonly cursors: ScanCursorStoreFace
-  private readonly threads: AdvanceThreadStoreFace
+  private readonly sources: ContextSourceStoreFace
   private readonly pool: DreamPoolFace | undefined
 
   constructor(
@@ -1567,7 +1567,7 @@ export class YzjAdvanceService extends Service {
     config: TodoConfig,
     holder: TodoBindingHolder,
     cursors: ScanCursorStoreFace = new ScanCursorStore(),
-    threads: AdvanceThreadStoreFace = new AdvanceThreadStore(),
+    sources: ContextSourceStoreFace = new ContextSourceStore(),
     pool?: DreamPoolFace,
   ) {
     super(ctx, 'yzjAdvance')
@@ -1575,7 +1575,7 @@ export class YzjAdvanceService extends Service {
     this.config = config
     this.holder = holder
     this.cursors = cursors
-    this.threads = threads
+    this.sources = sources
     this.pool = pool
   }
 
@@ -1609,7 +1609,7 @@ export class YzjAdvanceService extends Service {
       entryOffset: offset,
       entryTotal: entries.length,
       sources: aggregateSources(entries),
-      threads: this.threads.threadsOf(advanceId).map(row => ({ ...row })),
+      contextSources: this.sources.sourcesOf(advanceId).map(row => ({ ...row })),
     }
   }
 
@@ -1621,7 +1621,7 @@ export class YzjAdvanceService extends Service {
 
   /** Start-modal direct write (the user's own act; no confirmation card). */
   async create(input: AdvanceCreateInput): Promise<YzjAdvanceItemView> {
-    const result = await coreCreateAdvance(this.ctx, this.budget, this.config, this.caches, { ...input, actor: 'user' }, this.holder, this.threads)
+    const result = await coreCreateAdvance(this.ctx, this.budget, this.config, this.caches, { ...input, actor: 'user' }, this.holder, this.sources)
     return itemViewOf(result.item)
   }
 
@@ -1660,31 +1660,31 @@ export class YzjAdvanceService extends Service {
     return { pending: this.pool.pending().length, lastDreamAt: this.pool.lastDreamAt() ?? null }
   }
 
-  /** One item's subscribed threads (lossless rows for the panel). */
-  threadsOf(advanceId: string): AdvanceThread[] {
-    return this.threads.threadsOf(advanceId).map(row => ({ ...row }))
+  /** One item's subscribed sources (lossless rows for the panel). */
+  contextSourcesOf(advanceId: string): ContextSource[] {
+    return this.sources.sourcesOf(advanceId).map(row => ({ ...row }))
   }
 
   /**
-   * Panel 「关联渠道」 direct write (D9, no confirmation card): validate the
+   * Panel 「关联来源」 direct write (D9, no confirmation card): validate the
    * token grammar and the item, append the registry row (addedBy=user), and
    * for single-document sources land one 备注 事元 with refs=[token] so a
    * repeat association is blocked by both the registry and 决策 19 dedupe.
    * Unsubscribing never deletes entries (timeline invariance).
    */
-  async threadAdd(advanceId: string, token: string, label?: string): Promise<AdvanceThreadAddResult> {
-    const parsed = parseThreadToken(token)
+  async sourceAdd(advanceId: string, token: string, label?: string): Promise<ContextSourceAddResult> {
+    const parsed = parseSourceToken(token)
     if (parsed === undefined) {
-      throw new Error(`advance: 非法线程 token「${token}」；语法 im:<groupId> / doc:<docId> / dir:<docId> / todo:<todoId> / event:<eventId> / file:<fileId>`)
+      throw new Error(`advance: 非法来源 token「${token}」；语法 im:<groupId> / doc:<docId> / dir:<docId> / todo:<todoId> / event:<eventId> / file:<fileId>`)
     }
     const binding = await resolveAdvance(this.ctx, this.budget, this.config, this.caches, false, this.holder)
     const item = await fetchItemById(this.ctx, this.budget, binding, advanceId)
     if (item === undefined) throw new Error(`advance: 事项 ${advanceId} 不存在`)
-    const existing = this.threads.threadsOf(advanceId)
+    const existing = this.sources.sourcesOf(advanceId)
     if (existing.some(row => row.token === token)) {
-      return { threads: existing.map(row => ({ ...row })), entryAppended: false }
+      return { sources: existing.map(row => ({ ...row })), entryAppended: false }
     }
-    const kind = threadKindOf(parsed.prefix) ?? 'document'
+    const kind = sourceKindOf(parsed.prefix) ?? 'document'
     let resolvedLabel = label !== undefined && label.trim() !== '' ? label.trim() : parsed.id
     if (label === undefined || label.trim() === '') {
       if (parsed.prefix === 'im') {
@@ -1692,27 +1692,27 @@ export class YzjAdvanceService extends Service {
         resolvedLabel = catalog.find(row => row.groupId === parsed.id)?.groupName ?? parsed.id
       }
     }
-    const outcome = await this.threads.add(advanceId, {
+    const outcome = await this.sources.add(advanceId, {
       token,
       kind,
       label: resolvedLabel,
       addedBy: 'user',
       addedAt: Date.now(),
     })
-    if (!outcome.added) return { threads: outcome.threads.map(row => ({ ...row })), entryAppended: false }
+    if (!outcome.added) return { sources: outcome.sources.map(row => ({ ...row })), entryAppended: false }
     if (kind === 'document') {
       await coreFeedAdvance(this.ctx, this.budget, this.config, this.caches, documentThreadEntryInput(advanceId, token, resolvedLabel), this.holder)
-      return { threads: outcome.threads.map(row => ({ ...row })), entryAppended: true }
+      return { sources: outcome.sources.map(row => ({ ...row })), entryAppended: true }
     }
-    return { threads: outcome.threads.map(row => ({ ...row })), entryAppended: false }
+    return { sources: outcome.sources.map(row => ({ ...row })), entryAppended: false }
   }
 
   /** Panel 「解除关联」: registry row only — existing 事元 stay untouched. */
-  async threadRemove(advanceId: string, token: string): Promise<AdvanceThread[]> {
-    if (parseThreadToken(token) === undefined) {
-      throw new Error(`advance: 非法线程 token「${token}」`)
+  async sourceRemove(advanceId: string, token: string): Promise<ContextSource[]> {
+    if (parseSourceToken(token) === undefined) {
+      throw new Error(`advance: 非法来源 token「${token}」`)
     }
-    const rows = await this.threads.remove(advanceId, token)
+    const rows = await this.sources.remove(advanceId, token)
     return rows.map(row => ({ ...row }))
   }
 
@@ -1727,9 +1727,9 @@ export class YzjAdvanceService extends Service {
         this.ctx.logger.warn(`yzjAdvance: scan cursor store failed to open: ${String(error)}`)
       }
     }
-    if (this.threads instanceof AdvanceThreadStore) {
+    if (this.sources instanceof ContextSourceStore) {
       try {
-        await this.threads.open(facility as never)
+        await this.sources.open(facility as never)
       } catch (error) {
         this.ctx.logger.warn(`yzjAdvance: thread store failed to open: ${String(error)}`)
       }
@@ -1762,7 +1762,7 @@ export function applyAdvanceTools(
   config: TodoConfig,
   holder?: TodoBindingHolder,
   cursors: ScanCursorStoreFace = new ScanCursorStore(),
-  threads: AdvanceThreadStoreFace = new AdvanceThreadStore(),
+  sources: ContextSourceStoreFace = new ContextSourceStore(),
   pool?: DreamPoolFace,
 ): void {
   const caches: AdvanceCaches = { lib: {}, adv: {} }
@@ -1949,9 +1949,9 @@ export function applyAdvanceTools(
 
   ctx.tools.register(defineTool({
     name: 'yzj_advance_scan',
-    description: 'Read-only incremental IM scan for AI推进 auto-discovery (spec §14 / §15.3). Host owns the per-group cursor (storage-domain); the model must not pass or invent a msgId cursor. First visit of a group records a baseline and returns no history. Later visits return messages after the cursor, minus self and BOT- senders. groups is optional: omit it to scan every im: channel and dir: directory subscribed by open items (registry yzj_advance_threads, deduped — one fetch per channel whichever items subscribe; dir: threads surface new/updated docs in the directory as signals, refs=<docId>). the digest lists each item\'s 订阅清单 so you dispatch signals by thread + semantic relevance. Explicit groups stay capped at 8 (决策 17); subscription aggregation errors out instead of silently truncating. Patrol five steps: schedule wake → this tool → no new messages stay silent → new signals → yzj_advance_inspect → feed per §13 (progress-normal silent; interrupt → decision-needed; never completed). When the user says 开启巡检, create a root-session schedule_create(every_seconds≥300) whose prompt lists the groups.',
+    description: 'Read-only incremental IM scan for AI推进 auto-discovery (spec §14 / §15.3). Host owns the per-group cursor (storage-domain); the model must not pass or invent a msgId cursor. First visit of a group records a baseline and returns no history. Later visits return messages after the cursor, minus self and BOT- senders. groups is optional: omit it to scan every im: channel and dir: directory subscribed by open items (registry yzj_advance_sources, deduped — one fetch per channel whichever items subscribe; dir: sources surface new/updated docs in the directory as signals, refs=<docId>). the digest lists each item\'s 订阅清单 so you dispatch signals by source + semantic relevance. Explicit groups stay capped at 8 (决策 17); subscription aggregation errors out instead of silently truncating. Patrol five steps: schedule wake → this tool → no new messages stay silent → new signals → yzj_advance_inspect → feed per §13 (progress-normal silent; interrupt → decision-needed; never completed). When the user says 开启巡检, create a root-session schedule_create(every_seconds≥300) whose prompt lists the groups.',
     parameters: {
-      groups: { type: 'array', items: { type: 'string' }, description: 'Group ids or names to watch (1–8). Omit to aggregate the im: threads of every open item from the subscription registry.' },
+      groups: { type: 'array', items: { type: 'string' }, description: 'Group ids or names to watch (1–8). Omit to aggregate the im: sources of every open item from the subscription registry.' },
       limit: { type: 'number', description: 'Per-group page size 1–20, default 20.' },
     },
     output: yzjToolOutput,
@@ -1964,7 +1964,7 @@ export function applyAdvanceTools(
       }
       let result: AdvanceScanResult
       try {
-        result = await coreScanAdvance(ctx, budget, config, caches, cursors, groups, args.limit, holder, threads, pool)
+        result = await coreScanAdvance(ctx, budget, config, caches, cursors, groups, args.limit, holder, sources, pool)
       } catch (error) {
         return { content: `yzj advance scan failed: ${String((error as Error).message)}`, truncated: false, data: {} }
       }
@@ -2036,7 +2036,7 @@ export function applyAdvanceTools(
   }))
   ctx.tools.register(defineTool({
     name: 'yzj_advance_create',
-    description: 'Create one advancement item (推进事项) on the AI推进 board (auto-provisions the 事项/事元 tables on first use). Prefill the 7 fields from the conversation so the user only confirms (AI 预填). When 立项 happens inside a group topic, pass threads=[im:<groupId>] so the founding group becomes 线程① (intent-thread subscription, spec §15); later patrol scans follow the subscription. Idempotent: pass advanceId to adopt an existing item. Starts at stage draft; move it with yzj_advance_feed.',
+    description: 'Create one advancement item (推进事项) on the AI推进 board (auto-provisions the 事项/事元 tables on first use). Prefill the 7 fields from the conversation so the user only confirms (AI 预填). When 立项 happens inside a group topic, pass sources=[im:<groupId>] so the founding group becomes 来源① (intent-thread subscription, spec §15); later patrol scans follow the subscription. Idempotent: pass advanceId to adopt an existing item. Starts at stage draft; move it with yzj_advance_feed.',
     parameters: {
       title: { type: 'string', required: true, description: 'Item name (名称).' },
       advanceId: { type: 'string', description: 'Explicit stable id (A-YYYYMMDD-NNN); when it exists the existing item is returned unchanged (idempotent).' },
@@ -2048,7 +2048,7 @@ export function applyAdvanceTools(
       tags: { type: 'array', items: { type: 'string' }, description: 'Tags for aggregation; # prefixes stripped.' },
       refs: { type: 'array', items: { type: 'string' }, description: 'Traceable ref tokens (yzj:... / msgId / docId) this item originates from; stored on the 立项 entry. Never sent to the CLI.' },
       sourceType: { type: 'string', enum: [...SOURCE_TYPES], description: 'Provenance of the founding signal (default 人工).' },
-      threads: { type: 'array', items: { type: 'string' }, description: 'Intent-thread tokens to subscribe (im:<groupId> / dir:<docId 目录或整库 kbId> / doc:<docId> / todo:<todoId> / event:<eventId> / file:<fileId>). The founding group usually goes here as 线程①; im:/dir: threads drive later yzj_advance_scan aggregation.' },
+      sources: { type: 'array', items: { type: 'string' }, description: 'Intent-thread tokens to subscribe (im:<groupId> / dir:<docId 目录或整库 kbId> / doc:<docId> / todo:<todoId> / event:<eventId> / file:<fileId>). The founding group usually goes here as 来源①; im:/dir: sources drive later yzj_advance_scan aggregation.' },
     },
     output: yzjToolOutput,
     timeoutMs: budget.timeoutMs * 4,
@@ -2067,9 +2067,9 @@ export function applyAdvanceTools(
           tags: args.tags,
           refs: args.refs,
           sourceType: args.sourceType,
-          threads: args.threads,
+          sources: args.sources,
           actor: 'agent',
-        }, holder, threads)
+        }, holder, sources)
       } catch (error) {
         return { content: `yzj advance create failed: ${String((error as Error).message)}`, truncated: false, data: {} }
       }
@@ -2082,8 +2082,8 @@ export function applyAdvanceTools(
       }
       const content = [
         `created 推进事项 ${result.item.advanceId} · ${result.item.title} [draft]${result.assigneeNote}`,
-        ...(threads.threadsOf(result.item.advanceId).length > 0
-          ? [`已订阅线程：${threads.threadsOf(result.item.advanceId).map(row => row.token).join('、')}`]
+        ...(sources.sourcesOf(result.item.advanceId).length > 0
+          ? [`已订阅来源：${sources.sourcesOf(result.item.advanceId).map(row => row.token).join('、')}`]
           : []),
         `推进看板 ${result.binding.link}`,
       ].join('\n')
