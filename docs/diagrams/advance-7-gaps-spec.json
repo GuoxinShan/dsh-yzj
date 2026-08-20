@@ -13,7 +13,7 @@
     "subtitle": "会上 gap：确认目标 → 验收之间，AI 到底干什么"
   },
   "direction": "down",
-  "footer": "六块全是新事元类型 + 新 job：不改六态 / 不改门控线 / 不改 feed 唯一变更通道",
+  "footer": "七块全是新事元类型 + 新 job：不改六态 / 不改门控线 / 不改 feed 唯一变更通道",
   "nodes": [
     {
       "id": "start",
@@ -107,6 +107,14 @@
       "accent": "green",
       "x": 600,
       "y": 1350
+    },
+    {
+      "id": "patrol",
+      "label": "巡检建议立项",
+      "body": "scan 识别持续讨论\n但无对应事项→弹卡问",
+      "icon": "eye",
+      "x": 240,
+      "y": 180
     }
   ],
   "edges": [
@@ -163,6 +171,11 @@
       "to": "exec",
       "kind": "loop",
       "label": "未达标继续推进"
+    },
+    {
+      "from": "patrol",
+      "to": "start",
+      "label": "建议立项"
     }
   ]
 }
