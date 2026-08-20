@@ -135,6 +135,9 @@ export function YzjRoomComposer(
     let cancelled = false
     const load = async (): Promise<void> => {
       if (props.homeFused === undefined) return
+      // No room seated (overlay cover, nothing picked): an empty payload only
+      // errors on the host (pitfall-039) — skip the poll until a group exists.
+      if (props.sessionId === '' && groupId === '') return
       const result = await props.homeFused(props.sessionId, groupId === '' ? undefined : groupId)
       if (cancelled || !result.ok) return
       setSpeakers(speakersOf(result.value))

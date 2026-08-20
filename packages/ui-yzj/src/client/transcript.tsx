@@ -345,6 +345,10 @@ export function YzjFusedView(props: YzjFusedInjected) {
   }
 
   useEffect(() => {
+    // Overlay cover with no group picked yet: an empty viewKey means no
+    // sessionId AND no groupId — the host would reject the empty payload
+    // (pitfall-039), so stay idle until a group is selected.
+    if (viewKey === '') return
     let cancelled = false
     const load = async (backfill: boolean): Promise<void> => {
       const fused = await props.homeFused(props.sessionId, props.groupId)
@@ -531,7 +535,7 @@ export function YzjFusedView(props: YzjFusedInjected) {
         {emptyPhase ? (
         <div className={css.stream} data-testid="yzj-fused-stream">
           <div className={css.unbound}>
-            {phase === 'unbound' ? '还没有对话。' : (
+            {viewKey === '' ? '在左侧选择一个群开始。' : phase === 'unbound' ? '还没有对话。' : (
               <div className={css.hint}>{error !== '' ? error : '加载群消息…'}</div>
             )}
           </div>

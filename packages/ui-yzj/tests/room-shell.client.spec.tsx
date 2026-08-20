@@ -6,11 +6,13 @@ import { act } from 'react-dom/test-utils'
 import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 import { YzjRoomShell } from '../src/client/room-shell.tsx'
-import { getWorkbenchDomain, setWorkbenchDomain } from '../src/client/workbench-domain.ts'
+import { getWorkbenchDomain, requestImGroupFocus, setWorkbenchDomain } from '../src/client/workbench-domain.ts'
+import { clearImSeat, peekImSeat } from '../src/client/im-seat.ts'
 
 describe('YzjRoomShell', () => {
   afterEach(() => {
     setWorkbenchDomain('im')
+    clearImSeat()
   })
 
   it('renders the conversation list next to the group-room timeline', async () => {
@@ -177,6 +179,85 @@ describe('YzjRoomShell', () => {
     })
     expect(container.querySelector('[data-testid="yzj-room-shell"]')).not.toBeNull()
     expect(container.textContent).toContain('金蝶最小DSH交流群')
+    act(() => { root.unmount() })
+  })
+
+  it('overlay with no seat never sends an empty home-fused payload (pitfall-039)', async () => {
+    clearImSeat()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const calls: Array<[string, string | undefined]> = []
+    act(() => {
+      root.render(
+        <YzjRoomShell
+          overlay
+          sessionId=""
+          homeFused={async (id, groupId) => {
+            calls.push([id, groupId])
+            return { ok: true, value: { bound: false, kind: 'unbound', items: [] } }
+          }}
+          homeBackfill={async () => ({ ok: true, value: { appended: 0, skipped: 0 } })}
+          homeNav={async () => ({ ok: true, value: { rooms: [] } })}
+          fetchGroups={async () => ({ ok: true, value: { list: [], more: false } })}
+        />,
+      )
+    })
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(calls).toEqual([])
+    expect(container.textContent).toContain('在左侧选择一个群开始。')
+    act(() => { root.unmount() })
+  })
+
+  it('imGroupFocus retargets the overlay timeline to the group (advance-board jump)', async () => {
+    clearImSeat()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const calls: Array<[string, string | undefined]> = []
+    act(() => {
+      root.render(
+        <YzjRoomShell
+          overlay
+          sessionId=""
+          homeFused={async (id, groupId) => {
+            calls.push([id, groupId])
+            return {
+              ok: true,
+              value: {
+                bound: true,
+                kind: 'room',
+                binding: { yzjConversationId: groupId ?? '', dshSessionId: '', yzjKind: 'group' },
+                topics: [],
+                items: [
+                  { kind: 'im', time: 1, entry: { msgId: 'm1', sentAt: 1, fromName: '同事', content: '跳转目标群消息', origin: 'inbound', isSelf: false, status: 'acked' } },
+                ],
+              },
+            }
+          }}
+          homeBackfill={async () => ({ ok: true, value: { appended: 0, skipped: 0 } })}
+          homeNav={async () => ({ ok: true, value: { rooms: [] } })}
+          fetchGroups={async () => ({ ok: true, value: { list: [], more: false } })}
+        />,
+      )
+    })
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(calls).toEqual([])
+    act(() => { requestImGroupFocus('g-focus') })
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(calls.some(([, groupId]) => groupId === 'g-focus')).toBe(true)
+    expect(peekImSeat()?.groupId).toBe('g-focus')
+    expect(container.textContent).toContain('跳转目标群消息')
     act(() => { root.unmount() })
   })
 })
