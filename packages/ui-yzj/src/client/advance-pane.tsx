@@ -866,12 +866,19 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                             <i className={`${css.mark} ${css[`mark_${asString(entry.tone) || 'blue'}`]}`} />
                             <div className={css.timeCopy}>
                               <b data-testid={`yzj-advance-entry-${index}`}>{asString(entry.changeType) !== '' ? `${asString(entry.changeType)} · ` : ''}{asString(entry.summary)}</b>
-                              {expanded && asString(entry.detail) !== '' && <p>{asString(entry.detail)}</p>}
-                              {expanded && refList.length > 0 && (
+                              {expanded && asString(entry.detail) !== '' && <p>{asString(entry.detail)}</p>
+                              }
+                              {/* 三层树(决策 39 后续):原始信息默认挂在事元行下(最新 2 条),
+                                  多条时「展开全部」;不用点击就能看见事项→事元→原始信息。 */}
+                              {refList.length > 0 && (
                                 <>
-                                  <p className={css.subGroupLabel}>原始信息 {refList.length} · 多条信息可能被提炼为同一条事元</p>
+                                  <p className={css.subGroupLabel}>
+                                    原始信息 {refList.length}
+                                    {!expanded && refList.length > 2 ? ` · 显示最新 2 条` : ''}
+                                    {' '}· 多条信息可能被提炼为同一条事元
+                                  </p>
                                   <span className={css.refs}>
-                                  {refList.map((raw) => {
+                                  {(expanded ? refList : refList.slice(-2)).map((raw) => {
                                     const id = stripRefPrefix(raw)
                                     const kind = refKindOf(asString(entry.sourceType))
                                     const href = refHref(kind, id)
@@ -910,9 +917,13 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                               )}
                               <div className={css.timeMeta}>
                                 <span>{asString(entry.sourceType)}{asString(entry.actor) === 'user' ? ' · 你的判断' : ''}</span>
-                                <button type="button" className={css.jump} data-testid={`yzj-advance-entry-toggle-${index}`} onClick={toggleExpanded}>
-                                  {expanded ? '收起详情' : `查看详情${refList.length > 0 ? `（${refList.length} 条原始信息）` : ''}`}
-                                </button>
+                                {(asString(entry.detail) !== '' || refList.length > 2) && (
+                                  <button type="button" className={css.jump} data-testid={`yzj-advance-entry-toggle-${index}`} onClick={toggleExpanded}>
+                                    {expanded
+                                      ? '收起'
+                                      : `${refList.length > 2 ? `展开全部 ${refList.length} 条原始信息` : '查看详情'}`}
+                                  </button>
+                                )}
                               </div>
                             </div>
                           </div>

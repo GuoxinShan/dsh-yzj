@@ -1,0 +1,94 @@
+{
+  "layout": "graph",
+  "style": "paper",
+  "animation": "flow",
+  "density": "airy",
+  "direction": "right",
+  "canvas": { "fps": 20, "frames": 41 },
+  "signature": "@dsh-yzj",
+  "title": {
+    "prefix": "AI推进 ·",
+    "highlight": "数据结构",
+    "subtitle": "三层模型：事件 → 事元（流） → 事项（投影） ｜ v1.8 存储：本地 SQLite 双表 + 三个 storage-domain"
+  },
+  "nodes": [
+    {
+      "id": "field",
+      "label": "工作现场（事件）",
+      "icon": "message",
+      "color": "#e0862a",
+      "icon_style": "illustrated",
+      "body": "IM 群聊 / 文档·纪要 / 日程\n外部事实本体 · 不入库\n被 refs 指针引用"
+    },
+    {
+      "id": "sources",
+      "label": "上下文来源订阅",
+      "icon": "globe",
+      "color": "#2a9d8f",
+      "icon_style": "illustrated",
+      "body": "domain yzj_advance_sources\nkey=advanceId · 1 事项 : N 来源\n→ [{token, kind, label,\naddedBy, addedAt}]\n持续源 im:/dir: · 静态 doc:/todo:"
+    },
+    {
+      "id": "cursors",
+      "label": "巡检游标（渠道级）",
+      "icon": "clock",
+      "color": "#5b6abf",
+      "icon_style": "illustrated",
+      "body": "domain yzj_advance_scan_cursors\ncursors: groupId→lastMsgId\ndirs: docId→updateTime 快照\nmeta: 上轮 scannedAt·found"
+    },
+    {
+      "id": "pool",
+      "label": "Dream 蓄水池",
+      "icon": "queue",
+      "color": "#7b6bd6",
+      "icon_style": "illustrated",
+      "body": "domain yzj_advance_dreampool\npool.pending → [{id, channel,\nrefId, content, sendTime, done}]\nmeta: lastDreamAt · 水位 ≥5"
+    },
+    {
+      "id": "todos",
+      "label": "待办（同库另一表）",
+      "icon": "clipboard",
+      "color": "#e0862a",
+      "icon_style": "illustrated",
+      "body": "SQLite 表 todos\ntodo_id + fields(JSON)\n待办是事元的一种"
+    },
+    {
+      "id": "entries",
+      "label": "事元（流 · 事实本体）",
+      "icon": "db",
+      "color": "#2a9d8f",
+      "icon_style": "hero",
+      "icon_size": "hero",
+      "body": "SQLite 表 entries · append-only\nentry_id E-YYYYMMDD-NNN\n时间·来源类型·变化类型·摘要\n变化内容(原值→新值)·引用·操作者"
+    },
+    {
+      "id": "items",
+      "label": "事项（投影 · 缓存）",
+      "icon": "package",
+      "color": "#d1497c",
+      "icon_style": "hero",
+      "icon_size": "hero",
+      "body": "SQLite 表 items\nadvance_id A-YYYYMMDD-NNN\n名称·描述(目标)·负责人·目标日期\n任务背景·成功指标·标签·最新动态"
+    },
+    {
+      "id": "stage",
+      "label": "阶段值域（七态）",
+      "icon": "check",
+      "color": "#2a9d8f",
+      "icon_style": "illustrated",
+      "body": "draft→running→decision-needed\n→updated→ready-for-review\n→completed\ncancelled 终局 · 仅用户 judge"
+    }
+  ],
+  "edges": [
+    { "from": "sources", "to": "cursors", "label": "聚合订阅渠道取流" },
+    { "from": "field", "to": "cursors", "label": "增量拉取 · cursor 只前进" },
+    { "from": "cursors", "to": "pool", "label": "过滤本人/BOT → 入池" },
+    { "from": "pool", "to": "entries", "label": "Dream 抽取 · refs=原信号" },
+    { "from": "field", "to": "entries", "label": "refs 事件指针（N 事件→1 事元）" },
+    { "from": "todos", "to": "entries", "label": "完成/推进回流" },
+    { "from": "entries", "to": "items", "label": "advance_id · N:1" },
+    { "from": "items", "to": "entries", "kind": "loop", "label": "投影折叠回写（流为准）", "accent": "pink" },
+    { "from": "items", "to": "stage", "label": "阶段字段" }
+  ],
+  "footer": "不变式：事元只增不改不删（无 update/delete 路径）· 投影是缓存，流是事实 ｜ 同库另有 todos / im_cache 表（决策 36/37）｜ 落位：SQLite 表（items/entries/todos）在 ~/.dsh/storages/yzj_advance.db，其余为 host storage-domain"
+}
