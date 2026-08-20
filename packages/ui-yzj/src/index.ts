@@ -69,6 +69,9 @@ function stringField(payload: unknown, key: string): string | undefined {
 /** Cached groupId → name map from `im group recent` (60s TTL; the client polls home-nav every 2s). */
 let recentNamesCache: { at: number; map: Map<string, string> } | undefined
 
+/** docId → fileName cache for advance-ref-lookup (titles never change; miss stays uncached). */
+const refDocTitleCache = new Map<string, string>()
+
 /** Test helper: drop the recent-names cache so specs start cold. */
 export function clearRecentNamesCache(): void {
   recentNamesCache = undefined
@@ -736,22 +739,50 @@ function imCacheStore(): SqliteDb {
         }
       }
       case 'advance-ref-lookup': {
-        // 决策 39 后续: msg refs 对用户可读化 — 把 `im:<groupId>:<msgId>` 从
-        // bound log（捞过的消息本体，每群 500 条持久）解析成事件行
-        // （谁/何时/说了什么），面板渲染三层结构中的事件层。
+        // 决策 39 后续: 原始信息叶子可读化 — msg refs 从 bound log（捞过的
+        // 消息本体）解析成 谁/何时/说了什么；doc refs 经 `doc get` 拿文件名
+        // （进程内缓存）。而板渲染三层树的事件层。
         const io = homeIoFrom(ctx.get('yzjHome'))
-        if (io === undefined) return { ok: true, value: { hits: [] } }
-        const raw = typeof payload === 'object' && payload !== null
-          ? (payload as Record<string, unknown>).tokens
+        const refsRaw = typeof payload === 'object' && payload !== null
+          ? (payload as Record<string, unknown>).refs
           : undefined
-        const tokens = Array.isArray(raw) ? raw.map(token => String(token)) : []
-        const hits: { token: string; fromName: string; content: string; sentAt: number }[] = []
-        for (const token of tokens) {
-          const match = /^im:([^:\s]+):(.+)$/.exec(token)
+        const refs = Array.isArray(refsRaw)
+          ? refsRaw.map(row => {
+            const record = typeof row === 'object' && row !== null ? row as Record<string, unknown> : {}
+            return { token: String(record.token ?? ''), kind: String(record.kind ?? 'msg') }
+          }).filter(row => row.token !== '')
+          : []
+        if (refs.length === 0) return { ok: true, value: { hits: [] } }
+        const hits: { token: string; kind: string; fromName: string; content: string; sentAt: number }[] = []
+        for (const ref of refs) {
+          if (ref.kind === 'doc') {
+            let title = refDocTitleCache.get(ref.token)
+            if (title === undefined) {
+              let ran
+              try {
+                ran = await ctx.yzjBridge.run(['doc', 'get', '--id', ref.token])
+              } catch {
+                ran = undefined
+              }
+              const fileName = ran !== undefined && ran.ok && typeof ran.json === 'object' && ran.json !== null
+                ? String((ran.json as Record<string, unknown>).fileName ?? '')
+                : ''
+              if (fileName !== '') {
+                refDocTitleCache.set(ref.token, fileName)
+                title = fileName
+              }
+            }
+            if (title !== undefined) {
+              hits.push({ token: ref.token, kind: 'doc', fromName: '', content: title, sentAt: 0 })
+            }
+            continue
+          }
+          if (io === undefined) continue
+          const match = /^im:([^:\s]+):(.+)$/.exec(ref.token)
           if (match === null) continue
           const entry = io.getLog(match[1]!)?.entries.find(row => row.msgId === match[2])
           if (entry === undefined) continue
-          hits.push({ token, fromName: entry.fromName, content: entry.content.slice(0, 80), sentAt: entry.sentAt })
+          hits.push({ token: ref.token, kind: 'msg', fromName: entry.fromName, content: entry.content.slice(0, 80), sentAt: entry.sentAt })
         }
         return { ok: true, value: { hits } }
       }
