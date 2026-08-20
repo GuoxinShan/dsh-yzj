@@ -1279,7 +1279,7 @@ export async function coreCreateAdvance(
     latest: asString(fields[ITEM_F.latest]),
   }
   if (sources !== undefined && input.sources !== undefined && input.sources.length > 0) {
-    // Attach 意图线程 (spec §15.2): the founding group becomes 来源①.
+    // Attach context sources (spec §15.2): the founding group becomes 来源①.
     // Labels resolve once at write time (im: via the recent-group catalog);
     // they are display text, never live references.
     const actor: 'user' | 'agent' = input.actor === 'user' ? 'user' : 'agent'

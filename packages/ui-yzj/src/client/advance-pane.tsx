@@ -805,7 +805,7 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                       {detail.contextSources.map((source, index) => {
                         const token = asString(source.token)
                         return (
-                          <span key={token === '' ? `t${index}` : token} className={css.subChip} data-testid={`yzj-advance-thread-${index}`}>
+                          <span key={token === '' ? `t${index}` : token} className={css.subChip} data-testid={`yzj-advance-source-${index}`}>
                             <i className={css.subIcon}>{sourceIconOf(token)}</i>
                             <b>{asString(source.label) === '' ? token : asString(source.label)}</b>
                             <em>{asString(source.addedBy) === 'user' ? '你关联' : 'AI 关联'}</em>
@@ -929,12 +929,12 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
             {dirOptions.length > 0 && (
               <>
                 <p className={css.subGroupLabel}>知识库目录</p>
-                <div className={css.subGroupList} data-testid="yzj-advance-thread-dirs">
+                <div className={css.subGroupList} data-testid="yzj-advance-source-dirs">
                   {dirOptions.map((dir) => (
                     <button
                       key={dir.id}
                       type="button"
-                      data-testid={`yzj-advance-thread-dir-${dir.id}`}
+                      data-testid={`yzj-advance-source-dir-${dir.id}`}
                       disabled={busy}
                       onClick={() => { void addSource(`dir:${dir.id}`, dir.label) }}
                     >
