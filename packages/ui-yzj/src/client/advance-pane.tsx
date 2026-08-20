@@ -67,6 +67,13 @@ function stripRefPrefix(raw: string): string {
 
 const REF_ICON: Record<string, string> = { doc: '文', msg: '聊', todo: '待', event: '程', other: '源' }
 
+/** 决策 39: `im:<groupId>:<msgId>` msg ref → 事件级定位锚点；裸 msgId 是 legacy（无群信息，只能降级跳群）。 */
+function msgAnchorOf(raw: string): { groupId: string; msgId: string } | null {
+  const match = /^im:([^:\s]+):(.+)$/.exec(raw)
+  if (match === null) return null
+  return { groupId: match[1]!, msgId: match[2]! }
+}
+
 /** Doc deep link(知识库 web);其他类型跳域(无消息级锚点,spec 决策 8 诚实降级)。 */
 function refHref(kind: string, id: string): string | null {
   if (kind === 'doc' && id !== '') return `https://www.yunzhijia.com/knowledge/lingee/#/store/doc/${id}`
@@ -177,11 +184,21 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
   const [expandedEntries, setExpandedEntries] = useState<ReadonlySet<string>>(new Set())
   const [draft, setDraft] = useState({ title: '', goal: '', metrics: '', assignee: '', targetDate: '', background: '' })
   const [error, setError] = useState('')
-  /** msg 类事元/来源跳转：事项恰有一个 im 来源时直达该群，否则回对话域。 */
+  /** msg 类事元/来源跳转：带渠道 token 直达该群并定位那条消息（决策 39）；裸 msgId 降级用订阅渠道猜群。 */
   const imGroupTokens = (detail?.contextSources ?? []).map(row => asString(row.token)).filter(token => token.startsWith('im:'))
   const jumpToMsg = (): void => {
-    if (imGroupTokens.length === 1) requestImGroupFocus(imGroupTokens[0]!.slice(3))
+    if (imGroupTokens.length === 1) requestImGroupFocus({ groupId: imGroupTokens[0]!.slice(3) })
     setWorkbenchDomain('im')
+  }
+  /** 事元 msg ref 跳转（决策 39）：`im:g:m` 直达消息；legacy 裸 msgId 回退 jumpToMsg。 */
+  const jumpToSourceMsg = (raw: string): void => {
+    const anchor = msgAnchorOf(raw)
+    if (anchor !== null) {
+      requestImGroupFocus({ groupId: anchor.groupId, anchorMsgId: anchor.msgId })
+      setWorkbenchDomain('im')
+      return
+    }
+    jumpToMsg()
   }
   const [scanLine, setScanLine] = useState('尚未巡检')
   /** Dream 蓄水池水位行(spec §17.3)。 */
@@ -832,7 +849,7 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                                       return <a key={raw} className={css.refChip} href={href} target="_blank" rel="noreferrer" title={raw} data-testid={`yzj-advance-ref-${id}`}>{label}</a>
                                     }
                                     if (kind === 'msg') {
-                                      return <button key={raw} type="button" className={css.refChip} title={`打开来源群消息 ${raw}`} data-testid={`yzj-advance-ref-${id}`} onClick={jumpToMsg}>{label}</button>
+                                      return <button key={raw} type="button" className={css.refChip} title={`打开来源群消息 ${raw}`} data-testid={`yzj-advance-ref-${id}`} onClick={() => { jumpToSourceMsg(id) }}>{label}</button>
                                     }
                                     const domain = kind === 'todo' ? 'todo' : kind === 'event' ? 'calendar' : null
                                     if (domain !== null) {
@@ -914,7 +931,7 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                               {sourceHref !== null ? (
                                 <a href={sourceHref} target="_blank" rel="noreferrer" title={sourceRef}><b>{asString(source.label)}</b></a>
                               ) : sourceKind === 'msg' ? (
-                                <button type="button" className={css.sourceJump} title="打开来源群" data-testid={`yzj-advance-source-jump-${index}`} onClick={jumpToMsg}><b>{asString(source.label)}</b></button>
+                                <button type="button" className={css.sourceJump} title={`打开来源群消息 ${sourceRef}`} data-testid={`yzj-advance-source-jump-${index}`} onClick={() => { jumpToSourceMsg(sourceRef) }}><b>{asString(source.label)}</b></button>
                               ) : (
                                 <b>{asString(source.label)}</b>
                               )}

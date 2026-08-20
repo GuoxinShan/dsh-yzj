@@ -943,7 +943,7 @@ export function YzjPanel(props: YzjPanelProps) {
   // Advance board 事元/source jumps request a group open via the bus.
   const openGroupRef = useRef(openGroup)
   openGroupRef.current = openGroup
-  useEffect(() => subscribeImGroupFocus((groupId) => { openGroupRef.current(groupId) }), [])
+  useEffect(() => subscribeImGroupFocus((target) => { openGroupRef.current(target.groupId) }), [])
 
   const loadMoreGroups = (): void => {
     if (state.loading) return

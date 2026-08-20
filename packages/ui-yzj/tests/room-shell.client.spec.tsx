@@ -260,4 +260,54 @@ describe('YzjRoomShell', () => {
     expect(container.textContent).toContain('跳转目标群消息')
     act(() => { root.unmount() })
   })
+
+  it('anchored imGroupFocus scrolls the timeline onto the anchor row (决策 39)', async () => {
+    clearImSeat()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    const scrolled: Element[] = []
+    const prevScrollIntoView = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = function scrollIntoViewSpy(this: Element) { scrolled.push(this) }
+    try {
+      act(() => {
+        root.render(
+          <YzjRoomShell
+            overlay
+            sessionId=""
+            homeFused={async (id, groupId) => ({
+              ok: true,
+              value: {
+                bound: true,
+                kind: 'room',
+                binding: { yzjConversationId: groupId ?? '', dshSessionId: '', yzjKind: 'group' },
+                topics: [],
+                items: [
+                  { kind: 'im', time: 1, entry: { msgId: 'm-anchor', sentAt: 1, fromName: '同事', content: '锚点消息本体', origin: 'inbound', isSelf: false, status: 'acked' } },
+                ],
+              },
+            })}
+            homeBackfill={async () => ({ ok: true, value: { appended: 0, skipped: 0 } })}
+            homeNav={async () => ({ ok: true, value: { rooms: [] } })}
+            fetchGroups={async () => ({ ok: true, value: { list: [], more: false } })}
+          />,
+        )
+      })
+      await act(async () => {
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+      act(() => { requestImGroupFocus({ groupId: 'g-anchor', anchorMsgId: 'm-anchor' }) })
+      await act(async () => {
+        await Promise.resolve()
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+      expect(container.querySelector('[data-testid="yzj-room-row-m-anchor"]')).not.toBeNull()
+      expect(scrolled.some(el => el.getAttribute('data-testid') === 'yzj-room-row-m-anchor')).toBe(true)
+    } finally {
+      Element.prototype.scrollIntoView = prevScrollIntoView
+      act(() => { root.unmount() })
+    }
+  })
 })

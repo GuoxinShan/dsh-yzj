@@ -58,6 +58,8 @@ export interface YzjFusedInjected {
   readonly sessionId: string
   /** When set, the timeline follows this group (R24) instead of the hanger session. */
   readonly groupId?: string
+  /** 决策 39: 事元 msg ref 跳转锚点 — timeline 加载后滚动并高亮这条消息。 */
+  readonly anchorMsgId?: string
   homeFused: (sessionId: string, groupId?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   homeBackfill: (sessionId: string, opts?: { beforeMsgId?: string; limit?: number; groupId?: string }) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   homeTopicOpen?: (input: {
@@ -296,6 +298,14 @@ export function YzjFusedView(props: YzjFusedInjected) {
     followBottomRef.current = false
     highlightRef.current?.scrollIntoView({ block: 'center' })
   }, [highlightMsgId, value.items])
+
+  // 决策 39: anchored group-focus (事元 msg ref jump) — after the view swaps
+  // onto the target group, highlight the anchor row. Fires after the viewKey
+  // reset above, so ordering keeps the anchor sticky across group switches.
+  useEffect(() => {
+    if (props.anchorMsgId === undefined || props.anchorMsgId === '') return
+    setHighlightMsgId(props.anchorMsgId)
+  }, [props.anchorMsgId, viewKey])
 
   useEffect(() => {
     const el = streamRef.current

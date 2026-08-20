@@ -874,3 +874,15 @@ host 端 `stringField` 空=缺失校验保持原样（校验正确，错在 clie
 | 验证 | 613 绿（advance-pane 2 用例改写：RPC+聚焦+不再写 draft；bound-io 新增 runDreamSession）；真机 verify-advance-dream.mjs 全 PASS（巡检入池 → 池浮层列 35 条 → 点抽取 → 盖板退下聚焦新会话「Dream 抽取 · 池中 35 条」→ 指令为 turn 1 → agent 开跑 dream_status → 零 page error） |
 
 `yzj-dream-*` 是普通 agent 会话（非 room/topic 视图），确认卡按 WRITE_SPECS 标准弹。旧 askDraft 机制保留给「请 AI 鎮收」「沉淀复盘」（绑事项、话题上下文有延续合理性）。
+## 24.18 AI推进｜事元 msg ref 事件级定位：跳到消息而非只到群（2026-08-20，决策 39）
+
+用户拍板：「跳转可以跳到 message 吗不是只是群；需要定位的是产生事元的事件」——三层模型（事件→事元→事项）与 spec 一致，实现欠账两点：msg ref 只存裸 msgId 不带群信息、跳转只到容器不定位消息。本轮补齐。
+
+| 层 | 改动 |
+|---|---|
+| 工具面 | scan digest 信号行 `<msgId>` → `<im:<groupId>:<msgId>>`（模型原样抄入 refs）；feed/create refs description 同步；dreamAskPrompt 教 agent 用池条目 channel+refId 组装 token |
+| 跳转总线 | `requestImGroupFocus` 升级为 `ImFocusTarget { groupId, anchorMsgId? }`（字符串兼容旧调用方）；room-shell 消费 anchor 透传 YzjFusedView |
+| 时间轴 | `YzjFusedView` 新 `anchorMsgId` prop：viewKey 切换后 setHighlightMsgId → 既有高亮机制滚动+高亮该消息行；手选群清 anchor |
+| 面板 | 事元 refs chip 与来源列 msg 跳转接 `jumpToSourceMsg`：`im:g:m` 直达群+定位消息；legacy 裸 msgId 回退订阅渠道猜群 |
+| 兼容 | 存量事元裸 msgId refs 降级（跳群不定位）；isRefReplay token 字符串比较不受影响（混格式漏判可接受）；锚点不在首屏窗口时诚实降级（到群，自动翻页后续增强） |
+| 验证 | 616 绿（advance-pane 2 用例：anchor 直达/legacy 回退；room-shell 1 用例：scrollIntoView 落在锚点行）；真机 verify-advance-anchor.mjs 全 PASS（seed `im:<realGroupId>:<realMsgId>` 事元 → 点来源 → 直达 830 群 → 锚点消息行渲染 → 零 page error，seed 已清理） |

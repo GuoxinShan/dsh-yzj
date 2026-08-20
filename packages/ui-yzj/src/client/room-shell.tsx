@@ -83,13 +83,18 @@ export function YzjRoomShell(props: YzjRoomShellInjected) {
 
   // Advance-board jumps (requestImGroupFocus) retarget the overlay timeline;
   // the legacy sidebar panel consumes the same bus for its own open path.
-  useEffect(() => subscribeImGroupFocus((groupId) => {
-    setActiveGroupId(groupId)
-    rememberImSeat({ groupId, sessionId: props.sessionId })
+  // 决策 39: an anchored jump also carries the source message id so the
+  // timeline highlights that exact row (事件级定位).
+  const [focusAnchor, setFocusAnchor] = useState('')
+  useEffect(() => subscribeImGroupFocus((target) => {
+    setActiveGroupId(target.groupId)
+    setFocusAnchor(target.anchorMsgId ?? '')
+    rememberImSeat({ groupId: target.groupId, sessionId: props.sessionId })
   }), [])
 
   const selectGroup = (groupId: string, groupName?: string): void => {
     setActiveGroupId(groupId)
+    setFocusAnchor('')
     rememberImSeat({
       groupId,
       sessionId: props.sessionId,
@@ -164,6 +169,7 @@ export function YzjRoomShell(props: YzjRoomShellInjected) {
           <YzjFusedView
             sessionId={props.sessionId}
             {...(activeGroupId === '' ? {} : { groupId: activeGroupId })}
+            {...(focusAnchor === '' ? {} : { anchorMsgId: focusAnchor })}
             homeFused={props.homeFused}
             homeBackfill={props.homeBackfill}
             {...(props.homeTopicOpen === undefined ? {} : { homeTopicOpen: props.homeTopicOpen })}

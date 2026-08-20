@@ -47,7 +47,7 @@
 ```
 
 - **事项**：7 字段投影 + tags。字段的当前值是事元流折叠出来的**投影**，不是独立可篡改的事实。
-- **事元**（host 追加，模型不可改写历史）：`{ 时间, 来源类型(对话/待办/文档/会议/日程/数据/人工), refs(可溯源 yzj token 或 id), 摘要, 变化类型(目标更新/进度更新/偏差/决策请求/验收请求/阶段变化/备注), 变化内容(原值→新值), 操作者(user/agent/panel) }`。**阶段变化本身也是一条事元**——PRD「状态由 AI 判断触发」在数据上即体现为 agent 喂入的阶段事元。
+- **事元**（host 追加，模型不可改写历史）：`{ 时间, 来源类型(对话/待办/文档/会议/日程/数据/人工), refs(可溯源 yzj token 或 id；消息事件用 im:<groupId>:<msgId> 带渠道 token，决策 39), 摘要, 变化类型(目标更新/进度更新/偏差/决策请求/验收请求/阶段变化/备注), 变化内容(原值→新值), 操作者(user/agent/panel) }`。**阶段变化本身也是一条事元**——PRD「状态由 AI 判断触发」在数据上即体现为 agent 喂入的阶段事元。
 - **轻量待办与事项的关系**：`yzj_todo_*` 三态与待办页签均不动——待办是事元的一种（一条待办可挂进某事项，其完成/推进作为事元回流），不是事项本身。
 - **时间线完整性不变量**（硬要求 ②）：事元行只增不改不删（代码里不存在 update/delete 路径）；摘要/变化内容存全文；裁剪只发生在模型面 digest 与面板首屏窗口；`yzj_advance_get` 支持窗口翻页读全量。知识沉淀出口（第④期）：推进完成后把完整事元流折成复盘文档入知识库（目标演化、关键决策、偏差与证据链），并供 memory-yzj dream 固化取材。
 
@@ -100,7 +100,7 @@ cancelled → running（重启）
 | `变化类型` | SingleSelect（预注册） | 目标更新 / 进度更新 / 偏差 / 决策请求 / 验收请求 / 阶段变化 / 备注 |
 | `摘要` | MultiLineText | 事件描述（时间旅程行的主文案） |
 | `变化内容` | MultiLineText | 结构化 `原值→新值`（host 生成，含字段级 diff 行） |
-| `引用` | MultiLineText | ref tokens（`yzj:...` / msgId / docId / todoId）空格分隔 |
+| `引用` | MultiLineText | ref tokens（`yzj:...` / `im:<groupId>:<msgId>` 消息事件指针（决策 39，面板据此定位到具体群消息）/ docId / todoId 空格分隔；legacy 裸 msgId 兼容降级跳群） |
 | `操作者` | MultiLineText | `user` / `agent` / `panel` |
 
 读路径：事项列表 = 「事项」表全量 + host 排序；详情 = 按 `advance_id` filter「事元」表（filter Equals 已实测可用）。写路径：每次 feed = 追加一行事元 + 回写事项投影字段（last-write-wins）。**两次写非事务**：投影写失败时事元行已在——读路径以事元流为准（`最新动态` 只是缓存）；原生后端应服务端折叠（记入迁移文档 API 需求）。
@@ -220,6 +220,7 @@ guard `WRITE_SPECS` +2：`yzj_advance_create` 一律标准确认；`yzj_advance_
 | 34 | Dream 触发方式 | **三径：手动按钮（演示主路径）+ 水位提示（pending ≥ 5＝DREAM_WATER_LEVEL，面板抽取按钮高亮）+ 定时 schedule（既有机制）**；host 自动唤起 agent 会话后置 | 演示不能等定时任务；自动唤起需要 host 主动建会话（召唤窗面），复杂度后置 |
 | 37 | todo 与缓存也切 sqlite（v1.8） | **todo 家族同切 local SQLite（双后端：真机 sqlite / 测试 dbt double）；IM 消息窗口/群清单/已读态缓存 = localStorage L1 + host SQLite L2 副本（`im-cache-get/put` RPC）**；云 dbt 在真机全死 | 用户拍板「待办也切 sql，云直接干掉；消息列表之类的缓存也进 sql」；todo 与 advance 同库不同表，单一本地事实源；缓存 L2 让刷新/跨会话首屏有热数据 |
 | 38 | Dream 手动径落点（v1.8） | **host 直建 `yzj-dream-*` 会话**：面板按钮 → `advance-dream-run` RPC（agents.create + followup 抽取指令为 turn 1 + 钉标题「Dream 抽取 · 池中 N 条」）→ GUI 聚焦该会话；蓄水池 pending 明细进面板（「池 N」浮层，dreamState 扩展 entries） | 用户质疑「不应该是跳转到新会话吗，为啥是群里的话题助手」——askDraft 预填是决策 34 后置自动唤起的临时形态，两步走断层（跳群列表 + banner 暗示）；程序化建会话（话题同款）已验证，一步到位；「池里没地方看有啥」同轮反馈 |
+| 39 | 事元 msg ref 的定位粒度（v1.8） | **事件级**：msg ref 升级为带渠道 token `im:<groupId>:<msgId>`（scan digest / dream 指令直接产出，agent 原样抄入 feed/create refs），面板点 ref/来源 → 打开该群并滚动高亮**那条消息**；legacy 裸 msgId 降级跳群不定位。三层模型不变：事件（原始消息/文档）→ 事元（提炼，refs=事件指针）→ 事项（事元流聚合） | 用户拍板「跳转可以跳到 message 吗不是只是群；需要定位的是产生事元的事件」——模型与 spec 一致（refs 本就是事件指针），实现欠账在 msg ref 不带群信息且只到容器；锚点不在首屏窗口时诚实降级（到群不定位，自动翻页后续增强） |
 | 36 | 推进双表存哪（v1.8 存储切换） | **local SQLite（node:sqlite，`~/.dsh/storages/yzj_advance.db`）**；todo 家族仍留云 dbt；双后端适配器（config 级 `setAdvanceBackend`，真机 sqlite / 测试 dbt） | 云多维表格 record 服务间歇 500（2026-08-20 全天多次，删探针/导数据全被挡）；推进看板是明天演示主面，不能押云脸；SQLite 本地闭环、无损 JSON 行、中文键复用 dbt 映射层；dbt 路径保留作测试与 legacy |
 | 35 | 巡检要不要模型（v1.8 收敛） | **不要。巡检 = host 机械 routine（≥300s 增量入池，无模型）；模型只在 Dream 抽取时出场**。判断权单点收敛到 Dream | 830 实验观察到模型实时判断漂移（同一信号集一次拒噪音一次聚合）；巡检高频，模型实时判断烧 token 且双判断冗余（Work 喂一次 + Dream 抽一次）；水位达阈即提示抽取，实时性从「实时」变「水位实时」，偏差提示延迟可控 |
 
