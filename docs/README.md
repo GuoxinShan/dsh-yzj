@@ -33,7 +33,7 @@ docs/
     advance-3-gate                     增量感应门 × 门控线（打扰判据 vs 批写规则，不叠问）
     advance-5-target                   灵基终态映射（v1.7：Signal Pool + 七态 + dir 增量；组件对照以 migration/advance-lingee-migration.md 三层表为准）
     advance-6-journey                  用户旅程（@灵基 → 弹卡立项 → 上下文来源订阅 → Dream 抽取 → 验收）
-    advance-7-gaps                     待补能力六块（策略选择已随 ③.2 落地；余：拆解/会前材料/阻塞升级/跨推进依赖/指标读数）
+    advance-7-gaps                     待补能力七块（策略选择已随 ③.2 落地；余：拆解/会前材料/阻塞升级/跨推进依赖/指标读数/巡检建议立项）
                                        （汇报产物不留仓库：模块关系图/故事线图/架构蓝图/接口契约/故事线文字版已发 830 群，见 gap §24.5；合同唯一事实源 = ai-advance-design + migration）
   pitfalls/                           ← 实现级坑库（一坑一文件 + 索引）
 ```
