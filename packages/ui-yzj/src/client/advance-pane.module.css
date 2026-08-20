@@ -526,6 +526,17 @@
   max-width: 100%;
 }
 
+/* 事元描述正文(默认可见,变化内容):进度行→事元描述→原始信息 */
+
+.entryDetail {
+  margin: 2px 0 4px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dsh-alias-label-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* --- 事元 refs 事件行(决策 39 后续): msg ref 可读化 — 谁/何时/说了什么 --- */
 
 .refEvent {
