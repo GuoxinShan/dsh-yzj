@@ -880,10 +880,12 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                             <i className={`${css.mark} ${css[`mark_${asString(entry.tone) || 'blue'}`]}`} />
                             <div className={css.timeCopy}>
                               <b data-testid={`yzj-advance-entry-${index}`}>{asString(entry.changeType) !== '' ? `${asString(entry.changeType)} · ` : ''}{asString(entry.summary)}</b>
-                              {expanded && asString(entry.detail) !== '' && <p>{asString(entry.detail)}</p>
-                              }
-                              {/* 三层树(决策 39 后续):原始信息默认挂在事元行下(最新 2 条),
-                                  多条时「展开全部」;不用点击就能看见事项→事元→原始信息。 */}
+                              {/* 事元本身也是一段描述(用户拍板):默认展示变化内容,
+                                  之下才是原始信息 — 进度行→事元描述→原始信息。 */}
+                              {asString(entry.detail) !== '' && (
+                                <p className={css.entryDetail} data-testid={`yzj-advance-entry-detail-${index}`}>{asString(entry.detail)}</p>
+                              )}
+                              {/* 原始信息默认挂在事元描述下(最新 2 条),多条时「展开全部」。 */}
                               {refList.length > 0 && (
                                 <>
                                   <p className={css.subGroupLabel}>
@@ -940,11 +942,9 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                               )}
                               <div className={css.timeMeta}>
                                 <span>{asString(entry.sourceType)}{asString(entry.actor) === 'user' ? ' · 你的判断' : ''}</span>
-                                {(asString(entry.detail) !== '' || refList.length > 2) && (
+                                {refList.length > 2 && (
                                   <button type="button" className={css.jump} data-testid={`yzj-advance-entry-toggle-${index}`} onClick={toggleExpanded}>
-                                    {expanded
-                                      ? '收起'
-                                      : `${refList.length > 2 ? `展开全部 ${refList.length} 条原始信息` : '查看详情'}`}
+                                    {expanded ? '收起' : `展开全部 ${refList.length} 条原始信息`}
                                   </button>
                                 )}
                               </div>
