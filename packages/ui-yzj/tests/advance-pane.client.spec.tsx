@@ -570,7 +570,7 @@ describe('YzjAdvancePane', () => {
     act(() => { face.root.unmount() })
   })
 
-  it('shows the empty subscription copy and opens the 关联渠道 modal with the group picker', async () => {
+  it('shows the empty subscription copy and opens the 关联来源 modal with the group picker', async () => {
     const face = mountPane({
       items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行' })],
       detail: { item: item({ advanceId: 'A-1', stage: 'running', title: '试运行' }), entries: [] },
@@ -594,7 +594,7 @@ describe('YzjAdvancePane', () => {
     act(() => { face.root.unmount() })
   })
 
-  it('关联渠道 modal:无手输 token;知识库目录 picker 关联 dir: 线程(决策 32)', async () => {
+  it('关联来源 modal:无手输 token;知识库目录 picker 关联 dir: 来源(决策 32)', async () => {
     const face = mountPane({
       items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行' })],
       detail: { item: item({ advanceId: 'A-1', stage: 'running', title: '试运行' }), entries: [] },
@@ -606,11 +606,11 @@ describe('YzjAdvancePane', () => {
     // 手输 token 已移除(决策 32)
     expect(face.container.querySelector('[data-testid="yzj-advance-thread-token"]')).toBeNull()
     // 目录 picker:整库 + hasChildren 目录;散文档不列
-    const dirs = face.container.querySelector('[data-testid="yzj-advance-thread-dirs"]')
+    const dirs = face.container.querySelector('[data-testid="yzj-advance-source-dirs"]')
     expect(dirs?.textContent).toContain('我的知识（整库）')
     expect(dirs?.textContent).toContain('830实验·共识')
     expect(dirs?.textContent).not.toContain('散文档')
-    const dirBtn = face.container.querySelector('[data-testid="yzj-advance-thread-dir-dirA"]') as HTMLButtonElement
+    const dirBtn = face.container.querySelector('[data-testid="yzj-advance-source-dir-dirA"]') as HTMLButtonElement
     await act(async () => { dirBtn.click(); await Promise.resolve() })
     await settle()
     expect(face.sourceAdds).toEqual([{ advanceId: 'A-1', token: 'dir:dirA', label: '830实验·共识' }])

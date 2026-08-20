@@ -1,6 +1,6 @@
 /**
  * Intent-thread subscription registry for advancement items (spec §15.2,
- * 决策 20). One advancement item subscribes to N data channels ("意图线程");
+ * 决策 20). One advancement item subscribes to N data channels ("上下文来源" / context sources; pre-v1.8 name "意图线程");
  * the registry maps advanceId → thread rows. `im:` threads are persistent
  * channels (cursor-based incremental scan, spec §15.3); `doc:` / `todo:` /
  * `event:` / `file:` threads are single-document sources (association lands
