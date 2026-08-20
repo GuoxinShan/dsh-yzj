@@ -797,19 +797,24 @@ export function parseMetrics(metrics: string): { name: string; current: string; 
   return out
 }
 
-/** One aggregated information source (PRD §5.3.3), derived from the stream. */
+/** One aggregated original-information row (决策 39 后续: 事元引用的原始信息). */
 export interface YzjAdvanceSource {
   sourceType: string
+  /** 兜底文案（原始信息不可读化时的描述）；主显示由面板按 ref 类型渲染。 */
   label: string
   ref: string
   at: string
   status: '已确认' | '已读取' | '未达标' | '等待中'
+  /** 引用这条原始信息的事元（三层结构:事项→事元→原始信息）。 */
+  citing: { entryId: string; changeType: string; summary: string }[]
 }
 
 /**
- * Fold the stream into the information-sources panel: one row per distinct
- * ref (or per source-type+summary when unreferenced), status from the latest
- * entry — a stage-①  heuristic that the phase-③ AI judgement will replace.
+ * Fold the stream into the original-information panel: one row per distinct
+ * ref (or per source-type+summary when unreferenced) carrying the 事元 that
+ * cite it — 三层结构里事项引用事元、事元引用原始信息，本聚合只管后一层。
+ * Status from the latest citing entry — a stage-① heuristic that the phase-③
+ * AI judgement will replace.
  */
 export function aggregateSources(entries: readonly YzjAdvanceEntry[]): YzjAdvanceSource[] {
   const byKey = new Map<string, YzjAdvanceSource>()
@@ -819,13 +824,20 @@ export function aggregateSources(entries: readonly YzjAdvanceEntry[]): YzjAdvanc
       : entry.changeType === '偏差' ? '未达标'
       : entry.actor === 'user' ? '已确认'
       : '已读取'
-    byKey.set(key, {
-      sourceType: entry.sourceType,
-      label: entry.summary,
-      ref: entry.refs[0] ?? '',
-      at: entry.at,
-      status,
-    })
+    const citing = { entryId: entry.entryId, changeType: entry.changeType, summary: entry.summary }
+    const existing = byKey.get(key)
+    if (existing === undefined) {
+      byKey.set(key, {
+        sourceType: entry.sourceType,
+        label: entry.summary,
+        ref: entry.refs[0] ?? '',
+        at: entry.at,
+        status,
+        citing: [citing],
+      })
+    } else {
+      byKey.set(key, { ...existing, at: entry.at, status, citing: [...existing.citing, citing] })
+    }
   }
   return [...byKey.values()]
 }

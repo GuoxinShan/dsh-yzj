@@ -343,9 +343,12 @@ describe('YzjAdvancePane', () => {
     expect(timeline?.textContent).toContain('从对话中发起')
     expect(timeline?.textContent).toContain('UAT 不达标')
     const sources = face.container.querySelector('[data-testid="yzj-advance-sources"]')
-    expect(sources?.textContent).toContain('事元')
-    expect(sources?.textContent).toContain('未达标')
+    // 决策 39 后续:扁平的原始信息聚合列已删 — 原始信息只挂在事元下(三层树),
+    // 侧栏只剩订阅管理;sideNote 保留产品哲学脚注。
+    expect(sources?.textContent).toContain('上下文来源')
+    expect(sources?.textContent).not.toContain('未达标')
     expect(sources?.textContent).toContain('AI 推进不建立新的文件库')
+    expect(face.container.querySelector('[data-testid="yzj-advance-sources-toggle"]')).toBeNull()
     // 「已有产物」区已于 v1.6 收掉(产物=事元的一部分,随信息来源呈现)
     expect(sources?.textContent).not.toContain('已有产物')
     const showAll = face.container.querySelector('[data-testid="yzj-advance-show-all"]') as HTMLButtonElement
@@ -537,7 +540,7 @@ describe('YzjAdvancePane', () => {
     act(() => { face.root.unmount() })
   })
 
-  it('事元来源区窗口化:默认最近 3 条,可展开/收起', async () => {
+  it('扁平原始信息列已收(决策 39 后续):侧栏只留订阅管理,聚合不再呈现', async () => {
     const five = [1, 2, 3, 4, 5].map(i => ({ sourceType: '文档', label: `来源${i}`, ref: `doc${i}`, at: `08-1${i}`, status: '已读取' }))
     const face = mountPane({
       items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行' })],
@@ -546,12 +549,8 @@ describe('YzjAdvancePane', () => {
     await settle()
     const side = face.container.querySelector('[data-testid="yzj-advance-sources"]')!
     expect(side.textContent).not.toContain('来源1')
-    expect(side.textContent).toContain('来源5')
-    const toggle = side.querySelector('[data-testid="yzj-advance-sources-toggle"]') as HTMLButtonElement
-    expect(toggle.textContent).toContain('展开全部 5 条')
-    await act(async () => { toggle.click(); await Promise.resolve() })
-    expect(side.textContent).toContain('来源1')
-    expect(toggle.textContent).toContain('收起')
+    expect(side.textContent).not.toContain('来源5')
+    expect(side.querySelector('[data-testid="yzj-advance-sources-toggle"]')).toBeNull()
     act(() => { face.root.unmount() })
   })
 
@@ -609,7 +608,7 @@ describe('YzjAdvancePane', () => {
     act(() => { face.root.unmount() })
   })
 
-  it('msg 来源带渠道 token:跳转直达群并定位到那条消息(决策 39)', async () => {
+  it('事元 msg ref 带渠道 token:展开点原始信息直达群并定位那条消息(决策 39)', async () => {
     setWorkbenchDomain('advance')
     const focused: ImFocusTarget[] = []
     const dispose = subscribeImGroupFocus(target => { focused.push(target) })
@@ -617,12 +616,14 @@ describe('YzjAdvancePane', () => {
       items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行' })],
       detail: {
         item: item({ advanceId: 'A-1', stage: 'running', title: '试运行' }),
-        entries: [],
-        sources: [{ sourceType: '对话', label: 'dsh-2 · 覆盖率到 80', ref: 'im:g1:m9', at: '08-20', status: '已读取' }],
+        entries: [entry({ entryId: 'E-1', sourceType: '对话', changeType: '进度更新', summary: '覆盖率推进到 80', refs: ['im:g1:m9'] })],
       },
     })
     await settle()
-    const jump = face.container.querySelector('[data-testid="yzj-advance-source-jump-0"]') as HTMLButtonElement
+    const toggle = face.container.querySelector('[data-testid="yzj-advance-entry-toggle-0"]') as HTMLButtonElement
+    await act(async () => { toggle.click(); await Promise.resolve() })
+    await settle()
+    const jump = face.container.querySelector('[data-testid="yzj-advance-ref-im:g1:m9"]') as HTMLButtonElement
     expect(jump).not.toBeNull()
     await act(async () => { jump.click(); await Promise.resolve() })
     expect(focused).toEqual([{ groupId: 'g1', anchorMsgId: 'm9' }])
@@ -631,7 +632,7 @@ describe('YzjAdvancePane', () => {
     act(() => { face.root.unmount() })
   })
 
-  it('msg 来源裸 msgId(legacy):回退订阅渠道猜群不带锚点', async () => {
+  it('事元 msg ref 裸 msgId(legacy):回退订阅渠道猜群不带锚点', async () => {
     setWorkbenchDomain('advance')
     const focused: ImFocusTarget[] = []
     const dispose = subscribeImGroupFocus(target => { focused.push(target) })
@@ -639,13 +640,15 @@ describe('YzjAdvancePane', () => {
       items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行' })],
       detail: {
         item: item({ advanceId: 'A-1', stage: 'running', title: '试运行' }),
-        entries: [],
-        sources: [{ sourceType: '对话', label: '旧信号', ref: 'm-legacy', at: '08-19', status: '已读取' }],
+        entries: [entry({ entryId: 'E-1', sourceType: '对话', changeType: '备注', summary: '旧信号', refs: ['m-legacy'] })],
         contextSources: [{ token: 'im:g2', kind: 'persistent', label: 'dsh-2', addedBy: 'user', addedAt: 1 }],
       },
     })
     await settle()
-    const jump = face.container.querySelector('[data-testid="yzj-advance-source-jump-0"]') as HTMLButtonElement
+    const toggle = face.container.querySelector('[data-testid="yzj-advance-entry-toggle-0"]') as HTMLButtonElement
+    await act(async () => { toggle.click(); await Promise.resolve() })
+    await settle()
+    const jump = face.container.querySelector('[data-testid="yzj-advance-ref-m-legacy"]') as HTMLButtonElement
     await act(async () => { jump.click(); await Promise.resolve() })
     expect(focused).toEqual([{ groupId: 'g2' }])
     dispose()

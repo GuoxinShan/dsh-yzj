@@ -515,6 +515,17 @@
   cursor: default;
 }
 
+.sourceCiting {
+  display: block;
+  font-size: 10.5px;
+  color: var(--dsh-alias-label-tertiary);
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
 /* --- 事元 refs 事件行(决策 39 后续): msg ref 可读化 — 谁/何时/说了什么 --- */
 
 .refEvent {

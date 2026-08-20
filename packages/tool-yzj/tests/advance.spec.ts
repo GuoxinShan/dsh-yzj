@@ -322,6 +322,12 @@ describe('advance pure helpers', () => {
     expect(sources).toHaveLength(2)
     expect(sources.find(source => source.ref === 'yzj:doc:1')?.status).toBe('已确认')
     expect(sources.find(source => source.ref === 'yzj:data:uat')?.status).toBe('未达标')
+    // 决策 39 后续: 一条原始信息携带引用它的事元（三层:事项→事元→原始信息）
+    const doc = sources.find(source => source.ref === 'yzj:doc:1')
+    expect(doc?.citing).toHaveLength(2)
+    expect(doc?.citing[0]).toMatchObject({ entryId: 'E-1', changeType: '备注', summary: '读取范围说明' })
+    expect(doc?.citing[1]).toMatchObject({ entryId: 'E-3', changeType: '备注', summary: '用户确认' })
+    expect(sources.find(source => source.ref === 'yzj:data:uat')?.citing).toHaveLength(1)
   })
 
   it('maps judge verbs to entries and stage moves', () => {

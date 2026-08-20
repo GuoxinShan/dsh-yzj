@@ -96,10 +96,6 @@ function dotToneOf(stage: string): 'red' | 'blue' | 'green' | 'gray' {
   return 'blue'
 }
 
-/** Single-character source icon (信息来源面板). */
-const SOURCE_ICON: Record<string, string> = {
-  '对话': '聊', '待办': '待', '文档': '文', '会议': '会', '日程': '日', '数据': '数', '人工': '人',
-}
 
 /** Single-character icon per source token prefix (上下文来源 chip). */
 const THREAD_ICON: Record<string, string> = {
@@ -186,8 +182,6 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
   const [cancelArmed, setCancelArmed] = useState(false)
   /** 「已结束」折叠区(completed/cancelled 事项,终局提示事后可达)。 */
   const [showClosed, setShowClosed] = useState(false)
-  /** 事元来源区窗口化:默认最近 3 条,可展开全部(时间旅程同型「查看全部」)。 */
-  const [showAllSources, setShowAllSources] = useState(false)
   /** 时间线事元详情展开集(默认折叠,展开才见原始来源)。 */
   const [expandedEntries, setExpandedEntries] = useState<ReadonlySet<string>>(new Set())
   const [draft, setDraft] = useState({ title: '', goal: '', metrics: '', assignee: '', targetDate: '', background: '' })
@@ -850,7 +844,7 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                 <section className={css.section} data-testid="yzj-advance-timeline">
                   <div className={css.sectionHead}>
                     <h2>推进演进</h2>
-                    <small>事元时间线 · 展开详情看原始来源</small>
+                    <small>多个事元折叠出演进 · 展开看每条事元引用的原始信息</small>
                   </div>
                   {detail.entries.length === 0 ? (
                     <p className={css.quiet}>还没有事元记录。</p>
@@ -874,7 +868,9 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                               <b data-testid={`yzj-advance-entry-${index}`}>{asString(entry.changeType) !== '' ? `${asString(entry.changeType)} · ` : ''}{asString(entry.summary)}</b>
                               {expanded && asString(entry.detail) !== '' && <p>{asString(entry.detail)}</p>}
                               {expanded && refList.length > 0 && (
-                                <span className={css.refs}>
+                                <>
+                                  <p className={css.subGroupLabel}>原始信息 {refList.length} · 多条信息可能被提炼为同一条事元</p>
+                                  <span className={css.refs}>
                                   {refList.map((raw) => {
                                     const id = stripRefPrefix(raw)
                                     const kind = refKindOf(asString(entry.sourceType))
@@ -909,12 +905,13 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                                     }
                                     return <span key={raw} className={css.refChip} title={raw}>{label}</span>
                                   })}
-                                </span>
+                                  </span>
+                                </>
                               )}
                               <div className={css.timeMeta}>
                                 <span>{asString(entry.sourceType)}{asString(entry.actor) === 'user' ? ' · 你的判断' : ''}</span>
                                 <button type="button" className={css.jump} data-testid={`yzj-advance-entry-toggle-${index}`} onClick={toggleExpanded}>
-                                  {expanded ? '收起详情' : `查看详情${refList.length > 0 ? `（${refList.length} 个来源）` : ''}`}
+                                  {expanded ? '收起详情' : `查看详情${refList.length > 0 ? `（${refList.length} 条原始信息）` : ''}`}
                                 </button>
                               </div>
                             </div>
@@ -963,50 +960,7 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                     </div>
                   )}
                 </section>
-                <section className={css.section}>
-                  <div className={css.sectionHead}>
-                    <h2>事元</h2>
-                    <small>跨工作现场</small>
-                  </div>
-                  {detail.sources.length === 0 ? (
-                    <p className={css.quiet}>暂无信息来源。</p>
-                  ) : (
-                    <div className={css.sourceList}>
-                      {(showAllSources ? detail.sources : detail.sources.slice(-3)).map((source, index) => {
-                        const sourceRef = stripRefPrefix(asString(source.ref))
-                        const sourceKind = refKindOf(asString(source.sourceType))
-                        const sourceHref = refHref(sourceKind, sourceRef)
-                        return (
-                          <div key={`s${index}`} className={css.source}>
-                            <span className={css.sourceIcon}>{SOURCE_ICON[asString(source.sourceType)] ?? '源'}</span>
-                            <span className={css.sourceCopy}>
-                              {sourceHref !== null ? (
-                                <a href={sourceHref} target="_blank" rel="noreferrer" title={sourceRef}><b>{asString(source.label)}</b></a>
-                              ) : sourceKind === 'msg' ? (
-                                <button type="button" className={css.sourceJump} title={`打开来源群消息 ${sourceRef}`} data-testid={`yzj-advance-source-jump-${index}`} onClick={() => { jumpToSourceMsg(sourceRef) }}><b>{asString(source.label)}</b></button>
-                              ) : (
-                                <b>{asString(source.label)}</b>
-                              )}
-                              <span>{asString(source.at)}</span>
-                            </span>
-                            <em className={`${css.sourceState} ${css[`state_${asString(source.status)}`] ?? ''}`}>{asString(source.status)}</em>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                  {detail.sources.length > 3 && (
-                    <button
-                      type="button"
-                      className={css.more}
-                      data-testid="yzj-advance-sources-toggle"
-                      onClick={() => { setShowAllSources(!showAllSources) }}
-                    >
-                      {showAllSources ? '收起' : `展开全部 ${detail.sources.length} 条`}
-                    </button>
-                  )}
-                  <p className={css.sideNote}>AI 推进不建立新的文件库，而是解释这些工作事实为什么支持或不支持当前目标。</p>
-                </section>
+                <p className={css.sideNote}>AI 推进不建立新的文件库，也不建独立来源库：原始信息挂在事元下（多条信息可能被提炼为一条事元），多个事元折叠出推进演进。</p>
               </aside>
             </div>
           </>
