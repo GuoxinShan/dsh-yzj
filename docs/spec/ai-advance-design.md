@@ -43,7 +43,8 @@
       ├─ 投影：名称/描述(目标)/负责人/目标日期/阶段(六态)/任务背景/成功指标/最新动态
       │        —— 由 host 在每次追加事元时折叠更新；投影是缓存，流是事实
       ├─ 推进时间旅程 = 事元流的渲染（时间/三色/描述/来源跳转）
-      └─ 信息来源面板 = 事元流按 ref 去重聚合（类型/内容/状态）
+      └─ 面板呈纯三层树(决策 39 后续):演进=事元时间线,事元展开见「原始信息 N」(事件行可读化+点击定位);
+         扁平信息来源聚合列已删(aggregateSources 带 citing 保留在 API 面),侧栏只留上下文来源订阅
 ```
 
 - **事项**：7 字段投影 + tags。字段的当前值是事元流折叠出来的**投影**，不是独立可篡改的事实。
@@ -220,7 +221,7 @@ guard `WRITE_SPECS` +2：`yzj_advance_create` 一律标准确认；`yzj_advance_
 | 34 | Dream 触发方式 | **三径：手动按钮（演示主路径）+ 水位提示（pending ≥ 5＝DREAM_WATER_LEVEL，面板抽取按钮高亮）+ 定时 schedule（既有机制）**；host 自动唤起 agent 会话后置 | 演示不能等定时任务；自动唤起需要 host 主动建会话（召唤窗面），复杂度后置 |
 | 37 | todo 与缓存也切 sqlite（v1.8） | **todo 家族同切 local SQLite（双后端：真机 sqlite / 测试 dbt double）；IM 消息窗口/群清单/已读态缓存 = localStorage L1 + host SQLite L2 副本（`im-cache-get/put` RPC）**；云 dbt 在真机全死 | 用户拍板「待办也切 sql，云直接干掉；消息列表之类的缓存也进 sql」；todo 与 advance 同库不同表，单一本地事实源；缓存 L2 让刷新/跨会话首屏有热数据 |
 | 38 | Dream 手动径落点（v1.8） | **host 直建 `yzj-dream-*` 会话**：面板按钮 → `advance-dream-run` RPC（agents.create + followup 抽取指令为 turn 1 + 钉标题「Dream 抽取 · 池中 N 条」）→ GUI 聚焦该会话；蓄水池 pending 明细进面板（「池 N」浮层，dreamState 扩展 entries） | 用户质疑「不应该是跳转到新会话吗，为啥是群里的话题助手」——askDraft 预填是决策 34 后置自动唤起的临时形态，两步走断层（跳群列表 + banner 暗示）；程序化建会话（话题同款）已验证，一步到位；「池里没地方看有啥」同轮反馈 |
-| 39 | 事元 msg ref 的定位粒度（v1.8） | **事件级**：msg ref 升级为带渠道 token `im:<groupId>:<msgId>`（scan digest / dream 指令直接产出，agent 原样抄入 feed/create refs），面板点 ref/来源 → 打开该群并滚动高亮**那条消息**；legacy 裸 msgId 降级跳群不定位。锚点不在首窗时自动翻页加载更早（每群有界 10 页，找到或到底即停）。三层模型不变：事件（原始消息/文档）→ 事元（提炼，refs=事件指针）→ 事项（事元流聚合） | 用户拍板「跳转可以跳到 message 吗不是只是群；需要定位的是产生事元的事件」——模型与 spec 一致（refs 本就是事件指针），实现欠账在 msg ref 不带群信息且只到容器；捞过的消息本体都在 bound log（每群 500 条持久）且 fused 全量读，从未开过的群只 backfill 最近 50 条，故补自动翻页把「捞过就能定位」闭环 |
+| 39 | 事元 msg ref 的定位粒度（v1.8） | **事件级**：msg ref 升级为带渠道 token `im:<groupId>:<msgId>`（scan digest / dream 指令直接产出，agent 原样抄入 feed/create refs），面板点 ref/来源 → 打开该群并滚动高亮**那条消息**；legacy 裸 msgId 降级跳群不定位。锚点不在首窗时自动翻页加载更早（每群有界 10 页，找到或到底即停）。三层模型不变：事件（原始消息/文档）→ 事元（提炼，refs=事件指针，N 信息→1 事元）→ 事项（事元流折叠出演进，N 事元→1 演进态）；面板为纯三层树，无扁平原始信息列 | 用户拍板「跳转可以跳到 message 吗不是只是群；需要定位的是产生事元的事件」——模型与 spec 一致（refs 本就是事件指针），实现欠账在 msg ref 不带群信息且只到容器；捞过的消息本体都在 bound log（每群 500 条持久）且 fused 全量读，从未开过的群只 backfill 最近 50 条，故补自动翻页把「捞过就能定位」闭环 |
 | 36 | 推进双表存哪（v1.8 存储切换） | **local SQLite（node:sqlite，`~/.dsh/storages/yzj_advance.db`）**；todo 家族仍留云 dbt；双后端适配器（config 级 `setAdvanceBackend`，真机 sqlite / 测试 dbt） | 云多维表格 record 服务间歇 500（2026-08-20 全天多次，删探针/导数据全被挡）；推进看板是明天演示主面，不能押云脸；SQLite 本地闭环、无损 JSON 行、中文键复用 dbt 映射层；dbt 路径保留作测试与 legacy |
 | 35 | 巡检要不要模型（v1.8 收敛） | **不要。巡检 = host 机械 routine（≥300s 增量入池，无模型）；模型只在 Dream 抽取时出场**。判断权单点收敛到 Dream | 830 实验观察到模型实时判断漂移（同一信号集一次拒噪音一次聚合）；巡检高频，模型实时判断烧 token 且双判断冗余（Work 喂一次 + Dream 抽一次）；水位达阈即提示抽取，实时性从「实时」变「水位实时」，偏差提示延迟可控 |
 

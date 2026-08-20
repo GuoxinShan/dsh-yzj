@@ -136,38 +136,27 @@ try {
   await page.waitForTimeout(4000)
   await page.screenshot({ path: join(OUT, '1-detail-source.png') })
 
-  const jump = page.locator('[data-testid^="yzj-advance-source-jump-"]').first()
-  if (await jump.count() === 0) {
-    ok('msg source jump rendered', false, 'no source-jump button on the detail')
+  // 决策 39 后续:原始信息挂在事元下 — 展开最新一条事元(seed)点原始信息行跳转
+  const toggles = page.locator('[data-testid^="yzj-advance-entry-toggle-"]')
+  const lastToggle = toggles.last()
+  if (await lastToggle.count() === 0) {
+    ok('entry toggle rendered', false, 'no entry rows on the timeline')
   } else {
-    await jump.click()
-    await page.waitForTimeout(9000)
-    const domain = await page.getByTestId('yzj-room-shell').getAttribute('data-workbench-domain').catch(() => '')
-    ok('jump lands on the im domain', domain === 'im', `domain=${domain}`)
-    const row = page.getByTestId(`yzj-room-row-${msgId}`)
-    ok('anchor message row rendered (auto-paged when outside the first window)', await row.count().then(n => n > 0), `row yzj-room-row-${msgId.slice(0, 12)}…`)
-    await page.screenshot({ path: join(OUT, '2-anchor-row.png') })
-    const bodyText = await page.locator('body').innerText().catch(() => '')
-    ok('no home-fused error', !bodyText.includes('requires a groupId or sessionId'))
-
-    // --- 5. back to the board: the seeded 事元 now shows a READABLE event row
-    // (who/when/what from the bound log the anchor paging just populated) ---
-    await page.getByTestId('yzj-workbench-tabs').getByRole('tab', { name: '推进' }).click()
-    await page.waitForTimeout(4000)
-    await page.getByTestId(`yzj-advance-item-${ADVANCE_ID}`).click()
-    await page.waitForTimeout(4000)
-    const toggles = page.locator('[data-testid^="yzj-advance-entry-toggle-"]')
-    const lastToggle = toggles.last()
-    if (await lastToggle.count() > 0) {
-      await lastToggle.click()
-      await page.waitForTimeout(1500)
-      const eventRow = page.locator(`[data-testid="yzj-advance-ref-im:${groupId}:${msgId}"]`)
-      const rendered = await eventRow.count().then(n => n > 0)
-      const text = rendered ? (await eventRow.innerText()) : ''
-      ok('msg ref renders as a readable event row (谁/何时/说了什么)', rendered && text.length > 10, rendered ? text.slice(0, 60).replace(/\n/g, ' ') : 'not hit in bound log')
-      await page.screenshot({ path: join(OUT, '3-event-row.png') })
+    await lastToggle.click()
+    await page.waitForTimeout(1500)
+    const jump = page.locator(`[data-testid="yzj-advance-ref-im:${groupId}:${msgId}"]`)
+    if (await jump.count() === 0) {
+      ok('original-info row rendered under the 事元', false, 'ref row not found')
     } else {
-      console.log('INFO  no entry toggle rendered — event-row step skipped')
+      await jump.click()
+      await page.waitForTimeout(9000)
+      const domain = await page.getByTestId('yzj-room-shell').getAttribute('data-workbench-domain').catch(() => '')
+      ok('jump lands on the im domain', domain === 'im', `domain=${domain}`)
+      const row = page.getByTestId(`yzj-room-row-${msgId}`)
+      ok('anchor message row rendered (auto-paged when outside the first window)', await row.count().then(n => n > 0), `row yzj-room-row-${msgId.slice(0, 12)}…`)
+      await page.screenshot({ path: join(OUT, '2-anchor-row.png') })
+      const bodyText = await page.locator('body').innerText().catch(() => '')
+      ok('no home-fused error', !bodyText.includes('requires a groupId or sessionId'))
     }
   }
   ok('zero page errors', pageErrors.length === 0, pageErrors.join(' | '))
