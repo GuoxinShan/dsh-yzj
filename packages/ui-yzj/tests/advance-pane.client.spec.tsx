@@ -59,6 +59,7 @@ function mountPane(config: {
   const getRequests: Face['getRequests'] = []
   const sourceAdds: Face['sourceAdds'] = []
   const sourceRemoves: Face['sourceRemoves'] = []
+  const patrols: { at: number }[] = []
   const groupState = { fetches: 0 }
   const items = config.items ?? []
   const props: AdvancePaneProps = {
@@ -98,6 +99,10 @@ function mountPane(config: {
       advanceEnsure: async () => {
         ensured.count += 1
         return { ok: true, value: { ready: true, library: { link: 'https://example/board' }, items: [] } } as Rpc
+      },
+      advancePatrolNow: async () => {
+        patrols.push({ at: Date.now() })
+        return { ok: true, value: { scannedAt: Date.now(), found: 0 } } as Rpc
       },
       advanceScanState: async () => ({
         ok: true,
@@ -139,7 +144,7 @@ function mountPane(config: {
     root.render(<YzjAdvancePane {...props} />)
   })
   return {
-    container, root, judged, created, ensured, getRequests, sourceAdds, sourceRemoves,
+    container, root, judged, created, ensured, getRequests, sourceAdds, sourceRemoves, patrols,
     get groupFetches() { return groupState.fetches },
   }
 }
@@ -498,7 +503,7 @@ describe('YzjAdvancePane', () => {
     act(() => { face.root.unmount() })
   })
 
-  it('立即巡检 writes a patrol ask draft (kind=patrol) and switches to 对话', async () => {
+  it('立即巡检 = host 机械 patrol RPC（v1.8 收敛：无模型、不切域、不写 ask）', async () => {
     setWorkbenchDomain('advance')
     const face = mountPane({
       items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行' })],
@@ -507,10 +512,10 @@ describe('YzjAdvancePane', () => {
     await settle()
     const patrol = face.container.querySelector('[data-testid="yzj-advance-patrol-now"]') as HTMLButtonElement
     await act(async () => { patrol.click(); await Promise.resolve() })
-    expect(getWorkbenchDomain()).toBe('im')
-    const draft = getAdvanceAskDraft()
-    expect(draft?.kind).toBe('patrol')
-    expect(draft?.text).toContain('yzj_advance_scan')
+    await settle()
+    expect(face.patrols).toHaveLength(1)
+    expect(getWorkbenchDomain()).toBe('advance')
+    expect(getAdvanceAskDraft()).toBeNull()
     act(() => { face.root.unmount() })
   })
 

@@ -72,6 +72,7 @@ export interface YzjPanelInject {
   advanceEnsure: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Last patrol wave for the board status line (spec §14.5). */
   advanceScanState: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  advancePatrolNow: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Dream-pool watermark for the board queue head (spec §17.3). */
   advanceDreamState: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** User-direct 事元 feed (D9, no confirm card; no stageTo). */
@@ -247,6 +248,7 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
     }),
     advanceEnsure: () => call('advance-ensure', {}),
     advanceScanState: () => call('advance-scan-state', {}),
+    advancePatrolNow: () => call('advance-patrol-now', {}),
     advanceDreamState: () => call('advance-dream-state', {}),
     advanceFeed: (input) => call('advance-feed', {
       advanceId: input.advanceId,

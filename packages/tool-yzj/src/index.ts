@@ -102,6 +102,9 @@ export function apply(ctx: Context, config: Config): void {
   const dreamPool = new DreamPoolStore()
   const advanceService = new YzjAdvanceService(ctx, budget, config.todo ?? {}, todoService.holder, scanCursors, advanceSources, dreamPool)
   applyAdvanceTools(ctx, budget, config.todo ?? {}, todoService.holder, scanCursors, advanceSources, dreamPool)
+  // v1.8 收敛（决策 35）：巡检 = host 机械 routine（≥300s 增量入池，无模型）；
+  // 模型只在 Dream 抽取时出场。注册即效应，卸载无残留。
+  ctx.effect(() => advanceService.startPatrolTimer())
   // Product-home binding table (dsh-home-session): one Yunzhijia
   // conversation ↔ one DSH session. Shared by robot inbound and UI pick-group.
   const home = new YzjHomeService(ctx, {

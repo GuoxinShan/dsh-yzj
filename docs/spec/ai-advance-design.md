@@ -217,7 +217,8 @@ guard `WRITE_SPECS` +2：`yzj_advance_create` 一律标准确认；`yzj_advance_
 | 31 | ④期实现范围 | **教学面 + 模板 + 终局提示 + cancelled 态**；工具面零新增（get/import/feed 全复用）；④-b 纪要出口只做模板+流程打包，群里转录自动感知留⑤期 | 830 第 0 波证明现有工具链人工已跑通（10 分钟/4 篇基线）；④期价值是流程打包，不是新能力（迁移文档「存钱 vs 镀金」） |
 | 32 | 订阅粒度：单文档 vs 目录（v1.7） | **目录级 `dir:<docId>` 进持续渠道**（新增/更新文档 = 增量信号）；单文档 `doc:` 保留为「关联即事元」的静态引用。关联弹层去掉手输 token：只留 IM 群 picker + 知识库目录 picker | 用户拍板：「应该是知识库一整个这样才能自动获取增量」——单文档源没有增量语义；手输 token 是开发者界面不是用户界面。目录级（含整库根）比整库更精准，整库作为根目录特例同机制支持 |
 | 33 | Dream 的采集模型 | **蓄水池**（DreamPool）：Work scan 的新信号 copy 入池 pending，Dream 触发时统一提炼；替代决策 21 的「Dream 每日直取订阅流」合同（直取无法攒批折叠） | 用户拍板 eventloop 设想：「定时把待抽取进 eventloop，到一定数量或时间就开始抽取事元产生建议卡片」；Work 即时价值（830 已验）不动，池是待抽取队列不是替代 |
-| 34 | Dream 触发方式 | **三径：手动按钮（演示主路径）+ 水位提示（pending ≥ 8 队列头横幅，只提示不自动唤起）+ 定时 schedule（既有机制）**；host 自动唤起 agent 会话后置 | 演示不能等定时任务；自动唤起需要 host 主动建会话（召唤窗面），复杂度后置 |
+| 34 | Dream 触发方式 | **三径：手动按钮（演示主路径）+ 水位提示（pending ≥ 5＝DREAM_WATER_LEVEL，面板抽取按钮高亮）+ 定时 schedule（既有机制）**；host 自动唤起 agent 会话后置 | 演示不能等定时任务；自动唤起需要 host 主动建会话（召唤窗面），复杂度后置 |
+| 35 | 巡检要不要模型（v1.8 收敛） | **不要。巡检 = host 机械 routine（≥300s 增量入池，无模型）；模型只在 Dream 抽取时出场**。判断权单点收敛到 Dream | 830 实验观察到模型实时判断漂移（同一信号集一次拒噪音一次聚合）；巡检高频，模型实时判断烧 token 且双判断冗余（Work 喂一次 + Dream 抽一次）；水位达阈即提示抽取，实时性从「实时」变「水位实时」，偏差提示延迟可控 |
 
 ## 10. 验收口径（第一期）
 
@@ -365,20 +366,21 @@ digest 含：每条事项的目标 / 背景（原来的理解）/ 成功指标 /
 3. inspect digest 含 13.1 六条打扰判据、13.2 静默判据、13.3 抑制判据、13.5 门控线一句。
 4. 用户直写 `/yzj advance-feed` 行为不变（决策 10：仍拒 `stageTo` 与基准字段）。
 
-## 14. 主动发现（scan → inspect → feed）
+## 14. 主动发现（host 机械巡检 → Dream 抽取）
 
-> v1.4。把机制 B/F 从「被召唤时比对」升级为「AI 定时自己发现」。不改双表 / 六态 / D9 / 决策 10–15。host 仍不做语义结论（决策 11）。
+> v1.4 立节（原名 scan → inspect → feed）；**v1.8 收敛（决策 35）：巡检 = host 机械 routine，无模型；模型只在 Dream 抽取时出场**。不改双表 / 六态 / D9 / 决策 10–15。host 仍不做语义结论（决策 11）。
 
-### 14.1 回路
+### 14.1 回路（v1.8 收敛后）
 
 ```
-schedule 到点唤醒 root 会话
-  → yzj_advance_scan(groups=…)     // host 管 cursor；无新消息 → 静默结束
-  → yzj_advance_inspect(signals=新信号包)
-  → 无关或复述 → 不写事元
-  → 属于某事项且进度正常 → feed 进度更新（静默落；host 同源去重）
-  → 命中 §13.1 打扰判据 → feed 偏差 stageTo=decision-needed（看板待我决定，无卡）
-  → 要改基准 → 确认卡（§13.5）
+host patrol timer（≥300s，ctx.effect 注册，卸载无残留）
+  → coreScanAdvance（聚合 open 事项的上下文来源，cursor 增量取流）
+  → 信号 copy 入蓄水池（§17）+ 水位更新   // 无模型，无 feed
+  → 水位达阈（DREAM_WATER_LEVEL=5）→ 面板高亮「Dream 抽取」
+Dream 抽取（手动 / 水位提示 / 定时三径）
+  → yzj_advance_dream_status 读池 pending
+  → yzj_advance_inspect 逐事项比对（§13 判据）
+  → 有价值的落事元 / 建议卡 → yzj_advance_dream_mark 出池
 ```
 
 对话机器人 WS **收不到**全量群消息（只投 @机器人 / 链内），所以发现通道是 CLI `im message list --type new` 轮询，不是入站监听。
@@ -389,11 +391,11 @@ schedule 到点唤醒 root 会话
 - 每群：无 cursor → `type=newest` 取最新一条记 cursor，**不回灌历史**（基线）。有 cursor → `type=new --msg-id <cursor>`，跳过锚点自身。
 - 过滤：本人（`contact user get` 的 openId）与 `fromOpenId` 以 `BOT-` 开头的机器人帖，防自激励（沿 T12 口径）。
 - cursor 写 storage-domain `yzj_advance_scan_cursors`（决策 18）；只读工具，不进 `WRITE_SPECS`。
-- digest：各群新信号（`messageLine` 形态，含 `<msgId>`）+ open 事项一行摘要 + 巡检五步纪律。无新信号则明写「无新消息，静默」。
+- digest：各群新信号（`messageLine` 形态，含 `<msgId>`）+ open 事项一行摘要 + 订阅清单。无新信号则明写「本轮无新信号」；有新信号则注明「已入蓄水池，抽取走 Dream」。v1.8 起 digest 不再附实时判断纪律（判断只在抽取时做）。
 
-### 14.3 巡检五步（教学面）
+### 14.3 host 机械巡检（v1.8 收敛，决策 35）
 
-到点 → scan → 无新消息静默结束 → 有新信号则 inspect → 按 §13 判据行动。用户说「开启巡检」时，agent 在 **root 会话** `schedule_create`（`every_seconds ≥ 300`，prompt 含群清单）。诚实边界：session-local，GUI 进程关掉就停。
+`YzjAdvanceService.startPatrolTimer()`：setInterval ≥300s，tick = `patrolNow()`（coreScanAdvance 全量聚合，错误吞掉——巡检永不弄坏 host）。`ctx.effect` 注册，bundle 卸载清 timer。面板「巡检」按钮 = `/yzj advance-patrol-now` 立即机械一轮（无模型、不切域、不写 ask）。旧「巡检五步」模型教学面作废——830 实验观察到模型实时判断漂移（同一信号集一次拒噪音一次聚合），判断权收敛到 Dream 单点。
 
 ### 14.4 无人值守（dsh-routines，可选）
 

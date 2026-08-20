@@ -649,6 +649,15 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
           return internalError(`advance-ensure failed: ${String(error)}`)
         }
       }
+      case 'advance-patrol-now': {
+        const advance = ctx.get('yzjAdvance')
+        if (advance === undefined) return internalError('advance-patrol-now: yzjAdvance 服务不可用（tool-yzj 未挂载）')
+        try {
+          return { ok: true, value: await advance.patrolNow() }
+        } catch (error) {
+          return internalError(`advance-patrol-now failed: ${String(error)}`)
+        }
+      }
       case 'advance-scan-state': {
         const advance = ctx.get('yzjAdvance')
         if (advance === undefined) return internalError('advance-scan-state: yzjAdvance 服务不可用（tool-yzj 未挂载）')
