@@ -78,6 +78,8 @@ export interface YzjPanelInject {
   imCachePut: (key: string, payload: unknown, fetchedAt: number) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Dream-pool watermark for the board queue head (spec §17.3). */
   advanceDreamState: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Dream 手动径（决策 38）: host 直建 yzj-dream-* 会话并注入抽取指令。 */
+  advanceDreamRun: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** User-direct 事元 feed (D9, no confirm card; no stageTo). */
   advanceFeed: (input: { advanceId: string; summary: string; sourceType?: string; refs?: string[] }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Subscribe one context source (关联来源; user-direct, spec §15.2). */
@@ -255,6 +257,7 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
     imCacheGet: (key) => call('im-cache-get', { key }),
     imCachePut: (key, payload, fetchedAt) => call('im-cache-put', { key, payload, fetchedAt }),
     advanceDreamState: () => call('advance-dream-state', {}),
+    advanceDreamRun: () => call('advance-dream-run', {}),
     advanceFeed: (input) => call('advance-feed', {
       advanceId: input.advanceId,
       summary: input.summary,

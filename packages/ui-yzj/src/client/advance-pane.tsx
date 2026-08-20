@@ -13,7 +13,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { YzjPanelInject } from './rpc.ts'
 import { requestImGroupFocus, setWorkbenchDomain } from './workbench-domain.ts'
 import { setAdvanceFeedback } from './advance-feedback.ts'
-import { setAdvanceAskDraft, reviewAskText, exportReviewAskText, dreamAskText } from './advance-ask.ts'
+import { setAdvanceAskDraft, reviewAskText, exportReviewAskText } from './advance-ask.ts'
 import css from './advance-pane.module.css'
 
 type UnknownRecord = Record<string, unknown>
@@ -98,7 +98,7 @@ function sourceIconOf(token: string): string {
 
 /** Props: the RPC verbs the board needs (subset of the panel inject). */
 export interface AdvancePaneProps {
-  inject: Pick<YzjPanelInject, 'advanceState' | 'advanceGet' | 'advanceCreate' | 'advanceJudge' | 'advanceEnsure' | 'advanceScanState' | 'advancePatrolNow' | 'advanceSourceAdd' | 'advanceSourceRemove' | 'fetchGroups' | 'fetchWorkspaces' | 'fetchDocs' | 'advanceDreamState'>
+  inject: Pick<YzjPanelInject, 'advanceState' | 'advanceGet' | 'advanceCreate' | 'advanceJudge' | 'advanceEnsure' | 'advanceScanState' | 'advancePatrolNow' | 'advanceSourceAdd' | 'advanceSourceRemove' | 'fetchGroups' | 'fetchWorkspaces' | 'fetchDocs' | 'advanceDreamState' | 'advanceDreamRun' | 'focusBoundSession'>
 }
 
 /** Queue-head patrol line (spec §14.5). */
@@ -188,6 +188,9 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
   const [dreamLine, setDreamLine] = useState('')
   /** Dream 水位达阈（决策 35）：抽取按钮高亮。 */
   const [waterReached, setWaterReached] = useState(false)
+  /** 蓄水池 pending 明细（池查看浮层，决策 38）。 */
+  const [dreamEntries, setDreamEntries] = useState<{ id: string; channel: string; refId: string; content: string; sendTime: string }[]>([])
+  const [dreamPoolOpen, setDreamPoolOpen] = useState(false)
   const [sourceModalOpen, setSourceModalOpen] = useState(false)
   const [groupOptions, setGroupOptions] = useState<UnknownRecord[]>([])
   /** 知识库目录选项(决策 32):整库 + 一层目录。 */
@@ -209,11 +212,40 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
     const pending = typeof value.pending === 'number' ? value.pending : 0
     const lastDreamAt = typeof value.lastDreamAt === 'number' ? value.lastDreamAt : null
     setWaterReached(value.waterLevelReached === true)
+    setDreamEntries(Array.isArray(value.entries)
+      ? (value.entries as unknown[]).map(row => {
+        const entry = asRecord(row)
+        return {
+          id: asString(entry.id),
+          channel: asString(entry.channel),
+          refId: asString(entry.refId),
+          content: asString(entry.content),
+          sendTime: asString(entry.sendTime),
+        }
+      })
+      : [])
     if (pending === 0) {
       setDreamLine(lastDreamAt === null ? '' : `蓄水池已清空 · 上次抽取 ${hhmm(lastDreamAt)}`)
       return
     }
     setDreamLine(`池中 ${pending} 条待抽取${value.waterLevelReached === true ? ' · 水位达到，建议抽取' : ''}${lastDreamAt === null ? '' : ` · 上次抽取 ${hhmm(lastDreamAt)}`}`)
+  }
+
+  /** Dream 手动径（决策 38）: host 直建 yzj-dream-* 会话并聚焦。 */
+  const runDream = async (): Promise<void> => {
+    setBusy(true)
+    try {
+      const result = await props.inject.advanceDreamRun()
+      if (!result.ok) {
+        setError(result.error.message)
+        return
+      }
+      setError('')
+      const sessionId = asString(asRecord(result.value).sessionId)
+      if (sessionId !== '') props.inject.focusBoundSession?.(sessionId)
+    } finally {
+      setBusy(false)
+    }
   }
 
   const loadBoard = async (): Promise<UnknownRecord[]> => {
@@ -512,15 +544,24 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
           {dreamLine !== '' && (
             <span className={css.dreamLine} data-testid="yzj-advance-dream-status">
               {dreamLine}
+              {dreamEntries.length > 0 && (
+                <button
+                  type="button"
+                  className={css.patrolBtn}
+                  data-testid="yzj-advance-dream-pool"
+                  title="查看蓄水池待抽取信号"
+                  onClick={() => { setDreamPoolOpen(true) }}
+                >
+                  池 {dreamEntries.length}
+                </button>
+              )}
               <button
                 type="button"
                 className={waterReached ? css.primary : css.patrolBtn}
                 data-testid="yzj-advance-dream-now"
-                title="Dream 抽取蓄水池"
-                onClick={() => {
-                  setAdvanceAskDraft({ advanceId: '', title: '蓄水池', text: dreamAskText(), kind: 'dream' })
-                  setWorkbenchDomain('im')
-                }}
+                disabled={busy}
+                title="新建会话直接开始 Dream 抽取"
+                onClick={() => { void runDream() }}
               >
                 Dream 抽取
               </button>
@@ -925,6 +966,26 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                 {busy ? '创建中…' : '开始推进'}
               </button>
             </footer>
+          </section>
+        </div>
+      )}
+      {dreamPoolOpen && (
+        <div className={css.mask} data-testid="yzj-advance-dream-modal">
+          <section className={css.modal} role="dialog" aria-modal="true" aria-label="蓄水池待抽取">
+            <header className={css.modalHead}>
+              <h2>蓄水池 · 待抽取 {dreamEntries.length} 条</h2>
+              <button type="button" aria-label="关闭" onClick={() => { setDreamPoolOpen(false) }}>×</button>
+            </header>
+            <p className={css.sideNote}>巡检发现的增量信号在池中等待 Dream 抽取：有价值的落成事元/建议卡，无关的跳过；抽过的标记完成不删除（审计面）。</p>
+            <div className={css.dreamPoolList} data-testid="yzj-advance-dream-entries">
+              {dreamEntries.map(entry => (
+                <div key={entry.id} className={css.dreamPoolRow} data-testid={`yzj-advance-dream-entry-${entry.id}`}>
+                  <span className={css.dreamPoolMeta}>[{entry.sendTime}] {entry.channel} · {entry.refId}</span>
+                  <span>{entry.content}</span>
+                </div>
+              ))}
+              {dreamEntries.length === 0 && <p className={css.sideNote}>池是空的。</p>}
+            </div>
           </section>
         </div>
       )}

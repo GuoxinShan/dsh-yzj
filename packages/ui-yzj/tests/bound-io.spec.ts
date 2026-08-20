@@ -8,7 +8,7 @@ import {
 } from '@dsh-yzj/tool-yzj/src/bound-log.ts'
 import {
   backfillBoundLog, fusedSnapshot, groupSpaceSnapshot, handoffToGroup, parseImSend, parseWhoami, robotSkipOpenIds,
-  sendImAndLog, topicLensBubbles, askTopicAssistant, type HomeIoFace,
+  sendImAndLog, topicLensBubbles, askTopicAssistant, runDreamSession, type HomeIoFace,
 } from '../src/bound-io.ts'
 
 function entry(over: Partial<YzjLogEntry> & Pick<YzjLogEntry, 'msgId'>): YzjLogEntry {
@@ -493,5 +493,43 @@ describe('topic lens / ask', () => {
       source: { kind: 'user' },
     })
     expect(touched).toEqual([{ yzjConversationId: 'g-a', source: 'dsh', rootMsgId: 'm1' }])
+  })
+})
+
+describe('runDreamSession', () => {
+  it('mints yzj-dream-*, starts the distillation as turn 1, and pins the board title (决策 38)', async () => {
+    const followups: unknown[] = []
+    const appended: { type: string; data: unknown }[] = []
+    const created: { sessionId: string; meta?: { cwd?: string; agentPreset?: string } }[] = []
+    const live = new Map<string, unknown>()
+    const result = await runDreamSession({
+      agents: {
+        get: (id: string) => live.get(id),
+        resume: async () => { throw new Error('no such session') },
+        create: async (opts: { sessionId: string; meta?: { cwd?: string; agentPreset?: string } }) => {
+          created.push(opts)
+          live.set(opts.sessionId, {
+            followup: (msg: unknown) => { followups.push(msg) },
+            session: {
+              events: [] as { type: string; data?: unknown }[],
+              append: (type: string, data: unknown) => { appended.push({ type, data }) },
+            },
+          })
+        },
+      },
+      cwd: '/dsh-yzj/workspace',
+      pending: 3,
+    })
+    expect(result.sessionId).toMatch(/^yzj-dream-\d{8}-\d{6}$/)
+    expect(created).toHaveLength(1)
+    expect(created[0]?.meta?.cwd).toBe('/dsh-yzj/workspace')
+    expect(followups).toHaveLength(1)
+    const turn = followups[0] as { role: string; source: { kind: string }; content: { type: string; text: string }[] }
+    expect(turn.role).toBe('user')
+    expect(turn.source.kind).toBe('user')
+    expect(turn.content[0]?.text).toContain('yzj_advance_dream_status')
+    expect(turn.content[0]?.text).toContain('yzj_advance_dream_mark')
+    const title = appended.find(event => event.type === 'session/title')
+    expect(JSON.stringify(title?.data)).toContain('Dream 抽取 · 池中 3 条')
   })
 })

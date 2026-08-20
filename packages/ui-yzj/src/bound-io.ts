@@ -15,7 +15,7 @@ import { parseContactUser } from './contact-parse.ts'
 import { digestCandidates, textOfSessionEvent, type DigestCandidate } from './handoff-digest.ts'
 import { artifactBadgeOf, writeFileNameOf, type ArtifactBadge } from './artifact-badge.ts'
 import {
-  openBoundHome, openTopicHome, lastSessionTitle, isPlaceholderRoomTitle, identifiedUserMessage, topicAgentRoute,
+  openBoundHome, openTopicHome, lastSessionTitle, isPlaceholderRoomTitle, identifiedUserMessage, publishHostSession, topicAgentRoute,
   topicAgentComposition,
   type HomeOpenAgents, type HomeOpenFace, type TopicAgentRoute, type TopicAgentSetup,
 } from './home-open.ts'
@@ -611,6 +611,56 @@ export function topicLensBubbles(
 /** User-authored followup (drawer 「问助手」). Visible in the lens. Must carry `id`. */
 function userTurn(text: string): ReturnType<typeof identifiedUserMessage> {
   return identifiedUserMessage(text, { kind: 'user' })
+}
+
+/**
+ * Dream 抽取指令（spec §17.2 手动径，决策 38）。单一事实源在 host：
+ * `advance-dream-run` RPC 直建 `yzj-dream-*` 会话并以首条 user turn 注入，
+ * 不再经 client askDraft / 话题问助手栏。
+ */
+export function dreamAskPrompt(): string {
+  return '请做一轮 Dream 抽取:先 yzj_advance_dream_status 读蓄水池 pending 清单,然后逐条与 open 事项比对(yzj_advance_inspect):有价值的按纪律 feed(refs=<refId>;进度正常静默挂,命中打扰判据才 stageTo=decision-needed 形成建议卡片),无关的跳过;最后 yzj_advance_dream_mark(ids=[已处理条目 id]) 并给我一句「抽取 N 条/产出 M 条建议」的总结。直接连续调用工具完成,不要询问我。'
+}
+
+/** `yzj-dream-<yyyymmdd-hhmmss>` stamp, newest-last sortable. */
+function dreamStamp(): string {
+  const now = new Date()
+  const pad = (value: number): string => String(value).padStart(2, '0')
+  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
+}
+
+/**
+ * One-shot Dream session (决策 38): mint `yzj-dream-<stamp>`, start the
+ * distillation as turn 1, then pin the board title so the sidebar lists it
+ * immediately. The caller focuses the GUI on the returned sessionId.
+ */
+export async function runDreamSession(options: {
+  readonly agents: HomeOpenAgents & {
+    get(sessionId: string): { followup?: (message: unknown) => void } | undefined
+  }
+  readonly cwd: string
+  readonly agentOptions?: TopicAgentRoute
+  readonly agentPreset?: string
+  readonly setup?: TopicAgentSetup
+  readonly pending: number
+}): Promise<{ sessionId: string }> {
+  const sessionId = `yzj-dream-${dreamStamp()}`
+  await options.agents.create({
+    sessionId,
+    meta: {
+      cwd: options.cwd,
+      ...(options.agentPreset === undefined ? {} : { agentPreset: options.agentPreset }),
+    },
+    ...(options.agentOptions === undefined ? {} : { agentOptions: options.agentOptions }),
+    ...(options.setup === undefined ? {} : { setup: options.setup }),
+  })
+  const live = options.agents.get(sessionId) as
+    | { followup?: (message: unknown) => void }
+    | undefined
+  if (live?.followup === undefined) throw new Error('advance-dream-run: agent followup unavailable')
+  live.followup(userTurn(dreamAskPrompt()))
+  publishHostSession(live, `Dream 抽取 · 池中 ${options.pending} 条`, true, true)
+  return { sessionId }
 }
 
 /**

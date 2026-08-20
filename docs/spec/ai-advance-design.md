@@ -219,6 +219,7 @@ guard `WRITE_SPECS` +2：`yzj_advance_create` 一律标准确认；`yzj_advance_
 | 33 | Dream 的采集模型 | **蓄水池**（DreamPool）：Work scan 的新信号 copy 入池 pending，Dream 触发时统一提炼；替代决策 21 的「Dream 每日直取订阅流」合同（直取无法攒批折叠） | 用户拍板 eventloop 设想：「定时把待抽取进 eventloop，到一定数量或时间就开始抽取事元产生建议卡片」；Work 即时价值（830 已验）不动，池是待抽取队列不是替代 |
 | 34 | Dream 触发方式 | **三径：手动按钮（演示主路径）+ 水位提示（pending ≥ 5＝DREAM_WATER_LEVEL，面板抽取按钮高亮）+ 定时 schedule（既有机制）**；host 自动唤起 agent 会话后置 | 演示不能等定时任务；自动唤起需要 host 主动建会话（召唤窗面），复杂度后置 |
 | 37 | todo 与缓存也切 sqlite（v1.8） | **todo 家族同切 local SQLite（双后端：真机 sqlite / 测试 dbt double）；IM 消息窗口/群清单/已读态缓存 = localStorage L1 + host SQLite L2 副本（`im-cache-get/put` RPC）**；云 dbt 在真机全死 | 用户拍板「待办也切 sql，云直接干掉；消息列表之类的缓存也进 sql」；todo 与 advance 同库不同表，单一本地事实源；缓存 L2 让刷新/跨会话首屏有热数据 |
+| 38 | Dream 手动径落点（v1.8） | **host 直建 `yzj-dream-*` 会话**：面板按钮 → `advance-dream-run` RPC（agents.create + followup 抽取指令为 turn 1 + 钉标题「Dream 抽取 · 池中 N 条」）→ GUI 聚焦该会话；蓄水池 pending 明细进面板（「池 N」浮层，dreamState 扩展 entries） | 用户质疑「不应该是跳转到新会话吗，为啥是群里的话题助手」——askDraft 预填是决策 34 后置自动唤起的临时形态，两步走断层（跳群列表 + banner 暗示）；程序化建会话（话题同款）已验证，一步到位；「池里没地方看有啥」同轮反馈 |
 | 36 | 推进双表存哪（v1.8 存储切换） | **local SQLite（node:sqlite，`~/.dsh/storages/yzj_advance.db`）**；todo 家族仍留云 dbt；双后端适配器（config 级 `setAdvanceBackend`，真机 sqlite / 测试 dbt） | 云多维表格 record 服务间歇 500（2026-08-20 全天多次，删探针/导数据全被挡）；推进看板是明天演示主面，不能押云脸；SQLite 本地闭环、无损 JSON 行、中文键复用 dbt 映射层；dbt 路径保留作测试与 legacy |
 | 35 | 巡检要不要模型（v1.8 收敛） | **不要。巡检 = host 机械 routine（≥300s 增量入池，无模型）；模型只在 Dream 抽取时出场**。判断权单点收敛到 Dream | 真机实验观察到模型实时判断漂移（同一信号集一次拒噪音一次聚合）；巡检高频，模型实时判断烧 token 且双判断冗余（Work 喂一次 + Dream 抽一次）；水位达阈即提示抽取，实时性从「实时」变「水位实时」，偏差提示延迟可控 |
 
@@ -561,19 +562,20 @@ Work 巡检(scan) ──新信号──→ DreamPool(pending 蓄水)
 - **不重复**：Work 已即时 feed 过的信号,Dream 再筛时 host 同源去重兜底（决策 19/25）;Dream 的价值在**跨渠道归集 + 折叠建议**（把分散信号攒成一次判断），不在重 feed。
 - **建议卡片** = 既有「待我决定」队列的事项（stageTo=decision-needed 即卡片）,不新造 UI 形态。
 
-### 17.2 触发三径（决策 34)
+### 17.2 触发三径（决策 34；手动径 v1.8 重定义，决策 38）
 
 | 径 | 形态 |
 |---|---|
-| **手动** | 看板队列头「Dream 抽取」按钮 → 跳对话域预填抽取 prompt(ask bus,kind='dream')——演示主路径 |
-| **水位** | 池 pending ≥ 8(可配)时队列头横幅「池中 N 条待抽取」提示人去点;水位只提示不自动唤起(自动唤起 agent 会话后置,见迁移文档) |
+| **手动** | 看板队列头「Dream 抽取」按钮 → host 直建 `yzj-dream-*` 新会话（`advance-dream-run` RPC：agents.create + followup 抽取指令为 turn 1 + 钉标题「Dream 抽取 · 池中 N 条」）→ GUI 聚焦该会话，一步到位（决策 38；替代决策 34 的 askDraft 预填两步形态） |
+| **水位** | 池 pending ≥ 5（DREAM_WATER_LEVEL，可配）时队列头「池中 N 条待抽取 · 水位达到，建议抽取」+ 按钮高亮；水位只提示不自动唤起 |
 | **定时** | 沿用既有「开启巡检」的 schedule_create 机制:用户说「开启 Dream」时 root 会话挂每日定时,prompt 即抽取指令 |
 
 ### 17.3 工具与数据面
 
 - 池:storage-domain **`yzj_advance_dreampool`** `{ id, channel, refId, content, sendTime, enqueuedAt, done }`。
-- 工具:`yzj_advance_dream_status`(只读:pending 清单+水位)与 `yzj_advance_dream_mark`(标记 done;host 内部状态,不在 WRITE_SPECS)。抽取本身零新工具(读池 → feed 复用)。
-- 面板:队列头第二行「池中 N 条待抽取 · 上次抽取 HH:mm」(RPC advance-dream-state)。
+- 工具:`yzj_advance_dream_status`(只读:pending 清单+水位)与 `yzj_advance_dream_mark`(标记 done;host 内部状态,不在 WRITE_SPECS)。抽取本身零新工具(读池 → feed 复用);抽取指令文本单一事实源在 host(bound-io `dreamAskPrompt`,决策 38)。
+- 面板:队列头第二行「池中 N 条待抽取 · 上次抽取 HH:mm」(RPC advance-dream-state);「池 N」按钮打开 pending 明细浮层(时间/渠道/refId/内容前 120 字,决策 38)。
+- 会话:`yzj-dream-*` 前缀是普通 agent 会话(非 yzj-home/yzj-topic 视图),挂在云之家工作区;确认卡按 WRITE_SPECS 标准弹。
 
 ### 17.4 验收口径
 

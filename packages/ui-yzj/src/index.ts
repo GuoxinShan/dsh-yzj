@@ -18,7 +18,7 @@ import { applyWriteGate, type YzjWriteRecord } from './write-gate.ts'
 import { openBoundHome, openTopicHome, isPlaceholderRoomTitle, topicAgentRoute, topicAgentComposition, type HomeOpenFace } from './home-open.ts'
 import {
   backfillBoundLog, fusedSnapshot, groupSpaceSnapshot, handoffToGroup, homeIoFrom, parseImSend, roomSnapshot, roomSnapshotForGroup, sendImAndLog,
-  sessionEventsOf, topicLensBubbles, askTopicAssistant,
+  sessionEventsOf, topicLensBubbles, askTopicAssistant, runDreamSession,
 } from './bound-io.ts'
 import { digestCandidates } from './handoff-digest.ts'
 import { attachYzjSession, ensureYzjHostWorkspace } from './yzj-cwd.ts'
@@ -708,6 +708,31 @@ function imCacheStore(): SqliteDb {
           return { ok: true, value: advance.dreamState() }
         } catch (error) {
           return internalError(`advance-dream-state failed: ${String(error)}`)
+        }
+      }
+      case 'advance-dream-run': {
+        // Dream 手动径（决策 38）: host 直建 yzj-dream-* 会话注入抽取指令,
+        // 不再经 client askDraft / 话题问助手栏。返回 sessionId 供 GUI 聚焦。
+        const advance = ctx.get('yzjAdvance')
+        if (advance === undefined) return internalError('advance-dream-run: yzjAdvance 服务不可用（tool-yzj 未挂载）')
+        const agents = agentsFace(ctx)
+        if (agents === undefined) return internalError('advance-dream-run: agents 服务不可用')
+        try {
+          const state = advance.dreamState()
+          const cwd = await ensureYzjHostWorkspace(ctx)
+          const route = topicAgentRoute(ctx)
+          const composition = await topicAgentComposition(ctx)
+          const value = await runDreamSession({
+            agents,
+            cwd,
+            pending: state.pending,
+            ...(route === undefined ? {} : { agentOptions: route }),
+            ...composition,
+          })
+          await attachYzjSession(ctx, value.sessionId)
+          return { ok: true, value }
+        } catch (error) {
+          return internalError(`advance-dream-run failed: ${String(error)}`)
         }
       }
       case 'advance-source-add': {
