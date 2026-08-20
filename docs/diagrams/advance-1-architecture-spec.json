@@ -11,7 +11,7 @@
   "title": {
     "prefix": "AI推进 ·",
     "highlight": "架构与环路",
-    "subtitle": "事元流绕环一周 = 一次推进回合（v1.7：蓄水池 + 七态 + 目录订阅）"
+    "subtitle": "事元流绕环一周 = 一次推进回合（v1.8：本地 SQLite + 机械巡检 + Dream 直建会话 + 四层数据树）"
   },
   "input_title": "Event Sources",
   "inputs": [
@@ -53,20 +53,14 @@
       },
       {
         "title": "蓄水池",
-        "body": "DreamPool · 信号入池\n水位/手动/定时触发抽取",
+        "body": "DreamPool · 机械巡检入池\n水位/手动/定时触发抽取",
         "icon": "queue",
         "icon_style": "illustrated"
       },
       {
-        "title": "判断该干啥",
-        "body": "inspect · 确定性\n无 LLM",
+        "title": "判断与定案",
+        "body": "inspect·EU · 确定性\n无 LLM·固化比对上下文",
         "icon": "dispatch",
-        "icon_style": "illustrated"
-      },
-      {
-        "title": "把任务定下来",
-        "body": "EU · agent\n固化比对上下文",
-        "icon": "package",
         "icon_style": "illustrated"
       },
       {
@@ -101,7 +95,7 @@
       },
       {
         "title": "事项双表",
-        "body": "sheet dbt\n七字段投影",
+        "body": "local SQLite\n七字段投影·todo/缓存同库",
         "icon": "package",
         "icon_style": "illustrated"
       },
@@ -120,13 +114,13 @@
     "cards": [
       {
         "title": "Work 比对",
-        "body": "被召唤即比\n触发阶段",
+        "body": "巡检=host 机械\n≥300s·无 LLM",
         "icon": "agent",
         "icon_style": "illustrated"
       },
       {
         "title": "每日 Dream",
-        "body": "摘要·复盘·建议\n④ 取材",
+        "body": "直建 yzj-dream-* 会话\nturn1=抽取指令·模型出场",
         "icon": "brain",
         "icon_style": "hero",
         "icon_size": "hero"
@@ -152,7 +146,7 @@
       },
       {
         "title": "推进页签",
-        "body": "三栏+旅程+终局区\n水位行·Dream 抽取",
+        "body": "四层数据树：进度节点\n→事元描述→原始信息",
         "icon": "eye",
         "icon_style": "illustrated"
       },
