@@ -25,6 +25,7 @@ import {
 import { registerPanelController } from './panel-controller.ts'
 import { TodoPane } from './todo-pane.tsx'
 import { rememberImSeat } from './im-seat.ts'
+import { bindImCachePersistence } from './im-cache.ts'
 import { setWorkbenchDomain, subscribeImGroupFocus } from './workbench-domain.ts'
 import { openWorkbench } from './workbench-overlay.ts'
 import {
@@ -425,6 +426,17 @@ function loadTab(
 /** The frame-overlay Yunzhijia panel; renders null while closed. */
 export function YzjPanel(props: YzjPanelProps) {
   const open = props.useStore(state => state.open)
+  useEffect(() => {
+    bindImCachePersistence(
+      (key, payload, fetchedAt) => { void props.imCachePut(key, payload, fetchedAt) },
+      async (key) => {
+        const result = await props.imCacheGet(key)
+        if (!result.ok || result.value === null) return null
+        return { payload: (result.value as { payload: unknown }).payload, fetchedAt: (result.value as { fetchedAt: number }).fetchedAt }
+      },
+    )
+  }, [])
+
   const tab = props.useStore(state => state.tab)
   const embedded = props.embedded === true
   // Persisted tabs may hold removed keys (me/robot/memory); fall back to docs.

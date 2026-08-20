@@ -23,6 +23,13 @@ import type { YzjRunResult } from '@dsh-yzj/bridge'
 import type {} from '@dsh-yzj/bridge'
 import { yzjToolOutput, asRecord, asArray, asString, clipJson, failureDigest } from './shared.ts'
 import type { YzjToolBudget } from './shared.ts'
+import { localStore } from './local-store.ts'
+
+/** v1.8 决策 37: 'sqlite' = 真机本地 SQLite（index.ts apply 启用）；'dbt' = 测试 double（FakeStore 命令脚本）。云 dbt 在真机已死。 */
+let todoBackend: 'dbt' | 'sqlite' = 'dbt'
+export function setTodoBackend(next: 'dbt' | 'sqlite'): void {
+  todoBackend = next
+}
 
 /** Field names of the backing 任务 table (single source of truth). */
 const F = {
@@ -335,6 +342,12 @@ export async function resolveLibrary(
   allowProvision: boolean,
   holder?: TodoBindingHolder,
 ): Promise<TodoBinding> {
+  if (todoBackend === 'sqlite') {
+    const local: TodoBinding = { docId: 'local-sqlite', tableId: 0, link: '' }
+    cache.binding = local
+    return local
+  }
+
   if (cache.binding !== undefined) return cache.binding
 
   // 0. Panel-selected override: validate once, then trust (and remember).
@@ -436,6 +449,12 @@ export async function fetchTodos(
   budget: YzjToolBudget,
   binding: TodoBinding,
 ): Promise<YzjTodo[]> {
+  if (todoBackend === 'sqlite') {
+    return localStore().listTodos()
+      .map(row => parseTodoRecord({ id: row.recordId, fields: row.fields }))
+      .filter((todo): todo is YzjTodo => todo !== null)
+  }
+
   const todos: YzjTodo[] = []
   let pageToken: string | undefined
   for (let page = 0; page < 3; page += 1) {
@@ -460,6 +479,12 @@ export async function fetchTodoByTodoId(
   binding: TodoBinding,
   todoId: string,
 ): Promise<YzjTodo | undefined> {
+  if (todoBackend === 'sqlite') {
+    const row = localStore().todo(todoId)
+    if (row === undefined) return undefined
+    return parseTodoRecord({ id: row.recordId, fields: row.fields }) ?? undefined
+  }
+
   const filter = JSON.stringify({ mode: 'AND', criteria: [{ field: F.id, operator: 'Equals', values: [todoId] }] })
   const ran = await runTodoJson(ctx, budget, 'sheet record list', [
     'sheet', 'record', 'list', '--id', binding.docId, '--table-id', String(binding.tableId), '--filter', filter,
@@ -500,6 +525,20 @@ async function writeRecords(
   binding: TodoBinding,
   records: string,
 ): Promise<{ ok: true; json: unknown } | { ok: false; content: string }> {
+  if (todoBackend === 'sqlite') {
+    const store = localStore()
+    const rows = JSON.parse(records) as { id?: string; fieldsValue?: Record<string, unknown> }[]
+    const out: { id: string; fields: Record<string, unknown> }[] = []
+    for (const row of rows) {
+      const fields = row.fieldsValue ?? {}
+      const todoId = String(row.id ?? fields[F.id] ?? '')
+      if (label.includes('create')) store.createTodo(fields)
+      else store.updateTodo(todoId, fields)
+      out.push({ id: todoId, fields: { ...store.todo(todoId)?.fields } })
+    }
+    return { ok: true, json: { records: out } }
+  }
+
   const command = label.includes('create')
     ? ['sheet', 'record', 'create', '--id', binding.docId, '--table-id', String(binding.tableId), '--records', records]
     : ['sheet', 'record', 'update', '--id', binding.docId, '--table-id', String(binding.tableId), '--records', records]

@@ -218,6 +218,7 @@ guard `WRITE_SPECS` +2：`yzj_advance_create` 一律标准确认；`yzj_advance_
 | 32 | 订阅粒度：单文档 vs 目录（v1.7） | **目录级 `dir:<docId>` 进持续渠道**（新增/更新文档 = 增量信号）；单文档 `doc:` 保留为「关联即事元」的静态引用。关联弹层去掉手输 token：只留 IM 群 picker + 知识库目录 picker | 用户拍板：「应该是知识库一整个这样才能自动获取增量」——单文档源没有增量语义；手输 token 是开发者界面不是用户界面。目录级（含整库根）比整库更精准，整库作为根目录特例同机制支持 |
 | 33 | Dream 的采集模型 | **蓄水池**（DreamPool）：Work scan 的新信号 copy 入池 pending，Dream 触发时统一提炼；替代决策 21 的「Dream 每日直取订阅流」合同（直取无法攒批折叠） | 用户拍板 eventloop 设想：「定时把待抽取进 eventloop，到一定数量或时间就开始抽取事元产生建议卡片」；Work 即时价值（830 已验）不动，池是待抽取队列不是替代 |
 | 34 | Dream 触发方式 | **三径：手动按钮（演示主路径）+ 水位提示（pending ≥ 5＝DREAM_WATER_LEVEL，面板抽取按钮高亮）+ 定时 schedule（既有机制）**；host 自动唤起 agent 会话后置 | 演示不能等定时任务；自动唤起需要 host 主动建会话（召唤窗面），复杂度后置 |
+| 37 | todo 与缓存也切 sqlite（v1.8） | **todo 家族同切 local SQLite（双后端：真机 sqlite / 测试 dbt double）；IM 消息窗口/群清单/已读态缓存 = localStorage L1 + host SQLite L2 副本（`im-cache-get/put` RPC）**；云 dbt 在真机全死 | 用户拍板「待办也切 sql，云直接干掉；消息列表之类的缓存也进 sql」；todo 与 advance 同库不同表，单一本地事实源；缓存 L2 让刷新/跨会话首屏有热数据 |
 | 36 | 推进双表存哪（v1.8 存储切换） | **local SQLite（node:sqlite，`~/.dsh/storages/yzj_advance.db`）**；todo 家族仍留云 dbt；双后端适配器（config 级 `setAdvanceBackend`，真机 sqlite / 测试 dbt） | 云多维表格 record 服务间歇 500（2026-08-20 全天多次，删探针/导数据全被挡）；推进看板是明天演示主面，不能押云脸；SQLite 本地闭环、无损 JSON 行、中文键复用 dbt 映射层；dbt 路径保留作测试与 legacy |
 | 35 | 巡检要不要模型（v1.8 收敛） | **不要。巡检 = host 机械 routine（≥300s 增量入池，无模型）；模型只在 Dream 抽取时出场**。判断权单点收敛到 Dream | 830 实验观察到模型实时判断漂移（同一信号集一次拒噪音一次聚合）；巡检高频，模型实时判断烧 token 且双判断冗余（Work 喂一次 + Dream 抽一次）；水位达阈即提示抽取，实时性从「实时」变「水位实时」，偏差提示延迟可控 |
 

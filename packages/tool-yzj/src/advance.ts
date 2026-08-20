@@ -29,7 +29,7 @@ import {
 import type { TodoBinding, TodoBindingHolder, TodoConfig } from './todo.ts'
 import { ScanCursorStore, scanStateOf, type AdvanceScanState, type ScanCursorStoreFace } from './scan-cursors.ts'
 import type { DreamPoolFace } from './advance-dreampool.ts'
-import { localAdvanceStore } from './advance-local-store.ts'
+import { localStore } from './local-store.ts'
 import {
   ContextSourceStore, parseSourceToken, sourceKindOf, sourceTypeOfToken,
 } from './advance-sources.ts'
@@ -1054,7 +1054,7 @@ export async function fetchItems(
   binding: AdvanceBinding,
 ): Promise<YzjAdvanceItem[]> {
   if (advanceBackend === 'sqlite') {
-    return localAdvanceStore().listItems()
+    return localStore().listItems()
       .map(row => parseAdvanceItem({ id: row.recordId, fields: row.fields }))
       .filter((item): item is YzjAdvanceItem => item !== null)
   }
@@ -1083,7 +1083,7 @@ export async function fetchItemById(
   advanceId: string,
 ): Promise<YzjAdvanceItem | undefined> {
   if (advanceBackend === 'sqlite') {
-    const row = localAdvanceStore().item(advanceId)
+    const row = localStore().item(advanceId)
     if (row === undefined) return undefined
     return parseAdvanceItem({ id: row.recordId, fields: row.fields }) ?? undefined
   }
@@ -1111,7 +1111,7 @@ export async function fetchEntries(
   advanceId: string,
 ): Promise<YzjAdvanceEntry[]> {
   if (advanceBackend === 'sqlite') {
-    const entries = localAdvanceStore().listEntries(advanceId)
+    const entries = localStore().listEntries(advanceId)
       .map(row => parseAdvanceEntry({ id: row.recordId, fields: row.fields }))
       .filter((entry): entry is YzjAdvanceEntry => entry !== null)
     return entries.sort((a, b) => (a.at === b.at ? (a.entryId < b.entryId ? -1 : 1) : (a.at < b.at ? -1 : 1)))
@@ -1142,7 +1142,7 @@ async function todaysEntryIds(
 ): Promise<string[]> {
   const day = todayStr().replace(/\//g, '')
   if (advanceBackend === 'sqlite') {
-    return localAdvanceStore().listAllEntryIds().filter(id => id.includes(`E-${day}-`))
+    return localStore().listAllEntryIds().filter(id => id.includes(`E-${day}-`))
   }
   const filter = JSON.stringify({ mode: 'AND', criteria: [{ field: ENTRY_F.id, operator: 'Contains', values: [`E-${day}-`] }] })
   const ran = await runJson(ctx, budget, 'sheet record list', [
@@ -1161,7 +1161,7 @@ async function writeTable(
   records: string,
 ): Promise<unknown> {
   if (advanceBackend === 'sqlite') {
-    const store = localAdvanceStore()
+    const store = localStore()
     const rows = JSON.parse(records) as { id?: string; fieldsValue?: Record<string, unknown> }[]
     for (const row of rows) {
       const fields = row.fieldsValue ?? {}

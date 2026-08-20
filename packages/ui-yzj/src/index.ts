@@ -7,6 +7,9 @@
  * @module @dsh-yzj/ui-yzj
  */
 
+import { DatabaseSync as SqliteDb } from 'node:sqlite'
+import { homedir } from 'node:os'
+import { join as joinPath } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ConnectionRpcHandler } from '@deepseek-ai/dsh-client-connection'
 import type {} from '@dsh-yzj/bridge'
@@ -647,6 +650,36 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
           return { ok: true, value: await advance.ensure() }
         } catch (error) {
           return internalError(`advance-ensure failed: ${String(error)}`)
+        }
+      }
+
+/** IM 缓存 L2 持久化（决策 37）：host SQLite 副本（browser localStorage 为 L1 热备）。 */
+let imCacheDb: SqliteDb | undefined
+function imCacheStore(): SqliteDb {
+  if (imCacheDb === undefined) {
+    const dbPath = process.env['YZJ_ADVANCE_DB'] ?? joinPath(homedir(), '.dsh', 'storages', 'yzj_advance.db')
+    imCacheDb = new SqliteDb(dbPath)
+    imCacheDb.exec('CREATE TABLE IF NOT EXISTS im_cache (cache_key TEXT PRIMARY KEY, payload TEXT NOT NULL, fetched_at INTEGER NOT NULL)')
+  }
+  return imCacheDb
+}
+      case 'im-cache-get': {
+        try {
+          const key = String((payload as { key?: string }).key ?? '')
+          const row = imCacheStore().prepare('SELECT payload, fetched_at FROM im_cache WHERE cache_key = ?').get(key) as { payload: string; fetched_at: number } | undefined
+          if (row === undefined) return { ok: true, value: null }
+          return { ok: true, value: { payload: JSON.parse(row.payload), fetchedAt: row.fetched_at } }
+        } catch (error) {
+          return internalError(`im-cache-get failed: ${String(error)}`)
+        }
+      }
+      case 'im-cache-put': {
+        try {
+          const p = payload as { key?: string; payload?: unknown; fetchedAt?: number }
+          imCacheStore().prepare('INSERT INTO im_cache (cache_key, payload, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at').run(String(p.key ?? ''), JSON.stringify(p.payload ?? null), Number(p.fetchedAt ?? Date.now()))
+          return { ok: true, value: true }
+        } catch (error) {
+          return internalError(`im-cache-put failed: ${String(error)}`)
         }
       }
       case 'advance-patrol-now': {
