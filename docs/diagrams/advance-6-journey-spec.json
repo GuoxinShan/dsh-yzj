@@ -10,26 +10,58 @@
   "title": {
     "prefix": "AI推进 ·",
     "highlight": "用户旅程",
-    "subtitle": "@灵基 → 弹卡立项 → 上下文来源订阅 → 每日 Dream 筛事元 → 偏差提示到验收"
+    "subtitle": "五入口触发 → 弹卡立项 → 上下文来源订阅 → 每日 Dream 筛事元 → 偏差提示到验收"
   },
   "direction": "down",
-  "footer": "上下文来源 = 推进订阅的数据源（群/知识库/纪要/待办/AI产物，可多条） · 事元 = 线程上被采纳的 event · completed 只经用户验收",
+  "footer": "上下文来源 = 推进订阅的数据源（群/知识库目录/纪要/待办/AI产物，可多条） · 事元 = 来源上被采纳的 event · completed 只经用户验收",
   "nodes": [
     {
-      "id": "u1",
-      "label": "群里 @灵基",
-      "body": "帮我分析总结\n最近的聊天记录",
+      "id": "en-conv",
+      "label": "灵基对话",
+      "body": "@灵基 / 对话框一句话\n「帮我跟进这件事」",
       "icon": "message",
+      "x": 140,
+      "y": 180
+    },
+    {
+      "id": "en-meet",
+      "label": "会议纪要",
+      "body": "会后纪要产出\nAI 识别可执行共识",
+      "icon": "clipboard",
+      "x": 370,
+      "y": 180
+    },
+    {
+      "id": "en-im",
+      "label": "IM 群消息",
+      "body": "群里密集讨论 /\nhover「喂给推进」",
+      "icon": "ingest",
       "x": 600,
+      "y": 180
+    },
+    {
+      "id": "en-doc",
+      "label": "文档产出",
+      "body": "PRD / 定义卡 / 纪要\n新文档产出即触发",
+      "icon": "file",
+      "x": 830,
+      "y": 180
+    },
+    {
+      "id": "en-patrol",
+      "label": "AI 巡检",
+      "body": "scan 发现未立项的\n在办事项，建议立项",
+      "icon": "eye",
+      "x": 1060,
       "y": 180
     },
     {
       "id": "a1",
       "label": "灵基读上下文",
-      "body": "看到 PRD / 文件\n识别出可跟踪的事",
+      "body": "汇聚各入口触发\n识别出可跟踪的事",
       "icon": "scan",
       "x": 600,
-      "y": 370
+      "y": 400
     },
     {
       "id": "d1",
@@ -37,7 +69,7 @@
       "kind": "decision",
       "body": "弹出卡片询问",
       "x": 600,
-      "y": 560
+      "y": 590
     },
     {
       "id": "no",
@@ -47,41 +79,41 @@
       "icon": "wait",
       "accent": "muted",
       "x": 280,
-      "y": 560
+      "y": 590
     },
     {
       "id": "c1",
       "label": "创建推进",
-      "body": "事项进看板\n本群自动挂为线程①",
+      "body": "事项进看板\n本群自动挂为来源①",
       "icon": "plan",
       "accent": "green",
       "x": 880,
-      "y": 700
+      "y": 730
     },
     {
       "id": "m1",
       "label": "手动喂 / 关联",
-      "body": "关联渠道=订阅\n单条直喂=事元",
+      "body": "关联来源=订阅\n单条直喂=事元",
       "icon": "ingest",
       "x": 940,
-      "y": 920
+      "y": 950
     },
     {
       "id": "threads",
       "label": "上下文来源 ×N",
-      "body": "订阅的数据源\n每源一条线程",
+      "body": "订阅的数据源\n每源一条增量流",
       "icon": "queue",
       "x": 600,
-      "y": 920
+      "y": 950
     },
     {
       "id": "dream",
       "label": "每日 Dream",
-      "body": "取各线程新消息\nLLM+规则筛有价值",
+      "body": "取各来源增量\nLLM+规则筛有价值",
       "icon": "brain",
       "accent": "purple",
       "x": 600,
-      "y": 1120
+      "y": 1150
     },
     {
       "id": "e1",
@@ -89,7 +121,7 @@
       "body": "被采纳的 event\nappend-only 可溯源",
       "icon": "db",
       "x": 600,
-      "y": 1320
+      "y": 1350
     },
     {
       "id": "d2",
@@ -97,7 +129,7 @@
       "kind": "decision",
       "body": "对照目标与指标",
       "x": 600,
-      "y": 1510
+      "y": 1540
     },
     {
       "id": "quiet",
@@ -107,7 +139,7 @@
       "icon": "wait",
       "accent": "muted",
       "x": 320,
-      "y": 1650
+      "y": 1680
     },
     {
       "id": "n1",
@@ -116,7 +148,7 @@
       "icon": "emit",
       "accent": "amber",
       "x": 880,
-      "y": 1650
+      "y": 1680
     },
     {
       "id": "u2",
@@ -124,7 +156,7 @@
       "body": "确认 / 修改 / 忽略\n判断也记事元",
       "icon": "human",
       "x": 600,
-      "y": 1810
+      "y": 1840
     },
     {
       "id": "end",
@@ -133,12 +165,28 @@
       "icon": "success",
       "accent": "green",
       "x": 600,
-      "y": 1980
+      "y": 2010
     }
   ],
   "edges": [
     {
-      "from": "u1",
+      "from": "en-conv",
+      "to": "a1"
+    },
+    {
+      "from": "en-meet",
+      "to": "a1"
+    },
+    {
+      "from": "en-im",
+      "to": "a1"
+    },
+    {
+      "from": "en-doc",
+      "to": "a1"
+    },
+    {
+      "from": "en-patrol",
       "to": "a1"
     },
     {
@@ -158,12 +206,12 @@
     {
       "from": "c1",
       "to": "threads",
-      "label": "线程① = 本群"
+      "label": "来源① = 本群"
     },
     {
       "from": "m1",
       "to": "threads",
-      "label": "关联渠道"
+      "label": "关联来源"
     },
     {
       "from": "m1",
@@ -202,8 +250,7 @@
     {
       "from": "u2",
       "to": "e1",
-      "kind": "loop",
-      "label": "判断回流事元"
+      "kind": "loop"
     },
     {
       "from": "u2",
