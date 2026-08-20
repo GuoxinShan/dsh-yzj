@@ -850,3 +850,15 @@ todo 家族仍留 dbt（用户未要求动）；dbt 路径保留作测试与 leg
 | 验证 | 609 绿；真机 todo 创建落库且列表可见（验收脚本 ux-sqlite-todo.mjs）；im_cache 待真用户开群触发双写 |
 
 云 dbt 残行（探针等）不再是任何路径的事实源；云服务恢复后可一次性物理清理。
+## 24.16 ui-yzj｜推进「跳到消息」撞 home-fused 空 payload + overlay 跳转总线缺消费端（2026-08-20，pitfall-039）
+
+用户报告：推进面板点「跳到消息」显示 `home-fused endpoint requires a groupId or sessionId payload` 且轮询刷屏。根因是 R27 overlay 空 占位 sessionId 与 slot 时代调用链叠加（详见 pitfall-039），连带 `requestImGroupFocus` 只有旧侧栏 panel 消费、overlay 时间轴 retarget 不了。
+
+| 层 | 改动 |
+|---|---|
+| room-shell | binding fallback 仅 slot 模式（`yzj-home-*`）发起；新增 `subscribeImGroupFocus` 订阅（setActiveGroupId + rememberImSeat），推进跳转直达群 |
+| transcript | `YzjFusedView` viewKey 空时 load effect 短路（不 RPC 不轮询不 setError）；空态文案「在左侧选择一个群开始。」 |
+| composer | speakers 轮询在 `sessionId === '' && groupId === ''` 时跳过 |
+| 验证 | 611 绿（room-shell 新增 2 用例：零调用断言 + imGroupFocus retarget）；真机 verify-advance-jump.mjs 全 PASS（无报错空态 → 点群开房 → 推进 msg 来源跳转直达 im 域群房间 → 零 page error） |
+
+host 端 `stringField` 空=缺失校验保持原样（校验正确，错在 client 发空 payload）。Dream 抽取按钮的「跳群列表」体验断层属设计语义（askDraft 预备→话题问助手栏），见 ai-advance-design §14。

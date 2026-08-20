@@ -47,6 +47,7 @@
 | 36 | GUI「Full access」档位 approval=never,yzj 写工具 ask 自动转 deny、确认卡 不弹 | `.acceptance` 确认卡实验 / 任何依赖弹卡的 GUI 会话 | [pitfall-036-full-access-disables-approval.md](pitfall-036-full-access-disables-approval.md) |
 | 37 | 验收脚本的话题步骤对「目标群有没有话题锚点」敏感：数据态差异被误读成代码 回归 | `.acceptance/verify-advance-feed.mjs` / 任何以话题为前置的走查 | [pitfall-037-acceptance-topic-data-precondition.md](pitfall-037-acceptance-topic-data-precondition.md) |
 | 38 | web profile bundle link 被切到 worktree 不归位：主 checkout build 与 GUI 加载 脱节 | 真机验收 / 实验环境前置 | [pitfall-038-profile-bundle-link-stale.md](pitfall-038-profile-bundle-link-stale.md) |
+| 39 | 工作台 overlay 空 sessionId 撞 home-fused 空 payload 校验，推进跳转报错且轮询刷屏 | ui-yzj browser half / 推进板「跳到消息」等切 im 域入口 | [pitfall-039-overlay-empty-session-home-fused.md](pitfall-039-overlay-empty-session-home-fused.md) |
 
 ## 维护规则
 

@@ -14,7 +14,7 @@ import { YzjDomainWorkbench } from './workbench-pane.tsx'
 import { YzjAdvancePane } from './advance-pane.tsx'
 import { registerPanelController } from './panel-controller.ts'
 import {
-  getWorkbenchDomain, setWorkbenchDomain, subscribeWorkbenchDomain,
+  getWorkbenchDomain, setWorkbenchDomain, subscribeImGroupFocus, subscribeWorkbenchDomain,
   WORKBENCH_TABS, type WorkbenchDomain,
 } from './workbench-domain.ts'
 import { peekImSeat, rememberImSeat } from './im-seat.ts'
@@ -60,6 +60,10 @@ export function YzjRoomShell(props: YzjRoomShellInjected) {
     }
     const cached = cachedRoomGroupId(props.sessionId)
     if (cached !== '') setActiveGroupId(cached)
+    // The binding fallback below is slot-mode recovery (a real `yzj-home-*`
+    // hanger). The overlay cover has an empty placeholder session — that
+    // payload only errors on the host (pitfall-039), so never send it.
+    if (!props.sessionId.startsWith('yzj-home-')) return
     let cancelled = false
     const load = async (): Promise<void> => {
       if (peekImSeat()?.groupId) return
@@ -76,6 +80,13 @@ export function YzjRoomShell(props: YzjRoomShellInjected) {
     // homeFused is a stable RPC closure.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRoom, props.sessionId])
+
+  // Advance-board jumps (requestImGroupFocus) retarget the overlay timeline;
+  // the legacy sidebar panel consumes the same bus for its own open path.
+  useEffect(() => subscribeImGroupFocus((groupId) => {
+    setActiveGroupId(groupId)
+    rememberImSeat({ groupId, sessionId: props.sessionId })
+  }), [])
 
   const selectGroup = (groupId: string, groupName?: string): void => {
     setActiveGroupId(groupId)
