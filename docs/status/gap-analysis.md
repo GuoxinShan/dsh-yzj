@@ -862,3 +862,15 @@ todo 家族仍留 dbt（用户未要求动）；dbt 路径保留作测试与 leg
 | 验证 | 611 绿（room-shell 新增 2 用例：零调用断言 + imGroupFocus retarget）；真机 verify-advance-jump.mjs 全 PASS（无报错空态 → 点群开房 → 推进 msg 来源跳转直达 im 域群房间 → 零 page error） |
 
 host 端 `stringField` 空=缺失校验保持原样（校验正确，错在 client 发空 payload）。Dream 抽取按钮的「跳群列表」体验断层属设计语义（askDraft 预备→话题问助手栏），见 ai-advance-design §14。
+## 24.17 ui-yzj｜Dream 手动径重定义：host 直建会话一步到位 + 蓄水池面板可视化（2026-08-20，决策 38）
+
+用户质疑决策 34 的 askDraft 两步形态：「不应该是跳转到新会话吗为啥是群里的话题助手」+「蓄水池没地方看有啥」。当时后置的「host 自动唤起会话」这轮补上——程序化建会话机制（话题同款）已验证。
+
+| 层 | 改动 |
+|---|---|
+| host | bound-io 新增 `dreamAskPrompt()`（指令文本单一事实源迁 host）+ `runDreamSession()`（mint `yzj-dream-<stamp>` → agents.create + followup 指令为 turn 1 → publishHostSession 钉标题「Dream 抽取 · 池中 N 条」）；index.ts 新 RPC `advance-dream-run`（复用 topicAgentRoute/composition + attachYzjSession） |
+| 面板 | Dream 按钮 → `advanceDreamRun` → `focusBoundSession(sessionId)`（关工作台盖板 + 聚焦主会话）；「池 N」按钮 → pending 明细浮层（dreamState 扩展 entries：id/channel/refId/content 前 120 字/sendTime） |
+| 清理 | advance-ask.ts 删 `dreamAskText`/`patrolAskText`（后者 v1.8 收敛后已是死代码）；AskDraft.kind 收窄为 review/export；banner 文案删 dream/patrol 分支 |
+| 验证 | 613 绿（advance-pane 2 用例改写：RPC+聚焦+不再写 draft；bound-io 新增 runDreamSession）；真机 verify-advance-dream.mjs 全 PASS（巡检入池 → 池浮层列 35 条 → 点抽取 → 盖板退下聚焦新会话「Dream 抽取 · 池中 35 条」→ 指令为 turn 1 → agent 开跑 dream_status → 零 page error） |
+
+`yzj-dream-*` 是普通 agent 会话（非 room/topic 视图），确认卡按 WRITE_SPECS 标准弹。旧 askDraft 机制保留给「请 AI 鎮收」「沉淀复盘」（绑事项、话题上下文有延续合理性）。

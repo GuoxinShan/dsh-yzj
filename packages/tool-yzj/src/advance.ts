@@ -1709,11 +1709,27 @@ export class YzjAdvanceService extends Service {
     return scanStateOf(this.cursors)
   }
 
-  /** Dream-pool snapshot for the board watermark line (spec §17.3). */
-  dreamState(): { pending: number; lastDreamAt: number | null; waterLevelReached: boolean } {
-    if (this.pool === undefined) return { pending: 0, lastDreamAt: null, waterLevelReached: false }
-    const pending = this.pool.pending().length
-    return { pending, lastDreamAt: this.pool.lastDreamAt() ?? null, waterLevelReached: pending >= DREAM_WATER_LEVEL }
+  /** Dream-pool snapshot for the board watermark line + pool viewer (spec §17.3). */
+  dreamState(): {
+    pending: number
+    lastDreamAt: number | null
+    waterLevelReached: boolean
+    entries: { id: string; channel: string; refId: string; content: string; sendTime: string }[]
+  } {
+    if (this.pool === undefined) return { pending: 0, lastDreamAt: null, waterLevelReached: false, entries: [] }
+    const pending = this.pool.pending()
+    return {
+      pending: pending.length,
+      lastDreamAt: this.pool.lastDreamAt() ?? null,
+      waterLevelReached: pending.length >= DREAM_WATER_LEVEL,
+      entries: pending.map(entry => ({
+        id: entry.id,
+        channel: entry.channel,
+        refId: entry.refId,
+        content: entry.content.slice(0, 120),
+        sendTime: entry.sendTime,
+      })),
+    }
   }
 
   /**

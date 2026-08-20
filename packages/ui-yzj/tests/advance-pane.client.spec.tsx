@@ -39,6 +39,9 @@ interface Face {
   getRequests: { advanceId: string; entryOffset?: number; entryLimit?: number }[]
   sourceAdds: { advanceId: string; token: string; label?: string }[]
   sourceRemoves: { advanceId: string; token: string }[]
+  patrols: { at: number }[]
+  dreamRuns: number
+  focused: string[]
   groupFetches: number
 }
 
@@ -47,7 +50,7 @@ function mountPane(config: {
   items?: Record<string, unknown>[]
   detail?: { item: Record<string, unknown>; entries: Record<string, unknown>[]; entryTotal?: number; sources?: Record<string, unknown>[]; contextSources?: Record<string, unknown>[] }
   scan?: { scannedAt: number | null; found: number }
-  dream?: { pending: number; lastDreamAt: number | null }
+  dream?: { pending: number; lastDreamAt: number | null; entries?: { id: string; channel: string; refId: string; content: string; sendTime: string }[] }
   groups?: Record<string, unknown>[]
 }): Face {
   const container = document.createElement('div')
@@ -60,6 +63,8 @@ function mountPane(config: {
   const sourceAdds: Face['sourceAdds'] = []
   const sourceRemoves: Face['sourceRemoves'] = []
   const patrols: { at: number }[] = []
+  const dreamRuns = { count: 0 }
+  const focused: string[] = []
   const groupState = { fetches: 0 }
   const items = config.items ?? []
   const props: AdvancePaneProps = {
@@ -110,8 +115,13 @@ function mountPane(config: {
       }) as Rpc,
       advanceDreamState: async () => ({
         ok: true,
-        value: config.dream ?? { pending: 0, lastDreamAt: null },
+        value: config.dream ?? { pending: 0, lastDreamAt: null, entries: [] },
       }) as Rpc,
+      advanceDreamRun: async () => {
+        dreamRuns.count += 1
+        return { ok: true, value: { sessionId: 'yzj-dream-20260820-120000' } } as Rpc
+      },
+      focusBoundSession: (sessionId: string) => { focused.push(sessionId) },
       advanceSourceAdd: async (advanceId, token, label) => {
         if (!/^(im|doc|todo|event|file|dir):[A-Za-z0-9_-]+$/.test(token)) {
           return { ok: false, error: { message: `advance-source-add failed: 非法来源 token「${token}」` } } as Rpc
@@ -145,6 +155,8 @@ function mountPane(config: {
   })
   return {
     container, root, judged, created, ensured, getRequests, sourceAdds, sourceRemoves, patrols,
+    get dreamRuns() { return dreamRuns.count },
+    focused,
     get groupFetches() { return groupState.fetches },
   }
 }
@@ -537,22 +549,57 @@ describe('YzjAdvancePane', () => {
     act(() => { face.root.unmount() })
   })
 
-  it('Dream 水位行:pending > 0 时显示「池中 N 条待抽取」+ Dream 抽取按钮写 draft (kind=dream)', async () => {
+  it('Dream 水位行:点「Dream 抽取」走 advance-dream-run 并聚焦新会话(决策 38),不再写 askDraft', async () => {
     setWorkbenchDomain('advance')
     const face = mountPane({
       items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行' })],
       detail: { item: item({ advanceId: 'A-1', stage: 'running', title: '试运行' }), entries: [] },
-      dream: { pending: 3, lastDreamAt: null },
+      dream: {
+        pending: 3,
+        lastDreamAt: null,
+        entries: [
+          { id: 'p1', channel: 'im:g1', refId: 'm1', content: '覆盖率到 80', sendTime: '2026/08/20 10:00' },
+          { id: 'p2', channel: 'dir:d1', refId: 'doc2', content: '更新文档《范围》', sendTime: '2026/08/20 10:05' },
+        ],
+      },
     })
     await settle()
     const line = face.container.querySelector('[data-testid="yzj-advance-dream-status"]')
     expect(line?.textContent).toContain('池中 3 条待抽取')
     const dreamBtn = face.container.querySelector('[data-testid="yzj-advance-dream-now"]') as HTMLButtonElement
     await act(async () => { dreamBtn.click(); await Promise.resolve() })
-    expect(getWorkbenchDomain()).toBe('im')
-    const draft = getAdvanceAskDraft()
-    expect(draft?.kind).toBe('dream')
-    expect(draft?.text).toContain('yzj_advance_dream_status')
+    await settle()
+    expect(face.dreamRuns).toBe(1)
+    expect(face.focused).toEqual(['yzj-dream-20260820-120000'])
+    // 决策 38:不再经 askDraft 预备,也不切域
+    expect(getAdvanceAskDraft()).toBeNull()
+    expect(getWorkbenchDomain()).toBe('advance')
+    act(() => { face.root.unmount() })
+  })
+
+  it('蓄水池查看:点「池 N」列出 pending 明细(决策 38)', async () => {
+    const face = mountPane({
+      items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行' })],
+      detail: { item: item({ advanceId: 'A-1', stage: 'running', title: '试运行' }), entries: [] },
+      dream: {
+        pending: 2,
+        lastDreamAt: null,
+        entries: [
+          { id: 'p1', channel: 'im:g1', refId: 'm1', content: '覆盖率到 80', sendTime: '2026/08/20 10:00' },
+          { id: 'p2', channel: 'dir:d1', refId: 'doc2', content: '更新文档《范围》', sendTime: '2026/08/20 10:05' },
+        ],
+      },
+    })
+    await settle()
+    const poolBtn = face.container.querySelector('[data-testid="yzj-advance-dream-pool"]') as HTMLButtonElement
+    expect(poolBtn.textContent).toContain('池 2')
+    await act(async () => { poolBtn.click(); await Promise.resolve() })
+    const modal = face.container.querySelector('[data-testid="yzj-advance-dream-modal"]')
+    expect(modal).not.toBeNull()
+    expect(modal?.textContent).toContain('待抽取 2 条')
+    expect(modal?.textContent).toContain('覆盖率到 80')
+    expect(modal?.textContent).toContain('更新文档《范围》')
+    expect(modal?.textContent).toContain('im:g1')
     act(() => { face.root.unmount() })
   })
 
