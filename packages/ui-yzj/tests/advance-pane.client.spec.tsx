@@ -460,6 +460,12 @@ describe('YzjAdvancePane', () => {
       },
     })
     await settle()
+    // refs 折叠在「查看详情」里(v1.8 UX):先展开两条事元
+    for (const idx of [0, 1]) {
+      const toggle = face.container.querySelector(`[data-testid="yzj-advance-entry-toggle-${idx}"]`) as HTMLButtonElement
+      expect(toggle.textContent).toContain('查看详情')
+      await act(async () => { toggle.click(); await Promise.resolve() })
+    }
     const docChip = face.container.querySelector('[data-testid="yzj-advance-ref-6a85774aecd3fb103b859f8a"]') as HTMLAnchorElement
     expect(docChip.tagName).toBe('A')
     expect(docChip.href).toContain('/store/doc/6a85774aecd3fb103b859f8a')
