@@ -826,3 +826,15 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 | 文档 | spec §14 重写（回路图/14.3 机械巡检）；决策 34 水位 8→5、决策 35 入表 |
 
 **验证**：609 绿（巡检测例改机械断言：不切域/不写 ask/RPC 计数）；typecheck 0。实时性 trade-off 记录于决策 35（偏差提示从实时变水位实时）。
+## 24.14 AI推进｜存储切换：推进双表 dbt → local SQLite（2026-08-20，v1.8，决策 36）
+
+云多维表格 record 服务间歇 500（code=10000506）全天多次：删探针重试 3+5+10 次全灭、830 数据无法导出。用户拍板 fallback：「如果还是有问题就把数据存储层换成 sql」。
+
+| 层 | 改动 |
+|---|---|
+| 新增 | `advance-local-store.ts`：node:sqlite 双表（items/entries，fields 无损 JSON 中文键），singleton + `YZJ_ADVANCE_DB` 覆盖 |
+| 核心 | advance.ts 六触点（resolve/fetchItems/fetchItemById/fetchEntries/todaysEntryIds/writeTable）加 sqlite 分支；`setAdvanceBackend('sqlite')` 在 tool-yzj apply 启用；测试零改动（不 call 即 dbt） |
+| 数据 | 云导不出 → seed 脚本按实验记录重建 830 演示旅程（item + 5 事元，refs 用真实 docId）；sqlite 写路径探针已删；上下文来源订阅（storage-domain）本就本地，原样在位 |
+| 验证 | 609 绿（dbt 测试路径不变）；真机：空板 hero → 创建落库 → seed 后 830 看板完整（截图 sqlite-check/ux-redesign） |
+
+todo 家族仍留 dbt（用户未要求动）；dbt 路径保留作测试与 legacy 回退。
