@@ -7,8 +7,8 @@
   flex: 1;
   min-height: 0;
   display: flex;
-  gap: 12px;
-  padding: 10px 12px 12px;
+  gap: 16px;
+  padding: 16px 20px 20px;
   overflow: hidden;
 }
 
@@ -68,12 +68,12 @@
 .queueItem {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
   text-align: left;
   border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--dsw-alias-bg-layer-1);
-  padding: 8px 10px;
+  padding: 10px 12px;
   cursor: pointer;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
@@ -150,7 +150,7 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 
 .detailHead {
@@ -205,8 +205,9 @@
 
 .detailHead h1 {
   margin: 0;
-  font-size: 17px;
-  line-height: 1.3;
+  font-size: 19px;
+  line-height: 1.35;
+  font-weight: 650;
   color: var(--dsw-alias-label-primary);
 }
 
@@ -226,39 +227,40 @@
 .metrics {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 12px;
 }
 
 .metric {
-  flex: 1 1 120px;
-  min-width: 120px;
+  flex: 1 1 140px;
+  min-width: 140px;
   border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--dsw-alias-bg-layer-1);
-  padding: 8px 10px;
+  padding: 12px 14px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .metric span {
-  font-size: 11px;
+  font-size: 11.5px;
   color: var(--dsw-alias-label-tertiary);
 }
 
 .metric b {
-  font-size: 16px;
+  font-size: 22px;
+  font-weight: 650;
   color: var(--dsw-alias-label-primary);
 }
 
 .metric small {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--dsw-alias-label-tertiary);
 }
 
 .detailGrid {
   display: flex;
-  gap: 12px;
+  gap: 16px;
   align-items: flex-start;
 }
 
@@ -267,24 +269,25 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 
 .side {
-  flex: 0 0 240px;
+  flex: 0 0 280px;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 
 .section {
   border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--dsw-alias-bg-layer-1);
-  padding: 10px 12px;
+  padding: 14px 16px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .sectionHead {
@@ -292,11 +295,13 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
+  margin-bottom: 2px;
 }
 
 .sectionHead h2 {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 650;
   color: var(--dsw-alias-label-primary);
 }
 
@@ -307,14 +312,15 @@
 
 .goal {
   margin: 0;
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 13.5px;
+  line-height: 1.65;
   color: var(--dsw-alias-label-primary);
 }
 
 .background {
   margin: 0;
   font-size: 12px;
+  line-height: 1.6;
   color: var(--dsw-alias-label-secondary);
 }
 
@@ -514,13 +520,13 @@
 .timeline {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 18px;
 }
 
 .timeItem {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: 10px;
 }
 
 .time {
@@ -548,17 +554,19 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 5px;
 }
 
 .timeCopy b {
-  font-size: 12.5px;
+  font-size: 13px;
+  line-height: 1.5;
   color: var(--dsw-alias-label-primary);
 }
 
 .timeCopy p {
   margin: 0;
-  font-size: 11.5px;
+  font-size: 12px;
+  line-height: 1.6;
   color: var(--dsw-alias-label-secondary);
   white-space: pre-wrap;
 }
@@ -605,8 +613,8 @@
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-secondary);
   font-size: 10.5px;
-  line-height: 18px;
-  padding: 0 8px;
+  line-height: 20px;
+  padding: 0 10px;
   cursor: pointer;
   text-decoration: none;
   font-family: inherit;
@@ -689,7 +697,7 @@
 .sourceList {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 
 .source {
@@ -719,8 +727,24 @@
   flex-direction: column;
 }
 
+.sourceCopy a {
+  display: block;
+  min-width: 0;
+  color: var(--dsw-static-deepseek-500);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sourceCopy a:hover {
+  text-decoration: underline;
+}
+
 .sourceCopy b {
-  font-size: 11.5px;
+  display: block;
+  font-size: 12px;
+  line-height: 1.5;
   color: var(--dsw-alias-label-primary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -728,7 +752,7 @@
 }
 
 .sourceCopy span {
-  font-size: 10px;
+  font-size: 10.5px;
   color: var(--dsw-alias-label-tertiary);
 }
 
