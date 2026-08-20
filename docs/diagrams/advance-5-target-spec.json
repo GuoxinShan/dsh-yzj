@@ -5,7 +5,7 @@
   "title": {
     "prefix": "灵基终态 ·",
     "highlight": "推进 + Event Loop",
-    "subtitle": "dsh-yzj 是 MVP 原型；我们做推进、Brain、IM 打通，其余骑灵基已有（v1.7：蓄水池/七态/目录订阅映射）"
+    "subtitle": "dsh-yzj 是 MVP 原型；我们做推进、Brain、IM 打通，其余骑灵基已有（v1.8：本地 SQLite/机械巡检/Dream 直建会话/四层数据树映射）"
   },
   "signature": "@dsh-yzj",
   "lanes": [
@@ -92,7 +92,8 @@
           "id": "board",
           "title": "推进看板",
           "icon": "queue",
-          "icon_style": "illustrated"
+          "icon_style": "illustrated",
+          "note": "四层树:进度节点→事元→原始信息(事件级定位)"
         }
       ]
     },
@@ -117,7 +118,7 @@
           "title": "Signal Pool",
           "icon": "queue",
           "icon_style": "illustrated",
-          "note": "蓄水池·水位/手动/定时触发"
+          "note": "蓄水池·抽取=直建会话(MVP:yzj-dream-*)"
         },
         {
           "id": "lanes",
@@ -243,5 +244,5 @@
       "label": "跳回原文"
     }
   ],
-  "footer": "MVP 映射：bridge→开放API直连 · tool-yzj→推进域服务 · ui-yzj页签→灵基推进页 · memory-yzj→记忆服务 · harness schedule→Brain Scheduler · robot-yzj→IM打通层"
+  "footer": "MVP 映射：bridge→开放API直连 · tool-yzj→推进域服务(本地 SQLite) · ui-yzj页签→灵基推进页(四层数据树) · memory-yzj→记忆服务 · harness schedule→Brain Scheduler · robot-yzj→IM打通层 · Dream 直建会话→Brain 主动唤起"
 }
