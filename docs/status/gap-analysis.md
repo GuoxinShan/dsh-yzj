@@ -813,3 +813,16 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 | 历史节 | §24.5/§24.7 等历史留痕不重写（演进用追加段落，AGENTS.md 规矩） |
 
 **真机验证**：重启 GUI 后 测试事项「上下文来源」区显示迁移过来的两个订阅 chip（测试群 + 830实验·共识 目录）——legacy 迁移成功；下区「事元」正常。610 绿。截图 `shots-advance-ux/ux-redesign.png`。
+## 24.13 AI推进｜巡检收敛：host 机械 routine，AI 只在抽取时出场（2026-08-20，v1.8，决策 35）
+
+用户拍板：「巡检应该是不需要 AI 的，抽取事元才需要」。原混合双节奏（Work 模型实时判断 + Dream 再抽取）冗余且漂移（830 复验判定 6 观察到同一信号集模型两次判断不一致）。
+
+| 层 | 改动 |
+|---|---|
+| host | `YzjAdvanceService.startPatrolTimer()`（setInterval ≥300s，ctx.effect 注册/卸载）；tick = `patrolNow()` = coreScanAdvance 全量聚合入池，错误吞掉 |
+| 工具 | `yzj_advance_scan` 降级为只读查询（description 明示 host 巡检自动入池、抽取走 Dream）；digest 不再附实时判断纪律；`INSPECT_DISCIPLINE` 删「巡检五步/订阅分发」改「抽取分发」 |
+| RPC | 新增 `advance-patrol-now`（面板「巡检」按钮 = 立即机械一轮，不切域不写 ask） |
+| 面板 | 水位达阈（DREAM_WATER_LEVEL=5）dreamState.waterLevelReached → 水位行「建议抽取」+ Dream 按钮高亮 primary |
+| 文档 | spec §14 重写（回路图/14.3 机械巡检）；决策 34 水位 8→5、决策 35 入表 |
+
+**验证**：609 绿（巡检测例改机械断言：不切域/不写 ask/RPC 计数）；typecheck 0。实时性 trade-off 记录于决策 35（偏差提示从实时变水位实时）。

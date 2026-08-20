@@ -259,8 +259,8 @@ describe('advance pure helpers', () => {
     expect(compare).toContain('静默判据')
     expect(compare).toContain('抑制')
     expect(compare).toContain('确认卡只在改基准')
-    expect(compare).toContain('巡检五步')
-    expect(compare).toContain('yzj_advance_scan')
+    expect(compare).toContain('抽取分发')
+    expect(compare).toContain('打扰判据')
     const review = buildInspectDigest({ subjects: [{ item, recent: [] }], signals: '', mode: 'review' })
     expect(review).toContain('验收辅助材料')
     expect(review).toContain('不要自动过')
@@ -821,7 +821,7 @@ describe('yzj_advance_scan', () => {
     expect(found.content).toContain('<m-new>')
     expect(found.content).not.toContain('机器人回帖')
     expect(found.content).not.toContain('我自己说的')
-    expect(found.content).toContain('把新信号交给 yzj_advance_inspect')
+    expect(found.content).toContain('信号已由 host 巡检自动入蓄水池')
   })
 
   it('persists the cursor across tool calls and names unknown groups', async () => {

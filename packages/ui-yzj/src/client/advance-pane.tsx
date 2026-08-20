@@ -13,7 +13,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { YzjPanelInject } from './rpc.ts'
 import { requestImGroupFocus, setWorkbenchDomain } from './workbench-domain.ts'
 import { setAdvanceFeedback } from './advance-feedback.ts'
-import { setAdvanceAskDraft, reviewAskText, exportReviewAskText, patrolAskText, dreamAskText } from './advance-ask.ts'
+import { setAdvanceAskDraft, reviewAskText, exportReviewAskText, dreamAskText } from './advance-ask.ts'
 import css from './advance-pane.module.css'
 
 type UnknownRecord = Record<string, unknown>
@@ -98,7 +98,7 @@ function sourceIconOf(token: string): string {
 
 /** Props: the RPC verbs the board needs (subset of the panel inject). */
 export interface AdvancePaneProps {
-  inject: Pick<YzjPanelInject, 'advanceState' | 'advanceGet' | 'advanceCreate' | 'advanceJudge' | 'advanceEnsure' | 'advanceScanState' | 'advanceSourceAdd' | 'advanceSourceRemove' | 'fetchGroups' | 'fetchWorkspaces' | 'fetchDocs' | 'advanceDreamState'>
+  inject: Pick<YzjPanelInject, 'advanceState' | 'advanceGet' | 'advanceCreate' | 'advanceJudge' | 'advanceEnsure' | 'advanceScanState' | 'advancePatrolNow' | 'advanceSourceAdd' | 'advanceSourceRemove' | 'fetchGroups' | 'fetchWorkspaces' | 'fetchDocs' | 'advanceDreamState'>
 }
 
 /** Queue-head patrol line (spec §14.5). */
@@ -186,6 +186,8 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
   const [scanLine, setScanLine] = useState('尚未巡检')
   /** Dream 蓄水池水位行(spec §17.3)。 */
   const [dreamLine, setDreamLine] = useState('')
+  /** Dream 水位达阈（决策 35）：抽取按钮高亮。 */
+  const [waterReached, setWaterReached] = useState(false)
   const [sourceModalOpen, setSourceModalOpen] = useState(false)
   const [groupOptions, setGroupOptions] = useState<UnknownRecord[]>([])
   /** 知识库目录选项(决策 32):整库 + 一层目录。 */
@@ -206,11 +208,12 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
     const value = asRecord(result.value)
     const pending = typeof value.pending === 'number' ? value.pending : 0
     const lastDreamAt = typeof value.lastDreamAt === 'number' ? value.lastDreamAt : null
+    setWaterReached(value.waterLevelReached === true)
     if (pending === 0) {
       setDreamLine(lastDreamAt === null ? '' : `蓄水池已清空 · 上次抽取 ${hhmm(lastDreamAt)}`)
       return
     }
-    setDreamLine(`池中 ${pending} 条待抽取${lastDreamAt === null ? '' : ` · 上次抽取 ${hhmm(lastDreamAt)}`}`)
+    setDreamLine(`池中 ${pending} 条待抽取${value.waterLevelReached === true ? ' · 水位达到，建议抽取' : ''}${lastDreamAt === null ? '' : ` · 上次抽取 ${hhmm(lastDreamAt)}`}`)
   }
 
   const loadBoard = async (): Promise<UnknownRecord[]> => {
@@ -486,10 +489,22 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
             type="button"
             className={css.patrolBtn}
             data-testid="yzj-advance-patrol-now"
-            title="立即巡检一轮上下文来源"
+            title="立即机械巡检一轮上下文来源（host routine，无模型）"
             onClick={() => {
-              setAdvanceAskDraft({ advanceId: '', title: '全部上下文来源', text: patrolAskText(), kind: 'patrol' })
-              setWorkbenchDomain('im')
+              void (async () => {
+                setBusy(true)
+                try {
+                  await props.inject.advancePatrolNow()
+                  const scan = await props.inject.advanceScanState()
+                  if (scan.ok) {
+                    const v = asRecord(scan.value)
+                    setScanLine(formatScanStatus(typeof v.scannedAt === 'number' ? v.scannedAt : null, typeof v.found === 'number' ? v.found : 0))
+                  }
+                  await loadDream()
+                } finally {
+                  setBusy(false)
+                }
+              })()
             }}
           >
             巡检
@@ -499,7 +514,7 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
               {dreamLine}
               <button
                 type="button"
-                className={css.patrolBtn}
+                className={waterReached ? css.primary : css.patrolBtn}
                 data-testid="yzj-advance-dream-now"
                 title="Dream 抽取蓄水池"
                 onClick={() => {

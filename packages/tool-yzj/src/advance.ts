@@ -122,6 +122,9 @@ export function checkStageTransition(from: string, to: string): string | null {
 }
 
 /** Inspect discipline pasted into every yzj_advance_inspect digest (spec §12). */
+/** Dream 水位阈值（决策 35）：池 pending 达此数即提示抽取。 */
+export const DREAM_WATER_LEVEL = 5
+
 export const INSPECT_DISCIPLINE = [
   '纪律：running 无偏差则不要 feed（静默）。已记录事实的复述连事元都不写。',
   '打扰判据（命中任一条才 stageTo=decision-needed）：① 新信号与任务背景的前提矛盾；② 任一成功指标由达标转未达标或朝远离目标移动；③ 按当前速度在目标日期前补不上差距；④ 出现明确阻塞威胁目标日期；⑤ 继续推进须砍范围/加资源/改优先级或越红线；⑥ 两条以上都合理且会改变后续基准的路径分叉。',
@@ -131,8 +134,7 @@ export const INSPECT_DISCIPLINE = [
   '产物齐且指标 N/N 达标且无未决偏差 → changeType=验收请求 stageTo=ready-for-review。',
   '确认卡只在改基准（goal/metrics/targetDate/assignee）时出现；纯追加与阶段变化静默落，人在看板队列被找到。',
   '禁止 stageTo=completed/cancelled；终局只由用户在看板拍板（确认达到目标/中止推进）。',
-  '巡检五步：到点 → yzj_advance_scan(groups=…) → 无新消息则静默结束 → 有新信号则 yzj_advance_inspect → 按打扰判据行动（进度正常静默挂上；命中则 stageTo=decision-needed；禁止 completed）。用户说「开启巡检」时在 root 会话 schedule_create(every_seconds≥300，prompt 含群清单)。',
-  '订阅分发：scan digest 的「订阅清单」列出每个 open 事项订阅了哪些线程（groups 缺省时 scan 也按它取流）；分发是你的职责——信号属于哪个事项的线程且语义相关才 feed 给谁，否则不喂。',
+  '抽取分发（v1.8 收敛，决策 35）：巡检是 host 机械 routine（增量入池，无模型）；模型只在 Dream 抽取时出场——读池 pending 清单，按「信号 ∈ 哪个事项的上下文来源 + 语义相关」逐条比对提炼，有价值的落事元/建议卡，处理完 dream_mark 出池。',
   '最小回路：核心变量对比（原来的理解 vs 现在的约束）→ 建议（AI建议+备选+自定义）→ 用户选择 → 复述影响 → 确认后才 feed。',
   '终局沉淀：事项进 completed/cancelled 后，用户可能说「复盘一下」——沉淀四步：yzj_advance_get 翻页读全量事元 → 按复盘模板（docs/spec/advance-review-template.md：目标演化/关键决策/偏差与证据链/下一步/事元索引）写 markdown → yzj_doc_import 入「我的知识/推进复盘/<事项名>」→ 回链 feed 一条产物事元（refs=[复盘 docId]，纯追加静默）。会议纪要出口同理（纪要四步：读转录 → 金蝶四段式目标/内容/共识/下一步 → 入库 → 下一步挂事项回链 refs）。',
 ].join('\n')
@@ -300,9 +302,9 @@ export function buildScanDigest(result: AdvanceScanResult): string {
           `${row.advanceId} · ${row.title} [${row.stage}] → ${row.tokens.length === 0 ? '（无线程）' : row.tokens.join('，')}`),
       ]
   const next = result.signals.length === 0
-    ? '下一步：静默结束本轮。'
-    : '下一步：把新信号交给 yzj_advance_inspect（signals=上列），再按纪律决定是否 feed。'
-  return ['巡检扫描', ...groupLines, ...signalLines, items, ...subscriptionLines, next, INSPECT_DISCIPLINE].join('\n')
+    ? '下一步：本轮无新信号。'
+    : '下一步：信号已由 host 巡检自动入蓄水池；抽取走 Dream 三径（yzj_advance_dream_status 读池 → 提炼 → dream_mark）。'
+  return ['巡检扫描', ...groupLines, ...signalLines, items, ...subscriptionLines, next].join('\n')
 }
 
 function parseImMessage(record: unknown): { msgId: string; fromOpenId: string; content: string; sendTime: string } {
@@ -1655,9 +1657,35 @@ export class YzjAdvanceService extends Service {
   }
 
   /** Dream-pool snapshot for the board watermark line (spec §17.3). */
-  dreamState(): { pending: number; lastDreamAt: number | null } {
-    if (this.pool === undefined) return { pending: 0, lastDreamAt: null }
-    return { pending: this.pool.pending().length, lastDreamAt: this.pool.lastDreamAt() ?? null }
+  dreamState(): { pending: number; lastDreamAt: number | null; waterLevelReached: boolean } {
+    if (this.pool === undefined) return { pending: 0, lastDreamAt: null, waterLevelReached: false }
+    const pending = this.pool.pending().length
+    return { pending, lastDreamAt: this.pool.lastDreamAt() ?? null, waterLevelReached: pending >= DREAM_WATER_LEVEL }
+  }
+
+  /**
+   * One mechanical patrol tick (v1.8 收敛，决策 35): aggregate every open
+   * item's subscribed sources, fetch increments, enqueue signals into the
+   * Dream pool. No model in the loop — distillation happens only in Dream.
+   * Errors are swallowed (patrol must never break the host).
+   */
+  async patrolNow(): Promise<{ scannedAt: number; found: number }> {
+    try {
+      const result = await coreScanAdvance(this.ctx, this.budget, this.config, this.caches, this.cursors, [], 20, this.holder, this.sources, this.pool)
+      return { scannedAt: Date.now(), found: result.signals.length }
+    } catch {
+      return { scannedAt: Date.now(), found: 0 }
+    }
+  }
+
+  /**
+   * Host patrol timer (registration = effect; disposer returned). Interval
+   * bounded to ≥300s per the patrol-frequency 口径.
+   */
+  startPatrolTimer(intervalMs: number = 300_000): () => void {
+    const bounded = Math.max(300_000, intervalMs)
+    const timer = setInterval(() => { void this.patrolNow() }, bounded)
+    return () => { clearInterval(timer) }
   }
 
   /** One item's subscribed sources (lossless rows for the panel). */
@@ -1885,7 +1913,7 @@ export function applyAdvanceTools(
 
   ctx.tools.register(defineTool({
     name: 'yzj_advance_inspect',
-    description: 'Read-only 比对材料 for AI推进 (spec §12). Spreads open items\' goal/background/metrics/recent 事元/legal next stages plus the interrupt / silence / suppression criteria (spec §13). Host does NOT judge semantics — you do, then yzj_advance_feed. mode=review is the 验收辅助 checklist. Patrol five steps: on a schedule wake call yzj_advance_scan(groups=…) first; no new messages → stay silent and stop; new signals → call this with signals=the scan digest, then act per §13 (progress-normal silent feed; interrupt criterion → stageTo=decision-needed; never completed). Never stageTo completed.',
+    description: 'Read-only 比对材料 for AI推进 (spec §12). Spreads open items\' goal/background/metrics/recent 事元/legal next stages plus the interrupt / silence / suppression criteria (spec §13). Host does NOT judge semantics — you do, then yzj_advance_feed. mode=review is the 验收辅助 checklist. v1.8 收敛（决策 35）：used during Dream distillation (read pool via yzj_advance_dream_status, compare per item, feed valuable ones) and 验收; patrol itself is a host mechanical routine with no model. Never stageTo completed.',
     parameters: {
       advanceId: { type: 'string', description: 'Inspect one item; omit to spread every open (not completed/cancelled) item.' },
       signals: { type: 'string', description: 'New information to contrast (group messages / minutes excerpt). Empty = scheduled patrol with no new signal yet.' },
@@ -1949,7 +1977,7 @@ export function applyAdvanceTools(
 
   ctx.tools.register(defineTool({
     name: 'yzj_advance_scan',
-    description: 'Read-only incremental IM scan for AI推进 auto-discovery (spec §14 / §15.3). Host owns the per-group cursor (storage-domain); the model must not pass or invent a msgId cursor. First visit of a group records a baseline and returns no history. Later visits return messages after the cursor, minus self and BOT- senders. groups is optional: omit it to scan every im: channel and dir: directory subscribed by open items (registry yzj_advance_sources, deduped — one fetch per channel whichever items subscribe; dir: sources surface new/updated docs in the directory as signals, refs=<docId>). the digest lists each item\'s 订阅清单 so you dispatch signals by source + semantic relevance. Explicit groups stay capped at 8 (决策 17); subscription aggregation errors out instead of silently truncating. Patrol five steps: schedule wake → this tool → no new messages stay silent → new signals → yzj_advance_inspect → feed per §13 (progress-normal silent; interrupt → decision-needed; never completed). When the user says 开启巡检, create a root-session schedule_create(every_seconds≥300) whose prompt lists the groups.',
+    description: 'Read-only incremental scan for AI推进 (spec §14 / §15.3). v1.8 收敛（决策 35）: the host patrol routine runs this mechanically every ≥300s (no model) and enqueues signals into the Dream pool; calling it yourself is a read-only peek at the same increments. Host owns the per-group cursor (storage-domain); the model must not pass or invent a msgId cursor. First visit of a group records a baseline and returns no history. Later visits return messages after the cursor, minus self and BOT- senders. groups is optional: omit it to scan every im: channel and dir: directory subscribed by open items (registry yzj_advance_sources, deduped — one fetch per channel whichever items subscribe; dir: sources surface new/updated docs in the directory as signals, refs=<docId>). The digest lists each item\'s 订阅清单. Explicit groups stay capped at 8 (决策 17); subscription aggregation errors out instead of silently truncating. Distillation is NOT your job here — it happens in Dream (yzj_advance_dream_status → 提炼 → dream_mark).',
     parameters: {
       groups: { type: 'array', items: { type: 'string' }, description: 'Group ids or names to watch (1–8). Omit to aggregate the im: sources of every open item from the subscription registry.' },
       limit: { type: 'number', description: 'Per-group page size 1–20, default 20.' },
