@@ -29,6 +29,7 @@ import {
 import type { TodoBinding, TodoBindingHolder, TodoConfig } from './todo.ts'
 import { ScanCursorStore, scanStateOf, type AdvanceScanState, type ScanCursorStoreFace } from './scan-cursors.ts'
 import type { DreamPoolFace } from './advance-dreampool.ts'
+import { localAdvanceStore } from './advance-local-store.ts'
 import {
   ContextSourceStore, parseSourceToken, sourceKindOf, sourceTypeOfToken,
 } from './advance-sources.ts'
@@ -68,6 +69,24 @@ export const ENTRY_F = {
 
 const ITEM_TABLE = '事项'
 const ENTRY_TABLE = '事元'
+
+/**
+ * v1.8 storage switch (决策 36): 'sqlite' = local SQLite via node:sqlite
+ * (real-device default; zero cloud dependency after the 多维表格 record
+ * service proved intermittently unavailable); 'dbt' = cloud 多维表格
+ * (tests + legacy). Tests never call setAdvanceBackend, so they stay on
+ * the dbt path with the existing FakeStore mocks.
+ */
+let advanceBackend: 'dbt' | 'sqlite' = 'dbt'
+export function setAdvanceBackend(next: 'dbt' | 'sqlite'): void {
+  advanceBackend = next
+}
+export function getAdvanceBackend(): 'dbt' | 'sqlite' {
+  return advanceBackend
+}
+
+/** Binding placeholder for the local backend (no cloud doc). */
+const LOCAL_BINDING: AdvanceBinding = { docId: 'local-sqlite', itemTableId: 0, entryTableId: 1, link: '' }
 
 /** Stage machine of one advancement item (PRD §5.1.2 六态 + v1.6 第七态 cancelled 终局,决策 27). */
 export type AdvanceStage = 'draft' | 'running' | 'decision-needed' | 'updated' | 'ready-for-review' | 'completed' | 'cancelled'
@@ -996,6 +1015,10 @@ export async function resolveAdvance(
   allowProvision: boolean,
   holder?: TodoBindingHolder,
 ): Promise<AdvanceBinding> {
+  if (advanceBackend === 'sqlite') {
+    caches.adv.binding = LOCAL_BINDING
+    return LOCAL_BINDING
+  }
   if (holder?.override !== undefined && caches.adv.binding !== undefined
     && caches.adv.binding.docId !== holder.override.docId) {
     delete caches.adv.binding
@@ -1030,6 +1053,11 @@ export async function fetchItems(
   budget: YzjToolBudget,
   binding: AdvanceBinding,
 ): Promise<YzjAdvanceItem[]> {
+  if (advanceBackend === 'sqlite') {
+    return localAdvanceStore().listItems()
+      .map(row => parseAdvanceItem({ id: row.recordId, fields: row.fields }))
+      .filter((item): item is YzjAdvanceItem => item !== null)
+  }
   const items: YzjAdvanceItem[] = []
   let pageToken: string | undefined
   for (let page = 0; page < 3; page += 1) {
@@ -1054,6 +1082,11 @@ export async function fetchItemById(
   binding: AdvanceBinding,
   advanceId: string,
 ): Promise<YzjAdvanceItem | undefined> {
+  if (advanceBackend === 'sqlite') {
+    const row = localAdvanceStore().item(advanceId)
+    if (row === undefined) return undefined
+    return parseAdvanceItem({ id: row.recordId, fields: row.fields }) ?? undefined
+  }
   const filter = JSON.stringify({ mode: 'AND', criteria: [{ field: ITEM_F.id, operator: 'Equals', values: [advanceId] }] })
   const ran = await runJson(ctx, budget, 'sheet record list', [
     'sheet', 'record', 'list', '--id', binding.docId, '--table-id', String(binding.itemTableId), '--filter', filter,
@@ -1077,6 +1110,12 @@ export async function fetchEntries(
   binding: AdvanceBinding,
   advanceId: string,
 ): Promise<YzjAdvanceEntry[]> {
+  if (advanceBackend === 'sqlite') {
+    const entries = localAdvanceStore().listEntries(advanceId)
+      .map(row => parseAdvanceEntry({ id: row.recordId, fields: row.fields }))
+      .filter((entry): entry is YzjAdvanceEntry => entry !== null)
+    return entries.sort((a, b) => (a.at === b.at ? (a.entryId < b.entryId ? -1 : 1) : (a.at < b.at ? -1 : 1)))
+  }
   const filter = JSON.stringify({ mode: 'AND', criteria: [{ field: ENTRY_F.advanceId, operator: 'Equals', values: [advanceId] }] })
   const entries: YzjAdvanceEntry[] = []
   let pageToken: string | undefined
@@ -1102,6 +1141,9 @@ async function todaysEntryIds(
   binding: AdvanceBinding,
 ): Promise<string[]> {
   const day = todayStr().replace(/\//g, '')
+  if (advanceBackend === 'sqlite') {
+    return localAdvanceStore().listAllEntryIds().filter(id => id.includes(`E-${day}-`))
+  }
   const filter = JSON.stringify({ mode: 'AND', criteria: [{ field: ENTRY_F.id, operator: 'Contains', values: [`E-${day}-`] }] })
   const ran = await runJson(ctx, budget, 'sheet record list', [
     'sheet', 'record', 'list', '--id', binding.docId, '--table-id', String(binding.entryTableId), '--filter', filter, '--limit', '100',
@@ -1118,6 +1160,17 @@ async function writeTable(
   kind: 'create' | 'update',
   records: string,
 ): Promise<unknown> {
+  if (advanceBackend === 'sqlite') {
+    const store = localAdvanceStore()
+    const rows = JSON.parse(records) as { id?: string; fieldsValue?: Record<string, unknown> }[]
+    for (const row of rows) {
+      const fields = row.fieldsValue ?? {}
+      if (tableId === LOCAL_BINDING.entryTableId) store.createEntry(fields)
+      else if (kind === 'create') store.createItem(fields)
+      else store.updateItem(String(row.id ?? fields[ITEM_F.id] ?? ''), fields)
+    }
+    return {}
+  }
   const command = ['sheet', 'record', kind, '--id', binding.docId, '--table-id', String(tableId), '--records', records]
   const ran = await runJson(ctx, budget, `sheet record ${kind}`, command)
   if (!ran.ok) throw new Error(ran.content)
