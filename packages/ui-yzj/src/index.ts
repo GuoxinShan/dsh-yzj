@@ -735,6 +735,26 @@ function imCacheStore(): SqliteDb {
           return internalError(`advance-dream-run failed: ${String(error)}`)
         }
       }
+      case 'advance-ref-lookup': {
+        // 决策 39 后续: msg refs 对用户可读化 — 把 `im:<groupId>:<msgId>` 从
+        // bound log（捞过的消息本体，每群 500 条持久）解析成事件行
+        // （谁/何时/说了什么），面板渲染三层结构中的事件层。
+        const io = homeIoFrom(ctx.get('yzjHome'))
+        if (io === undefined) return { ok: true, value: { hits: [] } }
+        const raw = typeof payload === 'object' && payload !== null
+          ? (payload as Record<string, unknown>).tokens
+          : undefined
+        const tokens = Array.isArray(raw) ? raw.map(token => String(token)) : []
+        const hits: { token: string; fromName: string; content: string; sentAt: number }[] = []
+        for (const token of tokens) {
+          const match = /^im:([^:\s]+):(.+)$/.exec(token)
+          if (match === null) continue
+          const entry = io.getLog(match[1]!)?.entries.find(row => row.msgId === match[2])
+          if (entry === undefined) continue
+          hits.push({ token, fromName: entry.fromName, content: entry.content.slice(0, 80), sentAt: entry.sentAt })
+        }
+        return { ok: true, value: { hits } }
+      }
       case 'advance-source-add': {
         // 面板「关联来源」 = user-direct write (D9, spec §15.2): registry row
         // + one 备注 事元 for single-document sources; no confirmation card.

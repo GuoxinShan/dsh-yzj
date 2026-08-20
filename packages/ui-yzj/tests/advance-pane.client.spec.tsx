@@ -121,6 +121,12 @@ function mountPane(config: {
         dreamRuns.count += 1
         return { ok: true, value: { sessionId: 'yzj-dream-20260820-120000' } } as Rpc
       },
+      advanceRefLookup: async (tokens: string[]) => {
+        const hits = tokens
+          .filter(token => token.startsWith('im:'))
+          .map(token => ({ token, fromName: '老黎', content: '覆盖率到 80，还差最后一步', sentAt: 1_755_600_000_000 }))
+        return { ok: true, value: { hits } } as Rpc
+      },
       focusBoundSession: (sessionId: string) => { focused.push(sessionId) },
       advanceSourceAdd: async (advanceId, token, label) => {
         if (!/^(im|doc|todo|event|file|dir):[A-Za-z0-9_-]+$/.test(token)) {
@@ -642,6 +648,38 @@ describe('YzjAdvancePane', () => {
     const jump = face.container.querySelector('[data-testid="yzj-advance-source-jump-0"]') as HTMLButtonElement
     await act(async () => { jump.click(); await Promise.resolve() })
     expect(focused).toEqual([{ groupId: 'g2' }])
+    dispose()
+    act(() => { face.root.unmount() })
+  })
+
+  it('事元展开的 msg ref 渲染为可读事件行(决策 39 后续):谁/何时/说了什么,点击仍定位消息', async () => {
+    setWorkbenchDomain('advance')
+    const focused: ImFocusTarget[] = []
+    const dispose = subscribeImGroupFocus(target => { focused.push(target) })
+    const face = mountPane({
+      items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行' })],
+      detail: {
+        item: item({ advanceId: 'A-1', stage: 'running', title: '试运行' }),
+        entries: [entry({
+          entryId: 'E-1',
+          at: '2026/08/20 16:00',
+          sourceType: '对话',
+          changeType: '进度更新',
+          summary: '覆盖率推进到 80',
+          refs: ['im:g1:m9'],
+        })],
+      },
+    })
+    await settle()
+    const toggle = face.container.querySelector('[data-testid="yzj-advance-entry-toggle-0"]') as HTMLButtonElement
+    await act(async () => { toggle.click(); await Promise.resolve() })
+    await settle()
+    const eventRow = face.container.querySelector('[data-testid="yzj-advance-ref-im:g1:m9"]')
+    expect(eventRow).not.toBeNull()
+    expect(eventRow?.textContent).toContain('老黎')
+    expect(eventRow?.textContent).toContain('覆盖率到 80')
+    await act(async () => { (eventRow as HTMLButtonElement).click(); await Promise.resolve() })
+    expect(focused).toEqual([{ groupId: 'g1', anchorMsgId: 'm9' }])
     dispose()
     act(() => { face.root.unmount() })
   })
