@@ -49,3 +49,18 @@ export function useWorkbenchDomain(): WorkbenchDomain {
   useEffect(() => subscribeWorkbenchDomain(() => { setDomain(getWorkbenchDomain()) }), [])
   return domain
 }
+
+/** Cross-component IM group focus bus: the advance board's 事元/source jumps
+ * request a group open; the im panel consumes it and switches the timeline. */
+const imFocusListeners = new Set<(groupId: string) => void>()
+
+/** Ask the im domain to open one group (consumed by the panel). */
+export function requestImGroupFocus(groupId: string): void {
+  for (const listener of imFocusListeners) listener(groupId)
+}
+
+/** Subscribe to group-focus requests. Returns the disposer. */
+export function subscribeImGroupFocus(listener: (groupId: string) => void): () => void {
+  imFocusListeners.add(listener)
+  return () => { imFocusListeners.delete(listener) }
+}

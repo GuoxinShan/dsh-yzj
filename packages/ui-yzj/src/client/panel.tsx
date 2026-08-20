@@ -25,7 +25,7 @@ import {
 import { registerPanelController } from './panel-controller.ts'
 import { TodoPane } from './todo-pane.tsx'
 import { rememberImSeat } from './im-seat.ts'
-import { setWorkbenchDomain } from './workbench-domain.ts'
+import { setWorkbenchDomain, subscribeImGroupFocus } from './workbench-domain.ts'
 import { openWorkbench } from './workbench-overlay.ts'
 import {
   GroupAvatar, ImLightbox, MessageBody, SenderAvatar, typeLabelOf,
@@ -927,6 +927,11 @@ export function YzjPanel(props: YzjPanelProps) {
       setMessagesFetching(false)
     })
   }
+
+  // Advance board 事元/source jumps request a group open via the bus.
+  const openGroupRef = useRef(openGroup)
+  openGroupRef.current = openGroup
+  useEffect(() => subscribeImGroupFocus((groupId) => { openGroupRef.current(groupId) }), [])
 
   const loadMoreGroups = (): void => {
     if (state.loading) return

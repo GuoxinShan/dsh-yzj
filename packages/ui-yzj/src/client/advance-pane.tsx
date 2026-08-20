@@ -11,7 +11,7 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import type { YzjPanelInject } from './rpc.ts'
-import { setWorkbenchDomain } from './workbench-domain.ts'
+import { requestImGroupFocus, setWorkbenchDomain } from './workbench-domain.ts'
 import { setAdvanceFeedback } from './advance-feedback.ts'
 import { setAdvanceAskDraft, reviewAskText, exportReviewAskText, patrolAskText, dreamAskText } from './advance-ask.ts'
 import css from './advance-pane.module.css'
@@ -96,15 +96,6 @@ function sourceIconOf(token: string): string {
   return THREAD_ICON[prefix] ?? '源'
 }
 
-/** Workbench domain a source type jumps to (可跳则跳，不可跳则只标注). */
-function sourceJumpDomain(sourceType: string): 'im' | 'todo' | 'docs' | 'calendar' | null {
-  if (sourceType === '对话') return 'im'
-  if (sourceType === '待办') return 'todo'
-  if (sourceType === '文档' || sourceType === '会议') return 'docs'
-  if (sourceType === '日程') return 'calendar'
-  return null
-}
-
 /** Props: the RPC verbs the board needs (subset of the panel inject). */
 export interface AdvancePaneProps {
   inject: Pick<YzjPanelInject, 'advanceState' | 'advanceGet' | 'advanceCreate' | 'advanceJudge' | 'advanceEnsure' | 'advanceScanState' | 'advanceSourceAdd' | 'advanceSourceRemove' | 'fetchGroups' | 'fetchWorkspaces' | 'fetchDocs' | 'advanceDreamState'>
@@ -182,8 +173,16 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
   const [showClosed, setShowClosed] = useState(false)
   /** 事元来源区窗口化:默认最近 3 条,可展开全部(时间旅程同型「查看全部」)。 */
   const [showAllSources, setShowAllSources] = useState(false)
+  /** 时间线事元详情展开集(默认折叠,展开才见原始来源)。 */
+  const [expandedEntries, setExpandedEntries] = useState<ReadonlySet<string>>(new Set())
   const [draft, setDraft] = useState({ title: '', goal: '', metrics: '', assignee: '', targetDate: '', background: '' })
   const [error, setError] = useState('')
+  /** msg 类事元/来源跳转：事项恰有一个 im 来源时直达该群，否则回对话域。 */
+  const imGroupTokens = (detail?.contextSources ?? []).map(row => asString(row.token)).filter(token => token.startsWith('im:'))
+  const jumpToMsg = (): void => {
+    if (imGroupTokens.length === 1) requestImGroupFocus(imGroupTokens[0]!.slice(3))
+    setWorkbenchDomain('im')
+  }
   const [scanLine, setScanLine] = useState('尚未巡检')
   /** Dream 蓄水池水位行(spec §17.3)。 */
   const [dreamLine, setDreamLine] = useState('')
@@ -616,15 +615,21 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
             </header>
 
             {metrics.length > 0 && (
-              <div className={css.metrics} data-testid="yzj-advance-metrics">
-                {metrics.map((metric, index) => (
-                  <div key={`m${index}`} className={css.metric}>
-                    <span>{asString(metric.name)}</span>
-                    <b>{asString(metric.current) === '' ? '—' : asString(metric.current)}</b>
-                    {asString(metric.target) !== '' && <small>目标 {asString(metric.target)}</small>}
-                  </div>
-                ))}
-              </div>
+              <section className={css.section}>
+                <div className={css.sectionHead}>
+                  <h2>成功指标</h2>
+                  <small>这几项达标 = 推进达到目标</small>
+                </div>
+                <div className={css.metrics} data-testid="yzj-advance-metrics">
+                  {metrics.map((metric, index) => (
+                    <div key={`m${index}`} className={css.metric}>
+                      <span>{asString(metric.name)}</span>
+                      <b>{asString(metric.current) === '' ? '—' : asString(metric.current)}</b>
+                      {asString(metric.target) !== '' && <small>目标 {asString(metric.target)}</small>}
+                    </div>
+                  ))}
+                </div>
+              </section>
             )}
 
             <div className={css.detailGrid}>
@@ -735,48 +740,57 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
 
                 <section className={css.section} data-testid="yzj-advance-timeline">
                   <div className={css.sectionHead}>
-                    <h2>已经推进到这里</h2>
-                    <small>来自对话、待办、文档、会议、日程与业务数据</small>
+                    <h2>推进演进</h2>
+                    <small>事元时间线 · 展开详情看原始来源</small>
                   </div>
                   {detail.entries.length === 0 ? (
                     <p className={css.quiet}>还没有事元记录。</p>
                   ) : (
                     <div className={css.timeline}>
                       {detail.entries.map((entry, index) => {
-                        const jumpDomain = sourceJumpDomain(asString(entry.sourceType))
+                        const entryId = asString(entry.entryId) || `e${index}`
+                        const expanded = expandedEntries.has(entryId)
+                        const refList = [...new Set(asArray(entry.refs).map(ref => asString(ref)).filter(ref => ref !== ''))]
+                        const toggleExpanded = (): void => {
+                          const next = new Set(expandedEntries)
+                          if (next.has(entryId)) next.delete(entryId)
+                          else next.add(entryId)
+                          setExpandedEntries(next)
+                        }
                         return (
-                          <div key={asString(entry.entryId) || `e${index}`} className={css.timeItem}>
+                          <div key={entryId} className={css.timeItem}>
                             <span className={css.time}>{asString(entry.at)}</span>
                             <i className={`${css.mark} ${css[`mark_${asString(entry.tone) || 'blue'}`]}`} />
                             <div className={css.timeCopy}>
-                              <b>{asString(entry.summary)}</b>
-                              {asString(entry.detail) !== '' && <p>{asString(entry.detail)}</p>}
+                              <b data-testid={`yzj-advance-entry-${index}`}>{asString(entry.changeType) !== '' ? `${asString(entry.changeType)} · ` : ''}{asString(entry.summary)}</b>
+                              {expanded && asString(entry.detail) !== '' && <p>{asString(entry.detail)}</p>}
+                              {expanded && refList.length > 0 && (
+                                <span className={css.refs}>
+                                  {refList.map((raw) => {
+                                    const id = stripRefPrefix(raw)
+                                    const kind = refKindOf(asString(entry.sourceType))
+                                    const href = refHref(kind, id)
+                                    const short = id.length > 12 ? `${id.slice(0, 8)}…` : id
+                                    const label = `${REF_ICON[kind] ?? '源'} ${short}`
+                                    if (href !== null) {
+                                      return <a key={raw} className={css.refChip} href={href} target="_blank" rel="noreferrer" title={raw} data-testid={`yzj-advance-ref-${id}`}>{label}</a>
+                                    }
+                                    if (kind === 'msg') {
+                                      return <button key={raw} type="button" className={css.refChip} title={`打开来源群消息 ${raw}`} data-testid={`yzj-advance-ref-${id}`} onClick={jumpToMsg}>{label}</button>
+                                    }
+                                    const domain = kind === 'todo' ? 'todo' : kind === 'event' ? 'calendar' : null
+                                    if (domain !== null) {
+                                      return <button key={raw} type="button" className={css.refChip} title={raw} data-testid={`yzj-advance-ref-${id}`} onClick={() => { setWorkbenchDomain(domain) }}>{label}</button>
+                                    }
+                                    return <span key={raw} className={css.refChip} title={raw}>{label}</span>
+                                  })}
+                                </span>
+                              )}
                               <div className={css.timeMeta}>
                                 <span>{asString(entry.sourceType)}{asString(entry.actor) === 'user' ? ' · 你的判断' : ''}</span>
-                                {asArray(entry.refs).length > 0 && (
-                                  <span className={css.refs}>
-                                    {[...new Set(asArray(entry.refs).map(ref => asString(ref)).filter(ref => ref !== ''))].map((raw) => {
-                                      const id = stripRefPrefix(raw)
-                                      const kind = refKindOf(asString(entry.sourceType))
-                                      const href = refHref(kind, id)
-                                      const short = id.length > 12 ? `${id.slice(0, 8)}…` : id
-                                      const label = `${REF_ICON[kind] ?? '源'} ${short}`
-                                      if (href !== null) {
-                                        return <a key={raw} className={css.refChip} href={href} target="_blank" rel="noreferrer" title={raw} data-testid={`yzj-advance-ref-${id}`}>{label}</a>
-                                      }
-                                      const domain = kind === 'msg' ? 'im' : kind === 'todo' ? 'todo' : kind === 'event' ? 'calendar' : null
-                                      if (domain !== null) {
-                                        return <button key={raw} type="button" className={css.refChip} title={raw} data-testid={`yzj-advance-ref-${id}`} onClick={() => { setWorkbenchDomain(domain) }}>{label}</button>
-                                      }
-                                      return <span key={raw} className={css.refChip} title={raw}>{label}</span>
-                                    })}
-                                  </span>
-                                )}
-                                {jumpDomain !== null && (
-                                  <button type="button" className={css.jump} onClick={() => { setWorkbenchDomain(jumpDomain) }}>
-                                    查看{asString(entry.sourceType)}
-                                  </button>
-                                )}
+                                <button type="button" className={css.jump} data-testid={`yzj-advance-entry-toggle-${index}`} onClick={toggleExpanded}>
+                                  {expanded ? '收起详情' : `查看详情${refList.length > 0 ? `（${refList.length} 个来源）` : ''}`}
+                                </button>
                               </div>
                             </div>
                           </div>
@@ -843,6 +857,8 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                             <span className={css.sourceCopy}>
                               {sourceHref !== null ? (
                                 <a href={sourceHref} target="_blank" rel="noreferrer" title={sourceRef}><b>{asString(source.label)}</b></a>
+                              ) : sourceKind === 'msg' ? (
+                                <button type="button" className={css.sourceJump} title="打开来源群" data-testid={`yzj-advance-source-jump-${index}`} onClick={jumpToMsg}><b>{asString(source.label)}</b></button>
                               ) : (
                                 <b>{asString(source.label)}</b>
                               )}
