@@ -1,5 +1,7 @@
 # 830 真数据闭环实验（转交执行版）
 
+> **状态：已完工（2026-08-19，执行：agent）**。判定 8/9 PASS（判定 9 的偏差=refs 去重误伤，已修，决策 25）；证据归档 [`docs/status/gap-analysis.md`](../docs/status/gap-analysis.md) §24.6；后续 Dream 蓄水池见 §24.10。本文保留为执行设计底稿。
+
 > 日期：2026-08-19 ｜ 设计：Guoxin Shan / agent ｜ 执行：转交他人（人或 agent 均可）
 > 目的：用「830 项目【登顶计划】」群的**真实历史数据**验证 AI推进闭环——知识沉淀 → 立项回放 → 真巡检增量发现，产出**打扰判据精度的第一份真机证据**（对应 `docs/migration/advance-lingee-migration.md` §4 验证清单第 1/2 行）。
 > 实验结束后：证据写入 `docs/status/gap-analysis.md` §24.6（模板见本文 §7），截图存 `.acceptance/shots-advance-830/`。
