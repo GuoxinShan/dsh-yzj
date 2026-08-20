@@ -80,8 +80,8 @@ export interface YzjPanelInject {
   advanceDreamState: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Dream 手动径（决策 38）: host 直建 yzj-dream-* 会话并注入抽取指令。 */
   advanceDreamRun: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** msg refs 事件行可读化（决策 39 后续）: im:<groupId>:<msgId> → bound log 命中的消息摘要。 */
-  advanceRefLookup: (tokens: string[]) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** 原始信息叶子可读化（决策 39 后续）: msg → bound log 事件行；doc → `doc get` 文件名。 */
+  advanceRefLookup: (refs: { token: string; kind: string }[]) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** User-direct 事元 feed (D9, no confirm card; no stageTo). */
   advanceFeed: (input: { advanceId: string; summary: string; sourceType?: string; refs?: string[] }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Subscribe one context source (关联来源; user-direct, spec §15.2). */
@@ -260,7 +260,7 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
     imCachePut: (key, payload, fetchedAt) => call('im-cache-put', { key, payload, fetchedAt }),
     advanceDreamState: () => call('advance-dream-state', {}),
     advanceDreamRun: () => call('advance-dream-run', {}),
-    advanceRefLookup: (tokens) => call('advance-ref-lookup', { tokens }),
+    advanceRefLookup: (refs) => call('advance-ref-lookup', { refs }),
     advanceFeed: (input) => call('advance-feed', {
       advanceId: input.advanceId,
       summary: input.summary,

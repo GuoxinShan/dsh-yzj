@@ -121,10 +121,10 @@ function mountPane(config: {
         dreamRuns.count += 1
         return { ok: true, value: { sessionId: 'yzj-dream-20260820-120000' } } as Rpc
       },
-      advanceRefLookup: async (tokens: string[]) => {
-        const hits = tokens
-          .filter(token => token.startsWith('im:'))
-          .map(token => ({ token, fromName: '老黎', content: '覆盖率到 80，还差最后一步', sentAt: 1_755_600_000_000 }))
+      advanceRefLookup: async (refs: { token: string; kind: string }[]) => {
+        const hits = refs.map(ref => ref.kind === 'doc'
+          ? { token: ref.token, kind: 'doc', fromName: '', content: '830纪要·0806 AI参谋产品方案讨论.otl', sentAt: 0 }
+          : { token: ref.token, kind: 'msg', fromName: '老黎', content: '覆盖率到 80，还差最后一步', sentAt: 1_755_600_000_000 })
         return { ok: true, value: { hits } } as Rpc
       },
       focusBoundSession: (sessionId: string) => { focused.push(sessionId) },
@@ -670,6 +670,30 @@ describe('YzjAdvancePane', () => {
     await act(async () => { (eventRow as HTMLButtonElement).click(); await Promise.resolve() })
     expect(focused).toEqual([{ groupId: 'g1', anchorMsgId: 'm9' }])
     dispose()
+    act(() => { face.root.unmount() })
+  })
+
+  it('doc 类原始信息可读化:事元下显示文档名而非截断 ID(决策 39 后续)', async () => {
+    const face = mountPane({
+      items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行' })],
+      detail: {
+        item: item({ advanceId: 'A-1', stage: 'running', title: '试运行' }),
+        entries: [entry({
+          entryId: 'E-1',
+          at: '2026/08/19 18:11',
+          sourceType: '文档',
+          changeType: '进度更新',
+          summary: '参谋部阶段共识',
+          refs: ['6a85774aecd3fb103b859f8a'],
+        })],
+      },
+    })
+    await settle()
+    const docRow = face.container.querySelector('[data-testid="yzj-advance-ref-6a85774aecd3fb103b859f8a"]') as HTMLAnchorElement
+    expect(docRow).not.toBeNull()
+    expect(docRow.tagName).toBe('A')
+    expect(docRow.textContent).toContain('830纪要·0806 AI参谋产品方案讨论.otl')
+    expect(docRow.getAttribute('href')).toContain('/store/doc/6a85774aecd3fb103b859f8a')
     act(() => { face.root.unmount() })
   })
 

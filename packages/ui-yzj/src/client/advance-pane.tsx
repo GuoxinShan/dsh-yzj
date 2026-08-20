@@ -210,8 +210,8 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
   /** 蓄水池 pending 明细（池查看浮层，决策 38）。 */
   const [dreamEntries, setDreamEntries] = useState<{ id: string; channel: string; refId: string; content: string; sendTime: string }[]>([])
   const [dreamPoolOpen, setDreamPoolOpen] = useState(false)
-  /** msg refs 事件行命中表（决策 39 后续）: token → bound log 消息摘要。 */
-  const [refHits, setRefHits] = useState<Record<string, { fromName: string; content: string; sentAt: number }>>({})
+  /** 原始信息叶子可读化(决策 39 后续): msg → bound log 事件行;doc → 文档名。 */
+  const [refHits, setRefHits] = useState<Record<string, { kind: string; fromName: string; content: string; sentAt: number }>>({})
   const [sourceModalOpen, setSourceModalOpen] = useState(false)
   const [groupOptions, setGroupOptions] = useState<UnknownRecord[]>([])
   /** 知识库目录选项(决策 32):整库 + 一层目录。 */
@@ -269,22 +269,36 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
     }
   }
 
-  /** msg refs 事件行可读化: detail 加载后批量把 im:<g>:<m> 解析成谁/何时/说了什么。 */
+  /** 原始信息可读化(决策 39 后续): detail 加载后批量把 refs 按 kind 解析成可读叶子。 */
   useEffect(() => {
     if (detail === undefined || detail === null) { setRefHits({}); return }
-    const tokens = [...new Set(detail.entries.flatMap(entry =>
-      (Array.isArray(entry.refs) ? entry.refs : []).map(ref => stripRefPrefix(asString(ref))).filter(ref => ref.startsWith('im:'))))]
-    if (tokens.length === 0) { setRefHits({}); return }
+    const wanted: { token: string; kind: string }[] = []
+    const seen = new Set<string>()
+    for (const entry of detail.entries) {
+      const kind = refKindOf(asString(entry.sourceType))
+      const refs = Array.isArray(entry.refs) ? entry.refs : []
+      for (const raw of refs) {
+        const token = stripRefPrefix(asString(raw))
+        if (token === '' || seen.has(token)) continue
+        // msg 类只有带渠道的 token 可定位/可读;doc 类全部可读(文件名)。
+        if (kind === 'msg' && !token.startsWith('im:')) continue
+        if (kind !== 'msg' && kind !== 'doc') continue
+        seen.add(token)
+        wanted.push({ token, kind })
+      }
+    }
+    if (wanted.length === 0) { setRefHits({}); return }
     let cancelled = false
     void (async () => {
-      const result = await props.inject.advanceRefLookup(tokens)
+      const result = await props.inject.advanceRefLookup(wanted)
       if (cancelled || !result.ok) return
       const hits = asRecord(result.value).hits
       if (!Array.isArray(hits)) return
-      const next: Record<string, { fromName: string; content: string; sentAt: number }> = {}
+      const next: Record<string, { kind: string; fromName: string; content: string; sentAt: number }> = {}
       for (const row of hits) {
         const hit = asRecord(row)
         next[asString(hit.token)] = {
+          kind: asString(hit.kind),
           fromName: asString(hit.fromName),
           content: asString(hit.content),
           sentAt: typeof hit.sentAt === 'number' ? hit.sentAt : 0,
@@ -885,6 +899,15 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                                     const short = id.length > 12 ? `${id.slice(0, 8)}…` : id
                                     const label = `${REF_ICON[kind] ?? '源'} ${short}`
                                     if (href !== null) {
+                                      const docHit = refHits[id]
+                                      if (docHit !== undefined && docHit.content !== '') {
+                                        return (
+                                          <a key={raw} className={css.refEvent} href={href} target="_blank" rel="noreferrer" title={`打开文档 ${raw}`} data-testid={`yzj-advance-ref-${id}`}>
+                                            <span className={css.refEventMeta}>文档</span>
+                                            <span className={css.refEventBody}>{docHit.content}</span>
+                                          </a>
+                                        )
+                                      }
                                       return <a key={raw} className={css.refChip} href={href} target="_blank" rel="noreferrer" title={raw} data-testid={`yzj-advance-ref-${id}`}>{label}</a>
                                     }
                                     if (kind === 'msg') {
