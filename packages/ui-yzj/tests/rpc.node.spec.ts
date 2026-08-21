@@ -282,6 +282,48 @@ describe('createRpcHandler', () => {
     expect(result.ok && (result.value as { contextSources: { token: string }[] }).contextSources.map(row => row.token)).toEqual(['im:g1'])
   })
 
+  it('advance-ref-lookup resolves dp-* pool refs and bare msgIds, misses stay out (视觉走查 08-21)', async () => {
+    const ctx = mountBridge({
+      'doc get --id doc-9': runOf({ fileName: '产品定义卡.otl' }),
+    })
+    const log = {
+      entries: [
+        { msgId: 'm9', fromName: '老黎', content: '覆盖率到 80', sentAt: 1_755_600_000_000 },
+        { msgId: 'm-bare', fromName: '王剑', content: '裸 id 时代引用的消息', sentAt: 1_755_600_001_000 },
+      ],
+    }
+    ctx.provide('yzjHome', {
+      ensureBound: async () => ({ sessionId: 'yzj-home-g1', created: false, yzjKind: 'group' }),
+      appendLog: async () => ({ accepted: true, reason: '' }),
+      getBySession: () => undefined,
+      getLog: (id: string) => (id === 'g1' ? log : undefined),
+      listBindings: () => [{ dshSessionId: 'yzj-home-g1', yzjConversationId: 'g1', yzjKind: 'group' }],
+      logs: {},
+    })
+    const poolRows = [
+      { id: 'dp-1-1', channel: 'im:g1', refId: 'm9', content: '池内副本(应被 log 本体覆盖)', sendTime: '2026-08-20 10:00:00.000', enqueuedAt: 1, done: true },
+      { id: 'dp-1-2', channel: 'dir:kb1', refId: 'doc-9', content: '池内文档', sendTime: '2026-08-20 10:01:00.000', enqueuedAt: 2, done: true },
+    ]
+    ctx.provide('yzjAdvance', {
+      dreamPoolLookup: (ids: readonly string[]) => poolRows.filter(row => ids.includes(row.id)),
+    })
+    const handler = createRpcHandler(ctx, { list: () => [], decide: () => false })
+    const result = await handler('advance-ref-lookup', {
+      refs: [
+        { token: 'dp-1-1', kind: 'other' },
+        { token: 'dp-1-2', kind: 'other' },
+        { token: 'm-bare', kind: 'msg' },
+        { token: 'm-missing', kind: 'msg' },
+      ],
+    }, undefined as never)
+    expect(result.ok).toBe(true)
+    const hits = result.ok ? (result.value as { hits: Record<string, unknown>[] }).hits : []
+    expect(hits).toHaveLength(3)
+    expect(hits[0]).toMatchObject({ token: 'dp-1-1', kind: 'msg', fromName: '老黎', content: '覆盖率到 80', jumpToken: 'im:g1:m9' })
+    expect(hits[1]).toMatchObject({ token: 'dp-1-2', kind: 'doc', content: '产品定义卡.otl', docId: 'doc-9' })
+    expect(hits[2]).toMatchObject({ token: 'm-bare', kind: 'msg', fromName: '王剑', jumpToken: 'im:g1:m-bare' })
+  })
+
   it('dream and model-default endpoints project their services', async () => {
     const ctx = new Context()
     const dreamSets: Record<string, unknown>[] = []

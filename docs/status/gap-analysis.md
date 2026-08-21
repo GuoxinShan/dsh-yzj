@@ -918,3 +918,39 @@ host 端 `stringField` 空=缺失校验保持原样（校验正确，错在 clie
 ## 24.20 ui-yzj｜关联来源 picker 只列「我的知识」漏掉 AI速记知识库（2026-08-21，决策 40）
 
 用户「你好些关联的不是知识库而是文档？我的知识库是这两个感觉不对」——两个观察都属实：(a) picker 的「830实验·共识」实为 .otl 文档（hasChildren 才被当目录列出，dir: 扫描对它工作正常，otl 可有子节点）；(b) **picker 只 `find(name.includes('我的知识'))`，AI速记知识库（速记纪要自动归档地，pitfall-041 的根因库）永远不在选项里**。修复：picker 改列全部个人库（`doc workspace list --type personal`，实测返回 AI速记知识库 + 我的知识 2 库），每库一个整库选项 + 一层 hasChildren 目录，多库时目录 label 带库名前缀（`AI速记知识库 / xxx`）；个人库有界 6（MAX_PICKER_WORKSPACES）。另实测 `doc get --id <kbId>` 返回 DOC_NOT_FOUND——整库订阅 dir:<kbId> 走 listDirDocs 的「非 docId」分支直接按 workspace 列根层级，工作正常。测试：mock 改双库分返 + 断言两整库与库名前缀；619 绿。真机截图 picker-dirs.png：picker 列出 AI速记知识库（整库）+ 3 个速记纪要目录 + 我的知识（整库）+ 830实验·共识。用户挂上「AI速记知识库（整库）」后，基线后每场新会纪要自动入池；存量 3 份（08-20 三场会）不回灌，Dream 里读 docId 直接 feed 即可。
+
+## 24.21 ui-yzj｜推进看板视觉走查：--dsh- 变量笔误 + 孤儿标签 + 时间线无轨道（2026-08-21，pitfall-042）
+
+用户「推进的看板 ui 设计的很丑了很多东西也没对齐」贴图走查——截图里 ref 卡是无边框裸文字、每条事元底部吊着孤儿「文档/对话」、圆点无连线、右栏不可见。逐条定位与修复：
+
+| 面 | 根因 | 修法 | 证据 |
+|---|---|---|---|
+| ref 卡裸文本 | `.refEvent`/`.entryDetail`/`.sourceCiting` 等 7 处 `var(--dsh-*)` 笔误（主题只有 `--dsw-*`），未定义变量整条声明静默无效（pitfall-042）；`<a>` 未去默认链接样式 | 全部改回 `--dsw-*` + `text-decoration: none`；卡改整行宽堆叠（max 560px）消除不等宽 wrap 锯齿；底色 `bg-base`（pitfall-023） | ux-shot-align.mjs 断言 borderTopWidth=1px；截图 ux-align-fix-timeline.png |
+| 孤儿「文档」标签 | timeMeta 把裸 `sourceType` 渲在 ref 卡正下方，与卡内「文档」meta 撞脸 | 改带谓语出处脚注「记录自 文档 / 人工 · 你的判断」（「你的判断」措辞保留，verify-advance-feed/threads 断言锁定） | 同上截图 |
+| 时间线不像线 | 圆点无轨道；时间戳整串日期重复占 96px+ 列宽 | mark ::after 画竖向连接线（top:10px→bottom:-24px 跨 18px 间距咬合下一圆点）；`formatEntryAt` 紧凑化（当天 HH:mm / 当年 MM-DD HH:mm，全量入 title），列固定 76px | 断言 ::after 高度 22px |
+| 标题行过重 | changeType·summary 整条 700 粗体，长句糊一片 | changeType 拆成色阶小标签（蓝/红/绿随 tone），summary 降 600 | 截图 |
+| 每条事元重复「原始信息 N · 多条信息可能被提炼为同一条事元」 | 八续定稿时删过的噪音行随展开功能回潮 | 收窄为「原始信息 N 条」头行 + 右侧「展开全部 N 条」（toggle testid 保留，verify-advance-anchor 锁定）；sectionHead 开发腔「三层结构：…」改用户话「每条事元可溯源到原始信息」 | 断言噪音文案清零 |
+| 左栏 Dream 行断行 | 状态长文 + 池 N + Dream 抽取挤一行 wrap | dreamLine 改纵向：状态一行、按钮一行（dreamActions） | 整页截图 |
+
+单测 619 绿、typecheck 绿；真机（GUI 11:53 重启 + bundle 直链本 checkout）ux-shot-align.mjs 全 PASS，截图 shots-advance-ux/ux-align-fix-{full,timeline}.png：三层骨架不动（演进→事元→原始信息），右栏「上下文来源」chips 正常呈现（用户截图右栏缺失为旧 bundle 所致，重启即恢复）。
+
+## 24.22 ui-yzj｜ref 解析升到全量：裸 msgId 扫绑定 log、dp-* 池 id 还原原始出处（2026-08-21）
+
+用户「聊怎么都是id还有源dp也是id又是啥，是不是有些不在sqlite里面」——实测否定猜想：**数据都在本地**（裸 msgId 全部命中 bound log backfill；dp-* 全部命中蓄水池，池条目 done 也保留），漏的是解析面：
+
+| ref 形态 | 旧链路 | 新链路 |
+|---|---|---|
+| `im:<g>:<m>` | bound log 直查（已有） | 同左 + hit 带 jumpToken |
+| 裸 msgId（08-20 Dream 旧 digest 产物） | client 直接不上送（只送 im:），渲染「聊 6a8427…」裸 id | host 经 `listBindings` 扫全部绑定会话 log，命中渲染事件行 + jumpToken 锚点直达；真 miss 才降级「聊 群消息」chip（不露 id） |
+| `dp-*` 池 id（抽取 agent 违反 prompt 抄的池内键） | kind=other 不上送，渲染「源 dp-1787…」 | yzjAdvance 新增 `dreamPoolLookup(ids)`（含 done；池永不删）→ channel+refId 还原：`im:` → log 取 fromName/本体（miss 用池副本）+ jumpToken；`dir:` → doc get 文件名卡 |
+| doc | `doc get` 文件名（已有） | 同左 + hit 带 docId |
+
+client 渲染改为 **hit 优先**：命中一律按 hit.kind 渲染（文档卡/消息事件行），entry.sourceType 推断的 kind 只作未命中降级——agent 乱写 ref 形态时 host 按 token 形状兜底。写侧纪律同步加固：dreamAskPrompt 明确「禁止把池条目 id(dp-*)抄进 refs」。面板「聊 群消息」降级 chip 保留点击（裸 id 走锚点/恰一渠道猜群，决策 39 语义不变）。
+
+测试：tool-yzj `DreamPoolStore.lookup`（含 done）；rpc.node spec 四 ref 形态（dp→msg/dp→doc/裸 msgId/miss）；client spec 三例（裸 msgId 事件行不露 id、dp-* jumpToken 锚点、miss 降级「聊 群消息」）。624 绿 + typecheck 绿。真机（GUI 重启后）：830 时间线 14 条事元 refs 全部可读（农佳捷/冯胜龙事件行 + 文档名卡），dp-/裸 hex 清零，截图 ux-align-fix-refs.png（ux-shot-align.mjs 增两条断言全 PASS）。
+
+## 24.21 落地｜AI速记知识库订阅 + 存量 3 份纪要事元化（2026-08-21，决策 40 后续动作）
+
+用户「你帮我搞定这两件事」：(a) 挂「AI速记知识库（整库）」dir: 订阅——`.acceptance/verify-subscribe-lingee-lib.mjs` 走面板直写点击完成并验证 sources.json 落盘（dir:6a744266…，之后每场新会纪要自动入池；首扫基线不回灌存量）。(b) 存量 3 份纪要（08-20 三场会）进事元——`.acceptance/verify-minutes-to-entries.mjs` 在**全新 harness 会话**发定向指令（读 3 docId → yzj_advance_feed refs=[docId]，无基准字段无确认卡），agent 落 E-20260821-002/003/004 三条事元（摘要+共识描述+refs 齐全）。
+
+**执行中暴露的 harness 侧故障（待查，非本仓代码）**：首选路径「830 群话题问助手」的既有话题会话（yzj-topic-…-6a842792…，08-18 建）在 turn 3 直接以 `invalid pi-ai replay state: unknown state kind`（INVALID_REPLAY_STATE）错误结束，零工具调用——replay state 损坏与历史事件相关，全新会话无此问题。该话题里残留一条无回应的指令气泡（无害）。自动化启示：Playwright 操作 GUI 时长任务会撞真机同后端操作（第一次 0/3 超时部分因此）；`fill()` 后必须读回 inputValue 验证 React 受控 state（第一次空发由此）；.mjs 里写 TS 类型注解这种低级错不该过手。

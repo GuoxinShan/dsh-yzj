@@ -20,6 +20,7 @@ import {
 } from '../src/advance.ts'
 import type { AdvanceCaches, YzjAdvanceEntry, YzjAdvanceItem } from '../src/advance.ts'
 import { ScanCursorStore, scanStateOf } from '../src/scan-cursors.ts'
+import { DreamPoolStore } from '../src/advance-dreampool.ts'
 import { ContextSourceStore, parseSourceToken, sourceKindOf, sourceTypeOfToken } from '../src/advance-sources.ts'
 import { todayStr } from '../src/todo.ts'
 import type { YzjToolBudget } from '../src/shared.ts'
@@ -1002,5 +1003,18 @@ describe('intent sources (spec §15 / ③.2)', () => {
     expect(documentThreadEntryInput('A-1', 'todo:t1', '待办').sourceType).toBe('待办')
     expect(documentThreadEntryInput('A-1', 'event:e1', '日程').sourceType).toBe('日程')
     expect(documentThreadEntryInput('A-1', 'file:f1', '文件').sourceType).toBe('文档')
+  })
+})
+
+describe('DreamPoolStore.lookup', () => {
+  it('returns entries incl done — dp-* refs on 事元 stay resolvable after distillation', async () => {
+    const pool = new DreamPoolStore()
+    const a = await pool.enqueue({ channel: 'im:g1', refId: 'm1', content: '群消息', sendTime: '2026-08-20 10:00:00.000' })
+    const b = await pool.enqueue({ channel: 'dir:kb1', refId: 'doc1', content: '新文档', sendTime: '2026-08-20 10:01:00.000' })
+    await pool.markDone([a.id])
+    expect(pool.pending().map(entry => entry.id)).toEqual([b.id])
+    const hits = pool.lookup([a.id, b.id, 'dp-missing'])
+    expect(hits.map(entry => entry.id)).toEqual([a.id, b.id])
+    expect(hits[0]).toMatchObject({ channel: 'im:g1', refId: 'm1', done: true })
   })
 })

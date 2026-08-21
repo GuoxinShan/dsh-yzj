@@ -52,6 +52,8 @@ function mountPane(config: {
   scan?: { scannedAt: number | null; found: number }
   dream?: { pending: number; lastDreamAt: number | null; entries?: { id: string; channel: string; refId: string; content: string; sendTime: string }[] }
   groups?: Record<string, unknown>[]
+  /** Tokens the ref-lookup mock should NOT resolve (miss-fallback specs). */
+  lookupMiss?: string[]
 }): Face {
   const container = document.createElement('div')
   document.body.appendChild(container)
@@ -122,9 +124,10 @@ function mountPane(config: {
         return { ok: true, value: { sessionId: 'yzj-dream-20260820-120000' } } as Rpc
       },
       advanceRefLookup: async (refs: { token: string; kind: string }[]) => {
-        const hits = refs.map(ref => ref.kind === 'doc'
+        const miss = new Set(config.lookupMiss ?? [])
+        const hits = refs.filter(ref => !miss.has(ref.token)).map(ref => ref.kind === 'doc'
           ? { token: ref.token, kind: 'doc', fromName: '', content: '830纪要·0806 AI参谋产品方案讨论.otl', sentAt: 0 }
-          : { token: ref.token, kind: 'msg', fromName: '老黎', content: '覆盖率到 80，还差最后一步', sentAt: 1_755_600_000_000 })
+          : { token: ref.token, kind: 'msg', fromName: '老黎', content: '覆盖率到 80，还差最后一步', sentAt: 1_755_600_000_000, ...(ref.token.startsWith('dp-') ? { jumpToken: 'im:g1:m-dp' } : {}) })
         return { ok: true, value: { hits } } as Rpc
       },
       focusBoundSession: (sessionId: string) => { focused.push(sessionId) },
@@ -701,6 +704,58 @@ describe('YzjAdvancePane', () => {
     expect(docRow.tagName).toBe('A')
     expect(docRow.textContent).toContain('830纪要·0806 AI参谋产品方案讨论.otl')
     expect(docRow.getAttribute('href')).toContain('/store/doc/6a85774aecd3fb103b859f8a')
+    act(() => { face.root.unmount() })
+  })
+
+  it('裸 msgId ref 命中后渲染事件行不露裸 id(视觉走查 08-21)', async () => {
+    const face = mountPane({
+      items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行' })],
+      detail: {
+        item: item({ advanceId: 'A-1', stage: 'running', title: '试运行' }),
+        entries: [entry({ entryId: 'E-1', sourceType: '对话', changeType: '进度更新', summary: '群信号', refs: ['6a842792e4b08c3f7ebf8521'] })],
+      },
+    })
+    await settle()
+    const row = face.container.querySelector('[data-testid="yzj-advance-ref-6a842792e4b08c3f7ebf8521"]')
+    expect(row).not.toBeNull()
+    expect(row?.textContent).toContain('老黎')
+    expect(row?.textContent).not.toContain('6a842792')
+    act(() => { face.root.unmount() })
+  })
+
+  it('dp-* 池 ref 渲染事件行并按 jumpToken 锚点定位(视觉走查 08-21)', async () => {
+    setWorkbenchDomain('advance')
+    const focused: ImFocusTarget[] = []
+    const dispose = subscribeImGroupFocus(target => { focused.push(target) })
+    const face = mountPane({
+      items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行' })],
+      detail: {
+        item: item({ advanceId: 'A-1', stage: 'running', title: '试运行' }),
+        entries: [entry({ entryId: 'E-1', sourceType: '智能', changeType: '进度更新', summary: 'Dream 抽取', refs: ['dp-1787190275985-3'] })],
+      },
+    })
+    await settle()
+    const row = face.container.querySelector('[data-testid="yzj-advance-ref-dp-1787190275985-3"]')
+    expect(row).not.toBeNull()
+    expect(row?.textContent).toContain('老黎')
+    await act(async () => { (row as HTMLButtonElement).click(); await Promise.resolve() })
+    expect(focused).toEqual([{ groupId: 'g1', anchorMsgId: 'm-dp' }])
+    dispose()
+    act(() => { face.root.unmount() })
+  })
+
+  it('msg ref 未命中降级「聊 群消息」不露裸 id', async () => {
+    const face = mountPane({
+      items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行' })],
+      detail: {
+        item: item({ advanceId: 'A-1', stage: 'running', title: '试运行' }),
+        entries: [entry({ entryId: 'E-1', sourceType: '对话', changeType: '备注', summary: '旧信号', refs: ['m-gone'] })],
+      },
+      lookupMiss: ['m-gone'],
+    })
+    await settle()
+    const chip = face.container.querySelector('[data-testid="yzj-advance-ref-m-gone"]')
+    expect(chip?.textContent).toBe('聊 群消息')
     act(() => { face.root.unmount() })
   })
 
