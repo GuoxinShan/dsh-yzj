@@ -71,6 +71,20 @@ const REF_ICON: Record<string, string> = { doc: '文', msg: '聊', todo: '待', 
 /** 未命中降级 chip 的类型名(不露裸 id,视觉走查 08-21)。 */
 const REF_LABEL: Record<string, string> = { doc: '文档', msg: '群消息', todo: '待办', event: '日程', other: '来源' }
 
+/** 事元出处载体(视觉走查 08-21):sourceType 记内容场合,refs 才是载体——「记录自」承诺的是载体,
+    会议来源引用群消息就显示「群消息」。按 refs 实际 kind 聚合;无 refs 退回 sourceType。 */
+function entryOriginOf(sourceType: string, refs: readonly string[]): string {
+  const kinds = new Set<string>()
+  for (const raw of refs) {
+    const token = stripRefPrefix(raw)
+    if (token === '') continue
+    kinds.add(refKindOf(sourceType, token))
+  }
+  if (kinds.size === 0) return sourceType
+  const order = ['msg', 'doc', 'todo', 'event', 'other'] as const
+  return order.filter(k => kinds.has(k)).map(k => REF_LABEL[k] ?? '来源').join('·')
+}
+
 /** 决策 39: `im:<groupId>:<msgId>` msg ref → 事件级定位锚点；裸 msgId 是 legacy（无群信息，只能降级跳群）。 */
 function msgAnchorOf(raw: string): { groupId: string; msgId: string } | null {
   const match = /^im:([^:\s]+):(.+)$/.exec(raw)
@@ -1115,11 +1129,14 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                                   </span>
                                 </>
                               )}
-                              {/* 事元出处脚注:裸 sourceType 曾渲染成 refs 卡下的孤儿标签(视觉走查)。 */}
+                              {/* 事元出处脚注:载体按 refs 实际 kind 聚合(会议来源引用群消息就显示「群消息」);无 refs 退回 sourceType。 */}
                               <div className={css.timeMeta}>
-                                {(asString(entry.sourceType) !== '' || asString(entry.actor) === 'user') && (
-                                  <span>{asString(entry.actor) === 'user' ? `${asString(entry.sourceType) === '' ? '' : `${asString(entry.sourceType)} · `}你的判断` : `记录自 ${asString(entry.sourceType)}`}</span>
-                                )}
+                                {(() => {
+                                  const origin = entryOriginOf(asString(entry.sourceType), refList)
+                                  return (origin !== '' || asString(entry.actor) === 'user') && (
+                                    <span>{asString(entry.actor) === 'user' ? `${origin === '' ? '' : `${origin} · `}你的判断` : `记录自 ${origin}`}</span>
+                                  )
+                                })()}
                                 <button
                                   type="button"
                                   className={css.jump}

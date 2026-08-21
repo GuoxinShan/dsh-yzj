@@ -960,3 +960,18 @@ client 渲染改为 **hit 优先**：命中一律按 hit.kind 渲染（文档卡
 **§24.21 再续（同日，时间线收敛 + 竖线贯穿）**：用户「时间线填的东西太多了应该少一点点开再展示具体的，然后线都没有连起来了」——两个诉求同根：(a) 事元默认全展开（描述+原始信息+出处全露，一屏只看 3-4 条）改回**默认收敛只露进度行**（changeType 标签+summary 两行截断+「详情」），整行可点展开看描述/原始信息/出处，二级「展开全部 N 条」取消（展开即全量 refs）；(b) 竖线断的根因是 `.mark::after` 固定 26px 长而展开的 timeItem 高几百 px——改为 **timeItem 级贯穿轨道**（`::before` 从圆点中心贯穿整条高度并延伸进 gap，x=76+10+4-0.75px），展开态也不断线。测试统一加 expandEntry 辅助（8 个 ref 用例先点展开）；倒序后 index 0=mock 末条注意点。真机：收敛态一屏 18 条、竖线全程贯通（timeline-collapsed.png）、展开完整（timeline-expanded.png）。执行插曲：并行会话同文件推进决策 41（latestDriver 决策区/事元「问助手」discuss 按钮/advance-ask kind+discussAskText），叠加编译断点两处（advance.ts `changeType`→`input.changeType`、advance-ask 导出）由双方各自补齐，最终 build/bundle 全绿、36 测试绿；决策 41 的 spec/文档留痕由该线补。
 
 **§24.21 四续（同日，原始信息不露 ID）**：用户「你这个原始信息不要显示 id 呀」——「会议」来源的事元引用 `im:<g>:<m>` 消息 token，但 `refKindOf` 只按事元 sourceType 判（会议→doc），token 被误当文档渲染成「文 im:6a605…」截断 id 链接。修复：kind 改为 **token 前缀优先**（`im:` 必是 msg，sourceType 只兜底），refHits 收集段同步逐 ref 判；未命中降级一律泛化类型名（文 文档/聊 群消息/待 待办/程 日程/源 来源，新增 REF_LABEL），任何分支不再拼截断 id。回归用例：会议来源 + im: ref 渲染事件行。630 绿；真机 refs-no-id.png：两条 13:54 事元的原始信息均为消息事件行（[08-21 11:47] 同事乙 … / [08-21 10:38] 同事甲 [文件]:转录：访谈.txt）。并行会话的决策 41 discuss 用例与收敛默认冲突（discuss 按钮在展开区）已补 expandEntry。
+
+## 24.23 tool-yzj+ui-yzj｜动作型建议卡 + 空决策区兜底 + 事元「问助手」（2026-08-21，决策 41）
+
+用户「产生的决定啥的这里也没有变化呀…应该 dream 要用 agent 产生一些东西呀例如代办？发消息对齐？定会议？」——两个事实层：(a) 830 处于 decision-needed 但全库无一条「决策请求」事元（旧纪律喂「偏差+stageTo」），决策区只剩三个裸动词，要决定什么完全不可见；(b) Dream 只会记事元，不产出可执行动作。拍板：动作型建议卡（要简单、可多个动作、看板随时能就某条进展问 agent）。
+
+| 面 | 交付 | 证据 |
+|---|---|---|
+| 合同（host 强制） | feed 校验 `stageTo=decision-needed` 必须 `changeType=决策请求`（错误信息即正确姿势指导）；INSPECT_DISCIPLINE / feed 工具 description / dreamAskPrompt 全部改产「问题 + 动作行」（`动作: 建待办\|发消息\|定会议 \| 键: 值 \| …`，决策 23 文本约定的行动化扩展） | advance.spec +1（偏差推阶段被拒、阶段不动、零事元写入） |
+| 动作执行（面板） | `parseDecisionOptions` 升级解析动作行（未知类型留原文）；动作按钮组各自独立：建待办 → `createTodo` 直落（截止→ddl、负责人→tags），发消息 → 就地草稿框预填投到恰一订阅群（`sendMessage`，人过目再发），定会议 → 跳日程域；执行后置灰「✓ 已建/已发」并 `advanceFeed` 落 user 留痕事元 | client spec 三例全链路（todos/sent/feeds 断言 + 置灰 + 跳域） |
+| 空决策区兜底 | decision-needed 但无决策请求事元 → 摆最新驱动事元（summary+detail）+「没有带上建议动作…点问助手补齐」提示，经典动词保留 | client spec +1；真机 830（13:54 偏差事元驱动）h3 非空 + 提示 + 动词全在 |
+| 事元「问助手」 | 每条事元展开后出处行尾「问助手」→ askDraft kind=discuss 预填「关于…这条进展：…先 yzj_advance_get 看上下文」→ 切对话域；banner 文案分流加「进展讨论已预备」。落点=绑定家园会话问助手栏（与请 AI 验收同径）；精确回到「产出它的 Dream 会话」需事元表加 producer 列（dbt 重建），本轮不做（记为取舍） | client spec +1（draft kind/text + 切域） |
+
+并行会话同日把时间线改为「倒序 + 默认收敛」（commit 77f4f90/25b00f6，问助手按钮随出处行入展开区，测试经 expandEntry 先展开）；两边工作已在工作树合流：630 绿 + typecheck 绿。真机（GUI 14:27 重启）verify-advance-actions.mjs 全 PASS，截图 ux-actions-decision.png。注：成功指标卡 0/0/0 是指标 current 从未被 feed 更新（动作卡里「建待办」类执行回写不涉及指标）——指标更新纪律留待下轮（Dream 比对后应回写 current）。
+
+**§24.21 五续（同日，出处脚注按 refs 载体）**：用户「为啥是记录自会议啊这不是 im 来的吗，我们的信息来源没有字段区分？」——字段是有的，但语义没分清：sourceType 记**内容场合**（agent 提炼时判断「会议讨论来的」），refs 才是**溯源载体**（客观 IM 消息）；「记录自」措辞承诺载体却渲染了 sourceType，于是 IM 提炼的事元显示「记录自 会议」。修复：新增 entryOriginOf——按 refs 实际 kind 聚合（msg/doc/todo/event → 群消息/文档/待办/日程，多类 join「·」），无 refs 退回 sourceType；actor=user 的「你的判断」标记不变。spec §1 事元定义补「来源类型 vs refs 的语义分工」。630 绿；真机两条 13:54 事元脚注均为「记录自 群消息」（origin-by-refs.png）。
