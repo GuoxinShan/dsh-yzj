@@ -185,4 +185,106 @@ export function applyImTools(ctx: Context, budget: YzjToolBudget): void {
       })
     },
   }))
+
+  ctx.tools.register(defineTool({
+    name: 'yzj_im_group_search',
+    description: 'Search groups visible to the current user by keyword (yzj-cli v0.1.4). Use to resolve a group id when yzj_im_group_recent paging misses it (e.g. before advance source subscription or message operations).',
+    parameters: {
+      keyword: { type: 'string', required: true, description: 'Group-name keyword.' },
+      limit: { type: 'number', description: 'Per-page count (default 10).' },
+      page: { type: 'number', description: 'Page number (default 1).' },
+    },
+    output: yzjToolOutput,
+    timeoutMs: budget.timeoutMs,
+    isConcurrencySafe: () => true,
+    async execute(args) {
+      const command = ['im', 'group', 'search', '--keyword', args.keyword]
+      if (args.limit !== undefined) command.push('--limit', String(args.limit))
+      if (args.page !== undefined) command.push('--page', String(args.page))
+      return runValue(ctx, budget, 'im group search', command, (json) => {
+        const groups = asArray(asRecord(json).list).length > 0 ? asArray(asRecord(json).list) : asArray(json)
+        const lines = groups.map(groupLine)
+        const content = lines.length === 0 ? '(no matches)' : lines.join('\n')
+        return { content, data: { list: clipJson(groups, { maxChars: budget.maxMetaChars }) } }
+      })
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'yzj_im_group_create',
+    description: 'Create a group with the current user as owner (yzj-cli v0.1.4). memberOpenIds are the initial members EXCLUDING the creator — the CLI requires 2-10. Requires user confirmation.',
+    parameters: {
+      name: { type: 'string', description: 'Group name.' },
+      memberOpenIds: { type: 'array', items: { type: 'string' }, required: true, description: 'Initial member openIds (2-10, creator excluded).' },
+    },
+    output: yzjToolOutput,
+    timeoutMs: budget.timeoutMs,
+    isConcurrencySafe: () => false,
+    async execute(args) {
+      const members = Array.isArray(args.memberOpenIds) ? args.memberOpenIds.map(String).filter(id => id !== '') : []
+      if (members.length < 2 || members.length > 10) {
+        throw new Error(`yzj_im_group_create: memberOpenIds needs 2-10 openIds (creator excluded), got ${members.length}`)
+      }
+      const command = ['im', 'group', 'create']
+      if (args.name !== undefined) command.push('--name', args.name)
+      for (const id of members) command.push('--member-open-id', id)
+      return runValue(ctx, budget, 'im group create', command, (json) => {
+        const payload = asRecord(json)
+        const groupId = asString(payload.groupId ?? payload.id)
+        return {
+          content: `created group${args.name === undefined ? '' : `「${args.name}」`} (${groupId === '' ? 'id unknown' : groupId}) with ${members.length} member(s)`,
+          data: { payload: clipJson(payload, { maxChars: budget.maxMetaChars }), groupId },
+        }
+      })
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'yzj_im_group_members_add',
+    description: 'Add members to a group (yzj-cli v0.1.4; ≤10 openIds per call). Requires user confirmation.',
+    parameters: {
+      groupId: { type: 'string', required: true, description: 'Target group id.' },
+      openIds: { type: 'array', items: { type: 'string' }, required: true, description: 'Member openIds to add (max 10).' },
+    },
+    output: yzjToolOutput,
+    timeoutMs: budget.timeoutMs,
+    isConcurrencySafe: () => false,
+    async execute(args) {
+      const openIds = Array.isArray(args.openIds) ? args.openIds.map(String).filter(id => id !== '') : []
+      if (openIds.length === 0 || openIds.length > 10) {
+        throw new Error(`yzj_im_group_members_add: openIds needs 1-10 ids, got ${openIds.length}`)
+      }
+      const command = ['im', 'group.members', 'add', '--group-id', args.groupId]
+      for (const id of openIds) command.push('--open-id', id)
+      return runValue(ctx, budget, 'im group.members add', command, (json) => ({
+        content: `added ${openIds.length} member(s) to group (${args.groupId})`,
+        data: { payload: clipJson(json, { maxChars: budget.maxMetaChars }), groupId: args.groupId, count: openIds.length },
+      }))
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'yzj_im_group_members_remove',
+    description: 'Remove members from a group irreversibly (yzj-cli v0.1.4; ≤10 openIds per call). Strong user confirmation required; the approval already covers the CLI --yes flag.',
+    parameters: {
+      groupId: { type: 'string', required: true, description: 'Target group id.' },
+      openIds: { type: 'array', items: { type: 'string' }, required: true, description: 'Member openIds to remove (max 10).' },
+    },
+    output: yzjToolOutput,
+    timeoutMs: budget.timeoutMs,
+    isConcurrencySafe: () => false,
+    async execute(args) {
+      const openIds = Array.isArray(args.openIds) ? args.openIds.map(String).filter(id => id !== '') : []
+      if (openIds.length === 0 || openIds.length > 10) {
+        throw new Error(`yzj_im_group_members_remove: openIds needs 1-10 ids, got ${openIds.length}`)
+      }
+      const command = ['im', 'group.members', 'remove', '--group-id', args.groupId]
+      for (const id of openIds) command.push('--open-id', id)
+      command.push('--yes')
+      return runValue(ctx, budget, 'im group.members remove', command, (json) => ({
+        content: `removed ${openIds.length} member(s) from group (${args.groupId})`,
+        data: { payload: clipJson(json, { maxChars: budget.maxMetaChars }), groupId: args.groupId, count: openIds.length },
+      }))
+    },
+  }))
 }

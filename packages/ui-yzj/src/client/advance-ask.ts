@@ -52,6 +52,11 @@ export function discussAskText(advanceId: string, title: string, at: string, sum
   return `关于推进事项 ${advanceId}「${title}」${at} 的这条进展：「${summary}」。先 yzj_advance_get（advanceId=${advanceId}）看上下文，然后我想讨论：`
 }
 
+/** Decision-card 「回到对话继续聊」prefill (决策 41): 卡上的选项/动作拿不准时，先回对话讨论;agent 聊出新建议后按纪律补/更新决策请求,用户再回看板拍板。 */
+export function decisionChatText(advanceId: string, title: string, summary: string): string {
+  return `关于推进事项 ${advanceId}「${title}」待我决定的问题：「${summary}」。先 yzj_advance_get（advanceId=${advanceId}）看上下文。我还想聊聊再定；如果聊出更合适的建议，按纪律补/更新决策请求（选项/动作行），我回到看板拍板。我的想法：`
+}
+
 /** Topic 问助手 prefill for 终局复盘沉淀 (spec §16, 决策 26: 复盘=终局收口). */
 export function exportReviewAskText(advanceId: string, title: string): string {
   return `请对推进事项 ${advanceId}「${title}」做终局复盘沉淀:先用 yzj_advance_get 翻页读全量事元,再按复盘模板(docs/spec/advance-review-template.md:目标演化/关键决策/偏差与证据链/下一步/事元全量索引)写出复盘 markdown,然后用 yzj_doc_import 入「我的知识/推进复盘/${title}」(父目录不存在就先 doc create 依次建「推进复盘」与事项目录),最后回链 yzj_advance_feed 一条产物事元(refs=[入库 docId],纯追加静默)。入库的确认卡我来点。`

@@ -203,7 +203,7 @@ export function applyCalendarTools(ctx: Context, budget: YzjToolBudget): void {
     timeoutMs: budget.timeoutMs,
     isConcurrencySafe: () => false,
     async execute(args) {
-      const command = ['calendar', 'event', 'delete', '--id', args.id]
+      const command = ['calendar', 'event', 'delete', '--id', args.id, '--yes']
       if (args.openId !== undefined) command.push('--open-id', args.openId)
       if (args.hard === true) command.push('--hard')
       return runValue(ctx, budget, 'calendar event delete', command, () => ({

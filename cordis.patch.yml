@@ -40,12 +40,3 @@
     # fallback (ctx.yzjModels).
     - id: model-yzj
       name: '@dsh-yzj/bundle/model-yzj'
-
-    # Opt-in Schedule for AI推进 patrol (spec §14 / 决策 16). Same ids as
-    # harness examples/web-schedule so an existing overlay is replaced, not
-    # double-mounted. only live roots created AFTER this row loads get
-    # schedule_create; every_seconds ≥ 300; session-local (GUI off → stop).
-    - id: time-context
-      name: '@deepseek-ai/dsh-time-context'
-    - id: schedule
-      name: '@deepseek-ai/dsh-schedule'

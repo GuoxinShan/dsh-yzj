@@ -41,6 +41,7 @@ const h3Text = await area.locator('h3').first().innerText().catch(() => '')
 ok('fallback shows the latest driving 事元 as h3', h3Text.trim().length > 10, h3Text.slice(0, 40))
 ok('fallback hint explains missing actions', areaText.includes('没有带上建议动作'))
 ok('classic verbs still there', areaText.includes('确认推进') && areaText.includes('忽略'))
+ok('回到对话继续聊 entry on the card (决策 41)', areaText.includes('回到对话继续聊'))
 
 // --- 2. collapsed timeline: rows show 详情 caret; expand reveals refs + 问助手
 const firstToggle = page.locator('[data-testid="yzj-advance-entry-toggle-0"]')

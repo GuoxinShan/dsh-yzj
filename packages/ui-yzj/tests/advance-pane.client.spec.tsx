@@ -175,11 +175,11 @@ function mountPane(config: {
         ok: true,
         value: workspace === 'kb1'
           ? [
-            { id: 'dirA', title: '830实验·共识', hasChildren: true },
-            { id: 'docB', title: '散文档', hasChildren: false },
+            { id: 'dirA', title: '830实验·共识', hasChildren: true, type: 2, fileSuffix: 'otl' },
+            { id: 'docB', title: '散文档', hasChildren: false, type: 2, fileSuffix: 'otl' },
           ]
           : [
-            { id: 'dirC', title: 'AI推进业务设计启动会纪要-总结', hasChildren: true },
+            { id: 'dirC', title: 'AI推进业务设计启动会纪要-总结', hasChildren: true, type: 2, fileSuffix: 'otl' },
           ],
       }) as Rpc,
     },
@@ -894,18 +894,16 @@ describe('YzjAdvancePane', () => {
     await settle()
     // 手输 token 已移除(决策 32)
     expect(face.container.querySelector('[data-testid="yzj-advance-thread-token"]')).toBeNull()
-    // 目录 picker:全部个人库整库 + hasChildren 目录(决策 40);散文档不列
+    // 知识库 picker 只列整库(决策 40,08-21 二拍「就整库就好了」):一层目录/文档节点不再列出
     const dirs = face.container.querySelector('[data-testid="yzj-advance-source-dirs"]')
     expect(dirs?.textContent).toContain('我的知识（整库）')
-    // 决策 40:AI速记知识库(速记纪要自动归档地)也进 picker;多库时目录带库名前缀
     expect(dirs?.textContent).toContain('AI速记知识库（整库）')
-    expect(dirs?.textContent).toContain('AI速记知识库 / AI推进业务设计启动会纪要-总结')
-    expect(dirs?.textContent).toContain('我的知识 / 830实验·共识')
+    expect(dirs?.textContent).not.toContain('830实验·共识')
     expect(dirs?.textContent).not.toContain('散文档')
-    const dirBtn = face.container.querySelector('[data-testid="yzj-advance-source-dir-dirA"]') as HTMLButtonElement
+    const dirBtn = face.container.querySelector('[data-testid="yzj-advance-source-dir-kb1"]') as HTMLButtonElement
     await act(async () => { dirBtn.click(); await Promise.resolve() })
     await settle()
-    expect(face.sourceAdds).toEqual([{ advanceId: 'A-1', token: 'dir:dirA', label: '我的知识 / 830实验·共识' }])
+    expect(face.sourceAdds).toEqual([{ advanceId: 'A-1', token: 'dir:kb1', label: '我的知识（整库）' }])
     act(() => { face.root.unmount() })
   })
 
@@ -976,6 +974,16 @@ describe('YzjAdvancePane', () => {
     const eventBtn = face.container.querySelector('[data-testid="yzj-advance-action-2"]') as HTMLButtonElement
     await act(async () => { eventBtn.click(); await Promise.resolve() })
     expect(getWorkbenchDomain()).toBe('calendar')
+    setWorkbenchDomain('advance')
+    // 有 agent 产动作时写死动词降级为次要行;「回到对话继续聊」预填 discuss 草稿(决策 41)
+    expect(face.container.querySelector('[data-testid="yzj-advance-verbs"]')?.className).toContain('verbsSecondary')
+    const chat = face.container.querySelector('[data-testid="yzj-advance-decision-chat"]') as HTMLButtonElement
+    await act(async () => { chat.click(); await Promise.resolve() })
+    const chatDraft = getAdvanceAskDraft()
+    expect(chatDraft?.kind).toBe('discuss')
+    expect(chatDraft?.text).toContain('两个范围补充是否纳入最小回路')
+    expect(chatDraft?.text).toContain('补/更新决策请求')
+    expect(getWorkbenchDomain()).toBe('im')
     act(() => { face.root.unmount() })
   })
 
@@ -990,6 +998,12 @@ describe('YzjAdvancePane', () => {
     expect(area?.textContent).toContain('评审中浮现两个需决策的范围补充')
     expect(area?.textContent).toContain('没有带上建议动作')
     expect(face.container.querySelector('[data-testid="yzj-advance-judge-confirm_advance"]')).not.toBeNull()
+    // 兑底卡也有「回到对话继续聊」,且动词不降级(无动态内容)
+    expect(face.container.querySelector('[data-testid="yzj-advance-verbs"]')?.className).not.toContain('verbsSecondary')
+    const chat = face.container.querySelector('[data-testid="yzj-advance-decision-chat"]') as HTMLButtonElement
+    await act(async () => { chat.click(); await Promise.resolve() })
+    expect(getAdvanceAskDraft()?.text).toContain('评审中浮现两个需决策的范围补充')
+    expect(getWorkbenchDomain()).toBe('im')
     act(() => { face.root.unmount() })
   })
 

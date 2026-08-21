@@ -73,6 +73,23 @@ describe('read-only tools over the real CLI', () => {
     expect(result.content).toContain('个人')
   })
 
+  it('yzj_doc_search finds docs by keyword (v0.1.4)', async () => {
+    if (!(await bridge.check(10_000))) return
+    const me = await byName.get('yzj_doc_workspace_list')!.execute({ type: 'personal' })
+    if (me.content === '(no workspaces)') return
+    const result = await byName.get('yzj_doc_search')!.execute({ keyword: '纪要', pageSize: 5 })
+    expect(result.content.length).toBeGreaterThan(0)
+  })
+
+  it('yzj_im_group_search resolves a group by keyword (v0.1.4)', async () => {
+    if (!(await bridge.check(10_000))) return
+    const recent = await byName.get('yzj_im_group_recent')!.execute({ limit: 1 })
+    if (recent.content === '(no recent groups)') return
+    const firstName = recent.content.split('\n')[0]!.split(' · ')[0]!.split(' (')[0]!
+    const result = await byName.get('yzj_im_group_search')!.execute({ keyword: firstName.slice(0, 4), limit: 5 })
+    expect(result.content.length).toBeGreaterThan(0)
+  })
+
   it('yzj_contact_search finds the current user by name', async () => {
     if (!(await bridge.check(10_000))) return
     const me = await byName.get('yzj_whoami')!.execute({})
