@@ -288,6 +288,14 @@ describe('parseDecisionOptions', () => {
     expect(parsed.rest).toContain('动作: 喝咖啡')
     expect(parsed.rest).not.toContain('建待办')
   })
+
+  it('extracts the 综合自 line (决策 43 修正: 单卡综合链)', () => {
+    const parsed = parseDecisionOptions('综合最新上下文后的判断\n综合自: E-20260821-007（旧问题并入本卡）\n动作: 建待办 | 内容: 确认排期')
+    expect(parsed.mergedFrom).toBe('E-20260821-007')
+    expect(parsed.actions).toHaveLength(1)
+    expect(parsed.rest).not.toContain('综合自')
+    expect(parsed.rest).toContain('综合最新上下文后的判断')
+  })
 })
 
 describe('YzjAdvancePane', () => {
@@ -1067,6 +1075,32 @@ describe('YzjAdvancePane', () => {
     expect(consumeTopicOpen('g1')).toBeNull()
     expect(getWorkbenchDomain()).toBe('advance')
     act(() => { face.root.unmount() })
+  })
+
+  it('单卡决策(决策 43 修正):卡面=最近判定后的最新决策请求;综合卡带「综合自」链', async () => {
+    const a = entry({ entryId: 'E-1', changeType: '决策请求', summary: '范围补充要不要纳入', tone: 'red' })
+    const judged = entry({ entryId: 'E-2', changeType: '备注', summary: '忽略本次评估，不构成新约束', actor: 'user', judge: 'ignore' })
+    const b = entry({ entryId: 'E-3', changeType: '决策请求', summary: '范围补充与新分叉综合版', tone: 'red', detail: '综合最新上下文后的判断\n综合自: E-1（旧问题并入本卡）' })
+    const face = mountPane({
+      items: [item({ advanceId: 'A-1', stage: 'decision-needed', title: '要决定' })],
+      detail: { item: item({ advanceId: 'A-1', stage: 'decision-needed', title: '要决定' }), entries: [a, judged, b] },
+    })
+    await settle()
+    const area = face.container.querySelector('[data-testid="yzj-advance-decision"]')
+    expect(area?.textContent).toContain('范围补充与新分叉综合版')
+    expect(area?.textContent).toContain('综合了 E-1')
+    expect(area?.textContent).not.toContain('范围补充要不要纳入')
+    act(() => { face.root.unmount() })
+    // 无 judge:最新综合卡同样顶面(旧卡内容必须已被它并入,host 侧强制)
+    const face2 = mountPane({
+      items: [item({ advanceId: 'A-1', stage: 'decision-needed', title: '要决定' })],
+      detail: { item: item({ advanceId: 'A-1', stage: 'decision-needed', title: '要决定' }), entries: [a, b] },
+    })
+    await settle()
+    const area2 = face2.container.querySelector('[data-testid="yzj-advance-decision"]')
+    expect(area2?.textContent).toContain('范围补充与新分叉综合版')
+    expect(area2?.textContent).not.toContain('排队中')
+    act(() => { face2.root.unmount() })
   })
 
   it('decision-needed without 选项N rows keeps the classic verbs only', async () => {

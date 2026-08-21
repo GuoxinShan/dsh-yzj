@@ -432,6 +432,36 @@ describe('yzj_advance_feed', () => {
     expect(parseAdvanceEntry({ id: 'x', fields: store.entries[0]!.fields })?.producer).toBe('yzj-dream-20260821-101500')
   })
 
+  it('rejects agent stage moves OUT of a waiting stage (决策 43: 待决出口是人的主权,防未处理决策被下一次 Dream 冲掉)', async () => {
+    const store = new FakeStore(true)
+    store.items.push(
+      { id: 'r1', fields: { advance_id: 'A-1', 名称: '待决定', 阶段: 'decision-needed' } },
+      { id: 'r2', fields: { advance_id: 'A-2', 名称: '待验收', 阶段: 'ready-for-review' } },
+    )
+    const { tools } = mount(store)
+    const feed = tools.find(tool => tool.name === 'yzj_advance_feed')!
+    const out1 = await feed.execute({ advanceId: 'A-1', summary: 'agent 误判解除', sourceType: '数据', stageTo: 'running' })
+    expect(out1.content).toContain('只能由用户在看板拍板')
+    const out2 = await feed.execute({ advanceId: 'A-2', summary: 'agent 试图打回', sourceType: '数据', stageTo: 'running' })
+    expect(out2.content).toContain('只能由用户在看板拍板')
+    expect(store.entries).toHaveLength(0)
+    expect(store.items[0]!.fields['阶段']).toBe('decision-needed')
+  })
+
+  it('enforces 综合自 on a second open 决策请求 (决策 43 修正: 卡面只有一条当前决策)', async () => {
+    const store = new FakeStore(true)
+    store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '待决定', 阶段: 'decision-needed' } })
+    store.entries.push({ id: 'e1', fields: { entry_id: 'E-1', advance_id: 'A-1', 时间: '2026/08/21 10:00', 来源类型: '会议', 变化类型: '决策请求', 摘要: '范围补充要不要纳入', 操作者: 'agent' } })
+    const { tools } = mount(store)
+    const feed = tools.find(tool => tool.name === 'yzj_advance_feed')!
+    const blocked = await feed.execute({ advanceId: 'A-1', summary: '新分叉要不要加资源', changeType: '决策请求', detail: '分析:两条路径都成立' })
+    expect(blocked.content).toContain('综合自')
+    expect(store.entries).toHaveLength(1)
+    const merged = await feed.execute({ advanceId: 'A-1', summary: '范围与分叉综合版', changeType: '决策请求', detail: '分析:最新上下文\n综合自: E-1（旧问题并入本卡）' })
+    expect(merged.content).toContain('fed 事元')
+    expect(store.entries).toHaveLength(2)
+  })
+
   it('rejects an illegal stage move without writing any entry', async () => {
     const store = new FakeStore(true)
     store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'draft' } })
@@ -613,6 +643,24 @@ describe('core judge path (panel direct write)', () => {
     expect(store.entries).toHaveLength(1)
     expect(store.entries[0]!.fields['操作者']).toBe('user')
     expect(String(store.entries[0]!.fields['摘要'])).toContain('验收通过：指标齐了')
+  })
+
+  it('judge verbs land the 判定动作 marker so the board settles the queue head (决策 43)', async () => {
+    const store = new FakeStore(true)
+    store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '待决定', 阶段: 'decision-needed' } })
+    const ctx = coreCtx(store)
+    const verb = judgeVerb('ignore')
+    await coreFeedAdvance(ctx, BUDGET, {}, freshCaches(), {
+      advanceId: 'A-1',
+      summary: verb.summary,
+      changeType: verb.changeType,
+      ...(verb.stageTo === undefined ? {} : { stageTo: verb.stageTo }),
+      actor: 'user',
+      judgeAction: 'ignore',
+    })
+    expect(store.entries[0]!.fields['判定动作']).toBe('ignore')
+    expect(parseAdvanceEntry({ id: 'x', fields: store.entries[0]!.fields })?.judge).toBe('ignore')
+    expect(store.entries[0]!.fields['操作者']).toBe('user')
   })
 
   it('core create is reachable for the panel start modal (actor user)', async () => {
