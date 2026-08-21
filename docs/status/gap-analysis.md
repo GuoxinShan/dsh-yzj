@@ -914,3 +914,7 @@ host 端 `stringField` 空=缺失校验保持原样（校验正确，错在 clie
 | 池 | 90 条 pending 全 im: 渠道，无 dir: 条目 |
 
 补救口径：增量挂「AI速记知识库」dir: 订阅（基线后新纪要自动入池；临时共享库需 agent source_add 直传 token）；存量纪要不经池，Dream/话题里 agent 读 docId 直接 feed（refs=[docId]）。**产品缺口留⑤期**：速记归档库随会议增生、dir: 订阅追不上——需要速记库聚合订阅或归档目标可配进「我的知识」。无代码改动（机制符合 spec），spec §15.3 已补缺口注记，诊断路径固化在 pitfall-041。
+
+## 24.20 ui-yzj｜关联来源 picker 只列「我的知识」漏掉 AI速记知识库（2026-08-21，决策 40）
+
+用户「你好些关联的不是知识库而是文档？我的知识库是这两个感觉不对」——两个观察都属实：(a) picker 的「830实验·共识」实为 .otl 文档（hasChildren 才被当目录列出，dir: 扫描对它工作正常，otl 可有子节点）；(b) **picker 只 `find(name.includes('我的知识'))`，AI速记知识库（速记纪要自动归档地，pitfall-041 的根因库）永远不在选项里**。修复：picker 改列全部个人库（`doc workspace list --type personal`，实测返回 AI速记知识库 + 我的知识 2 库），每库一个整库选项 + 一层 hasChildren 目录，多库时目录 label 带库名前缀（`AI速记知识库 / xxx`）；个人库有界 6（MAX_PICKER_WORKSPACES）。另实测 `doc get --id <kbId>` 返回 DOC_NOT_FOUND——整库订阅 dir:<kbId> 走 listDirDocs 的「非 docId」分支直接按 workspace 列根层级，工作正常。测试：mock 改双库分返 + 断言两整库与库名前缀；619 绿。真机截图 picker-dirs.png：picker 列出 AI速记知识库（整库）+ 3 个速记纪要目录 + 我的知识（整库）+ 830实验·共识。用户挂上「AI速记知识库（整库）」后，基线后每场新会纪要自动入池；存量 3 份（08-20 三场会）不回灌，Dream 里读 docId 直接 feed 即可。

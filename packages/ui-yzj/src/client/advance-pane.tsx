@@ -82,6 +82,20 @@ function refStampOf(sentAt: number): string {
   return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
+/** 时间线时间戳紧凑化(视觉走查):当天只留 `HH:mm`,当年 `MM-DD HH:mm`,跨年全量;完整值在 title。 */
+function formatEntryAt(at: string): string {
+  const match = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})[ T](\d{1,2}):(\d{2})/.exec(at.trim())
+  if (match === null) return at
+  const [, year, month, day, hh, mm] = match
+  const pad = (value: number): string => String(value).padStart(2, '0')
+  const mmdd = `${pad(Number(month))}-${pad(Number(day))}`
+  const now = new Date()
+  const today = `${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+  if (year === String(now.getFullYear()) && mmdd === today) return `${hh}:${mm}`
+  if (year === String(now.getFullYear())) return `${mmdd} ${hh}:${mm}`
+  return `${year}-${mmdd} ${hh}:${mm}`
+}
+
 /** Doc deep link(知识库 web);其他类型跳域(无消息级锚点,spec 决策 8 诚实降级)。 */
 function refHref(kind: string, id: string): string | null {
   if (kind === 'doc' && id !== '') return `https://www.yunzhijia.com/knowledge/lingee/#/store/doc/${id}`
@@ -96,6 +110,9 @@ function dotToneOf(stage: string): 'red' | 'blue' | 'green' | 'gray' {
   return 'blue'
 }
 
+
+/** Max personal workspaces listed in the source picker (防爆上限;个人库通常一两个)。 */
+const MAX_PICKER_WORKSPACES = 6
 
 /** Single-character icon per source token prefix (上下文来源 chip). */
 const THREAD_ICON: Record<string, string> = {
@@ -426,23 +443,28 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
       const rows = asArray(value.list).length > 0 ? asArray(value.list) : asArray(result.value)
       setGroupOptions(rows.map(asRecord).filter(row => asString(row.groupId) !== ''))
     }
-    // 知识库目录 picker(决策 32):个人库「我的知识」整库 + 一层目录(hasChildren)
+    // 知识库目录 picker(决策 40):全部个人库整库 + 各库一层目录(hasChildren;
+    // 多库时目录带库名前缀)。决策 32 只列「我的知识」——AI速记知识库(会议
+    // 纪要自动归档地)因此被漏掉,用户 08-21 拍板修正。
     const dirs: { id: string; label: string }[] = []
     const wsResult = await props.inject.fetchWorkspaces('personal')
     if (wsResult.ok) {
       const workspaces = asArray(wsResult.value).map(asRecord)
-      const mine = workspaces.find(row => asString(row.name).includes('我的知识')) ?? workspaces[0]
-      const kbId = asString(mine?.id)
-      if (kbId !== '') {
-        dirs.push({ id: kbId, label: `${asString(mine?.name) || '我的知识'}（整库）` })
+        .filter(row => asString(row.id) !== '')
+        .slice(0, MAX_PICKER_WORKSPACES)
+      const multi = workspaces.length > 1
+      for (const ws of workspaces) {
+        const kbId = asString(ws.id)
+        const kbName = asString(ws.name) || kbId
+        dirs.push({ id: kbId, label: `${kbName}（整库）` })
         const docsResult = await props.inject.fetchDocs(kbId)
-        if (docsResult.ok) {
-          const nodes = asArray(docsResult.value).map(asRecord)
-          for (const node of nodes) {
-            const id = asString(node.id)
-            const title = asString(node.title)
-            const hasChildren = node.hasChildren === true || (typeof node.childrenCount === 'number' && node.childrenCount > 0)
-            if (id !== '' && title !== '' && hasChildren) dirs.push({ id, label: title })
+        if (!docsResult.ok) continue
+        for (const node of asArray(docsResult.value).map(asRecord)) {
+          const id = asString(node.id)
+          const title = asString(node.title)
+          const hasChildren = node.hasChildren === true || (typeof node.childrenCount === 'number' && node.childrenCount > 0)
+          if (id !== '' && title !== '' && hasChildren) {
+            dirs.push({ id, label: multi ? `${kbName} / ${title}` : title })
           }
         }
       }
@@ -603,30 +625,32 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
             巡检
           </button>
           {dreamLine !== '' && (
-            <span className={css.dreamLine} data-testid="yzj-advance-dream-status">
-              {dreamLine}
-              {dreamEntries.length > 0 && (
+            <div className={css.dreamLine} data-testid="yzj-advance-dream-status">
+              <span>{dreamLine}</span>
+              <span className={css.dreamActions}>
+                {dreamEntries.length > 0 && (
+                  <button
+                    type="button"
+                    className={css.patrolBtn}
+                    data-testid="yzj-advance-dream-pool"
+                    title="查看蓄水池待抽取信号"
+                    onClick={() => { setDreamPoolOpen(true) }}
+                  >
+                    池 {dreamEntries.length}
+                  </button>
+                )}
                 <button
                   type="button"
-                  className={css.patrolBtn}
-                  data-testid="yzj-advance-dream-pool"
-                  title="查看蓄水池待抽取信号"
-                  onClick={() => { setDreamPoolOpen(true) }}
+                  className={waterReached ? css.primary : css.patrolBtn}
+                  data-testid="yzj-advance-dream-now"
+                  disabled={busy}
+                  title="新建会话直接开始 Dream 抽取"
+                  onClick={() => { void runDream() }}
                 >
-                  池 {dreamEntries.length}
+                  Dream 抽取
                 </button>
-              )}
-              <button
-                type="button"
-                className={waterReached ? css.primary : css.patrolBtn}
-                data-testid="yzj-advance-dream-now"
-                disabled={busy}
-                title="新建会话直接开始 Dream 抽取"
-                onClick={() => { void runDream() }}
-              >
-                Dream 抽取
-              </button>
-            </span>
+              </span>
+            </div>
           )}
         </div>
         {queueGroup('decide', '待我决定', queues.decide, '当前没有待决定事项', 'AI 会在需要你的权限时再提醒')}
@@ -858,7 +882,7 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                 <section className={css.section} data-testid="yzj-advance-timeline">
                   <div className={css.sectionHead}>
                     <h2>推进演进</h2>
-                    <small>三层结构：演进 → 事元（进度行+描述）→ 原始信息</small>
+                    <small>每条事元可溯源到原始信息</small>
                   </div>
                   {detail.entries.length === 0 ? (
                     <p className={css.quiet}>还没有事元记录。</p>
@@ -878,10 +902,16 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                         }
                         return (
                           <div key={entryId} className={css.timeItem}>
-                            <span className={css.time}>{asString(entry.at)}</span>
+                            <span className={css.time} title={asString(entry.at)}>{formatEntryAt(asString(entry.at))}</span>
                             <i className={`${css.mark} ${css[`mark_${asString(entry.tone) || 'blue'}`]}`} />
                             <div className={css.timeCopy}>
-                              <b data-testid={`yzj-advance-entry-${index}`}>{asString(entry.changeType) !== '' ? `${asString(entry.changeType)} · ` : ''}{asString(entry.summary)}</b>
+                              {/* 进度行:changeType 作小标签,summary 才是标题主体(视觉走查)。 */}
+                              <div className={css.entryHead}>
+                                {asString(entry.changeType) !== '' && (
+                                  <span className={`${css.changeType} ${css[`changeType_${asString(entry.tone) || 'blue'}`]}`}>{asString(entry.changeType)}</span>
+                                )}
+                                <b data-testid={`yzj-advance-entry-${index}`}>{asString(entry.summary)}</b>
+                              </div>
                               {/* 事元本身也是一段描述(用户拍板):默认展示变化内容,
                                   之下才是原始信息 — 进度行→事元描述→原始信息。 */}
                               {asString(entry.detail) !== '' && (
@@ -890,11 +920,14 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                               {/* 原始信息默认挂在事元描述下(最新 2 条),多条时「展开全部」。 */}
                               {refList.length > 0 && (
                                 <>
-                                  <p className={css.subGroupLabel}>
-                                    原始信息 {refList.length}
-                                    {!expanded && refList.length > 2 ? ` · 显示最新 2 条` : ''}
-                                    {' '}· 多条信息可能被提炼为同一条事元
-                                  </p>
+                                  <div className={css.refsHead}>
+                                    <span>原始信息 {refList.length} 条</span>
+                                    {refList.length > 2 && (
+                                      <button type="button" className={css.jump} data-testid={`yzj-advance-entry-toggle-${index}`} onClick={toggleExpanded}>
+                                        {expanded ? '收起' : `展开全部 ${refList.length} 条`}
+                                      </button>
+                                    )}
+                                  </div>
                                   <span className={css.refs}>
                                   {(expanded ? refList : refList.slice(-2)).map((raw) => {
                                     const id = stripRefPrefix(raw)
@@ -942,14 +975,12 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                                   </span>
                                 </>
                               )}
-                              <div className={css.timeMeta}>
-                                <span>{asString(entry.sourceType)}{asString(entry.actor) === 'user' ? ' · 你的判断' : ''}</span>
-                                {refList.length > 2 && (
-                                  <button type="button" className={css.jump} data-testid={`yzj-advance-entry-toggle-${index}`} onClick={toggleExpanded}>
-                                    {expanded ? '收起' : `展开全部 ${refList.length} 条原始信息`}
-                                  </button>
-                                )}
-                              </div>
+                              {/* 事元出处脚注:裸 sourceType 曾渲染成 refs 卡下的孤儿标签(视觉走查)。 */}
+                              {(asString(entry.sourceType) !== '' || asString(entry.actor) === 'user') && (
+                                <div className={css.timeMeta}>
+                                  <span>{asString(entry.actor) === 'user' ? `${asString(entry.sourceType) === '' ? '' : `${asString(entry.sourceType)} · `}你的判断` : `记录自 ${asString(entry.sourceType)}`}</span>
+                                </div>
+                              )}
                             </div>
                           </div>
                         )
