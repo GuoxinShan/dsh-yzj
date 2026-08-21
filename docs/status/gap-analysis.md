@@ -1021,3 +1021,5 @@ client 渲染改为 **hit 优先**：命中一律按 hit.kind 渲染（文档卡
 **UI 适配取舍**：知识库页加搜索框（高性价比：47 个库翻目录找文档是高频痛点）——host `doc-search` RPC + `fetchDocSearch` + 左栏顶部搜索框（选中库时限库搜），结果行点击 openDoc 预览。不做：建群/选人 UI（低频、contact 选择器成本高，agent 面已能）、文档编辑器（write/block replace 属 agent 面，面板不做编辑器）。下载按钮留后续（预览区顺手位）。
 
 测试：panel-switch 补搜索框用例（Enter→fetchDocSearch→命中行→点击开预览）；真机 doc-search.png：搜「830纪要」命中 4 行、点击打开全文预览。644 绿。
+
+**§24.23 续（同日，知识库类型分组）**：用户「能不能区分个人和其他类型啊还是有什么类型那看看先」——先查数据：51 库中 visibility=2（个人）仅 2 个（AI速记知识库、我的知识），visibility=1（企业）49 个，无更多类型（allMember 全 None，无企业全员库）。左栏按 visibility 分组渲染：「个人」组置顶 +「企业 / 团队」组随后，组标头小字（paneGroupLabel）。panel-switch 补分组用例（标头存在 + 个人组整体在企业组前，与数据源顺序无关）；真机 ws-groups.png。645 绿。

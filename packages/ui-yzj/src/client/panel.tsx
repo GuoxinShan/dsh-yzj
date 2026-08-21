@@ -1285,28 +1285,49 @@ export function YzjPanel(props: YzjPanelProps) {
                 {state.workspaces.length === 0 && !state.loading && state.error === '' && (
                   <div className={css.empty}><YzjCloudIcon size={28} /><span>暂无知识库</span></div>
                 )}
-                {state.workspaces.map((item, index) => {
-                  const ws = asRecord(item)
-                  const count = typeof ws.docCount === 'number' ? ws.docCount : 0
-                  const members = typeof ws.memberCount === 'number' ? ws.memberCount : 0
-                  const id = asString(ws.id)
-                  const name = asString(ws.name)
-                  const active = id === state.workspaceId
+                {/* 类型分组(v0.1.4 visibility):个人(=2)置顶,企业/团队随后——51 库平铺分不清层。 */}
+                {(() => {
+                  const rows = state.workspaces.map(asRecord)
+                  const personal = rows.filter(ws => ws.visibility === 2)
+                  const enterprise = rows.filter(ws => ws.visibility !== 2)
+                  const renderWs = (ws: Record<string, unknown>, index: number): ReactNode => {
+                    const count = typeof ws.docCount === 'number' ? ws.docCount : 0
+                    const members = typeof ws.memberCount === 'number' ? ws.memberCount : 0
+                    const id = asString(ws.id)
+                    const name = asString(ws.name)
+                    const active = id === state.workspaceId
+                    return (
+                      <button
+                        key={`w${index}`}
+                        type="button"
+                        className={active ? `${css.item} ${css.itemActive}` : css.item}
+                        onClick={() => { openWorkspace(id) }}
+                      >
+                        <span className={css.itemTitle}>
+                          <IconFolderOpenOutline16 />
+                          <span className={css.itemTitleText}>{name}</span>
+                        </span>
+                        <span className={css.itemSub}>文档 {count} · 成员 {members}</span>
+                      </button>
+                    )
+                  }
                   return (
-                    <button
-                      key={`w${index}`}
-                      type="button"
-                      className={active ? `${css.item} ${css.itemActive}` : css.item}
-                      onClick={() => { openWorkspace(id) }}
-                    >
-                      <span className={css.itemTitle}>
-                        <IconFolderOpenOutline16 />
-                        <span className={css.itemTitleText}>{name}</span>
-                      </span>
-                      <span className={css.itemSub}>文档 {count} · 成员 {members}</span>
-                    </button>
+                    <>
+                      {personal.length > 0 && (
+                        <>
+                          <div className={css.paneGroupLabel} data-testid="yzj-panel-ws-group-personal">个人</div>
+                          {personal.map(renderWs)}
+                        </>
+                      )}
+                      {enterprise.length > 0 && (
+                        <>
+                          <div className={css.paneGroupLabel} data-testid="yzj-panel-ws-group-enterprise">企业 / 团队</div>
+                          {enterprise.map(renderWs)}
+                        </>
+                      )}
+                    </>
                   )
-                })}
+                })()}
                   </>
                 )}
               </div>

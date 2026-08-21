@@ -249,6 +249,17 @@
   border-color: var(--dsw-static-deepseek-500);
 }
 
+/* 知识库类型分组标头(个人/企业) */
+
+.paneGroupLabel {
+  flex: none;
+  padding: 6px 4px 2px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-tertiary);
+  letter-spacing: 0.5px;
+}
+
 .paneRight {
   flex: 1;
   min-width: 0;
