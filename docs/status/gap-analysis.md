@@ -1007,3 +1007,5 @@ client 渲染改为 **hit 优先**：命中一律按 hit.kind 渲染（文档卡
 | 测试 | v014-tools.spec.ts 8 例 fake 组装断言（含 --yes 透传×5、成员窗口校验）；tools.spec.ts +2 真实冒烟（doc search 命中 830纪要×4、group search 命中 830 群）——640 绿 |
 
 未对齐（留观）：workspace 企业级权限参数（demo 个人库够用）；block replace 与 block update/delete/insert 能力重叠（便捷封装，低优先但已顺手补齐）。工具总数 51→59、写工具 27→33（根 README 同步）。
+
+**§24.22 续（同日，v0.1.4 完全适配收口）**：「完全适配了吗」核验补最后一块——`yzj_doc_workspace_create` 透传 `--visibility`（1=企业/2=个人）与 `--all-member`（企业全员 2=可编辑/3=可查看，v0.1.4 企业库特性），组装断言进 v014 spec；GUI 重启让 8 个新工具真机注册（lib/tool-yzj.mjs 核验 19 处新工具名引用）；全量 641 绿（含 2 个 v0.1.4 真实 CLI 冒烟；一次间歇抖动复跑即过）。面板全局 search RPC 是 `contact user search`（搜人），doc search 面板入口留作后续（非适配必选项）。

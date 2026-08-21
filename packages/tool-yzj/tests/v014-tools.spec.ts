@@ -43,6 +43,12 @@ function mount(json: unknown = { list: [] }): { commands: string[][]; byName: Ma
 }
 
 describe('yzj-cli v0.1.4 doc tools', () => {
+  it('yzj_doc_workspace_create passes enterprise visibility + all-member (v0.1.4)', async () => {
+    const { commands, byName } = mount({ id: 'kb9' })
+    await byName.get('yzj_doc_workspace_create')!.execute({ name: '团 队库', visibility: 1, allMember: 3 })
+    expect(commands[0]).toEqual(['doc', 'workspace', 'create', '--name', '团 队库', '--visibility', '1', '--all-member', '3'])
+  })
+
   it('yzj_doc_search assembles keyword + workspace + paging', async () => {
     const { commands, byName } = mount([{ id: 'd1', title: '测试报告' }])
     const result = await byName.get('yzj_doc_search')!.execute({ keyword: '测试报告', workspace: 'kb1', pageSize: 50, pageNum: 2 })

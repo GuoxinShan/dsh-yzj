@@ -125,10 +125,12 @@ export function applyDocTools(ctx: Context, budget: YzjToolBudget): void {
 
   ctx.tools.register(defineTool({
     name: 'yzj_doc_workspace_create',
-    description: 'Create a personal knowledge base with the given name and optional description. Returns the new KB_ID.',
+    description: 'Create a knowledge base with the given name and optional description. visibility: 1=企业知识库, 2=个人知识库 (default 2); allMember sets the enterprise-wide permission (2=可编辑, 3=可查看, visibility=1 only, yzj-cli v0.1.4). Returns the new KB_ID.',
     parameters: {
       name: { type: 'string', required: true, description: 'Knowledge base name.' },
       description: { type: 'string', description: 'Optional description.' },
+      visibility: { type: 'number', enum: [1, 2], description: '1=企业知识库, 2=个人知识库 (default 2).' },
+      allMember: { type: 'number', enum: [2, 3], description: 'Enterprise-wide permission: 2=可编辑, 3=可查看 (visibility=1 only).' },
     },
     output: yzjToolOutput,
     timeoutMs: budget.timeoutMs,
@@ -136,6 +138,8 @@ export function applyDocTools(ctx: Context, budget: YzjToolBudget): void {
     async execute(args) {
       const command = ['doc', 'workspace', 'create', '--name', args.name]
       if (args.description !== undefined) command.push('--description', args.description)
+      if (args.visibility !== undefined) command.push('--visibility', String(args.visibility))
+      if (args.allMember !== undefined) command.push('--all-member', String(args.allMember))
       return runValue(ctx, budget, 'doc workspace create', command, (json) => {
         const ws = asRecord(json)
         const id = asString(ws.id)
