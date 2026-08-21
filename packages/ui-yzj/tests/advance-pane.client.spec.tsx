@@ -727,6 +727,30 @@ describe('YzjAdvancePane', () => {
     act(() => { face.root.unmount() })
   })
 
+  it('会议来源的 im: ref 按 token 判 msg(视觉走查 08-21):渲染消息事件行而非「文 im:」文档 chip', async () => {
+    setWorkbenchDomain('advance')
+    const focused: ImFocusTarget[] = []
+    const dispose = subscribeImGroupFocus(target => { focused.push(target) })
+    const face = mountPane({
+      items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行' })],
+      detail: {
+        item: item({ advanceId: 'A-1', stage: 'running', title: '试运行' }),
+        entries: [entry({ entryId: 'E-1', sourceType: '会议', changeType: '偏差', summary: '讨论会共识', refs: ['im:g1:m9'] })],
+      },
+    })
+    await settle()
+    await expandEntry(face, 0)
+    const row = face.container.querySelector('[data-testid="yzj-advance-ref-im:g1:m9"]')
+    expect(row).not.toBeNull()
+    // kind=msg:命中渲染事件行,不再是「文 im:6a605…」式的截断 id 文档链接
+    expect(row?.textContent).toContain('老黎')
+    expect(row?.textContent).not.toContain('im:6a')
+    await act(async () => { (row as HTMLButtonElement).click(); await Promise.resolve() })
+    expect(focused).toEqual([{ groupId: 'g1', anchorMsgId: 'm9' }])
+    dispose()
+    act(() => { face.root.unmount() })
+  })
+
   it('doc 类原始信息可读化:事元下显示文档名而非截断 ID(决策 39 后续)', async () => {
     const face = mountPane({
       items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行' })],
@@ -976,6 +1000,8 @@ describe('YzjAdvancePane', () => {
       },
     })
     await settle()
+    // discuss 按钮在展开的事元出处行里(收敛默认,先展开)
+    await expandEntry(face, 0)
     const discuss = face.container.querySelector('[data-testid="yzj-advance-entry-discuss-0"]') as HTMLButtonElement
     expect(discuss).not.toBeNull()
     await act(async () => { discuss.click(); await Promise.resolve() })

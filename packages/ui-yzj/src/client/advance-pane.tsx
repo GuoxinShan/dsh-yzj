@@ -51,8 +51,9 @@ export function queuesOf(items: readonly UnknownRecord[]): { decide: UnknownReco
   return { decide, review, watch, closed }
 }
 
-/** Ref kind inferred from the entry's sourceType (refs carry bare ids). */
-function refKindOf(sourceType: string): 'doc' | 'msg' | 'todo' | 'event' | 'other' {
+/** Ref kind: token 前缀优先(`im:` 必是群消息——即使事元来源类型是会议/文档,引用的也可能是群消息);sourceType 兜底(refs carry bare ids)。 */
+function refKindOf(sourceType: string, token: string): 'doc' | 'msg' | 'todo' | 'event' | 'other' {
+  if (token.startsWith('im:')) return 'msg'
   if (sourceType === '文档' || sourceType === '会议') return 'doc'
   if (sourceType === '对话') return 'msg'
   if (sourceType === '待办') return 'todo'
@@ -66,6 +67,9 @@ function stripRefPrefix(raw: string): string {
 }
 
 const REF_ICON: Record<string, string> = { doc: '文', msg: '聊', todo: '待', event: '程', other: '源' }
+
+/** 未命中降级 chip 的类型名(不露裸 id,视觉走查 08-21)。 */
+const REF_LABEL: Record<string, string> = { doc: '文档', msg: '群消息', todo: '待办', event: '日程', other: '来源' }
 
 /** 决策 39: `im:<groupId>:<msgId>` msg ref → 事件级定位锚点；裸 msgId 是 legacy（无群信息，只能降级跳群）。 */
 function msgAnchorOf(raw: string): { groupId: string; msgId: string } | null {
@@ -329,11 +333,11 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
     const wanted: { token: string; kind: string }[] = []
     const seen = new Set<string>()
     for (const entry of detail.entries) {
-      const kind = refKindOf(asString(entry.sourceType))
       const refs = Array.isArray(entry.refs) ? entry.refs : []
       for (const raw of refs) {
         const token = stripRefPrefix(asString(raw))
         if (token === '' || seen.has(token)) continue
+        const kind = refKindOf(asString(entry.sourceType), token)
         // host 全量可解:doc → 文件名;msg → im: 直查 + 裸 msgId 扫绑定 log;dp-* 池 id 也能还原(视觉走查 08-21)。
         if (kind !== 'msg' && kind !== 'doc' && !token.startsWith('dp-')) continue
         seen.add(token)
@@ -1066,7 +1070,7 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                                       <span className={css.refs}>
                                         {refList.map((raw) => {
                                     const id = stripRefPrefix(raw)
-                                    const kind = refKindOf(asString(entry.sourceType))
+                                    const kind = refKindOf(asString(entry.sourceType), id)
                                     const hit = refHits[id]
                                     // 命中一律按 hit.kind 渲染:dp-* 池 ref 已被 host 还原成原始 msg/doc(视觉走查 08-21)。
                                     if (hit !== undefined && hit.content !== '') {
@@ -1093,10 +1097,9 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                                         </button>
                                       )
                                     }
-                                    // 未命中降级:doc 保留直跳;msg 不露裸 id(「聊 群消息」),点击仍走锚点/猜群。
+                                    // 未命中降级:一律泛化类型名,不露裸 id;doc 保留直跳,msg 点击仍走锚点/猜群。
                                     const href = refHref(kind, id)
-                                    const short = id.length > 12 ? `${id.slice(0, 8)}…` : id
-                                    const label = `${REF_ICON[kind] ?? '源'} ${short}`
+                                    const label = `${REF_ICON[kind] ?? '源'} ${REF_LABEL[kind] ?? '来源'}`
                                     if (href !== null) {
                                       return <a key={raw} className={css.refChip} href={href} target="_blank" rel="noreferrer" title={raw} data-testid={`yzj-advance-ref-${id}`}>{label}</a>
                                     }
