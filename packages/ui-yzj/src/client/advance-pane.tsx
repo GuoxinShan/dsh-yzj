@@ -890,8 +890,9 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                   ) : (
                     <div className={css.timeline}>
                       {/* 三层树(用户拍板):演进=本时间线;每条事元 = 进度行(changeType·summary)
-                          + 描述正文(detail) + 原始信息(refs)。无中间分组层。 */}
-                      {detail.entries.map((entry, index) => {
+                          + 描述正文(detail) + 原始信息(refs)。无中间分组层。
+                          新→旧倒序:最新事元置顶(host 保持 oldest-first 窗口契约,仅渲染倒)。 */}
+                      {[...detail.entries].reverse().map((entry, index) => {
                         const entryId = asString(entry.entryId) || `e${index}`
                         const expanded = expandedEntries.has(entryId)
                         const refList = [...new Set(asArray(entry.refs).map(ref => asString(ref)).filter(ref => ref !== ''))]

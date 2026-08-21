@@ -954,3 +954,5 @@ client 渲染改为 **hit 优先**：命中一律按 hit.kind 渲染（文档卡
 用户「你帮我搞定这两件事」：(a) 挂「AI速记知识库（整库）」dir: 订阅——`.acceptance/verify-subscribe-lingee-lib.mjs` 走面板直写点击完成并验证 sources.json 落盘（dir:6a744266…，之后每场新会纪要自动入池；首扫基线不回灌存量）。(b) 存量 3 份纪要（08-20 三场会）进事元——`.acceptance/verify-minutes-to-entries.mjs` 在**全新 harness 会话**发定向指令（读 3 docId → yzj_advance_feed refs=[docId]，无基准字段无确认卡），agent 落 E-20260821-002/003/004 三条事元（摘要+共识描述+refs 齐全）。
 
 **执行中暴露的 harness 侧故障（待查，非本仓代码）**：首选路径「测试群话题问助手」的既有话题会话（yzj-topic-…-6a842792…，08-18 建）在 turn 3 直接以 `invalid pi-ai replay state: unknown state kind`（INVALID_REPLAY_STATE）错误结束，零工具调用——replay state 损坏与历史事件相关，全新会话无此问题。该话题里残留一条无回应的指令气泡（无害）。自动化启示：Playwright 操作 GUI 时长任务会撞真机同后端操作（第一次 0/3 超时部分因此）；`fill()` 后必须读回 inputValue 验证 React 受控 state（第一次空发由此）；.mjs 里写 TS 类型注解这种低级错不该过手。
+
+**§24.21 续（同日，时间线倒序）**：用户「时间线是不是反了新的在前面」——此前渲染按 host oldest-first 窗口直出（最新事元沉底，刚落的 E-002/003/004 要滚到底才见）。改为渲染层 `[...entries].reverse()` 新→旧置顶（host 窗口契约不动）；「查看全部 N 条」在底部语义自然成立（往下=更早）。真机 timeline-reversed.png：顶部 13:21 三条纪要事元，下接 10:38 偏差（原始信息已是消息事件行+文档名——refHits 可读化同轮生效）。35 测试绿。
