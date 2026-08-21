@@ -1075,3 +1075,19 @@ archscribe 旧产物（advance-9 spec.json/gif/excalidraw）与 HTML 版不一�
 | client | advance-pane：runAction/sendActionMessage 换调新端点（废止 createTodo+advanceFeed 两步手拼）；`doneActions` 内存 Set 废止 → `foldDoneActions` 从事元流折叠（刷新不丢；kind+文本 兼底扛综合卡重排）；warnings 显示「已完成，但：…」 | `advance-pane.client.spec.tsx` 动作卡用例改写 + 新增折叠用例（已有执行事元渲染已执行且禁用、未执行可点） |
 
 全量 660 绿（68 文件）+ typecheck 绿；build + bundle 已跑。真机验收待重启 GUI 后走查（面板点动作卡 → 事元带 refs + 订阅出现 todo: 源 + 刷新后已执行态保持）。
+
+## 24.28 dsh-2 闭环演习：决策 45 真机验收 + todo 渠道断层证实（2026-08-22 凌晨）
+
+按 [`../../.acceptance/advance-dsh2-experiment.md`](../../.acceptance/advance-dsh2-experiment.md) 设计执行（约束：消息只发 dsh-2 群、待办只建本人、不 @ 任何人），驱动 = sidecar [`advance-dsh2-driver.ts`](../../.acceptance/advance-dsh2-driver.ts) + Playwright 主控 [`verify-advance-dsh2.mjs`](../../.acceptance/verify-advance-dsh2.mjs)。**ALL PASS（23 PASS + 1 SOFT-FAIL 预期内）**，截图 `shots-advance-dsh2/`：
+
+| 验收点 | 结果 | 证据 |
+|---|---|---|
+| A1 立项+关联来源 | 面板弹窗直写立项；「关联来源」挂上 dsh-2 群 | s0-created.png |
+| A2 静默进展 | 群房间 hover 喂给推进落进度事元（refs=群消息），阶段不被拖动 | s1-fed.png |
+| A3 决策卡 | 推论链「数据包 08-24 才到→窗口压缩→威胁 08-26」+ 三动作按钮渲染 | s2-decision.png |
+| **A4 决策 45 核心面** | 建待办（refs=T-id + 自动订阅 todo: 源）/ 发消息（refs=im:g:m，dsh-2 可见）/ 定会议（留痕）；**刷新页面三动作仍已执行**（foldDoneActions 流折叠） | s3-after-reload.png（三动作全勾 + 三条 todo 订阅） |
+| A5 todo 回流 | **SOFT-FAIL 即断层证实**：勾待办 done → 巡检 → Dream，事元流无「待办完成」——`coreScanAdvance` 只实现 im:/dir: 渠道增量，todo:/event:/doc:/file: 是静态引用，「完成回流」现状只能靠 agent 主动 feed。**后续任务：todo 渠道采集器**（patrol 时对每个 todo: 订阅查状态、变化入池） | s4-dream.png |
+| A6 六态收口 | draft→running→decision-needed→updated→ready-for-review→completed；事元流全量无损（SQLite 11 条 == 面板查看全部 11 条） | s5-completed.png |
+| A7 边界 | 零页面错误；写操作只触及 dsh-2 群与本人待办库 | — |
+
+**演习踩坑回写**：pitfall-043（sidecar 裸 Context 默认 dbt 后端，须 setAdvanceBackend/setTodoBackend 对齐 sqlite）+ pitfall-044（同事项点击不重拉 / Dream 切会话两时序坑）。三轮 reset-重跑均落在驱动侧，产物代码零改动。
