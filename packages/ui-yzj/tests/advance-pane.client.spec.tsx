@@ -43,6 +43,9 @@ interface Face {
   dreamRuns: number
   focused: string[]
   groupFetches: number
+  feeds: { advanceId: string; summary: string; sourceType?: string; refs?: string[] }[]
+  todos: { title: string; ddl?: string; priority?: string; tags?: string[] }[]
+  sent: { groupId: string; content: string }[]
 }
 
 function mountPane(config: {
@@ -68,6 +71,9 @@ function mountPane(config: {
   const dreamRuns = { count: 0 }
   const focused: string[] = []
   const groupState = { fetches: 0 }
+  const feeds: { advanceId: string; summary: string; sourceType?: string; refs?: string[] }[] = []
+  const todos: { title: string; ddl?: string; priority?: string; tags?: string[] }[] = []
+  const sent: { groupId: string; content: string }[] = []
   const items = config.items ?? []
   const props: AdvancePaneProps = {
     inject: {
@@ -131,6 +137,18 @@ function mountPane(config: {
         return { ok: true, value: { hits } } as Rpc
       },
       focusBoundSession: (sessionId: string) => { focused.push(sessionId) },
+      advanceFeed: async (input: { advanceId: string; summary: string; sourceType?: string; refs?: string[] }) => {
+        feeds.push(input)
+        return { ok: true, value: { advanceId: input.advanceId, stage: 'running' } } as Rpc
+      },
+      createTodo: async (input: { title: string; ddl?: string; priority?: string; tags?: string[] }) => {
+        todos.push(input)
+        return { ok: true, value: { todoId: 'T-NEW', title: input.title } } as Rpc
+      },
+      sendMessage: async (groupId: string, content: string | undefined) => {
+        sent.push({ groupId, content: content ?? '' })
+        return { ok: true, value: { msgId: 'm-sent' } } as Rpc
+      },
       advanceSourceAdd: async (advanceId, token, label) => {
         if (!/^(im|doc|todo|event|file|dir):[A-Za-z0-9_-]+$/.test(token)) {
           return { ok: false, error: { message: `advance-source-add failed: 非法来源 token「${token}」` } } as Rpc
@@ -171,6 +189,7 @@ function mountPane(config: {
   })
   return {
     container, root, judged, created, ensured, getRequests, sourceAdds, sourceRemoves, patrols,
+    feeds, todos, sent,
     get dreamRuns() { return dreamRuns.count },
     focused,
     get groupFetches() { return groupState.fetches },
@@ -183,6 +202,12 @@ async function settle(): Promise<void> {
     await Promise.resolve()
     await Promise.resolve()
   })
+}
+
+/** Expand one timeline entry (收敛默认:点开进度行才见 detail/refs;倒序后 index 0 = mock 末条)。 */
+async function expandEntry(face: Face, index: number): Promise<void> {
+  const toggle = face.container.querySelector(`[data-testid="yzj-advance-entry-toggle-${index}"]`) as HTMLButtonElement
+  await act(async () => { toggle.click(); await Promise.resolve() })
 }
 
 describe('queuesOf', () => {
@@ -240,6 +265,19 @@ describe('parseDecisionOptions', () => {
     expect(parsed.options).toEqual([])
     expect(parsed.impact).toBe('')
     expect(parsed.rest).toBe('客户要求改范围')
+  })
+
+  it('parses 动作 lines into executable actions (决策 41); unrecognized types stay plain', () => {
+    const parsed = parseDecisionOptions('两个范围补充要定\n动作: 建待办 | 内容: 确认会议模板排期 | 截止: 2026-08-25 | 负责人: 王剑\n动作: 发消息 | 内容: 范围补充想跟你对齐一下\n动作: 定会议 | 主题: 原型评审二次会 | 时间: 2026-08-22 14:00\n动作: 喝咖啡 | 内容: 不认识\n影响: 最小回路要扩')
+    expect(parsed.actions).toEqual([
+      { kind: 'todo', text: '确认会议模板排期', fields: { '内容': '确认会议模板排期', '截止': '2026-08-25', '负责人': '王剑' } },
+      { kind: 'im', text: '范围补充想跟你对齐一下', fields: { '内容': '范围补充想跟你对齐一下' } },
+      { kind: 'event', text: '原型评审二次会', fields: { '主题': '原型评审二次会', '时间': '2026-08-22 14:00' } },
+    ])
+    expect(parsed.impact).toBe('最小回路要扩')
+    expect(parsed.rest).toContain('两个范围补充要定')
+    expect(parsed.rest).toContain('动作: 喝咖啡')
+    expect(parsed.rest).not.toContain('建待办')
   })
 })
 
@@ -497,6 +535,9 @@ describe('YzjAdvancePane', () => {
     })
     await settle()
     // 三层树(决策 39 后续):原始信息默认挂在事元行下,无需展开
+    // 收敛默认:展开两条事元才见 refs(倒序后 index 0=E-2 msg、1=E-1 doc)
+    await expandEntry(face, 0)
+    await expandEntry(face, 1)
     const docChip = face.container.querySelector('[data-testid="yzj-advance-ref-6a85774aecd3fb103b859f8a"]') as HTMLAnchorElement
     expect(docChip.tagName).toBe('A')
     expect(docChip.href).toContain('/store/doc/6a85774aecd3fb103b859f8a')
@@ -625,6 +666,7 @@ describe('YzjAdvancePane', () => {
       },
     })
     await settle()
+    await expandEntry(face, 0)
     const jump = face.container.querySelector('[data-testid="yzj-advance-ref-im:g1:m9"]') as HTMLButtonElement
     expect(jump).not.toBeNull()
     await act(async () => { jump.click(); await Promise.resolve() })
@@ -647,6 +689,7 @@ describe('YzjAdvancePane', () => {
       },
     })
     await settle()
+    await expandEntry(face, 0)
     const jump = face.container.querySelector('[data-testid="yzj-advance-ref-m-legacy"]') as HTMLButtonElement
     await act(async () => { jump.click(); await Promise.resolve() })
     expect(focused).toEqual([{ groupId: 'g2' }])
@@ -673,6 +716,7 @@ describe('YzjAdvancePane', () => {
       },
     })
     await settle()
+    await expandEntry(face, 0)
     const eventRow = face.container.querySelector('[data-testid="yzj-advance-ref-im:g1:m9"]')
     expect(eventRow).not.toBeNull()
     expect(eventRow?.textContent).toContain('老黎')
@@ -699,6 +743,7 @@ describe('YzjAdvancePane', () => {
       },
     })
     await settle()
+    await expandEntry(face, 0)
     const docRow = face.container.querySelector('[data-testid="yzj-advance-ref-6a85774aecd3fb103b859f8a"]') as HTMLAnchorElement
     expect(docRow).not.toBeNull()
     expect(docRow.tagName).toBe('A')
@@ -716,6 +761,7 @@ describe('YzjAdvancePane', () => {
       },
     })
     await settle()
+    await expandEntry(face, 0)
     const row = face.container.querySelector('[data-testid="yzj-advance-ref-msg-prd"]')
     expect(row).not.toBeNull()
     expect(row?.textContent).toContain('老黎')
@@ -735,6 +781,7 @@ describe('YzjAdvancePane', () => {
       },
     })
     await settle()
+    await expandEntry(face, 0)
     const row = face.container.querySelector('[data-testid="yzj-advance-ref-dp-1787190275985-3"]')
     expect(row).not.toBeNull()
     expect(row?.textContent).toContain('老黎')
@@ -754,6 +801,7 @@ describe('YzjAdvancePane', () => {
       lookupMiss: ['m-gone'],
     })
     await settle()
+    await expandEntry(face, 0)
     const chip = face.container.querySelector('[data-testid="yzj-advance-ref-m-gone"]')
     expect(chip?.textContent).toBe('聊 群消息')
     act(() => { face.root.unmount() })
@@ -857,6 +905,85 @@ describe('YzjAdvancePane', () => {
     await act(async () => { option2.click(); await Promise.resolve() })
     await settle()
     expect(face.judged).toEqual([{ advanceId: 'A-1', action: 'confirm_advance', note: '目标日期顺延两周' }])
+    act(() => { face.root.unmount() })
+  })
+
+  it('动作型建议卡(决策 41):建待办直执+留痕,发消息就地草稿框投递,定会议跳日程', async () => {
+    setWorkbenchDomain('advance')
+    const decision = entry({
+      entryId: 'E-9', changeType: '决策请求', summary: '两个范围补充是否纳入最小回路', tone: 'red',
+      detail: '评审浮现两个范围补充\n动作: 建待办 | 内容: 确认会议模板排期 | 截止: 2026-08-25 | 负责人: 王剑\n动作: 发消息 | 内容: 范围补充想跟你对齐一下\n动作: 定会议 | 主题: 原型评审二次会 | 时间: 2026-08-22 14:00',
+    })
+    const face = mountPane({
+      items: [item({ advanceId: 'A-1', stage: 'decision-needed', title: '要决定' })],
+      detail: {
+        item: item({ advanceId: 'A-1', stage: 'decision-needed', title: '要决定' }),
+        entries: [decision],
+        contextSources: [{ token: 'im:g1', kind: 'persistent', label: '830 项目', addedBy: 'user', addedAt: 1 }],
+      },
+    })
+    await settle()
+    const actions = face.container.querySelector('[data-testid="yzj-advance-actions"]')
+    expect(actions?.textContent).toContain('建待办：确认会议模板排期')
+    expect(actions?.textContent).toContain('发消息：范围补充想跟你对齐一下')
+    expect(actions?.textContent).toContain('定会议：原型评审二次会')
+    // 建待办:点击直落库 + 置灰 + user 事元留痕
+    const todoBtn = face.container.querySelector('[data-testid="yzj-advance-action-0"]') as HTMLButtonElement
+    await act(async () => { todoBtn.click(); await Promise.resolve() })
+    await settle()
+    expect(face.todos).toEqual([{ title: '确认会议模板排期', ddl: '2026-08-25', tags: ['王剑'] }])
+    expect(face.feeds.map(row => row.summary)).toContain('执行建议动作：建待办「确认会议模板排期」')
+    expect((face.container.querySelector('[data-testid="yzj-advance-action-0"]') as HTMLButtonElement).textContent).toContain('已建待办')
+    // 发消息:就地草稿框预填,点发送投到恰一订阅群 + 留痕
+    const imBtn = face.container.querySelector('[data-testid="yzj-advance-action-1"]') as HTMLButtonElement
+    await act(async () => { imBtn.click(); await Promise.resolve() })
+    const draft = face.container.querySelector('[data-testid="yzj-advance-action-draft"]') as HTMLTextAreaElement
+    expect(draft.value).toBe('范围补充想跟你对齐一下')
+    const send = face.container.querySelector('[data-testid="yzj-advance-action-send"]') as HTMLButtonElement
+    expect(send.textContent).toContain('830 项目')
+    await act(async () => { send.click(); await Promise.resolve() })
+    await settle()
+    expect(face.sent).toEqual([{ groupId: 'g1', content: '范围补充想跟你对齐一下' }])
+    expect(face.feeds.map(row => row.summary)).toContain('执行建议动作：发消息到「830 项目」对齐')
+    // 定会议:跳日程域
+    const eventBtn = face.container.querySelector('[data-testid="yzj-advance-action-2"]') as HTMLButtonElement
+    await act(async () => { eventBtn.click(); await Promise.resolve() })
+    expect(getWorkbenchDomain()).toBe('calendar')
+    act(() => { face.root.unmount() })
+  })
+
+  it('decision-needed 无决策请求事元(决策 41 前存量):兜底摆驱动事元 + 提示,不空区', async () => {
+    const drift = entry({ entryId: 'E-8', changeType: '偏差', summary: '评审中浮现两个需决策的范围补充', tone: 'red', detail: '阶段 running→decision-needed' })
+    const face = mountPane({
+      items: [item({ advanceId: 'A-1', stage: 'decision-needed', title: '要决定' })],
+      detail: { item: item({ advanceId: 'A-1', stage: 'decision-needed', title: '要决定' }), entries: [drift] },
+    })
+    await settle()
+    const area = face.container.querySelector('[data-testid="yzj-advance-decision"]')
+    expect(area?.textContent).toContain('评审中浮现两个需决策的范围补充')
+    expect(area?.textContent).toContain('没有带上建议动作')
+    expect(face.container.querySelector('[data-testid="yzj-advance-judge-confirm_advance"]')).not.toBeNull()
+    act(() => { face.root.unmount() })
+  })
+
+  it('事元「问助手」入口:预填讨论草稿(discuss)并切对话域(决策 41)', async () => {
+    setWorkbenchDomain('advance')
+    const face = mountPane({
+      items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行' })],
+      detail: {
+        item: item({ advanceId: 'A-1', stage: 'running', title: '试运行' }),
+        entries: [entry({ entryId: 'E-1', at: '2026/08/20 15:58', summary: '产品需求细化', changeType: '进度更新' })],
+      },
+    })
+    await settle()
+    const discuss = face.container.querySelector('[data-testid="yzj-advance-entry-discuss-0"]') as HTMLButtonElement
+    expect(discuss).not.toBeNull()
+    await act(async () => { discuss.click(); await Promise.resolve() })
+    const draftNow = getAdvanceAskDraft()
+    expect(draftNow?.kind).toBe('discuss')
+    expect(draftNow?.text).toContain('产品需求细化')
+    expect(draftNow?.text).toContain('A-1')
+    expect(getWorkbenchDomain()).toBe('im')
     act(() => { face.root.unmount() })
   })
 

@@ -13,7 +13,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { YzjPanelInject } from './rpc.ts'
 import { requestImGroupFocus, setWorkbenchDomain } from './workbench-domain.ts'
 import { setAdvanceFeedback } from './advance-feedback.ts'
-import { setAdvanceAskDraft, reviewAskText, exportReviewAskText } from './advance-ask.ts'
+import { setAdvanceAskDraft, reviewAskText, exportReviewAskText, discussAskText } from './advance-ask.ts'
 import css from './advance-pane.module.css'
 
 type UnknownRecord = Record<string, unknown>
@@ -126,7 +126,7 @@ function sourceIconOf(token: string): string {
 
 /** Props: the RPC verbs the board needs (subset of the panel inject). */
 export interface AdvancePaneProps {
-  inject: Pick<YzjPanelInject, 'advanceState' | 'advanceGet' | 'advanceCreate' | 'advanceJudge' | 'advanceEnsure' | 'advanceScanState' | 'advancePatrolNow' | 'advanceSourceAdd' | 'advanceSourceRemove' | 'fetchGroups' | 'fetchWorkspaces' | 'fetchDocs' | 'advanceDreamState' | 'advanceDreamRun' | 'advanceRefLookup' | 'focusBoundSession'>
+  inject: Pick<YzjPanelInject, 'advanceState' | 'advanceGet' | 'advanceCreate' | 'advanceJudge' | 'advanceEnsure' | 'advanceScanState' | 'advancePatrolNow' | 'advanceSourceAdd' | 'advanceSourceRemove' | 'fetchGroups' | 'fetchWorkspaces' | 'fetchDocs' | 'advanceDreamState' | 'advanceDreamRun' | 'advanceRefLookup' | 'focusBoundSession' | 'advanceFeed' | 'createTodo' | 'sendMessage'>
 }
 
 /** Queue-head patrol line (spec §14.5). */
@@ -143,14 +143,30 @@ export function formatScanStatus(scannedAt: number | null, found: number): strin
   return `上次巡检 ${hh}:${mm} · 本轮发现 ${found} 条`
 }
 
+/** One parsed 动作 line (决策 41 动作型建议卡): 建待办/发消息/定会议 → todo/im/event。 */
+export interface DecisionAction {
+  readonly kind: 'todo' | 'im' | 'event'
+  /** Button label content (内容/主题 field, else the remaining segments). */
+  readonly text: string
+  readonly fields: Record<string, string>
+}
+
+const ACTION_KIND: Record<string, DecisionAction['kind']> = { '建待办': 'todo', '发消息': 'im', '定会议': 'event' }
+
+/** 动作类型标签与执行态文案(决策 41)。 */
+const ACTION_LABEL: Record<DecisionAction['kind'], string> = { todo: '建待办', im: '发消息', event: '定会议' }
+const ACTION_DONE: Record<DecisionAction['kind'], string> = { todo: '已建待办', im: '已发消息', event: '已跳日程' }
+
 /**
  * Parse one decision-request 事元 detail into selectable options (spec §15.4
- * / 决策 23): `选项N: …` lines become buttons, the `影响: …` line is shown
- * separately, the remaining lines stay as plain detail. No `选项N` line →
- * options empty (the classic two verbs render unchanged).
+ * / 决策 23) plus action lines (决策 41): `选项N: …` lines become buttons,
+ * `动作: 建待办 | 内容: …` lines become executable action buttons, the `影响: …`
+ * line is shown separately, the remaining lines stay as plain detail.
+ * No `选项N` line → options empty; unrecognized 动作类型 stays plain text.
  */
-export function parseDecisionOptions(detail: string): { options: string[]; impact: string; rest: string } {
+export function parseDecisionOptions(detail: string): { options: string[]; impact: string; rest: string; actions: DecisionAction[] } {
   const options: string[] = []
+  const actions: DecisionAction[] = []
   let impact = ''
   const rest: string[] = []
   for (const line of detail.split('\n')) {
@@ -161,6 +177,22 @@ export function parseDecisionOptions(detail: string): { options: string[]; impac
       options.push((option[1] ?? '').trim())
       continue
     }
+    const actionMatch = trimmed.match(/^动作[:：]\s*(.+)$/)
+    if (actionMatch !== null) {
+      const segments = (actionMatch[1] ?? '').split('|').map(segment => segment.trim()).filter(segment => segment !== '')
+      const kind = ACTION_KIND[segments[0] ?? '']
+      if (kind === undefined) {
+        rest.push(trimmed)
+        continue
+      }
+      const fields: Record<string, string> = {}
+      for (const segment of segments.slice(1)) {
+        const kv = segment.match(/^([^:：|]+)[:：]\s*(.+)$/)
+        if (kv !== null) fields[(kv[1] ?? '').trim()] = (kv[2] ?? '').trim()
+      }
+      actions.push({ kind, text: fields['内容'] ?? fields['主题'] ?? segments.slice(1).join(' · '), fields })
+      continue
+    }
     const impactMatch = trimmed.match(/^影响[:：]\s*(.+)$/)
     if (impactMatch !== null) {
       impact = (impactMatch[1] ?? '').trim()
@@ -168,7 +200,7 @@ export function parseDecisionOptions(detail: string): { options: string[]; impac
     }
     rest.push(trimmed)
   }
-  return { options, impact, rest: rest.join('\n') }
+  return { options, impact, rest: rest.join('\n'), actions }
 }
 
 interface BoardState {
@@ -199,12 +231,17 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
   const [cancelArmed, setCancelArmed] = useState(false)
   /** 「已结束」折叠区(completed/cancelled 事项,终局提示事后可达)。 */
   const [showClosed, setShowClosed] = useState(false)
+  /** 动作型建议卡执行态(决策 41):`${entryId}:${actionIndex}` 已执行集 + 发消息草稿框。 */
+  const [doneActions, setDoneActions] = useState<ReadonlySet<string>>(new Set())
+  const [imDraft, setImDraft] = useState<{ key: string; text: string } | null>(null)
   /** 时间线事元详情展开集(默认折叠,展开才见原始来源)。 */
   const [expandedEntries, setExpandedEntries] = useState<ReadonlySet<string>>(new Set())
   const [draft, setDraft] = useState({ title: '', goal: '', metrics: '', assignee: '', targetDate: '', background: '' })
   const [error, setError] = useState('')
   /** msg 类事元/来源跳转：带渠道 token 直达该群并定位那条消息（决策 39）；裸 msgId 降级用订阅渠道猜群。 */
   const imGroupTokens = (detail?.contextSources ?? []).map(row => asString(row.token)).filter(token => token.startsWith('im:'))
+  /** 第一个订阅群的显示名(发消息动作的投递目标文案)。 */
+  const imGroupLabel = asString((detail?.contextSources ?? []).map(asRecord).find(row => asString(row.token).startsWith('im:'))?.label) || '订阅群'
   const jumpToMsg = (): void => {
     if (imGroupTokens.length === 1) requestImGroupFocus({ groupId: imGroupTokens[0]!.slice(3) })
     setWorkbenchDomain('im')
@@ -436,6 +473,58 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
     })
   }
 
+  /** 动作型建议卡执行(决策 41):建待办直落库;发消息开就地草稿框;定会议跳日程。执行后落 user 事元留痕。 */
+  const runAction = async (key: string, action: DecisionAction): Promise<void> => {
+    if (action.kind === 'event') {
+      setDoneActions(prev => new Set(prev).add(key))
+      setWorkbenchDomain('calendar')
+      return
+    }
+    if (action.kind === 'im') {
+      setImDraft({ key, text: action.fields['内容'] ?? action.text })
+      return
+    }
+    setBusy(true)
+    setError('')
+    const result = await props.inject.createTodo({
+      title: action.text,
+      ...(action.fields['截止'] === undefined ? {} : { ddl: action.fields['截止'] }),
+      ...(action.fields['负责人'] === undefined ? {} : { tags: [action.fields['负责人']] }),
+    })
+    if (!result.ok) {
+      setBusy(false)
+      setError(result.error.message)
+      return
+    }
+    setDoneActions(prev => new Set(prev).add(key))
+    await props.inject.advanceFeed({ advanceId: activeId, summary: `执行建议动作：建待办「${action.text}」`, sourceType: '人工' })
+    setBusy(false)
+    await refreshDetail()
+  }
+
+  /** 发消息动作发送(决策 41):用户在看板过目草稿后点发,投到恰一订阅群(D9 本人意志)。 */
+  const sendActionMessage = async (): Promise<void> => {
+    if (imDraft === null || imDraft.text.trim() === '') return
+    const groupId = (imGroupTokens[0] ?? '').slice(3)
+    if (groupId === '') {
+      setError('没有订阅的群渠道，发消息动作无处投递')
+      return
+    }
+    setBusy(true)
+    setError('')
+    const result = await props.inject.sendMessage(groupId, imDraft.text.trim())
+    if (!result.ok) {
+      setBusy(false)
+      setError(result.error.message)
+      return
+    }
+    setDoneActions(prev => new Set(prev).add(imDraft.key))
+    await props.inject.advanceFeed({ advanceId: activeId, summary: `执行建议动作：发消息到「${imGroupLabel}」对齐`, sourceType: '对话' })
+    setBusy(false)
+    setImDraft(null)
+    await refreshDetail()
+  }
+
   const openSourceModal = async (): Promise<void> => {
     setSourceModalOpen(true)
     const result = await props.inject.fetchGroups()
@@ -594,6 +683,10 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
   const decisionParsed = latestDecision === undefined
     ? undefined
     : parseDecisionOptions(asString(latestDecision.detail))
+  /** 决策 41 前存量兜底:阶段已到 decision-needed 但无决策请求事元(旧纪律喂的是偏差+stageTo)——摆驱动事元。 */
+  const latestDriver = detail === null
+    ? undefined
+    : [...detail.entries].reverse().find(entry => asString(entry.summary) !== '' && asString(entry.changeType) !== '阶段变化')
 
   return (
     <div className={css.body} data-testid="yzj-advance-pane">
@@ -792,9 +885,40 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                   </div>
                   {stage === 'decision-needed' && (
                     <div className={css.decision}>
-                      {latestDecision !== undefined && decisionParsed !== undefined && (
+                      {latestDecision !== undefined && decisionParsed !== undefined ? (
                         <>
                           <h3>{asString(latestDecision.summary)}</h3>
+                          {decisionParsed.rest !== '' && <p>{decisionParsed.rest}</p>}
+                          {decisionParsed.actions.length > 0 && (
+                            <div className={css.actions} data-testid="yzj-advance-actions">
+                              {decisionParsed.actions.map((action, actionIndex) => {
+                                const key = `${asString(latestDecision.entryId) || 'latest'}:${actionIndex}`
+                                const done = doneActions.has(key)
+                                return (
+                                  <div key={key} className={css.actionRow}>
+                                    <button
+                                      type="button"
+                                      className={css.optionBtn}
+                                      data-testid={`yzj-advance-action-${actionIndex}`}
+                                      disabled={busy || done}
+                                      onClick={() => { void runAction(key, action) }}
+                                    >
+                                      {done ? `✓ ${ACTION_DONE[action.kind]}` : `${ACTION_LABEL[action.kind]}：${action.text}`}
+                                    </button>
+                                    {action.kind === 'im' && !done && imDraft?.key === key && (
+                                      <span className={css.imDraft}>
+                                        <textarea value={imDraft.text} data-testid="yzj-advance-action-draft" onChange={(event) => { setImDraft({ key, text: event.target.value }) }} />
+                                        <span className={css.imDraftFoot}>
+                                          <button type="button" className={css.primary} data-testid="yzj-advance-action-send" disabled={busy || imDraft.text.trim() === ''} onClick={() => { void sendActionMessage() }}>发到 {imGroupLabel}</button>
+                                          <button type="button" className={css.linkBtn} onClick={() => { setImDraft(null) }}>取消</button>
+                                        </span>
+                                      </span>
+                                    )}
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )}
                           {decisionParsed.options.length > 0 && (
                             <div className={css.options} data-testid="yzj-advance-options">
                               {decisionParsed.options.map((option, index) => (
@@ -812,7 +936,14 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                             </div>
                           )}
                           {decisionParsed.impact !== '' && <p className={css.impact}>影响：{decisionParsed.impact}</p>}
-                          {decisionParsed.rest !== '' && <p>{decisionParsed.rest}</p>}
+                        </>
+                      ) : latestDriver === undefined ? (
+                        <p className={css.quiet}>等待你处理。</p>
+                      ) : (
+                        <>
+                          <h3>{asString(latestDriver.summary)}</h3>
+                          {asString(latestDriver.detail) !== '' && <p>{asString(latestDriver.detail)}</p>}
+                          <p className={css.quiet}>这条变化把事项推到了「待你决定」，但没有带上建议动作；你可以直接拍板，或到时间线点「问助手」让它补齐建议。</p>
                         </>
                       )}
                       <div className={css.verbs}>
@@ -907,31 +1038,33 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                             <span className={css.time} title={asString(entry.at)}>{formatEntryAt(asString(entry.at))}</span>
                             <i className={`${css.mark} ${css[`mark_${asString(entry.tone) || 'blue'}`]}`} />
                             <div className={css.timeCopy}>
-                              {/* 进度行:changeType 作小标签,summary 才是标题主体(视觉走查)。 */}
-                              <div className={css.entryHead}>
+                              {/* 进度行整行可点(视觉走查 08-21):默认收敛只露标题,
+                                  点开才展示描述正文+原始信息+出处 — 密度低、竖线才连得起来。 */}
+                              <button
+                                type="button"
+                                className={css.entryHead}
+                                data-testid={`yzj-advance-entry-toggle-${index}`}
+                                aria-expanded={expanded}
+                                onClick={toggleExpanded}
+                              >
                                 {asString(entry.changeType) !== '' && (
                                   <span className={`${css.changeType} ${css[`changeType_${asString(entry.tone) || 'blue'}`]}`}>{asString(entry.changeType)}</span>
                                 )}
                                 <b data-testid={`yzj-advance-entry-${index}`}>{asString(entry.summary)}</b>
-                              </div>
-                              {/* 事元本身也是一段描述(用户拍板):默认展示变化内容,
-                                  之下才是原始信息 — 进度行→事元描述→原始信息。 */}
-                              {asString(entry.detail) !== '' && (
-                                <p className={css.entryDetail} data-testid={`yzj-advance-entry-detail-${index}`}>{asString(entry.detail)}</p>
-                              )}
-                              {/* 原始信息默认挂在事元描述下(最新 2 条),多条时「展开全部」。 */}
-                              {refList.length > 0 && (
+                                <span className={css.entryCaret}>{expanded ? '收起' : '详情'}</span>
+                              </button>
+                              {expanded && (
                                 <>
-                                  <div className={css.refsHead}>
-                                    <span>原始信息 {refList.length} 条</span>
-                                    {refList.length > 2 && (
-                                      <button type="button" className={css.jump} data-testid={`yzj-advance-entry-toggle-${index}`} onClick={toggleExpanded}>
-                                        {expanded ? '收起' : `展开全部 ${refList.length} 条`}
-                                      </button>
-                                    )}
-                                  </div>
-                                  <span className={css.refs}>
-                                  {(expanded ? refList : refList.slice(-2)).map((raw) => {
+                                  {asString(entry.detail) !== '' && (
+                                    <p className={css.entryDetail} data-testid={`yzj-advance-entry-detail-${index}`}>{asString(entry.detail)}</p>
+                                  )}
+                                  {refList.length > 0 && (
+                                    <>
+                                      <div className={css.refsHead}>
+                                        <span>原始信息 {refList.length} 条</span>
+                                      </div>
+                                      <span className={css.refs}>
+                                        {refList.map((raw) => {
                                     const id = stripRefPrefix(raw)
                                     const kind = refKindOf(asString(entry.sourceType))
                                     const hit = refHits[id]
@@ -980,10 +1113,26 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                                 </>
                               )}
                               {/* 事元出处脚注:裸 sourceType 曾渲染成 refs 卡下的孤儿标签(视觉走查)。 */}
-                              {(asString(entry.sourceType) !== '' || asString(entry.actor) === 'user') && (
-                                <div className={css.timeMeta}>
+                              <div className={css.timeMeta}>
+                                {(asString(entry.sourceType) !== '' || asString(entry.actor) === 'user') && (
                                   <span>{asString(entry.actor) === 'user' ? `${asString(entry.sourceType) === '' ? '' : `${asString(entry.sourceType)} · `}你的判断` : `记录自 ${asString(entry.sourceType)}`}</span>
-                                </div>
+                                )}
+                                <button
+                                  type="button"
+                                  className={css.jump}
+                                  data-testid={`yzj-advance-entry-discuss-${index}`}
+                                  title="就这条进展问助手(预填到问助手栏)"
+                                  onClick={() => {
+                                    const advanceId = asString(detail.item.advanceId)
+                                    const title = asString(detail.item.title)
+                                    setAdvanceAskDraft({ advanceId, title, text: discussAskText(advanceId, title, asString(entry.at), asString(entry.summary)), kind: 'discuss' })
+                                    setWorkbenchDomain('im')
+                                  }}
+                                >
+                                  问助手
+                                </button>
+                              </div>
+                                </>
                               )}
                             </div>
                           </div>
