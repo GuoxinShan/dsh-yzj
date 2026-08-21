@@ -461,6 +461,10 @@ export function YzjPanel(props: YzjPanelProps) {
   const [docPreview, setDocPreview] = useState<{ title: string; meta: string; lines: string[] } | null>(null)
   /** Folder drill-down trail inside the selected workspace (root = workspace). */
   const [docCrumbs, setDocCrumbs] = useState<{ id: string; title: string }[]>([])
+  /** 知识库搜索(v0.1.4):null = 浏览模式;非 null = 搜索结果列表(可能空)。 */
+  const [docQuery, setDocQuery] = useState('')
+  const [docResults, setDocResults] = useState<Record<string, unknown>[] | null>(null)
+  const [docSearching, setDocSearching] = useState(false)
   const [eventDetail, setEventDetail] = useState<{ title: string; time: string; person: string; place: string; content: string } | null>(null)
   const [messagesFetching, setMessagesFetching] = useState(false)
   const openGenRef = useRef(0)
@@ -745,6 +749,18 @@ export function YzjPanel(props: YzjPanelProps) {
         margin: 0,
       }
     : undefined
+
+  /** 知识库全局搜索(v0.1.4):命中后左栏切到结果列表;清空关键词回浏览模式。 */
+  const runDocSearch = async (): Promise<void> => {
+    const keyword = docQuery.trim()
+    if (keyword === '') { setDocResults(null); return }
+    setDocSearching(true)
+    const result = await props.fetchDocSearch(keyword, state.workspaceId === '' ? undefined : state.workspaceId)
+    setDocSearching(false)
+    if (!result.ok) { props.actions.setError(result.error.message); return }
+    const rows = asArray(result.value).length > 0 ? asArray(result.value) : asArray(asRecord(result.value).list)
+    setDocResults(rows.map(asRecord))
+  }
 
   /** Fetch one docs level of the workspace; parentId omitted = root. */
   const fetchDocsAt = (workspace: string, parentId?: string): void => {
@@ -1221,7 +1237,51 @@ export function YzjPanel(props: YzjPanelProps) {
         <div className={css.body}>
           <div className={css.twoPane}>
             <div className={css.paneLeft}>
+              <div className={css.docSearch}>
+                <input
+                  className={css.docSearchInput}
+                  value={docQuery}
+                  placeholder="搜索文档标题/文件名…"
+                  aria-label="搜索文档"
+                  data-testid="yzj-panel-doc-search"
+                  onChange={(event) => {
+                    setDocQuery(event.target.value)
+                    if (event.target.value.trim() === '') setDocResults(null)
+                  }}
+                  onKeyDown={(event) => { if (event.key === 'Enter') void runDocSearch() }}
+                />
+              </div>
               <div className={css.paneList}>
+                {docResults !== null ? (
+                  docSearching ? (
+                    <div className={css.empty}>搜索中…</div>
+                  ) : docResults.length === 0 ? (
+                    <div className={css.empty}><YzjCloudIcon size={28} /><span>没有命中文档</span></div>
+                  ) : (
+                    docResults.map((node, index) => {
+                      const id = asString(node.id)
+                      const title = asString(node.title) || asString(node.fileName) || id
+                      const updated = asString(node.updateTime).slice(0, 10)
+                      const kb = asString(node.kbName)
+                      return (
+                        <button
+                          key={`s${index}`}
+                          type="button"
+                          className={css.item}
+                          data-testid={`yzj-panel-doc-hit-${id}`}
+                          onClick={() => { openDoc(id) }}
+                        >
+                          <span className={css.itemTitle}>
+                            <IconFolderOpenOutline16 />
+                            <span className={css.itemTitleText}>{title}</span>
+                          </span>
+                          <span className={css.itemSub}>{kb === '' ? '' : `${kb} · `}{updated === '' ? '文档' : `更新 ${updated}`}</span>
+                        </button>
+                      )
+                    })
+                  )
+                ) : (
+                  <>
                 {state.workspaces.length === 0 && !state.loading && state.error === '' && (
                   <div className={css.empty}><YzjCloudIcon size={28} /><span>暂无知识库</span></div>
                 )}
@@ -1247,6 +1307,8 @@ export function YzjPanel(props: YzjPanelProps) {
                     </button>
                   )
                 })}
+                  </>
+                )}
               </div>
             </div>
             <div className={css.paneRight}>

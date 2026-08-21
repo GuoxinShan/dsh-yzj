@@ -418,6 +418,20 @@ describe('yzj_advance_feed', () => {
     expect(store.items[0]!.fields['阶段']).toBe('running')
   })
 
+  it('records the producing session on the entry (决策 41 讨论回环:问助手直回产出会话)', async () => {
+    const store = new FakeStore(true)
+    store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'running', 描述: '原目标' } })
+    const { tools } = mount(store)
+    const feed = tools.find(tool => tool.name === 'yzj_advance_feed')!
+    const result = await feed.execute(
+      { advanceId: 'A-1', summary: '群里一句', sourceType: '对话' } as never,
+      { agent: { session: { id: 'yzj-dream-20260821-101500' } } } as never,
+    )
+    expect(result.content).toContain('fed 事元')
+    expect(store.entries[0]!.fields['出处会话']).toBe('yzj-dream-20260821-101500')
+    expect(parseAdvanceEntry({ id: 'x', fields: store.entries[0]!.fields })?.producer).toBe('yzj-dream-20260821-101500')
+  })
+
   it('rejects an illegal stage move without writing any entry', async () => {
     const store = new FakeStore(true)
     store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'draft' } })

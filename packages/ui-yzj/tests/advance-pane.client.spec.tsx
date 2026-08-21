@@ -12,7 +12,7 @@ import { YzjAdvancePane, queuesOf, STAGE_LABEL, formatScanStatus, parseDecisionO
 import type { AdvancePaneProps } from '../src/client/advance-pane.tsx'
 import { getAdvanceFeedback, setAdvanceFeedback } from '../src/client/advance-feedback.ts'
 import { getAdvanceAskDraft, setAdvanceAskDraft } from '../src/client/advance-ask.ts'
-import { getWorkbenchDomain, setWorkbenchDomain, subscribeImGroupFocus, type ImFocusTarget } from '../src/client/workbench-domain.ts'
+import { consumeTopicOpen, getWorkbenchDomain, setWorkbenchDomain, subscribeImGroupFocus, type ImFocusTarget } from '../src/client/workbench-domain.ts'
 
 type Rpc = { ok: true; value: unknown } | { ok: false; error: { message: string } }
 
@@ -149,6 +149,15 @@ function mountPane(config: {
         sent.push({ groupId, content: content ?? '' })
         return { ok: true, value: { msgId: 'm-sent' } } as Rpc
       },
+      homeNav: async () => ({
+        ok: true,
+        value: {
+          rooms: [{
+            groupId: 'g1', sessionId: 'yzj-home-g1', groupName: '830 项目', yzjKind: 'group',
+            topics: [{ sessionId: 't-old', title: '旧话题', lastActivity: 1 }, { sessionId: 't-latest', title: '最新话题', lastActivity: 2 }],
+          }],
+        },
+      }) as Rpc,
       advanceSourceAdd: async (advanceId, token, label) => {
         if (!/^(im|doc|todo|event|file|dir):[A-Za-z0-9_-]+$/.test(token)) {
           return { ok: false, error: { message: `advance-source-add failed: 非法来源 token「${token}」` } } as Rpc
@@ -979,11 +988,14 @@ describe('YzjAdvancePane', () => {
     expect(face.container.querySelector('[data-testid="yzj-advance-verbs"]')?.className).toContain('verbsSecondary')
     const chat = face.container.querySelector('[data-testid="yzj-advance-decision-chat"]') as HTMLButtonElement
     await act(async () => { chat.click(); await Promise.resolve() })
+    await settle()
     const chatDraft = getAdvanceAskDraft()
     expect(chatDraft?.kind).toBe('discuss')
     expect(chatDraft?.text).toContain('两个范围补充是否纳入最小回路')
     expect(chatDraft?.text).toContain('补/更新决策请求')
     expect(getWorkbenchDomain()).toBe('im')
+    // 讨论回环:直开订阅群最新话题抽屉(决策 41)
+    expect(consumeTopicOpen('g1')?.sessionId).toBe('t-latest')
     act(() => { face.root.unmount() })
   })
 
@@ -1007,13 +1019,14 @@ describe('YzjAdvancePane', () => {
     act(() => { face.root.unmount() })
   })
 
-  it('事元「问助手」入口:预填讨论草稿(discuss)并切对话域(决策 41)', async () => {
+  it('事元「问助手」入口:预填讨论草稿并直开最新话题抽屉(决策 41 讨论回环)', async () => {
     setWorkbenchDomain('advance')
     const face = mountPane({
       items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行' })],
       detail: {
         item: item({ advanceId: 'A-1', stage: 'running', title: '试运行' }),
         entries: [entry({ entryId: 'E-1', at: '2026/08/20 15:58', summary: '产品需求细化', changeType: '进度更新' })],
+        contextSources: [{ token: 'im:g1', kind: 'persistent', label: '830 项目', addedBy: 'user', addedAt: 1 }],
       },
     })
     await settle()
@@ -1022,11 +1035,37 @@ describe('YzjAdvancePane', () => {
     const discuss = face.container.querySelector('[data-testid="yzj-advance-entry-discuss-0"]') as HTMLButtonElement
     expect(discuss).not.toBeNull()
     await act(async () => { discuss.click(); await Promise.resolve() })
+    await settle()
     const draftNow = getAdvanceAskDraft()
     expect(draftNow?.kind).toBe('discuss')
     expect(draftNow?.text).toContain('产品需求细化')
     expect(draftNow?.text).toContain('A-1')
     expect(getWorkbenchDomain()).toBe('im')
+    // 直开 agent 问答面:latch 指向订阅群的最新话题(transcript 消费后开抽屉,不再停在群时间线)
+    const pending = consumeTopicOpen('g1')
+    expect(pending?.sessionId).toBe('t-latest')
+    act(() => { face.root.unmount() })
+  })
+
+  it('事元有产出会话时「问助手」直回产出会话(focusBoundSession),不走话题抽屉(用户拍板 08-21)', async () => {
+    setWorkbenchDomain('advance')
+    const face = mountPane({
+      items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行' })],
+      detail: {
+        item: item({ advanceId: 'A-1', stage: 'running', title: '试运行' }),
+        entries: [entry({ entryId: 'E-1', at: '2026/08/21 15:12', summary: '产品需求细化', changeType: '进度更新', producer: 'yzj-dream-20260821-101500' })],
+        contextSources: [{ token: 'im:g1', kind: 'persistent', label: '830 项目', addedBy: 'user', addedAt: 1 }],
+      },
+    })
+    await settle()
+    await expandEntry(face, 0)
+    const discuss = face.container.querySelector('[data-testid="yzj-advance-entry-discuss-0"]') as HTMLButtonElement
+    await act(async () => { discuss.click(); await Promise.resolve() })
+    await settle()
+    // 聚焦产出会话,不切域、不开话题 latch
+    expect(face.focused).toEqual(['yzj-dream-20260821-101500'])
+    expect(consumeTopicOpen('g1')).toBeNull()
+    expect(getWorkbenchDomain()).toBe('advance')
     act(() => { face.root.unmount() })
   })
 

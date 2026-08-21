@@ -14,6 +14,7 @@ import { AdvanceFeedPicker } from './advance-feed-picker.tsx'
 import { setAdvanceFeedback, useAdvanceFeedback } from './advance-feedback.ts'
 import { setAdvanceAskDraft, useAdvanceAskDraft } from './advance-ask.ts'
 import { topicListBadge } from './conv-list.tsx'
+import { consumeTopicOpen } from './workbench-domain.ts'
 import { registerRoomComposerHost, ROOM_COMPOSER_HOST_ID } from './composer-host.ts'
 import {
   artifactOf, layoutRoomItems, topicReplyCount,
@@ -309,6 +310,28 @@ export function YzjFusedView(props: YzjFusedInjected) {
     if (props.anchorMsgId === undefined || props.anchorMsgId === '') return
     setHighlightMsgId(props.anchorMsgId)
   }, [props.anchorMsgId, viewKey])
+
+  // 决策 41 讨论回环:advance 板「问助手/回到对话继续聊」直开话题抽屉(agent 问答面),
+  // 不停在群时间线。binding 就绪后消费 latch;无 sessionId 时按 title 现 mint 一个话题。
+  useEffect(() => {
+    const groupId = value.binding?.yzjConversationId
+    if (groupId === undefined) return
+    const pending = consumeTopicOpen(groupId)
+    if (pending === null) return
+    void (async () => {
+      let sessionId = pending.sessionId ?? ''
+      if (sessionId === '' && props.homeTopicOpen !== undefined) {
+        const result = await props.homeTopicOpen({ groupId, ...(pending.title === undefined ? {} : { title: pending.title }) })
+        const minted = asRecord(result.ok ? result.value : null).sessionId
+        if (typeof minted === 'string') sessionId = minted
+      }
+      if (sessionId === '') return
+      setDrawerOpen(true)
+      setLensId(sessionId)
+    })()
+    // consume-once latch; binding identity churns per poll but the latch is gone after the first match.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewKey, value.binding])
 
   // 决策 39 后续:捞过的消息本体都在 bound log(每群 500 条)且 fused 全量读,
   // 但从未开过的群只 backfill 最近 50 条 — 锚点被新消息顶出窗口时自动翻页

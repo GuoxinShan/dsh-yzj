@@ -1009,3 +1009,15 @@ client 渲染改为 **hit 优先**：命中一律按 hit.kind 渲染（文档卡
 未对齐（留观）：workspace 企业级权限参数（demo 个人库够用）；block replace 与 block update/delete/insert 能力重叠（便捷封装，低优先但已顺手补齐）。工具总数 51→59、写工具 27→33（根 README 同步）。
 
 **§24.22 续（同日，v0.1.4 完全适配收口）**：「完全适配了吗」核验补最后一块——`yzj_doc_workspace_create` 透传 `--visibility`（1=企业/2=个人）与 `--all-member`（企业全员 2=可编辑/3=可查看，v0.1.4 企业库特性），组装断言进 v014 spec；GUI 重启让 8 个新工具真机注册（lib/tool-yzj.mjs 核验 19 处新工具名引用）；全量 641 绿（含 2 个 v0.1.4 真实 CLI 冒烟；一次间歇抖动复跑即过）。面板全局 search RPC 是 `contact user search`（搜人），doc search 面板入口留作后续（非适配必选项）。
+
+**§24.23 再续（同日，讨论入口直开 agent 问答面）**：用户「问助手/回到对话继续聊为什么都是回到云之家对话而不是 agent 对话」——原路径只切 im 域 + banner（用户还要自己开话题抽屉，两跳）。新增 topic-open latch（workbench-domain）：入口点击 → 预填 discuss 草稿 → 切 im 域 + 聚焦订阅群 → latch `{groupId, sessionId|title}` → 群 transcript binding 就绪后消费：有最新话题直开抽屉，没有则 `homeTopicOpen` 按标题现 mint（「进展讨论 · …」/「决策讨论 · …」）；无订阅群退回 banner 老路径。641 绿；真机点「问助手」直接落在 830 群最新话题的抽屉、问助手栏已预填「关于推进事项 A-…这条进展…」（截图 ux-discuss-drawer.png）。
+
+## 24.23 Dream 取材纪律升级 + 知识库搜索框（2026-08-21）
+
+用户两问：「UI 要不要加这些（v0.1.4）？Dream 有点笨要不要加工具？」
+
+**Dream 笨的确诊（证据）**：最近有产出的 Dream 会话（yzj-dream-20260821-151102，产出 E-20260821-001 偏差）全程只 5 次工具调用（dream_status/list/inspect/feed/mark），**零深读**——没有 im message list 读前后文、没有 doc get/block list 读正文、没有 search 检索。池条目只是一行摘要（dir: 条目甚至只有文档标题），它凭标题猜当然笨。**根因不是缺工具（59 个工具它都能用），是指令没取材纪律**。修复：dreamAskPrompt 加取材段（dir: 条目必先 doc get+block list 读正文；im: 拿不准就读前后各 10 条；相关判断可 advance_get/doc search 找对照；detail 必须写读到的原文要点不是复述标题）。
+
+**UI 适配取舍**：知识库页加搜索框（高性价比：47 个库翻目录找文档是高频痛点）——host `doc-search` RPC + `fetchDocSearch` + 左栏顶部搜索框（选中库时限库搜），结果行点击 openDoc 预览。不做：建群/选人 UI（低频、contact 选择器成本高，agent 面已能）、文档编辑器（write/block replace 属 agent 面，面板不做编辑器）。下载按钮留后续（预览区顺手位）。
+
+测试：panel-switch 补搜索框用例（Enter→fetchDocSearch→命中行→点击开预览）；真机 doc-search.png：搜「830纪要」命中 4 行、点击打开全文预览。644 绿。
