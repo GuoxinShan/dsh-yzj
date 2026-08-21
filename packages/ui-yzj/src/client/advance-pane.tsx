@@ -82,18 +82,6 @@ function refStampOf(sentAt: number): string {
   return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
-/** 连续同 changeType 的事元聚为一个「进度」节点(进度更新从多个事元来,用户拍板)。 */
-function groupEntriesByChangeType(entries: readonly UnknownRecord[]): { changeType: string; items: { entry: UnknownRecord; index: number }[] }[] {
-  const groups: { changeType: string; items: { entry: UnknownRecord; index: number }[] }[] = []
-  entries.forEach((entry, index) => {
-    const changeType = asString(entry.changeType) || '备注'
-    const last = groups[groups.length - 1]
-    if (last !== undefined && last.changeType === changeType) last.items.push({ entry, index })
-    else groups.push({ changeType, items: [{ entry, index }] })
-  })
-  return groups
-}
-
 /** Doc deep link(知识库 web);其他类型跳域(无消息级锚点,spec 决策 8 诚实降级)。 */
 function refHref(kind: string, id: string): string | null {
   if (kind === 'doc' && id !== '') return `https://www.yunzhijia.com/knowledge/lingee/#/store/doc/${id}`
@@ -870,36 +858,30 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                 <section className={css.section} data-testid="yzj-advance-timeline">
                   <div className={css.sectionHead}>
                     <h2>推进演进</h2>
-                    <small>进度节点由多个事元组成 · 事元下挂它引用的原始信息</small>
+                    <small>三层结构：演进 → 事元（进度行+描述）→ 原始信息</small>
                   </div>
                   {detail.entries.length === 0 ? (
                     <p className={css.quiet}>还没有事元记录。</p>
                   ) : (
                     <div className={css.timeline}>
-                      {/* 进度节点 = 连续同 changeType 的事元组(用户模型:进度更新从
-                          多个事元来);节点内每条事元 = 描述 + 原始信息。 */}
-                      {groupEntriesByChangeType(detail.entries).map((group, gi) => (
-                        <div key={`g${gi}`} className={css.entryGroup} data-testid={`yzj-advance-entry-group-${gi}`}>
-                          <div className={css.entryGroupHead}>
-                            <b>{group.changeType}</b>
-                            <span>{group.items.length} 个事元{group.items.length > 1 ? ` · ${asString(group.items[0]?.entry.at)} → ${asString(group.items[group.items.length - 1]?.entry.at)}` : ` · ${asString(group.items[0]?.entry.at)}`}</span>
-                          </div>
-                          {group.items.map(({ entry, index }) => {
-                          const entryId = asString(entry.entryId) || `e${index}`
-                          const expanded = expandedEntries.has(entryId)
-                          const refList = [...new Set(asArray(entry.refs).map(ref => asString(ref)).filter(ref => ref !== ''))]
-                          const toggleExpanded = (): void => {
-                            const next = new Set(expandedEntries)
-                            if (next.has(entryId)) next.delete(entryId)
-                            else next.add(entryId)
-                            setExpandedEntries(next)
-                          }
-                          return (
+                      {/* 三层树(用户拍板):演进=本时间线;每条事元 = 进度行(changeType·summary)
+                          + 描述正文(detail) + 原始信息(refs)。无中间分组层。 */}
+                      {detail.entries.map((entry, index) => {
+                        const entryId = asString(entry.entryId) || `e${index}`
+                        const expanded = expandedEntries.has(entryId)
+                        const refList = [...new Set(asArray(entry.refs).map(ref => asString(ref)).filter(ref => ref !== ''))]
+                        const toggleExpanded = (): void => {
+                          const next = new Set(expandedEntries)
+                          if (next.has(entryId)) next.delete(entryId)
+                          else next.add(entryId)
+                          setExpandedEntries(next)
+                        }
+                        return (
                           <div key={entryId} className={css.timeItem}>
                             <span className={css.time}>{asString(entry.at)}</span>
                             <i className={`${css.mark} ${css[`mark_${asString(entry.tone) || 'blue'}`]}`} />
                             <div className={css.timeCopy}>
-                              <b data-testid={`yzj-advance-entry-${index}`}>{asString(entry.summary)}</b>
+                              <b data-testid={`yzj-advance-entry-${index}`}>{asString(entry.changeType) !== '' ? `${asString(entry.changeType)} · ` : ''}{asString(entry.summary)}</b>
                               {/* 事元本身也是一段描述(用户拍板):默认展示变化内容,
                                   之下才是原始信息 — 进度行→事元描述→原始信息。 */}
                               {asString(entry.detail) !== '' && (
@@ -970,10 +952,8 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                               </div>
                             </div>
                           </div>
-                          )
-                          })}
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   )}
                   {!showAll && detail.entryTotal > detail.entries.length && (
