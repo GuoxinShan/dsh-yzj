@@ -22,10 +22,17 @@
         },
         {
           "id": "facts",
-          "title": "工作现场事实",
+          "title": "现场事实",
           "icon": "clipboard",
           "icon_style": "illustrated",
-          "note": "IM 消息 + 知识库目录(dir:)增量"
+          "note": "群消息·文档·日程 持续发生"
+        },
+        {
+          "id": "dir",
+          "title": "知识库目录",
+          "icon": "folder",
+          "icon_style": "illustrated",
+          "note": "dir: 目录增量订阅"
         },
         {
           "id": "assistant",
@@ -36,7 +43,7 @@
       ]
     },
     {
-      "title": "IM↔灵基 打通 · 做",
+      "title": "IM 打通 · 做",
       "subtitle": "robot 通道 · ack-then-push",
       "steps": [
         {
@@ -46,21 +53,23 @@
           "icon_style": "illustrated"
         },
         {
+          "id": "deeplink",
+          "title": "深链跳回",
+          "icon": "globe",
+          "icon_style": "illustrated",
+          "note": "cloudhub · 来源跳转"
+        },
+        {
           "id": "outbound",
           "title": "出站推送",
           "icon": "emit",
-          "icon_style": "illustrated"
+          "icon_style": "illustrated",
+          "note": "推进卡推送进群"
         },
         {
           "id": "card25",
           "title": "type-25 确认",
           "icon": "check",
-          "icon_style": "illustrated"
-        },
-        {
-          "id": "deeplink",
-          "title": "cloudhub 跳回",
-          "icon": "globe",
           "icon_style": "illustrated"
         }
       ]
@@ -73,27 +82,29 @@
           "id": "ledger",
           "title": "事元 Ledger",
           "icon": "db",
-          "icon_style": "illustrated"
+          "icon_style": "illustrated",
+          "note": "append-only · 本地 SQLite"
+        },
+        {
+          "id": "pool",
+          "title": "蓄水池",
+          "icon": "queue",
+          "icon_style": "illustrated",
+          "note": "DreamPool · 水位/手动/定时抽取"
         },
         {
           "id": "stage",
-          "title": "七态·增量感应门",
+          "title": "增量感应门",
           "icon": "decision",
           "icon_style": "illustrated",
-          "note": "含 cancelled 终局(中止)"
-        },
-        {
-          "id": "gate",
-          "title": "确认卡门禁",
-          "icon": "shield",
-          "icon_style": "illustrated"
+          "note": "七态含 cancelled · 改基准才卡"
         },
         {
           "id": "board",
           "title": "推进看板",
-          "icon": "queue",
+          "icon": "eye",
           "icon_style": "illustrated",
-          "note": "三层:演进→事元→原始信息(事件级定位)"
+          "note": "三层:演进→事元→原始信息"
         }
       ]
     },
@@ -114,17 +125,11 @@
           "icon_style": "illustrated"
         },
         {
-          "id": "pool",
-          "title": "Signal Pool",
-          "icon": "queue",
-          "icon_style": "illustrated",
-          "note": "蓄水池·抽取=直建会话(MVP:yzj-dream-*)"
-        },
-        {
           "id": "lanes",
           "title": "Work/Dream",
           "icon": "brain",
-          "icon_style": "illustrated"
+          "icon_style": "illustrated",
+          "note": "Dream 直建 yzj-dream-* 会话"
         },
         {
           "id": "memory",
@@ -142,19 +147,14 @@
       "label": "消息即信号"
     },
     {
-      "from": "inbound",
-      "to": "ledger",
-      "label": "登记事元"
-    },
-    {
       "from": "facts",
-      "to": "ledger",
+      "to": "inbound",
       "label": "事件总线"
     },
     {
-      "from": "assistant",
-      "to": "lanes",
-      "label": "召唤"
+      "from": "inbound",
+      "to": "ledger",
+      "label": "登记事元"
     },
     {
       "from": "ledger",
@@ -195,23 +195,23 @@
     {
       "from": "lanes",
       "to": "stage",
-      "label": "阶段"
+      "label": "阶段推进"
     },
     {
       "from": "stage",
-      "to": "gate",
-      "label": "改基准才卡"
+      "to": "board",
+      "label": "上看板"
     },
     {
-      "from": "gate",
+      "from": "board",
       "to": "ledger",
-      "label": "回流 · loop",
+      "label": "事元回流 · loop",
       "accent": "purple"
     },
     {
-      "from": "ledger",
-      "to": "board",
-      "label": "投影折叠"
+      "from": "stage",
+      "to": "outbound",
+      "label": "建议推群"
     },
     {
       "from": "board",
@@ -220,28 +220,8 @@
     },
     {
       "from": "card25",
-      "to": "im",
+      "to": "inbound",
       "label": "人在 IM 批准"
-    },
-    {
-      "from": "lanes",
-      "to": "outbound",
-      "label": "建议推群"
-    },
-    {
-      "from": "outbound",
-      "to": "im",
-      "label": "推进卡推送"
-    },
-    {
-      "from": "board",
-      "to": "deeplink",
-      "label": "来源跳转"
-    },
-    {
-      "from": "deeplink",
-      "to": "facts",
-      "label": "跳回原文"
     }
   ],
   "footer": "MVP 映射：bridge→开放API直连 · tool-yzj→推进域服务(本地 SQLite) · ui-yzj页签→灵基推进页(三层数据树) · memory-yzj→记忆服务 · harness schedule→Brain Scheduler · robot-yzj→IM打通层 · Dream 直建会话→Brain 主动唤起"

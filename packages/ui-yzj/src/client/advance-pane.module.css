@@ -518,7 +518,7 @@
 .sourceCiting {
   display: block;
   font-size: 10.5px;
-  color: var(--dsh-alias-label-tertiary);
+  color: var(--dsw-alias-label-tertiary);
   line-height: 1.5;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -532,39 +532,44 @@
   margin: 2px 0 4px;
   font-size: 12px;
   line-height: 1.6;
-  color: var(--dsh-alias-label-secondary);
+  color: var(--dsw-alias-label-secondary);
   white-space: pre-wrap;
   word-break: break-word;
 }
 
 /* --- 事元 refs 事件行(决策 39 后续): msg ref 可读化 — 谁/何时/说了什么 --- */
 
+/* refEvent 用 bg-base:浅色主题下 bg-layer-* 与画布同色(pitfall-023),bg-base 才能浮出来。 */
 .refEvent {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
-  border: 1px solid var(--dsh-alias-border-l2);
+  width: 100%;
+  max-width: 560px;
+  box-sizing: border-box;
+  border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 10px;
-  background: var(--dsh-alias-bg-layer-1);
+  background: var(--dsw-alias-bg-base);
   padding: 6px 10px;
   font-size: 11.5px;
   cursor: pointer;
   text-align: left;
-  max-width: min(420px, 100%);
+  text-decoration: none;
 }
 
 .refEvent:hover {
-  border-color: var(--dsh-static-deepseek-500);
+  border-color: var(--dsw-static-deepseek-500);
+  text-decoration: none;
 }
 
 .refEventMeta {
   font-size: 10.5px;
-  color: var(--dsh-alias-label-tertiary);
+  color: var(--dsw-alias-label-tertiary);
 }
 
 .refEventBody {
-  color: var(--dsh-alias-label-primary);
+  color: var(--dsw-alias-label-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -614,11 +619,11 @@
 }
 
 .time {
-  flex: 0 0 auto;
+  flex: 0 0 76px;
   font-size: 10.5px;
   color: var(--dsw-alias-label-tertiary);
   padding-top: 2px;
-  min-width: 96px;
+  white-space: nowrap;
 }
 
 .mark {
@@ -627,11 +632,24 @@
   height: 8px;
   border-radius: 50%;
   margin-top: 4px;
+  position: relative;
 }
 
 .mark_blue { background: var(--dsw-static-deepseek-500); }
 .mark_green { background: #2f9e44; }
 .mark_red { background: #e5484d; }
+
+/* 竖向轨道:从当前圆点连到下一条事元的圆点(时间线成线,视觉走查)。 */
+.timeItem:not(:last-child) .mark::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 10px;
+  bottom: -24px;
+  width: 1.5px;
+  margin-left: -0.75px;
+  background: var(--dsw-alias-border-l2);
+}
 
 .timeCopy {
   flex: 1;
@@ -644,7 +662,39 @@
 .timeCopy b {
   font-size: 13px;
   line-height: 1.5;
+  font-weight: 600;
   color: var(--dsw-alias-label-primary);
+}
+
+/* 进度行:changeType 小标签 + summary 标题主体(视觉走查)。 */
+
+.entryHead {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.changeType {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.changeType_blue { color: var(--dsw-static-deepseek-500); }
+.changeType_red { color: #e5484d; }
+.changeType_green { color: #2f9e44; }
+
+.refsHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
 }
 
 .timeCopy p {
@@ -664,32 +714,34 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.subGroupLabel {
-  font-size: 11.5px;
+.dreamLine {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  font-size: 11px;
+  line-height: 1.5;
   color: var(--dsw-alias-label-tertiary);
-  margin: 10px 0 4px;
+  margin-top: 2px;
 }
 
-.dreamLine {
+.dreamActions {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
-  color: var(--dsw-alias-label-tertiary);
-  margin-top: 2px;
 }
 
 /* --- refs chips / closed zone / patrol (v1.7 UX polish) ---------------------------------- */
 
 .refs {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  max-width: none;
-  white-space: normal;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
 }
 
 .refChip {
+  align-self: flex-start;
   display: inline-flex;
   align-items: center;
   border: 1px solid var(--dsw-alias-border-l2);

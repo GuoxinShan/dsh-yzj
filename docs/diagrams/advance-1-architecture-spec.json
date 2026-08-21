@@ -72,14 +72,13 @@
     ]
   },
   "decision": {
-    "title": "两种节奏",
-    "body": "Work 实时\nDream 蓄水池抽取"
+    "title": "两种节奏"
   },
   "output": {
     "label": "推进看板",
     "icon": "eye"
   },
-  "loop_label": "Dream 抽取：pending 出池 → 建议卡回流 Ledger",
+  "loop_label": "Dream 出池 → 建议卡回流 Ledger",
   "retry_label": "无偏差静默 · dead_letter",
   "left_panel": {
     "title": "数据层 · tool-yzj",
@@ -120,10 +119,10 @@
       },
       {
         "title": "每日 Dream",
-        "body": "直建 yzj-dream-* 会话\nturn1=抽取指令·模型出场",
+        "body": "直建 yzj-dream-* 会话\n模型出场",
         "icon": "brain",
         "icon_style": "hero",
-        "icon_size": "hero"
+        "icon_size": "standard"
       },
       {
         "title": "记忆召回",
