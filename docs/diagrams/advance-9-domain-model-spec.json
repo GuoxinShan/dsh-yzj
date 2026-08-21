@@ -85,66 +85,60 @@
     ]
   },
   "center_panel": {
-    "title": "四条公理",
-    "subtitle": "(领域模型的硬约束)",
-    "footer": "违例即拒",
-    "cards": [
-      {
-        "title": "唯一变更通道",
-        "body": "feed 追加事元 · 无改删",
-        "icon": "file",
-        "icon_size": "standard"
-      },
-      {
-        "title": "事实/意图分家",
-        "body": "事元=事实 · 行动=意图",
-        "icon": "package",
-        "icon_size": "standard"
-      },
-      {
-        "title": "规则/判断分工",
-        "body": "host 管规则 · LLM 管判断",
-        "icon": "gear",
-        "icon_size": "standard"
-      },
-      {
-        "title": "终局人主权",
-        "body": "completed/cancelled 只由人进",
-        "icon": "user",
-        "icon_size": "standard"
-      }
-    ]
-  },
-  "right_panel": {
     "title": "行动执行器",
-    "incoming_label": "分派",
-    "return_label": "效应回流",
+    "subtitle": "(行动 = 意图 + 执行器 + 归属 + 效应指针)",
+    "footer": "执行结果必须回流",
     "cards": [
       {
         "title": "建待办",
-        "body": "人执行 · 三态\ntodo:id 订阅回流",
+        "body": "人执行 · 订阅回流",
         "icon": "check",
         "icon_size": "standard"
       },
       {
         "title": "发消息",
-        "body": "一次性效应\nrefs=im:群:消息",
+        "body": "一次性 · 留 refs",
         "icon": "message",
         "icon_size": "standard"
       },
       {
         "title": "定会议",
-        "body": "落日程域\n纪要可回流",
+        "body": "落日程 · 纪要回流",
         "icon": "clock",
         "icon_size": "standard"
       },
       {
         "title": "派任务",
-        "body": "AI 执行 · 长周期\n(未来执行器)",
+        "body": "AI 执行 · 未来",
         "icon": "agent",
         "icon_size": "standard"
       }
     ]
+  },
+  "right_panel": {
+    "title": "三条公理",
+    "cards": [
+      {
+        "title": "唯一变更通道",
+        "body": "一切变更 = feed 事元\n无 update/delete",
+        "icon": "file",
+        "icon_size": "standard"
+      },
+      {
+        "title": "两个分家",
+        "body": "事元=事实 行动=意图\nhost 规则 LLM 判断",
+        "icon": "package",
+        "icon_size": "standard"
+      },
+      {
+        "title": "终局人主权",
+        "body": "completed/cancelled\n只由用户 judge 进入",
+        "icon": "user",
+        "icon_size": "standard"
+      }
+    ],
+    "incoming_label": "遵循",
+    "return_label": "约束全场"
   },
   "footer": "事实=事元(append-only) · 意图=行动(有生命周期) · 规则归 host / 判断归 LLM · 域外一律 token 引用",
   "signature": "@dsh-yzj"

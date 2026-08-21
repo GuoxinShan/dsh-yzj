@@ -159,3 +159,42 @@ describe('YzjPanel docs search (v0.1.4)', () => {
     act(() => { root.unmount() })
   })
 })
+
+describe('YzjPanel workspace type groups (v0.1.4)', () => {
+  it('知识库列表按 visibility 分组:个人置顶,企业/团队随后', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root: Root = createRoot(container)
+    const instance = createYzjStore().create()
+    const inject = stubInject({
+      fetchWorkspaces: async () => ok([
+        { id: 'kb-e1', name: '费用审核智能体', visibility: 1, docCount: 11, memberCount: 1 },
+        { id: 'kb-p1', name: '我的知识', visibility: 2, docCount: 16, memberCount: 1 },
+        { id: 'kb-p2', name: 'AI速记知识库', visibility: 2, docCount: 6, memberCount: 1 },
+        { id: 'kb-e2', name: '灵基foundation', visibility: 1, docCount: 7, memberCount: 1 },
+      ]),
+    })
+    instance.actions.setOpen(true)
+    instance.actions.setTab('docs')
+    instance.actions.setWorkspaces([
+      { id: 'kb-e1', name: '费用审核智能体', visibility: 1, docCount: 11, memberCount: 1 },
+      { id: 'kb-p1', name: '我的知识', visibility: 2, docCount: 16, memberCount: 1 },
+      { id: 'kb-p2', name: 'AI速记知识库', visibility: 2, docCount: 6, memberCount: 1 },
+      { id: 'kb-e2', name: '灵基foundation', visibility: 1, docCount: 7, memberCount: 1 },
+    ])
+    const useStore = <R,>(selector: (state: YzjPanelState) => R): R => selector(instance.getSnapshot())
+    act(() => {
+      root.render(<YzjPanel {...inject} useStore={useStore} actions={instance.actions} />)
+    })
+    await flush()
+    expect(container.querySelector('[data-testid="yzj-panel-ws-group-personal"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="yzj-panel-ws-group-enterprise"]')).not.toBeNull()
+    // 个人组整体在企业组之前(与数据源顺序无关)
+    const text = container.textContent ?? ''
+    const personalAt = text.indexOf('我的知识')
+    const enterpriseAt = text.indexOf('费用审核智能体')
+    expect(personalAt).toBeGreaterThanOrEqual(0)
+    expect(enterpriseAt).toBeGreaterThan(personalAt)
+    act(() => { root.unmount() })
+  })
+})
