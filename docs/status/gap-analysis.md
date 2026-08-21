@@ -666,7 +666,7 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 | scan 工具 | 只读 `yzj_advance_scan`（50→51）：`groups` 必填 1–8；首扫 `type=newest` 建基线不回灌；增量 `type=new`；过滤本人/`BOT-`；cursor 写 storage-domain `yzj_advance_scan_cursors` | `advance.spec.ts`：基线 / 静默轮 / 过滤自身 / cursor 持久 / 未知群 |
 | host 去重 | `coreFeedAdvance` 在 `appendEntry` 前：`input.refs` 与已有事元 refs 有交集 → 幂等返回、不加行（空 refs 不去重） | `advance.spec.ts`：同 msgId 二次 feed 不加行；无 refs 仍追加 |
 | 巡检教学 | `INSPECT_DISCIPLINE` + scan/inspect/feed description 含巡检五步；用户说「开启巡检」→ root `schedule_create(every_seconds≥300)` | digest 断言「巡检五步」；scan 不在 `WRITE_SPECS` |
-| schedule 挂载 | bundle `cordis.patch.yml` 加 `id: time-context` / `id: schedule`（与官方 `examples/web-schedule` 同 id，防双挂） | 插件 id 与 overlay 对齐；诚实边界：session-local，GUI 关就停 |
+| schedule 挂载 | bundle `cordis.patch.yml` 加 `id: time-context` / `id: schedule`（与官方 `examples/web-schedule` 同 id，防双挂） | 插件 id 与 overlay 对齐；诚实边界：session-local，GUI 关就停。**v1.9 决策 42 已移除挂载行（§24.24）** |
 | 无人值守 | `docs/spec/advance-patrol-routine.yaml` + `docs/spec/headless-yzj.cordis.yml`（只挂 bridge+tool-yzj）。digest 降噪：routines 每轮都投 chatnode，无内容过滤 → 默认只 `file` deliver；无发现输出 `[advance-patrol:quiet]` | 模板头写明 spike 结论 |
 | 看板状态行 | `/yzj advance-scan-state` + 队列头 `data-testid="yzj-advance-scan-status"`（尚未巡检 / 上次巡检 HH:mm · 本轮发现 N 条） | `advance-pane.client.spec.tsx` + `rpc.node.spec.ts` |
 
@@ -974,4 +974,36 @@ client 渲染改为 **hit 优先**：命中一律按 hit.kind 渲染（文档卡
 
 并行会话同日把时间线改为「倒序 + 默认收敛」（commit 77f4f90/25b00f6，问助手按钮随出处行入展开区，测试经 expandEntry 先展开）；两边工作已在工作树合流：630 绿 + typecheck 绿。真机（GUI 14:27 重启）verify-advance-actions.mjs 全 PASS，截图 ux-actions-decision.png。注：成功指标卡 0/0/0 是指标 current 从未被 feed 更新（动作卡里「建待办」类执行回写不涉及指标）——指标更新纪律留待下轮（Dream 比对后应回写 current）。
 
-**§24.21 五续（同日，出处脚注按 refs 载体）**：用户「为啥是记录自会议啊这不是 im 来的吗，我们的信息来源没有字段区分？」——字段是有的，但语义没分清：sourceType 记**内容场合**（agent 提炼时判断「会议讨论来的」），refs 才是**溯源载体**（客观 IM 消息）；「记录自」措辞承诺载体却渲染了 sourceType，于是 IM 提炼的事元显示「记录自 会议」。修复：新增 entryOriginOf——按 refs 实际 kind 聚合（msg/doc/todo/event → 群消息/文档/待办/日程，多类 join「·」），无 refs 退回 sourceType；actor=user 的「你的判断」标记不变。spec §1 事元定义补「来源类型 vs refs 的语义分工」。630 绿；真机两条 13:54 事元脚注均为「记录自 群消息」（origin-by-refs.png）。
+**§24.21 五续（同日，出处脚注按 refs 载体）**：用户「为啥是记录自会议啊这不是 im 来的吗，我们的信息来源没有字段区分？」——字段是有的，但语义没分清：sourceType 记**内容场合**（agent 提炼时判断「会议讨论来的」），refs 才是**溯源载体**（客观 IM 消息）；「记录自」措辞承诺载体却渲染了 sourceType，于是 IM 提炼的事元显示「记录自 会议」。修复：新增 entryOriginOf——按 refs 实际 kind 聚合（msg/doc/todo/event → 群消息/文档/待办/日程，多类 join「·」），无 refs 退回 sourceType；actor=user  的「你的判断」标记不变。spec §1 事元定义补「来源类型 vs refs 的语义分工」。630  绿；真机两条 13:54 事元脚注均为「记录自 群消息」（origin-by-refs.png）。
+
+**§24.23 续（同日，决策卡讨论回环）**：用户「需要我决策的卡片应该可以回到对话中继续聊，选项应该是变化的/askuserquestion，而不是写死的」——决策卡加「回到对话继续聊」入口（预填问题上下文的 discuss 草稿切对话域；agent 聊出新建议按抑制判据补/更新决策请求，用户再回看板拍板，闭环）；有 agent 产选项/动作行时写死的 judge 动词降级次要行（verbsSecondary，确认推进去 primary）——动态内容为主、写死动词为辅。兜底卡同有讨论入口。client spec 增补（讨论草稿内容/降级 className/兜底卡入口），630 绿；真机 verify-advance-actions.mjs 增「回到对话继续聊」断言全 PASS。
+
+## 24.24 bundle｜移除 schedule/time-context 挂载行：决策 35 遗留死重收尾（2026-08-21，决策 42）
+
+缘起：用户在 dream 固化会话里看到 `Time sampled while preparing turn X, step Y` 反复注入（每 step 一条），质疑「为啥 yzj 要加这个」。排查链：`dsh web --dump-config` 组合树显示两行挂在 `# == @dsh-yzj/bundle` 段落——来源是本仓 `cordis.patch.yml`（v1.4 决策 13/16，为「巡检五步」模型教学挂的）；但 v1.8 决策 35 已把巡检收敛为 host 机械 routine（`startPatrolTimer`），Dream 定时走 dream.json `dailyAt` 自管 tick，`packages/*/src` 全仓对 harness `schedule` 服务与 `schedule_create` **零引用**——挂载行成为死重，每个会话每个 step 白付三行读数（time-context 默认 `refreshIntervalMs=0`）。harness 官方默认 composition 本就不启用 time-context（仅 `examples/web-schedule` opt-in overlay），移除后与官方口径对齐。
+
+| 面 | 交付 | 证据 |
+|---|---|---|
+| 挂载行 | 删 `cordis.patch.yml` 的 `time-context` / `schedule` 两行（同 id 设计使官方 overlay 仍可覆盖恢复） | `dsh web --dump-config` 组合树无此两行 |
+| 依赖 | 删 package.json `@deepseek-ai/dsh-time-context`；**保留** `@deepseek-ai/dsh-schedule`——robot-yzj `!routines` bang 命令以库形态 import `foldScheduleEvents`（折叠会话内 schedule 事件的纯函数，插件不挂载时返回空列表，回复「本会话暂无定时提醒」），tsdown 打包 external 化该 import，发布形态依赖它解析 | `packages/robot-yzj/src/router.ts` import；`lib/robot-yzj.mjs` 保留 external import |
+| 文档 | spec 决策 13/16 标注 v1.9 废止、新增决策 42，版本头升 v1.9 | ai-advance-design.md |
+
+**教训回写**：决策 35（巡检去模型化）落地时只改了巡检机制、没收挂载行的尾——机制级决策变更应同轮清点其带进来的 composition 行。pitfall 库未新增条目（无「现象与预期不符」的调试过程，属决策债务收尾）。
+
+**§24.20 续（同日，picker 文档标签）**：用户「为啥这里又有知识库又有文档」——实测 `doc list` 节点：灵基知识库**没有独立文件夹对象**，「目录」= 含子页的 .otl 文档（`type=2`/`fileSuffix=otl` + hasChildren；830实验·共识 childrenCount=4、纪要-总结 childrenCount=1 都是文档）。picker 给这类节点加「（文档）」标签 + 弹窗说明「订阅它=看它的子页变化」，整库条目不变；不移除（830实验·共识这类文档订阅是真实在用的能力）。client spec fixture 带 type/fileSuffix、断言标签与关联 label；630 绿；真机 picker 4 个文档节点全部带标签（截图 ux-picker-doctag.png）。
+
+**§24.20 再续（同日，picker 收窄整库）**：用户「就整库就好了别搞太复杂」——picker 不再列一层目录/含子页文档（上一续的「（文档）」标签方案被更彻底的收窄取代），只列个人库「整库」；弹窗文案与分区标题（知识库（整库订阅））同步。存量 dir: 订阅（830实验·共识等文档级）在 registry 与巡检面不受影响。client spec 改断言（只列两整库、关联 label=「我的知识（整库）」）；638 绿；真机 picker 仅剩「AI速记知识库（整库）/ 我的知识（整库）」（截图 ux-picker-libonly.png）。
+
+## 24.22 tool-yzj｜yzj-cli v0.1.4 对齐：8 个新工具 + 删除族 --yes 兼容必修（2026-08-21）
+
+用户转发 v0.1.4 发布（im 群组管理 / doc search·write·download·block replace / 企业 workspace 权限）拍板「新功能有价值，对齐」。本机 0.1.3→0.1.4 升级（升级引发 keychain ACL 重弹——未签名 node 脚本 Always Allow 不持久，已在钥匙串访问.app 改「允许所有应用」+ 重登恢复；凭据明文全程未接触）。
+
+| 层 | 改动 |
+|---|---|
+| doc.ts | 新增 `yzj_doc_search`（只读，限库分页）、`yzj_doc_write`（整篇覆盖/追加，standard）、`yzj_doc_download`（落本地，overwrite 时 standard）、`yzj_doc_block_replace`（范围先删后插，standard） |
+| im.ts | 新增 `yzj_im_group_search`（只读）、`yzj_im_group_create`（standard，成员 2-10 校验）、`yzj_im_group_members_add`（standard）、`yzj_im_group_members_remove`（strong + --yes） |
+| **兼容必修** | v0.1.4 给删除族全加强制 `--yes`（doc delete / block delete / sheet table·record delete / calendar event delete）——既有封装全缺，0.1.4 下这些工具会失败；统一透传（产品确认卡已确认，--yes 不再二次挡） |
+| guard/cards | WRITE_SPECS +6（remove strong、write/block_replace/create/add standard、download when overwrite）；cards 工具名 +8 与中文名 |
+| 测试 | v014-tools.spec.ts 8 例 fake 组装断言（含 --yes 透传×5、成员窗口校验）；tools.spec.ts +2 真实冒烟（doc search 命中 830纪要×4、group search 命中 830 群）——640 绿 |
+
+未对齐（留观）：workspace 企业级权限参数（demo 个人库够用）；block replace 与 block update/delete/insert 能力重叠（便捷封装，低优先但已顺手补齐）。工具总数 51→59、写工具 27→33（根 README 同步）。

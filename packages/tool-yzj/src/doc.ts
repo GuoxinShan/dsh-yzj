@@ -318,7 +318,7 @@ export function applyDocTools(ctx: Context, budget: YzjToolBudget): void {
     timeoutMs: budget.timeoutMs,
     isConcurrencySafe: () => false,
     async execute(args) {
-      return runValue(ctx, budget, 'doc delete', ['doc', 'delete', '--id', args.id], () => ({
+      return runValue(ctx, budget, 'doc delete', ['doc', 'delete', '--id', args.id, '--yes'], () => ({
         content: `deleted doc (${args.id})`,
         data: { id: args.id },
       }))
@@ -472,11 +472,106 @@ export function applyDocTools(ctx: Context, budget: YzjToolBudget): void {
     isConcurrencySafe: () => false,
     async execute(args) {
       return runValue(ctx, budget, 'doc block delete',
-        ['doc', 'block', 'delete', '--id', args.id, '--operations', args.operations],
+        ['doc', 'block', 'delete', '--id', args.id, '--operations', args.operations, '--yes'],
         (json) => ({
           content: `deleted blocks in doc (${args.id})\n${docLink(args.id)}`,
           data: { payload: clipJson(json, { maxChars: budget.maxMetaChars }), id: args.id, link: docLink(args.id) },
         }))
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'yzj_doc_search',
+    description: 'Search knowledge-base documents by keyword in title/file name (yzj-cli v0.1.4). Optional workspace scope; paged (pageNum from 1, pageSize ≤50). Use this to locate a doc before yzj_doc_get / yzj_doc_write / yzj_doc_download.',
+    parameters: {
+      keyword: { type: 'string', required: true, description: 'Search keyword (matches title and file name).' },
+      workspace: { type: 'string', description: 'Limit to one knowledge base (KB_ID).' },
+      pageSize: { type: 'number', description: 'Page size, max 50 (default 20).' },
+      pageNum: { type: 'number', description: 'Page number, from 1 (default 1).' },
+    },
+    output: yzjToolOutput,
+    timeoutMs: budget.timeoutMs,
+    isConcurrencySafe: () => true,
+    async execute(args) {
+      const command = ['doc', 'search', '--keyword', args.keyword]
+      if (args.workspace !== undefined) command.push('--workspace', args.workspace)
+      if (args.pageSize !== undefined) command.push('--page-size', String(args.pageSize))
+      if (args.pageNum !== undefined) command.push('--page-num', String(args.pageNum))
+      return runValue(ctx, budget, 'doc search', command, (json) => {
+        const rows = asArray(json).length > 0 ? asArray(json) : asArray(asRecord(json).list)
+        const lines = rows.map(nodeLine)
+        const content = lines.length === 0 ? '(no matches)' : lines.join('\n')
+        return { content, data: { list: clipJson(rows, { maxChars: budget.maxMetaChars }) } }
+      })
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'yzj_doc_write',
+    description: 'Write the WHOLE content of one smart doc (otl) in one call (yzj-cli v0.1.4): overwrite (default, replaces the entire body) or append (adds to the end). Content format markdown (default) or html. For surgical edits prefer yzj_doc_block_insert/update/replace — overwrite destroys the previous body, so it requires user confirmation.',
+    parameters: {
+      id: { type: 'string', required: true, description: 'Doc node id (must be an otl smart doc).' },
+      content: { type: 'string', required: true, description: 'Full document content (overwrite) or the segment to append (append).' },
+      mode: { type: 'string', enum: ['overwrite', 'append'], description: 'overwrite (default) or append.' },
+      format: { type: 'string', enum: ['markdown', 'html'], description: 'Content format (default markdown).' },
+    },
+    output: yzjToolOutput,
+    timeoutMs: budget.timeoutMs * 2,
+    isConcurrencySafe: () => false,
+    async execute(args) {
+      const command = ['doc', 'write', '--id', args.id, '--content', args.content]
+      if (args.mode !== undefined) command.push('--mode', args.mode)
+      if (args.format !== undefined) command.push('--format', args.format)
+      return runValue(ctx, budget, 'doc write', command, (json) => ({
+        content: `wrote doc (${args.id}) mode=${args.mode ?? 'overwrite'}\n${docLink(args.id)}`,
+        data: { payload: clipJson(json, { maxChars: budget.maxMetaChars }), id: args.id, link: docLink(args.id) },
+      }))
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'yzj_doc_download',
+    description: 'Download one knowledge-base Office/HTML document node to a local file (yzj-cli v0.1.4). Without output the original file name lands in the current directory; without overwrite an existing file is auto-renamed (report.pdf → report (1).pdf). Overwriting an existing local file requires user confirmation.',
+    parameters: {
+      id: { type: 'string', required: true, description: 'Doc node id (must be an Office/HTML attachment-type node, not otl).' },
+      output: { type: 'string', description: 'Output file path.' },
+      overwrite: { type: 'boolean', description: 'Overwrite an existing local file; requires user confirmation.' },
+    },
+    output: yzjToolOutput,
+    timeoutMs: budget.timeoutMs * 2,
+    isConcurrencySafe: () => false,
+    async execute(args) {
+      const command = ['doc', 'download', '--id', args.id]
+      if (args.output !== undefined) command.push('--output', args.output)
+      if (args.overwrite === true) command.push('--overwrite')
+      return runValue(ctx, budget, 'doc download', command, (json) => ({
+        content: `downloaded doc (${args.id})${args.output === undefined ? '' : ` → ${args.output}`}`,
+        data: { payload: clipJson(json, { maxChars: budget.maxMetaChars }), id: args.id, output: args.output ?? '' },
+      }))
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'yzj_doc_block_replace',
+    description: 'Replace a block range inside an otl smart doc (yzj-cli v0.1.4): deletes blocks [start, end) then inserts content. start >= 1 (index 0 is the doc title and can never be removed); end is exclusive and must exceed start. content is the same block-node JSON array shape as yzj_doc_block_insert.',
+    parameters: {
+      id: { type: 'string', required: true, description: 'Doc node id (otl).' },
+      start: { type: 'number', required: true, description: 'Delete start index (inclusive, >= 1).' },
+      end: { type: 'number', required: true, description: 'Delete end index (exclusive, > start).' },
+      content: { type: 'string', required: true, description: 'Block-node JSON array to insert in place (see yzj_doc_block_insert).' },
+      parentBlockId: { type: 'string', description: 'Parent block id; defaults to "doc" (document root).' },
+    },
+    output: yzjToolOutput,
+    timeoutMs: budget.timeoutMs,
+    isConcurrencySafe: () => false,
+    async execute(args) {
+      const command = ['doc', 'block', 'replace', '--id', args.id,
+        '--start', String(args.start), '--end', String(args.end), '--content', args.content]
+      if (args.parentBlockId !== undefined) command.push('--parent-block-id', args.parentBlockId)
+      return runValue(ctx, budget, 'doc block replace', command, (json) => ({
+        content: `replaced blocks [${args.start}, ${args.end}) in doc (${args.id})\n${docLink(args.id)}`,
+        data: { payload: clipJson(json, { maxChars: budget.maxMetaChars }), id: args.id, link: docLink(args.id) },
+      }))
     },
   }))
 }

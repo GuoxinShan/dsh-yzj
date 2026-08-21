@@ -7,10 +7,10 @@ Model-facing Yunzhijia tools over `ctx.yzjBridge`. This package owns tool schema
 | Domain | Tools |
 | ------ | ----- |
 | contact | `yzj_whoami`, `yzj_contact_search`, `yzj_contact_get` |
-| doc | `yzj_doc_workspace_list/get/create`, `yzj_doc_list/get/recent/create/rename/move/delete/import/download_url`, `yzj_doc_block_list/insert/update/delete` |
+| doc | `yzj_doc_workspace_list/get/create`, `yzj_doc_list/get/recent/create/rename/move/delete/import/download_url`, `yzj_doc_search/write/download` (v0.1.4), `yzj_doc_block_list/insert/update/delete/replace` |
 | sheet | `yzj_sheet_create/get`, `yzj_sheet_table_get/create/rename/delete`, `yzj_sheet_record_list/create/update/delete` |
 | calendar | `yzj_calendar_event_list/get/create/update/delete/participants`, `yzj_calendar_room_find` |
-| im | `yzj_im_message_send/list`, `yzj_im_group_recent` |
+| im | `yzj_im_message_send/list`, `yzj_im_group_recent`, `yzj_im_group_search/create/members_add/members_remove` (v0.1.4) |
 | file | `yzj_file_upload`, `yzj_file_download` |
 | todo | `yzj_todo_list/create/update/complete` (semantic todo core, demo-stage sheet backend; see `ctx.yzjTodo`) |
 | advance | `yzj_advance_list/get/inspect/scan/create/feed` (AI推进 board; see `ctx.yzjAdvance`) |
@@ -32,7 +32,7 @@ Event-sourced AI推进 core (docs/spec/ai-advance-design.md): one advancement it
 
 ## Approval guard
 
-`tools/pre-execute` returns `{ kind: 'ask', reason }` for operations that must never run unconfirmed: `yzj_doc_delete`, `yzj_doc_move`, `yzj_doc_block_delete`, `yzj_sheet_table_delete`, `yzj_sheet_record_delete`, `yzj_calendar_event_delete`, `yzj_im_message_send`, `yzj_file_upload`, `yzj_file_download` with `overwrite: true`, todo writes, `yzj_advance_create`, `yzj_advance_feed` **only when it rewrites the baseline** (`goal`/`metrics`/`targetDate`/`assignee` — plain appends and stage moves stay silent, spec §13.5), `robot_share_write`, and **bound-home** `robot_notify` / `robot_continue` (D9 group push; the unbound operator console stays ungated). The composed ApprovalService routes the ask to the GUI approval panel (or the in-group suggestion card on inbound homes) and audits the pair on the session log.
+`tools/pre-execute` returns `{ kind: 'ask', reason }` for operations that must never run unconfirmed: `yzj_doc_delete`, `yzj_doc_move`, `yzj_doc_block_delete`, `yzj_sheet_table_delete`, `yzj_sheet_record_delete`, `yzj_calendar_event_delete`, `yzj_im_group_members_remove` (strong; these destructive commands also carry the CLI `--yes` flag after the product-level approval), `yzj_im_message_send`, `yzj_file_upload`, `yzj_file_download`/`yzj_doc_download` with `overwrite: true`, `yzj_doc_write`, `yzj_doc_block_replace`, `yzj_im_group_create`, `yzj_im_group_members_add`, todo writes, `yzj_advance_create`, `yzj_advance_feed` **only when it rewrites the baseline** (`goal`/`metrics`/`targetDate`/`assignee` — plain appends and stage moves stay silent, spec §13.5), `robot_share_write`, and **bound-home** `robot_notify` / `robot_continue` (D9 group push; the unbound operator console stays ungated). The composed ApprovalService routes the ask to the GUI approval panel (or the in-group suggestion card on inbound homes) and audits the pair on the session log.
 
 ## Config
 

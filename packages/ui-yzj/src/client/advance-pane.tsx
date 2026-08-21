@@ -13,7 +13,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { YzjPanelInject } from './rpc.ts'
 import { requestImGroupFocus, setWorkbenchDomain } from './workbench-domain.ts'
 import { setAdvanceFeedback } from './advance-feedback.ts'
-import { setAdvanceAskDraft, reviewAskText, exportReviewAskText, discussAskText } from './advance-ask.ts'
+import { setAdvanceAskDraft, reviewAskText, exportReviewAskText, discussAskText, decisionChatText } from './advance-ask.ts'
 import css from './advance-pane.module.css'
 
 type UnknownRecord = Record<string, unknown>
@@ -551,30 +551,17 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
       const rows = asArray(value.list).length > 0 ? asArray(value.list) : asArray(result.value)
       setGroupOptions(rows.map(asRecord).filter(row => asString(row.groupId) !== ''))
     }
-    // 知识库目录 picker(决策 40):全部个人库整库 + 各库一层目录(hasChildren;
-    // 多库时目录带库名前缀)。决策 32 只列「我的知识」——AI速记知识库(会议
-    // 纪要自动归档地)因此被漏掉,用户 08-21 拍板修正。
+    // 知识库 picker(决策 40,08-21 二拍):只列整库——「就整库就好了别搞太复杂」;
+    // 一层目录/含子页文档不再列出(灵基知识库无独立文件夹,文档当目录混读奇怪)。
     const dirs: { id: string; label: string }[] = []
     const wsResult = await props.inject.fetchWorkspaces('personal')
     if (wsResult.ok) {
       const workspaces = asArray(wsResult.value).map(asRecord)
         .filter(row => asString(row.id) !== '')
         .slice(0, MAX_PICKER_WORKSPACES)
-      const multi = workspaces.length > 1
       for (const ws of workspaces) {
         const kbId = asString(ws.id)
-        const kbName = asString(ws.name) || kbId
-        dirs.push({ id: kbId, label: `${kbName}（整库）` })
-        const docsResult = await props.inject.fetchDocs(kbId)
-        if (!docsResult.ok) continue
-        for (const node of asArray(docsResult.value).map(asRecord)) {
-          const id = asString(node.id)
-          const title = asString(node.title)
-          const hasChildren = node.hasChildren === true || (typeof node.childrenCount === 'number' && node.childrenCount > 0)
-          if (id !== '' && title !== '' && hasChildren) {
-            dirs.push({ id, label: multi ? `${kbName} / ${title}` : title })
-          }
-        }
+        dirs.push({ id: kbId, label: `${asString(ws.name) || kbId}（整库）` })
       }
     }
     setDirOptions(dirs)
@@ -705,6 +692,16 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
   const latestDriver = detail === null
     ? undefined
     : [...detail.entries].reverse().find(entry => asString(entry.summary) !== '' && asString(entry.changeType) !== '阶段变化')
+  /** agent 产的选项/动作是决策卡主按钮;有它们时写死的 judge 动词降级为次要行(用户拍板 08-21)。 */
+  const hasDynamic = decisionParsed !== undefined && (decisionParsed.actions.length > 0 || decisionParsed.options.length > 0)
+  /** 「回到对话继续聊」:预填讨论草稿(kind=discuss)切对话域;agent 聊出新建议后补/更新决策请求,用户再回看板拍板。 */
+  const chatAboutDecision = (summary: string): void => {
+    if (detail === null) return
+    const advanceId = asString(detail.item.advanceId)
+    const title = asString(detail.item.title)
+    setAdvanceAskDraft({ advanceId, title, text: decisionChatText(advanceId, title, summary), kind: 'discuss' })
+    setWorkbenchDomain('im')
+  }
 
   return (
     <div className={css.body} data-testid="yzj-advance-pane">
@@ -961,13 +958,21 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                         <>
                           <h3>{asString(latestDriver.summary)}</h3>
                           {asString(latestDriver.detail) !== '' && <p>{asString(latestDriver.detail)}</p>}
-                          <p className={css.quiet}>这条变化把事项推到了「待你决定」，但没有带上建议动作；你可以直接拍板，或到时间线点「问助手」让它补齐建议。</p>
+                          <p className={css.quiet}>这条变化把事项推到了「待你决定」，但没有带上建议动作；你可以直接拍板，或「回到对话继续聊」让它补齐建议。</p>
                         </>
                       )}
-                      <div className={css.verbs}>
+                      <div className={hasDynamic ? `${css.verbs} ${css.verbsSecondary}` : css.verbs} data-testid="yzj-advance-verbs">
                         <button type="button" data-testid="yzj-advance-judge-confirm_condition" disabled={busy} onClick={() => { void judge('confirm_condition') }}>确认新条件</button>
-                        <button type="button" className={css.primary} data-testid="yzj-advance-judge-confirm_advance" disabled={busy} onClick={() => { void judge('confirm_advance') }}>确认推进</button>
+                        <button type="button" className={hasDynamic ? undefined : css.primary} data-testid="yzj-advance-judge-confirm_advance" disabled={busy} onClick={() => { void judge('confirm_advance') }}>确认推进</button>
                         <button type="button" data-testid="yzj-advance-judge-ignore" disabled={busy} onClick={() => { void judge('ignore') }}>忽略</button>
+                        <button
+                          type="button"
+                          data-testid="yzj-advance-decision-chat"
+                          disabled={busy}
+                          onClick={() => { chatAboutDecision(asString((latestDecision ?? latestDriver)?.summary)) }}
+                        >
+                          回到对话继续聊
+                        </button>
                       </div>
                     </div>
                   )}
@@ -1259,7 +1264,7 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
               <h2>关联来源</h2>
               <button type="button" aria-label="关闭" onClick={() => { setSourceModalOpen(false) }}>×</button>
             </header>
-            <p className={css.sideNote}>IM 群与知识库目录都是持续渠道：巡检按订阅取增量（群=新消息，目录=新增/更新文档）。关联即订阅，解除不删事元。</p>
+            <p className={css.sideNote}>IM 群与知识库整库都是持续渠道：巡检按订阅取增量（群=新消息，整库=库内新增/更新文档）。关联即订阅，解除不删事元。</p>
             {groupOptions.length > 0 && (
               <>
                 <p className={css.subGroupLabel}>IM 群</p>
@@ -1283,7 +1288,7 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
             )}
             {dirOptions.length > 0 && (
               <>
-                <p className={css.subGroupLabel}>知识库目录</p>
+                <p className={css.subGroupLabel}>知识库（整库订阅）</p>
                 <div className={css.subGroupList} data-testid="yzj-advance-source-dirs">
                   {dirOptions.map((dir) => (
                     <button

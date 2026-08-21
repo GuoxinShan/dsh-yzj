@@ -370,6 +370,17 @@
   cursor: default;
 }
 
+/* 有 agent 产选项/动作时,judge 动词降级为次要行(决策 41:动态为主、写死为辅)。 */
+.verbsSecondary {
+  margin-top: 2px;
+}
+
+.verbsSecondary button {
+  font-size: 11px;
+  padding: 4px 10px;
+  color: var(--dsw-alias-label-secondary);
+}
+
 /* --- decision options (spec §15.4 / 决策 23) ---------------------------------- */
 
 .options {
