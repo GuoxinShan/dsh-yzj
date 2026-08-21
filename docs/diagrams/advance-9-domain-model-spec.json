@@ -1,9 +1,8 @@
 {
-  "layout": "graph",
-  "direction": "right",
+  "layout": "panorama",
   "style": "paper",
   "animation": "flow",
-  "density": "airy",
+  "density": "compact",
   "canvas": {
     "fps": 20,
     "frames": 41
@@ -13,147 +12,140 @@
     "highlight": "事元驱动闭环",
     "subtitle": "观察 → 分析 → 决策 → 执行 → 再观察 · 环上一切转折都落事元"
   },
-  "nodes": [
+  "input_title": "信号来源（订阅渠道）",
+  "inputs": [
     {
-      "id": "observe",
-      "label": "① 观察",
-      "icon": "eye",
-      "body": "订阅渠道增量巡检\n+ Dream 蓄水池",
-      "color": "#7bb8ff",
-      "x": 170,
-      "y": 380
+      "label": "IM 群消息",
+      "icon": "message"
     },
     {
-      "id": "analyze",
-      "label": "② 分析",
-      "icon": "brain",
-      "body": "摊开目标与指标\n六条打扰判据(LLM)",
-      "color": "#b78bff",
-      "x": 400,
-      "y": 230
+      "label": "待办",
+      "icon": "check"
     },
     {
-      "id": "decide",
-      "label": "③ 决策",
-      "icon": "decision",
-      "body": "决策请求事元\n人拍板 judge",
-      "color": "#f4b64e",
-      "x": 640,
-      "y": 230
+      "label": "文档/目录",
+      "icon": "folder"
     },
     {
-      "id": "act",
-      "label": "④ 执行",
-      "icon": "gear",
-      "body": "行动 = 意图+执行器\n+归属+效应指针",
-      "color": "#48e0c2",
-      "x": 830,
-      "y": 380
+      "label": "日程",
+      "icon": "clock"
     },
     {
-      "id": "reobserve",
-      "label": "⑤ 再观察",
-      "icon": "scan",
-      "body": "refs 指针\n+ 自动订阅回流",
-      "color": "#7ee3d6",
-      "x": 400,
-      "y": 600
-    },
-    {
-      "id": "item",
-      "label": "推进事项",
-      "icon": "db",
-      "body": "事元流 = 事实\n投影 = 缓存",
-      "color": "#ff7ab6",
-      "x": 480,
-      "y": 390
-    },
-    {
-      "id": "todo",
-      "label": "建待办",
-      "icon": "check",
-      "body": "人执行 · 三态\n订阅回流",
-      "color": "#8fd3a8",
-      "x": 1050,
-      "y": 270
-    },
-    {
-      "id": "imsg",
-      "label": "发消息",
-      "icon": "message",
-      "body": "一次性效应\nrefs=群消息",
-      "color": "#8fd3a8",
-      "x": 1050,
-      "y": 400
-    },
-    {
-      "id": "event",
-      "label": "定会议",
-      "icon": "clock",
-      "body": "落日程域\n纪要回流",
-      "color": "#8fd3a8",
-      "x": 1050,
-      "y": 530
-    },
-    {
-      "id": "agent",
-      "label": "派任务",
-      "icon": "agent",
-      "body": "AI 执行 · 长周期\n未来执行器",
-      "color": "#c9c9c9",
-      "x": 830,
-      "y": 620
+      "label": "文件",
+      "icon": "file"
     }
   ],
-  "edges": [
-    {
-      "from": "observe",
-      "to": "analyze"
-    },
-    {
-      "from": "analyze",
-      "to": "decide"
-    },
-    {
-      "from": "decide",
-      "to": "act"
-    },
-    {
-      "from": "act",
-      "to": "reobserve"
-    },
-    {
-      "from": "reobserve",
-      "to": "observe",
-      "kind": "loop",
-      "label": "效应即新信号",
-      "accent": "green"
-    },
-    {
-      "from": "decide",
-      "to": "item"
-    },
-    {
-      "from": "act",
-      "to": "item"
-    },
-    {
-      "from": "act",
-      "to": "todo"
-    },
-    {
-      "from": "act",
-      "to": "imsg"
-    },
-    {
-      "from": "act",
-      "to": "event"
-    },
-    {
-      "from": "act",
-      "to": "agent"
-    }
-  ],
+  "core": {
+    "title": "推进回路",
+    "subtitle": "(host 采集 · LLM 判断)",
+    "cards": [
+      {
+        "title": "① 观察",
+        "body": "订阅渠道增量巡检\n+ Dream 蓄水池折叠",
+        "icon": "eye"
+      },
+      {
+        "title": "② 分析",
+        "body": "摊开目标/指标/事元\n六条打扰判据(LLM)",
+        "icon": "brain"
+      }
+    ]
+  },
+  "decision": {
+    "title": "③人拍板"
+  },
+  "output": {
+    "label": "④ 执行",
+    "icon": "gear"
+  },
+  "loop_label": "⑤ 再观察：效应即新信号（refs 指针 + 自动订阅回流）",
+  "retry_label": "打回 / 忽略（judge 否定动词）",
+  "left_panel": {
+    "title": "事元模型",
+    "badge": "append-only",
+    "cards": [
+      {
+        "title": "推进事项",
+        "body": "聚合根 = 事元流(事实)\n+ 投影(缓存)",
+        "icon": "db",
+        "icon_size": "standard"
+      },
+      {
+        "title": "事元",
+        "body": "时间 · 来源类型 · 变化类型\n摘要 · refs · 操作者",
+        "icon": "clipboard",
+        "icon_size": "standard"
+      },
+      {
+        "title": "完整性",
+        "body": "只增不改不删\n时间线永不裁剪",
+        "icon": "shield",
+        "icon_size": "standard"
+      }
+    ]
+  },
+  "center_panel": {
+    "title": "四条公理",
+    "subtitle": "(领域模型的硬约束)",
+    "footer": "违例即拒",
+    "cards": [
+      {
+        "title": "唯一变更通道",
+        "body": "feed 追加事元 · 无改删",
+        "icon": "file",
+        "icon_size": "standard"
+      },
+      {
+        "title": "事实/意图分家",
+        "body": "事元=事实 · 行动=意图",
+        "icon": "package",
+        "icon_size": "standard"
+      },
+      {
+        "title": "规则/判断分工",
+        "body": "host 管规则 · LLM 管判断",
+        "icon": "gear",
+        "icon_size": "standard"
+      },
+      {
+        "title": "终局人主权",
+        "body": "completed/cancelled 只由人进",
+        "icon": "user",
+        "icon_size": "standard"
+      }
+    ]
+  },
+  "right_panel": {
+    "title": "行动执行器",
+    "incoming_label": "分派",
+    "return_label": "效应回流",
+    "cards": [
+      {
+        "title": "建待办",
+        "body": "人执行 · 三态\ntodo:id 订阅回流",
+        "icon": "check",
+        "icon_size": "standard"
+      },
+      {
+        "title": "发消息",
+        "body": "一次性效应\nrefs=im:群:消息",
+        "icon": "message",
+        "icon_size": "standard"
+      },
+      {
+        "title": "定会议",
+        "body": "落日程域\n纪要可回流",
+        "icon": "clock",
+        "icon_size": "standard"
+      },
+      {
+        "title": "派任务",
+        "body": "AI 执行 · 长周期\n(未来执行器)",
+        "icon": "agent",
+        "icon_size": "standard"
+      }
+    ]
+  },
   "footer": "事实=事元(append-only) · 意图=行动(有生命周期) · 规则归 host / 判断归 LLM · 域外一律 token 引用",
   "signature": "@dsh-yzj"
 }
