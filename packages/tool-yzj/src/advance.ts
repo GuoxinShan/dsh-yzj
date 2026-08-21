@@ -67,6 +67,8 @@ export const ENTRY_F = {
   actor: '操作者',
   /** 产出会话(决策 41 讨论回环):feed 时的 exec.agent.session.id（yzj-dream-* 等）;面板「问助手」据此直回产出会话。 */
   producer: '出处会话',
+  /** 判定动作(决策 43 决策队列):judge 动词落事元时记 action 名;面板据它判定哪些决策请求已被处理。 */
+  judge: '判定动作',
 } as const
 
 const ITEM_TABLE = '事项'
@@ -150,8 +152,8 @@ export const INSPECT_DISCIPLINE = [
   '纪律：running 无偏差则不要 feed（静默）。已记录事实的复述连事元都不写。',
   '打扰判据（命中任一条才 stageTo=decision-needed）：① 新信号与任务背景的前提矛盾；② 任一成功指标由达标转未达标或朝远离目标移动；③ 按当前速度在目标日期前补不上差距；④ 出现明确阻塞威胁目标日期；⑤ 继续推进须砍范围/加资源/改优先级或越红线；⑥ 两条以上都合理且会改变后续基准的路径分叉。',
   '静默判据：信号与目标一致且指标不变或朝目标移动；纯过程信息（谁在做/做到哪/附了什么产物）。',
-  '抑制：同判据已在 decision-needed 未处理则补进现有决策请求、不新起；同一来源（msgId/docId）已喂过则 host 强制去重；被用户 ignore 过的判据除非指标进一步恶化不再提。',
-  '打扰判据成立 → yzj_advance_feed changeType=决策请求 stageTo=decision-needed：summary=要用户决定的问题；detail=问题分析（多行）+ 动作行（每行一个，可多个，用户在看板一键执行，决策 41）：`动作: 建待办 | 内容: <标题> | 截止: <yyyy-MM-dd> | 负责人: <名字>`、`动作: 发消息 | 内容: <草稿>`、`动作: 定会议 | 主题: <主题> | 时间: <yyyy-MM-dd HH:mm>`（键可省）。host 强制：stageTo=decision-needed 必须配决策请求。',
+  '抑制与综合（单卡，决策 43 修正）：已有未处理决策请求时，新判据命中不并列起卡——feed 一张综合卡（changeType=决策请求，detail 带「综合自: <旧卡 entryId>」+ 旧问题的并入/失效说明；host 强制）。卡面永远只有一条当前决策，新卡必须带最新上下文（实效性）。同一来源（msgId/docId）已喂过则 host 强制去重；被用户 ignore 过的判据除非指标进一步恶化不再提。',
+  '打扰判据成立 → yzj_advance_feed changeType=决策请求 stageTo=decision-needed：summary=要用户决定的问题；detail=问题分析（多行）+ 动作行（每行一个，可多个，用户在看板一键执行，决策 41）：`动作: 建待办 | 内容: <标题> | 截止: <yyyy-MM-dd> | 负责人: <名字>`、`动作: 发消息 | 内容: <草稿>`、`动作: 定会议 | 主题: <主题> | 时间: <yyyy-MM-dd HH:mm>`（键可省）。host 强制：stageTo=decision-needed 必须配决策请求；已有未处理决策请求时必须带「综合自: <旧卡 entryId>」（决策 43 修正）。',
   '偏差（changeType=偏差）只记录指标未达标等事实，不推阶段；需要人拍板的一律走决策请求。',
   '产物齐且指标 N/N 达标且无未决偏差 → changeType=验收请求 stageTo=ready-for-review。',
   '确认卡只在改基准（goal/metrics/targetDate/assignee）时出现；纯追加与阶段变化静默落，人在看板队列被找到。',
@@ -716,6 +718,8 @@ export interface YzjAdvanceEntry {
   actor: string
   /** Producing session id (feed caller's agent session; '' for panel/RPC writes). */
   producer: string
+  /** Judge action name for judge-verb entries (决策 43); '' otherwise. */
+  judge: string
   tone: 'blue' | 'green' | 'red'
 }
 
@@ -777,6 +781,7 @@ export function parseAdvanceEntry(record: unknown): YzjAdvanceEntry | null {
     refs: asString(fields[ENTRY_F.refs]).split(/\s+/).filter(token => token !== ''),
     actor: asString(fields[ENTRY_F.actor]),
     producer: asString(fields[ENTRY_F.producer]),
+    judge: asString(fields[ENTRY_F.judge]),
     tone: toneOf(changeType, detail),
   }
 }
@@ -1234,6 +1239,8 @@ export interface AdvanceFeedInput {
   actor?: string | undefined
   /** Producing session id (tools pass `exec.agent?.session?.id`; panel/RPC writes leave it empty). */
   producerSessionId?: string | undefined
+  /** Judge action marker (决策 43; only the panel judge path sets it). */
+  judgeAction?: string | undefined
 }
 
 /** Append one entry row + refresh the item's 最新动态 projection cache. */
@@ -1250,6 +1257,7 @@ async function appendEntry(
     refs: readonly string[]
     actor: string
     producer?: string | undefined
+    judge?: string | undefined
   },
 ): Promise<YzjAdvanceEntry> {
   const entryId = nextSequentialId('E', await todaysEntryIds(ctx, budget, binding))
@@ -1266,6 +1274,7 @@ async function appendEntry(
   if (input.detail !== '') fields[ENTRY_F.detail] = input.detail
   if (input.refs.length > 0) fields[ENTRY_F.refs] = input.refs.join(' ')
   if (input.producer !== undefined && input.producer !== '') fields[ENTRY_F.producer] = input.producer
+  if (input.judge !== undefined && input.judge !== '') fields[ENTRY_F.judge] = input.judge
   await writeTable(ctx, budget, binding, binding.entryTableId, 'create', JSON.stringify([{ fieldsValue: fields }]))
   return {
     recordId: '',
@@ -1279,6 +1288,7 @@ async function appendEntry(
     refs: [...input.refs],
     actor: input.actor,
     producer: input.producer ?? '',
+    judge: input.judge ?? '',
     tone: toneOf(asString(fields[ENTRY_F.changeType]), input.detail),
   }
 }
@@ -1418,18 +1428,34 @@ export async function coreFeedAdvance(
     throw new Error(`advance: 事项 ${input.advanceId} 不存在；先用 yzj_advance_list 查真实 id，不要猜测`)
   }
   const incomingRefs = (input.refs ?? []).filter(token => token.trim() !== '')
+  const rawChangeType = input.changeType ?? '备注'
+  const normalizedChangeType = CHANGE_TYPES.includes(rawChangeType as typeof CHANGE_TYPES[number]) ? rawChangeType : '备注'
+  // refs 去重与「综合自」校验(决策 43 修正)都需要既有事元,统一取一次。
+  const existing = incomingRefs.length > 0 || normalizedChangeType === '决策请求'
+    ? await fetchEntries(ctx, budget, binding, input.advanceId)
+    : []
   let overlappedRefs: string[] = []
   if (incomingRefs.length > 0) {
-    const existing = await fetchEntries(ctx, budget, binding, input.advanceId)
     // 重放判定用模型声明的 changeType(缺省「备注」,与 appendEntry 归一一致);
     // stageTo 衍生的「阶段变化」不参与——阶段由 diff 承载,不是信号身份。
-    const rawChangeType = input.changeType ?? '备注'
-    const changeType = CHANGE_TYPES.includes(rawChangeType as typeof CHANGE_TYPES[number]) ? rawChangeType : '备注'
-    const replay = existing.find(entry => isRefReplay(incomingRefs, changeType, entry))
+    const replay = existing.find(entry => isRefReplay(incomingRefs, normalizedChangeType, entry))
     if (replay !== undefined) {
       return { item, entry: replay, stageFrom: item.stage, stageChanged: false, binding, idempotent: true, overlappedRefs: [] }
     }
     overlappedRefs = overlappedRefsOf(incomingRefs, existing)
+  }
+  // 单卡综合合同(决策 43 修正,用户拍板):卡面永远只有一条当前决策。已有未处理决策请求时,
+  // 新决策请求必须综合它——detail 带「综合自: <旧卡 entryId>」并写明旧问题的并入/失效(实效性)。
+  if (normalizedChangeType === '决策请求') {
+    let lastJudge = -1
+    existing.forEach((entry, i) => { if (entry.judge !== '') lastJudge = i })
+    const openDecision = existing.reduce<YzjAdvanceEntry | undefined>((acc, entry, i) => (i > lastJudge && entry.changeType === '决策请求' ? entry : acc), undefined)
+    if (openDecision !== undefined) {
+      const detail = input.detail ?? ''
+      if (!detail.includes('综合自') || !detail.includes(openDecision.entryId)) {
+        throw new Error(`advance: 已有未处理决策请求 ${openDecision.entryId}「${openDecision.summary.slice(0, 30)}」——新决策请求必须综合它:detail 加一行「综合自: ${openDecision.entryId}」并写明旧问题的并入/失效(卡面只留一条当前决策,实效性);若用户已在看板处理则无需综合`)
+      }
+    }
   }
   const diffs: string[] = []
   const projection: Record<string, unknown> = {}
@@ -1447,6 +1473,11 @@ export async function coreFeedAdvance(
     // 决策请求的问题/动作行;偏差+stageTo 会让看板出现没有问题文的空决策区(830 实测)。
     if (input.stageTo === 'decision-needed' && input.changeType !== '决策请求') {
       throw new Error('advance: stageTo=decision-needed 必须配 changeType=决策请求（summary=要用户决定的问题，detail=分析+动作行 动作: 建待办|发消息|定会议 …）；偏差只记录事实，不推阶段')
+    }
+    // 待决阶段出口是人的主权(决策 43):agent 只能把事项送进 decision-needed/ready-for-review,
+    // 不能替人把它拖出来——否则未处理的决策会被下一次巡检/Dream 静默冲掉。
+    if ((item.stage === 'decision-needed' || item.stage === 'ready-for-review') && input.actor !== 'user') {
+      throw new Error(`advance: ${item.stage} 的离开只能由用户在看板拍板；agent 请补进现有决策请求或保持静默`)
     }
     const violation = checkStageTransition(item.stage, input.stageTo)
     if (violation !== null) throw new Error(`advance: ${violation}`)
@@ -1491,6 +1522,7 @@ export async function coreFeedAdvance(
     refs: input.refs ?? [],
     actor: input.actor ?? 'agent',
     producer: input.producerSessionId,
+    judge: input.judgeAction,
   })
   projection[ITEM_F.latest] = `${entry.at} ${entry.changeType} ${entry.summary}`
   await writeTable(ctx, budget, binding, binding.itemTableId, 'update', JSON.stringify([{ id: item.recordId, fieldsValue: projection }]))
@@ -1537,6 +1569,8 @@ export interface YzjAdvanceEntryView {
   actor: string
   /** Producing session id ('' for panel/RPC writes); the board's 问助手 lands here (决策 41)。 */
   producer: string
+  /** Judge action name for judge-verb entries (决策 43 决策队列判定); '' otherwise。 */
+  judge: string
   tone: 'blue' | 'green' | 'red'
 }
 
@@ -1635,6 +1669,7 @@ function entryViewOf(entry: YzjAdvanceEntry): YzjAdvanceEntryView {
     refs: entry.refs,
     actor: entry.actor,
     producer: entry.producer,
+    judge: entry.judge,
     tone: entry.tone,
   }
 }
@@ -1734,6 +1769,8 @@ export class YzjAdvanceService extends Service {
       changeType: verb.changeType,
       ...(verb.stageTo === undefined ? {} : { stageTo: verb.stageTo }),
       actor: 'user',
+      // 决策 43 决策队列:判定动作落进事元,面板据它判定哪些决策请求已被处理。
+      judgeAction: action,
     }, this.holder)
     return itemViewOf(result.item)
   }
@@ -2239,7 +2276,7 @@ export function applyAdvanceTools(
 
   ctx.tools.register(defineTool({
     name: 'yzj_advance_feed',
-    description: 'Feed one 事元 (source unit) into an advancement item — the ONLY mutation channel: goal updates, progress, deviations, decision requests, and stage moves are all append-only entries with host-generated 原值→新值 diffs; the item projection is refolded. Stage moves obey the seven-stage machine (draft→running→(decision-needed→updated)*→ready-for-review→completed; any non-terminal → cancelled; terminal → running reopens). Patrol: yzj_advance_scan then yzj_advance_inspect, then this tool. Host forcibly dedupes only an exact replay — the same refs set AND the same changeType (决策 25): a genuine re-feed returns the existing 事元 and appends nothing; a partial refs overlap appends normally and returns an overlappedRefs hint, so distinct entries may cite the same document. running items stay quiet — do not feed when there is no deviation, and never re-state a fact already on the timeline. Interrupt the user (changeType 决策请求 + stageTo decision-needed — host rejects any other changeType with decision-needed, 决策 41) only when a criterion fires: the signal contradicts 任务背景, a metric flips off-target or moves away from it, the gap cannot close before the target date, a blocker threatens that date, continuing needs scope/resource/priority trade-offs or crosses a stated red line, or two+ viable paths would change the baseline. A 决策请求 carries the question in summary and, in detail, the analysis plus ACTION LINES the user can execute with one tap on the board (several allowed, one per line): `动作: 建待办 | 内容: <标题> | 截止: <yyyy-MM-dd> | 负责人: <名字>` / `动作: 发消息 | 内容: <草稿>` / `动作: 定会议 | 主题: <主题> | 时间: <yyyy-MM-dd HH:mm>` (keys optional). 偏差 entries record facts only and never push the stage. Deliverables complete AND metrics N/N AND no open deviation → 验收请求 + ready-for-review. Never stageTo completed/cancelled — terminal stages are user-only (the user taps 确认达到目标 / 中止推进; host rejects agent terminal stage moves outright). The confirmation card appears ONLY when you rewrite the baseline (goal/metrics/targetDate/assignee) — plain appends and stage moves land silently, the board queue is where the user is found. Min-loop in the topic: contrast 原来的理解 vs 现在的约束, propose options, wait, restate impact, then feed. Knowledge export (spec §16): when the user asks for 复盘, read the full stream with yzj_advance_get (page to the end), write the five-section review per docs/spec/advance-review-template.md, yzj_doc_import into 「我的知识/推进复盘/<事项名>」, then feed one silent 产物 entry with refs=[that docId]; meeting minutes follow the same loop with the four-section 金蝶 template (docs/spec/meeting-minutes-template.md).',
+    description: 'Feed one 事元 (source unit) into an advancement item — the ONLY mutation channel: goal updates, progress, deviations, decision requests, and stage moves are all append-only entries with host-generated 原值→新值 diffs; the item projection is refolded. Stage moves obey the seven-stage machine (draft→running→(decision-needed→updated)*→ready-for-review→completed; any non-terminal → cancelled; terminal → running reopens). Patrol: yzj_advance_scan then yzj_advance_inspect, then this tool. Host forcibly dedupes only an exact replay — the same refs set AND the same changeType (决策 25): a genuine re-feed returns the existing 事元 and appends nothing; a partial refs overlap appends normally and returns an overlappedRefs hint, so distinct entries may cite the same document. running items stay quiet — do not feed when there is no deviation, and never re-state a fact already on the timeline. Interrupt the user (changeType 决策请求 + stageTo decision-needed — host rejects any other changeType with decision-needed, 决策 41) only when a criterion fires: the signal contradicts 任务背景, a metric flips off-target or moves away from it, the gap cannot close before the target date, a blocker threatens that date, continuing needs scope/resource/priority trade-offs or crosses a stated red line, or two+ viable paths would change the baseline. A 决策请求 carries the question in summary and, in detail, the analysis plus ACTION LINES the user can execute with one tap on the board (several allowed, one per line): `动作: 建待办 | 内容: <标题> | 截止: <yyyy-MM-dd> | 负责人: <名字>` / `动作: 发消息 | 内容: <草稿>` / `动作: 定会议 | 主题: <主题> | 时间: <yyyy-MM-dd HH:mm>` (keys optional). One live card only (决策 43 修正): when an unhandled 决策请求 already exists, the new one must SYNTHESIZE it — add a detail line `综合自: <旧卡 entryId>` stating how the old question merges in or lapses (host rejects without it). 偏差 entries record facts only and never push the stage. Deliverables complete AND metrics N/N AND no open deviation → 验收请求 + ready-for-review. Never stageTo completed/cancelled — terminal stages are user-only (the user taps 确认达到目标 / 中止推进; host rejects agent terminal stage moves outright). The confirmation card appears ONLY when you rewrite the baseline (goal/metrics/targetDate/assignee) — plain appends and stage moves land silently, the board queue is where the user is found. Min-loop in the topic: contrast 原来的理解 vs 现在的约束, propose options, wait, restate impact, then feed. Knowledge export (spec §16): when the user asks for 复盘, read the full stream with yzj_advance_get (page to the end), write the five-section review per docs/spec/advance-review-template.md, yzj_doc_import into 「我的知识/推进复盘/<事项名>」, then feed one silent 产物 entry with refs=[that docId]; meeting minutes follow the same loop with the four-section 金蝶 template (docs/spec/meeting-minutes-template.md).',
     parameters: {
       advanceId: { type: 'string', required: true, description: 'Stable item id (from yzj_advance_list).' },
       summary: { type: 'string', required: true, description: 'Event description — what happened (timeline row text).' },

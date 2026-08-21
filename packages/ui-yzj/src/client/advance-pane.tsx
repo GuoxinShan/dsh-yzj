@@ -182,10 +182,11 @@ const ACTION_DONE: Record<DecisionAction['kind'], string> = { todo: '已建待�
  * line is shown separately, the remaining lines stay as plain detail.
  * No `选项N` line → options empty; unrecognized 动作类型 stays plain text.
  */
-export function parseDecisionOptions(detail: string): { options: string[]; impact: string; rest: string; actions: DecisionAction[] } {
+export function parseDecisionOptions(detail: string): { options: string[]; impact: string; rest: string; actions: DecisionAction[]; mergedFrom: string } {
   const options: string[] = []
   const actions: DecisionAction[] = []
   let impact = ''
+  let mergedFrom = ''
   const rest: string[] = []
   for (const line of detail.split('\n')) {
     const trimmed = line.trim()
@@ -193,6 +194,11 @@ export function parseDecisionOptions(detail: string): { options: string[]; impac
     const option = trimmed.match(/^选项\d+[:：]\s*(.+)$/)
     if (option !== null) {
       options.push((option[1] ?? '').trim())
+      continue
+    }
+    const merged = trimmed.match(/^综合自[:：]\s*([^\s（(]+)/)
+    if (merged !== null) {
+      mergedFrom = (merged[1] ?? '').trim()
       continue
     }
     const actionMatch = trimmed.match(/^动作[:：]\s*(.+)$/)
@@ -218,7 +224,7 @@ export function parseDecisionOptions(detail: string): { options: string[]; impac
     }
     rest.push(trimmed)
   }
-  return { options, impact, rest: rest.join('\n'), actions }
+  return { options, impact, rest: rest.join('\n'), actions, mergedFrom }
 }
 
 interface BoardState {
@@ -682,9 +688,15 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
 
   const stage = detail === null ? '' : asString(detail.item.stage)
   const metrics = detail === null ? [] : asArray(detail.item.metrics).map(asRecord)
+  /** 单卡决策(决策 43 修正,用户拍板):卡面=最近一条判定事元之后的最新决策请求;
+      新卡必须「综合自」旧卡(host 强制),judge 结算后重算——永远只有一条当前决策。 */
   const latestDecision = detail === null
     ? undefined
-    : [...detail.entries].reverse().find(entry => asString(entry.changeType) === '决策请求')
+    : (() => {
+      let lastJudge = -1
+      detail.entries.forEach((entry, i) => { if (asString(entry.judge) !== '') lastJudge = i })
+      return detail.entries.reduce<UnknownRecord | undefined>((acc, entry, i) => (i > lastJudge && asString(entry.changeType) === '决策请求' ? entry : acc), undefined)
+    })()
   const decisionParsed = latestDecision === undefined
     ? undefined
     : parseDecisionOptions(asString(latestDecision.detail))
@@ -983,6 +995,7 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                             </div>
                           )}
                           {decisionParsed.impact !== '' && <p className={css.impact}>影响：{decisionParsed.impact}</p>}
+                          {decisionParsed.mergedFrom !== '' && <p className={css.quiet}>此卡综合了 {decisionParsed.mergedFrom} 的未决内容（旧卡留在时间线）。</p>}
                         </>
                       ) : latestDriver === undefined ? (
                         <p className={css.quiet}>等待你处理。</p>
