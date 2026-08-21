@@ -1018,7 +1018,7 @@ export function applyTodoTools(ctx: Context, budget: YzjToolBudget, config: Todo
 
   ctx.tools.register(defineTool({
     name: 'yzj_todo_create',
-    description: 'Create a todo in the 待办任务库 (auto-provisions the library on first use). Idempotent: pass todoId to adopt an existing todo instead of creating a duplicate. Tags aggregate freely (#项目 #群名 …).',
+    description: 'Create a todo in the 待办任务库 (auto-provisions the library on first use). Idempotent: pass todoId to adopt an existing todo instead of creating a duplicate. Tags aggregate freely (#项目 #群名 …). 分流判据（决策 46）：待办 = 完成标准自明的轻量单动作；有业务目标/成功指标、需跨时间跟进与验收的事用 `yzj_advance_create` 建推进事项（一条待办可作为事元挂进事项，其完成经 todo:<id> 订阅回流）。',
     parameters: {
       title: { type: 'string', required: true, description: 'Todo title.' },
       todoId: { type: 'string', description: 'Explicit stable id (T-YYYYMMDD-NNN); when it already exists the existing todo is returned unchanged (idempotent).' },
