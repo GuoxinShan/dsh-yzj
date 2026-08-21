@@ -451,7 +451,7 @@ host storage-domain **`yzj_advance_sources`**（v1.8 前名 `yzj_advance_threads
 
 - cursor 保持**渠道级**（`yzj_advance_scan_cursors` 不变）：同一渠道被多个事项订阅时一次取流。
 - 分发是模型职责：scan digest 列出新信号 + 各 open 事项的订阅清单（上下文来源），inspect 按「信号 ∈ 哪个事项的来源 + 语义相关」决定喂给谁；host 不做语义判断（决策 11），同源去重兜底（决策 19/25）。
-- **目录来源的增量（v1.7，决策 32）**：`dir:<docId>` 来源按「`doc list --parent-id` 该目录」取增量——首扫建基线（docId→updateTime 快照，不回灌）；增量 = 新增文档或 updateTime 变化，信号 refs=[docId]、sourceType=文档。cursor 存 scan domain 的 `dirs` 表（与群 cursor 同域不同表）。
+- **目录来源的增量（v1.7，决策 32）**：`dir:<docId>` 来源按「`doc list --parent-id` 该目录」取增量——首扫建基线（docId→updateTime 快照，不回灌）；增量 = 新增文档或 updateTime 变化，信号 refs=[docId]、sourceType=文档。cursor 存 scan domain 的 `dirs` 表（与群 cursor 同域不同表）。**已知缺口（08-21 实证，pitfall-041 / gap §24.19）**：金蝶云 AI 速记把会议纪要归档到独立库（AI速记知识库 / 会议生成的共享库），不归档到用户订阅的库——dir: 订阅追不上速记库的增生；且列取只盖一层（整库订阅不看子目录）。⑤期需「速记库聚合订阅」或速记归档目标可配。
 - 双节奏：**Work**（被召唤 / schedule 唤醒，实时比对，§12/§14 既有）+ **Dream**（每日一次，按订阅全量取增量、筛有价值落事元、折叠摘要/建议/偏差提示；无偏差静默）。巡检频率的既有口径（≥300s）适用于 Work 触发；Dream 是低频大预算轮。
 
 > ③.2 实现落点：`yzj_advance_scan` 的 `groups` 改为可选——缺省时从注册表聚合全部 open 事项的 `im:` 来源去重取流（超过 8 个渠道报错提示分批，不悄悄截断，决策 17 刚性保持）；digest 新增「订阅清单」行供模型分发。Dream 仅定合同，未落地（④期配套）。
