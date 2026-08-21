@@ -11,7 +11,7 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import type { YzjPanelInject } from './rpc.ts'
-import { requestImGroupFocus, setWorkbenchDomain } from './workbench-domain.ts'
+import { requestImGroupFocus, requestTopicOpen, setWorkbenchDomain } from './workbench-domain.ts'
 import { setAdvanceFeedback } from './advance-feedback.ts'
 import { setAdvanceAskDraft, reviewAskText, exportReviewAskText, discussAskText, decisionChatText } from './advance-ask.ts'
 import css from './advance-pane.module.css'
@@ -144,7 +144,7 @@ function sourceIconOf(token: string): string {
 
 /** Props: the RPC verbs the board needs (subset of the panel inject). */
 export interface AdvancePaneProps {
-  inject: Pick<YzjPanelInject, 'advanceState' | 'advanceGet' | 'advanceCreate' | 'advanceJudge' | 'advanceEnsure' | 'advanceScanState' | 'advancePatrolNow' | 'advanceSourceAdd' | 'advanceSourceRemove' | 'fetchGroups' | 'fetchWorkspaces' | 'fetchDocs' | 'advanceDreamState' | 'advanceDreamRun' | 'advanceRefLookup' | 'focusBoundSession' | 'advanceFeed' | 'createTodo' | 'sendMessage'>
+  inject: Pick<YzjPanelInject, 'advanceState' | 'advanceGet' | 'advanceCreate' | 'advanceJudge' | 'advanceEnsure' | 'advanceScanState' | 'advancePatrolNow' | 'advanceSourceAdd' | 'advanceSourceRemove' | 'fetchGroups' | 'fetchWorkspaces' | 'fetchDocs' | 'advanceDreamState' | 'advanceDreamRun' | 'advanceRefLookup' | 'focusBoundSession' | 'advanceFeed' | 'createTodo' | 'sendMessage' | 'homeNav'>
 }
 
 /** Queue-head patrol line (spec §14.5). */
@@ -694,13 +694,45 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
     : [...detail.entries].reverse().find(entry => asString(entry.summary) !== '' && asString(entry.changeType) !== '阶段变化')
   /** agent 产的选项/动作是决策卡主按钮;有它们时写死的 judge 动词降级为次要行(用户拍板 08-21)。 */
   const hasDynamic = decisionParsed !== undefined && (decisionParsed.actions.length > 0 || decisionParsed.options.length > 0)
-  /** 「回到对话继续聊」:预填讨论草稿(kind=discuss)切对话域;agent 聊出新建议后补/更新决策请求,用户再回看板拍板。 */
-  const chatAboutDecision = (summary: string): void => {
+  /** 「问助手/回到对话继续聊」(决策 41 讨论回环):预填 discuss 草稿 → 切对话域 →
+   *  直开订阅群的话题抽屉(最新话题,没有则按标题现 mint)——落点是 agent 问答面,
+   *  不是群时间线;无订阅群时退回 banner 路径。 */
+  const openAgentChat = async (text: string, topicTitle: string, producer?: string): Promise<void> => {
     if (detail === null) return
+    // 产出会话在(用户拍板 08-21「应该到产生这个演进的那个会话」):直聚焦那个会话——它带着
+    // 产出这条进展的完整上下文。官方 composer 无跨插件预填 API,草稿进剪贴板,粘贴即可。
+    if (producer !== undefined && producer !== '') {
+      try { await navigator.clipboard?.writeText(text) } catch { /* clipboard 不可用则静默 */ }
+      props.inject.focusBoundSession?.(producer)
+      return
+    }
     const advanceId = asString(detail.item.advanceId)
     const title = asString(detail.item.title)
-    setAdvanceAskDraft({ advanceId, title, text: decisionChatText(advanceId, title, summary), kind: 'discuss' })
+    setAdvanceAskDraft({ advanceId, title, text, kind: 'discuss' })
     setWorkbenchDomain('im')
+    const groupId = (imGroupTokens[0] ?? '').slice(3)
+    if (groupId === '') return
+    requestImGroupFocus({ groupId })
+    let sessionId = ''
+    const nav = await props.inject.homeNav?.()
+    if (nav !== undefined && nav.ok) {
+      const room = asArray(asRecord(nav.value).rooms).map(asRecord).find(row => asString(row.groupId) === groupId)
+      const topics = asArray(room?.topics).map(asRecord)
+      const latest = topics.reduce<UnknownRecord | undefined>((best, row) => {
+        const activity = typeof row.lastActivity === 'number' ? row.lastActivity : 0
+        const bestActivity = best !== undefined && typeof best.lastActivity === 'number' ? best.lastActivity : 0
+        return best === undefined || activity > bestActivity ? row : best
+      }, undefined)
+      sessionId = asString(latest?.sessionId)
+    }
+    requestTopicOpen({ groupId, ...(sessionId === '' ? { title: topicTitle } : { sessionId }) })
+  }
+
+  /** 「回到对话继续聊」:agent 聊出新建议后补/更新决策请求,用户再回看板拍板。
+      落点=产出该决策请求/驱动事元的会话(有记录时),否则订阅群最新话题。 */
+  const chatAboutDecision = (summary: string): void => {
+    const producer = asString((latestDecision ?? latestDriver)?.producer)
+    void openAgentChat(decisionChatText(asString(detail?.item.advanceId), asString(detail?.item.title), summary), `决策讨论 · ${summary.slice(0, 18)}`, producer)
   }
 
   return (
@@ -1146,12 +1178,9 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                                   type="button"
                                   className={css.jump}
                                   data-testid={`yzj-advance-entry-discuss-${index}`}
-                                  title="就这条进展问助手(预填到问助手栏)"
+                                  title={asString(entry.producer) !== '' ? '回到产出这条进展的会话(草稿已复制,粘贴即可)' : '就这条进展问助手(预填到问助手栏)'}
                                   onClick={() => {
-                                    const advanceId = asString(detail.item.advanceId)
-                                    const title = asString(detail.item.title)
-                                    setAdvanceAskDraft({ advanceId, title, text: discussAskText(advanceId, title, asString(entry.at), asString(entry.summary)), kind: 'discuss' })
-                                    setWorkbenchDomain('im')
+                                    void openAgentChat(discussAskText(asString(detail.item.advanceId), asString(detail.item.title), asString(entry.at), asString(entry.summary)), `进展讨论 · ${asString(entry.summary).slice(0, 18)}`, asString(entry.producer))
                                   }}
                                 >
                                   问助手

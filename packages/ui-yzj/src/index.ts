@@ -294,6 +294,15 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
         if (parentId !== undefined) command.push('--parent-id', parentId)
         return bridgeResult(ctx, 'doc list', command)
       }
+      case 'doc-search': {
+        // 知识库全局搜索(yzj-cli v0.1.4):面板知识库页搜索框;可选限库。
+        const keyword = stringField(payload, 'keyword')
+        if (keyword === undefined) return internalError('doc-search endpoint requires a keyword payload')
+        const command = ['doc', 'search', '--keyword', keyword]
+        const workspace = stringField(payload, 'workspace')
+        if (workspace !== undefined) command.push('--workspace', workspace)
+        return bridgeResult(ctx, 'doc search', command)
+      }
       case 'events': {
         const start = stringField(payload, 'start')
         const end = stringField(payload, 'end')

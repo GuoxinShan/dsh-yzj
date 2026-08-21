@@ -1,0 +1,159 @@
+{
+  "layout": "graph",
+  "direction": "right",
+  "style": "paper",
+  "animation": "flow",
+  "density": "airy",
+  "canvas": {
+    "fps": 20,
+    "frames": 41
+  },
+  "title": {
+    "prefix": "AI推进领域模型",
+    "highlight": "事元驱动闭环",
+    "subtitle": "观察 → 分析 → 决策 → 执行 → 再观察 · 环上一切转折都落事元"
+  },
+  "nodes": [
+    {
+      "id": "observe",
+      "label": "① 观察",
+      "icon": "eye",
+      "body": "订阅渠道增量巡检\n+ Dream 蓄水池",
+      "color": "#7bb8ff",
+      "x": 170,
+      "y": 380
+    },
+    {
+      "id": "analyze",
+      "label": "② 分析",
+      "icon": "brain",
+      "body": "摊开目标与指标\n六条打扰判据(LLM)",
+      "color": "#b78bff",
+      "x": 400,
+      "y": 230
+    },
+    {
+      "id": "decide",
+      "label": "③ 决策",
+      "icon": "decision",
+      "body": "决策请求事元\n人拍板 judge",
+      "color": "#f4b64e",
+      "x": 640,
+      "y": 230
+    },
+    {
+      "id": "act",
+      "label": "④ 执行",
+      "icon": "gear",
+      "body": "行动 = 意图+执行器\n+归属+效应指针",
+      "color": "#48e0c2",
+      "x": 830,
+      "y": 380
+    },
+    {
+      "id": "reobserve",
+      "label": "⑤ 再观察",
+      "icon": "scan",
+      "body": "refs 指针\n+ 自动订阅回流",
+      "color": "#7ee3d6",
+      "x": 400,
+      "y": 600
+    },
+    {
+      "id": "item",
+      "label": "推进事项",
+      "icon": "db",
+      "body": "事元流 = 事实\n投影 = 缓存",
+      "color": "#ff7ab6",
+      "x": 480,
+      "y": 390
+    },
+    {
+      "id": "todo",
+      "label": "建待办",
+      "icon": "check",
+      "body": "人执行 · 三态\n订阅回流",
+      "color": "#8fd3a8",
+      "x": 1050,
+      "y": 270
+    },
+    {
+      "id": "imsg",
+      "label": "发消息",
+      "icon": "message",
+      "body": "一次性效应\nrefs=群消息",
+      "color": "#8fd3a8",
+      "x": 1050,
+      "y": 400
+    },
+    {
+      "id": "event",
+      "label": "定会议",
+      "icon": "clock",
+      "body": "落日程域\n纪要回流",
+      "color": "#8fd3a8",
+      "x": 1050,
+      "y": 530
+    },
+    {
+      "id": "agent",
+      "label": "派任务",
+      "icon": "agent",
+      "body": "AI 执行 · 长周期\n未来执行器",
+      "color": "#c9c9c9",
+      "x": 830,
+      "y": 620
+    }
+  ],
+  "edges": [
+    {
+      "from": "observe",
+      "to": "analyze"
+    },
+    {
+      "from": "analyze",
+      "to": "decide"
+    },
+    {
+      "from": "decide",
+      "to": "act"
+    },
+    {
+      "from": "act",
+      "to": "reobserve"
+    },
+    {
+      "from": "reobserve",
+      "to": "observe",
+      "kind": "loop",
+      "label": "效应即新信号",
+      "accent": "green"
+    },
+    {
+      "from": "decide",
+      "to": "item"
+    },
+    {
+      "from": "act",
+      "to": "item"
+    },
+    {
+      "from": "act",
+      "to": "todo"
+    },
+    {
+      "from": "act",
+      "to": "imsg"
+    },
+    {
+      "from": "act",
+      "to": "event"
+    },
+    {
+      "from": "act",
+      "to": "agent"
+    }
+  ],
+  "footer": "事实=事元(append-only) · 意图=行动(有生命周期) · 规则归 host / 判断归 LLM · 域外一律 token 引用",
+  "signature": "@dsh-yzj"
+}

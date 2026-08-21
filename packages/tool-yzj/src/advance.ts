@@ -65,6 +65,8 @@ export const ENTRY_F = {
   detail: '变化内容',
   refs: '引用',
   actor: '操作者',
+  /** 产出会话(决策 41 讨论回环):feed 时的 exec.agent.session.id（yzj-dream-* 等）;面板「问助手」据此直回产出会话。 */
+  producer: '出处会话',
 } as const
 
 const ITEM_TABLE = '事项'
@@ -712,6 +714,8 @@ export interface YzjAdvanceEntry {
   detail: string
   refs: string[]
   actor: string
+  /** Producing session id (feed caller's agent session; '' for panel/RPC writes). */
+  producer: string
   tone: 'blue' | 'green' | 'red'
 }
 
@@ -772,6 +776,7 @@ export function parseAdvanceEntry(record: unknown): YzjAdvanceEntry | null {
     detail,
     refs: asString(fields[ENTRY_F.refs]).split(/\s+/).filter(token => token !== ''),
     actor: asString(fields[ENTRY_F.actor]),
+    producer: asString(fields[ENTRY_F.producer]),
     tone: toneOf(changeType, detail),
   }
 }
@@ -1227,6 +1232,8 @@ export interface AdvanceFeedInput {
   targetDate?: string | undefined
   assignee?: string | undefined
   actor?: string | undefined
+  /** Producing session id (tools pass `exec.agent?.session?.id`; panel/RPC writes leave it empty). */
+  producerSessionId?: string | undefined
 }
 
 /** Append one entry row + refresh the item's 最新动态 projection cache. */
@@ -1242,6 +1249,7 @@ async function appendEntry(
     detail: string
     refs: readonly string[]
     actor: string
+    producer?: string | undefined
   },
 ): Promise<YzjAdvanceEntry> {
   const entryId = nextSequentialId('E', await todaysEntryIds(ctx, budget, binding))
@@ -1257,6 +1265,7 @@ async function appendEntry(
   }
   if (input.detail !== '') fields[ENTRY_F.detail] = input.detail
   if (input.refs.length > 0) fields[ENTRY_F.refs] = input.refs.join(' ')
+  if (input.producer !== undefined && input.producer !== '') fields[ENTRY_F.producer] = input.producer
   await writeTable(ctx, budget, binding, binding.entryTableId, 'create', JSON.stringify([{ fieldsValue: fields }]))
   return {
     recordId: '',
@@ -1269,6 +1278,7 @@ async function appendEntry(
     detail: input.detail,
     refs: [...input.refs],
     actor: input.actor,
+    producer: input.producer ?? '',
     tone: toneOf(asString(fields[ENTRY_F.changeType]), input.detail),
   }
 }
@@ -1480,6 +1490,7 @@ export async function coreFeedAdvance(
     detail: detailParts.join('\n'),
     refs: input.refs ?? [],
     actor: input.actor ?? 'agent',
+    producer: input.producerSessionId,
   })
   projection[ITEM_F.latest] = `${entry.at} ${entry.changeType} ${entry.summary}`
   await writeTable(ctx, budget, binding, binding.itemTableId, 'update', JSON.stringify([{ id: item.recordId, fieldsValue: projection }]))
@@ -1524,6 +1535,8 @@ export interface YzjAdvanceEntryView {
   detail: string
   refs: string[]
   actor: string
+  /** Producing session id ('' for panel/RPC writes); the board's 问助手 lands here (决策 41)。 */
+  producer: string
   tone: 'blue' | 'green' | 'red'
 }
 
@@ -1621,6 +1634,7 @@ function entryViewOf(entry: YzjAdvanceEntry): YzjAdvanceEntryView {
     detail: entry.detail,
     refs: entry.refs,
     actor: entry.actor,
+    producer: entry.producer,
     tone: entry.tone,
   }
 }
@@ -2242,7 +2256,7 @@ export function applyAdvanceTools(
     output: yzjToolOutput,
     timeoutMs: budget.timeoutMs * 4,
     isConcurrencySafe: () => false,
-    async execute(args) {
+    async execute(args, exec) {
       let result: AdvanceFeedResult
       try {
         result = await coreFeedAdvance(ctx, budget, config, caches, {
@@ -2258,6 +2272,8 @@ export function applyAdvanceTools(
           targetDate: args.targetDate,
           assignee: args.assignee,
           actor: 'agent',
+          // 决策 41 讨论回环:记录产出会话,面板「问助手」直回产出这条进展的会话。
+          producerSessionId: exec?.agent?.session?.id,
         }, holder)
       } catch (error) {
         return { content: `yzj advance feed failed: ${String((error as Error).message)}`, truncated: false, data: {} }

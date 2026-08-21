@@ -226,6 +226,29 @@
   border-right: 1px solid var(--dsw-alias-border-l1);
 }
 
+/* 知识库搜索框(v0.1.4) */
+
+.docSearch {
+  flex: none;
+  padding: 8px 8px 0;
+}
+
+.docSearchInput {
+  width: 100%;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 28px;
+  padding: 0 10px;
+  outline: none;
+}
+
+.docSearchInput:focus {
+  border-color: var(--dsw-static-deepseek-500);
+}
+
 .paneRight {
   flex: 1;
   min-width: 0;

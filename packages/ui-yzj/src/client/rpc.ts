@@ -14,6 +14,8 @@ export interface YzjRpcError {
 export interface YzjPanelInject {
   fetchWorkspaces: (type?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   fetchDocs: (workspace: string, parentId?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** 知识库文档搜索(v0.1.4):按标题/文件名关键词,可选限库。 */
+  fetchDocSearch: (keyword: string, workspace?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   fetchEvents: (start: string, end: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   fetchGroups: (limit?: number, page?: number) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   fetchMessages: (groupId: string, limit?: number, page?: { type: 'newest' | 'old' | 'new'; msgId?: string }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
@@ -189,6 +191,7 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
   return {
     fetchWorkspaces: (type) => call('workspaces', type === undefined ? {} : { type }),
     fetchDocs: (workspace, parentId) => call('docs', parentId === undefined ? { workspace } : { workspace, parentId }),
+    fetchDocSearch: (keyword, workspace) => call('doc-search', workspace === undefined ? { keyword } : { keyword, workspace }),
     fetchEvents: (start, end) => call('events', { start, end }),
     fetchGroups: (limit, page) => call('groups', {
       ...(limit === undefined ? {} : { limit }),

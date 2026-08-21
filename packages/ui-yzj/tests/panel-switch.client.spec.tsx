@@ -115,3 +115,47 @@ describe('YzjPanel conversation switch', () => {
     act(() => { root.unmount() })
   })
 })
+
+describe('YzjPanel docs search (v0.1.4)', () => {
+  it('知识库搜索框:Enter 触发 fetchDocSearch,命中行点击开预览', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root: Root = createRoot(container)
+    const instance = createYzjStore().create()
+    const searches: string[] = []
+    const inject = stubInject({
+      fetchDocSearch: async (keyword: string) => {
+        searches.push(keyword)
+        return ok([{ id: 'd1', title: '830纪要·0806 AI参谋产品方案讨论', updateTime: '2026-08-19T10:00:00' }])
+      },
+      fetchDoc: async () => ok({ title: '830纪要·0806 AI参谋产品方案讨论', fileSuffix: 'otl', updateTime: '2026-08-19' }),
+    })
+    instance.actions.setOpen(true)
+    instance.actions.setTab('docs')
+    const useStore = <R,>(selector: (state: YzjPanelState) => R): R => selector(instance.getSnapshot())
+    act(() => {
+      root.render(<YzjPanel {...inject} useStore={useStore} actions={instance.actions} />)
+    })
+    await flush()
+    const input = container.querySelector('[data-testid="yzj-panel-doc-search"]') as HTMLInputElement
+    expect(input).not.toBeNull()
+    // React 受控 input:native setter + input 事件才能更新 state
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+    act(() => {
+      setter.call(input, '830纪要')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    act(() => {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+    await flush()
+    expect(searches).toEqual(['830纪要'])
+    const hit = container.querySelector('[data-testid="yzj-panel-doc-hit-d1"]') as HTMLButtonElement
+    expect(hit).not.toBeNull()
+    expect(hit.textContent).toContain('830纪要·0806')
+    act(() => { hit.click() })
+    await flush()
+    expect(container.textContent).toContain('返回文档')
+    act(() => { root.unmount() })
+  })
+})
