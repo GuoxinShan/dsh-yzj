@@ -28,7 +28,7 @@ import {
 } from './todo.ts'
 import type { TodoBinding, TodoBindingHolder, TodoConfig } from './todo.ts'
 import { ScanCursorStore, scanStateOf, type AdvanceScanState, type ScanCursorStoreFace } from './scan-cursors.ts'
-import type { DreamPoolFace } from './advance-dreampool.ts'
+import type { DreamPoolEntry, DreamPoolFace } from './advance-dreampool.ts'
 import { localStore } from './local-store.ts'
 import {
   ContextSourceStore, parseSourceToken, sourceKindOf, sourceTypeOfToken,
@@ -1744,6 +1744,11 @@ export class YzjAdvanceService extends Service {
         sendTime: entry.sendTime,
       })),
     }
+  }
+
+  /** dp-* id lookup for advance-ref-lookup (视觉走查 08-21): Dream 抽取 agent 曾把池 id 抄进 refs;池条目永不删(审计),done 也可查。 */
+  dreamPoolLookup(ids: readonly string[]): DreamPoolEntry[] {
+    return this.pool?.lookup(ids) ?? []
   }
 
   /**

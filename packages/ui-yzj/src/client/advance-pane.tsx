@@ -228,7 +228,7 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
   const [dreamEntries, setDreamEntries] = useState<{ id: string; channel: string; refId: string; content: string; sendTime: string }[]>([])
   const [dreamPoolOpen, setDreamPoolOpen] = useState(false)
   /** 原始信息叶子可读化(决策 39 后续): msg → bound log 事件行;doc → 文档名。 */
-  const [refHits, setRefHits] = useState<Record<string, { kind: string; fromName: string; content: string; sentAt: number }>>({})
+  const [refHits, setRefHits] = useState<Record<string, { kind: string; fromName: string; content: string; sentAt: number; jumpToken?: string; docId?: string }>>({})
   const [sourceModalOpen, setSourceModalOpen] = useState(false)
   const [groupOptions, setGroupOptions] = useState<UnknownRecord[]>([])
   /** 知识库目录选项(决策 32):整库 + 一层目录。 */
@@ -297,9 +297,8 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
       for (const raw of refs) {
         const token = stripRefPrefix(asString(raw))
         if (token === '' || seen.has(token)) continue
-        // msg 类只有带渠道的 token 可定位/可读;doc 类全部可读(文件名)。
-        if (kind === 'msg' && !token.startsWith('im:')) continue
-        if (kind !== 'msg' && kind !== 'doc') continue
+        // host 全量可解:doc → 文件名;msg → im: 直查 + 裸 msgId 扫绑定 log;dp-* 池 id 也能还原(视觉走查 08-21)。
+        if (kind !== 'msg' && kind !== 'doc' && !token.startsWith('dp-')) continue
         seen.add(token)
         wanted.push({ token, kind })
       }
@@ -311,7 +310,7 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
       if (cancelled || !result.ok) return
       const hits = asRecord(result.value).hits
       if (!Array.isArray(hits)) return
-      const next: Record<string, { kind: string; fromName: string; content: string; sentAt: number }> = {}
+      const next: Record<string, { kind: string; fromName: string; content: string; sentAt: number; jumpToken?: string; docId?: string }> = {}
       for (const row of hits) {
         const hit = asRecord(row)
         next[asString(hit.token)] = {
@@ -319,6 +318,8 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
           fromName: asString(hit.fromName),
           content: asString(hit.content),
           sentAt: typeof hit.sentAt === 'number' ? hit.sentAt : 0,
+          ...(asString(hit.jumpToken) === '' ? {} : { jumpToken: asString(hit.jumpToken) }),
+          ...(asString(hit.docId) === '' ? {} : { docId: asString(hit.docId) }),
         }
       }
       if (!cancelled) setRefHits(next)
@@ -932,39 +933,41 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                                   {(expanded ? refList : refList.slice(-2)).map((raw) => {
                                     const id = stripRefPrefix(raw)
                                     const kind = refKindOf(asString(entry.sourceType))
+                                    const hit = refHits[id]
+                                    // 命中一律按 hit.kind 渲染:dp-* 池 ref 已被 host 还原成原始 msg/doc(视觉走查 08-21)。
+                                    if (hit !== undefined && hit.content !== '') {
+                                      if (hit.kind === 'doc') {
+                                        const docHref = refHref('doc', hit.docId ?? id)
+                                        return (
+                                          <a key={raw} className={css.refEvent} href={docHref ?? undefined} target="_blank" rel="noreferrer" title={`打开文档 ${raw}`} data-testid={`yzj-advance-ref-${id}`}>
+                                            <span className={css.refEventMeta}>文档</span>
+                                            <span className={css.refEventBody}>{hit.content}</span>
+                                          </a>
+                                        )
+                                      }
+                                      return (
+                                        <button
+                                          key={raw}
+                                          type="button"
+                                          className={css.refEvent}
+                                          title={`打开来源群消息 ${raw}`}
+                                          data-testid={`yzj-advance-ref-${id}`}
+                                          onClick={() => { jumpToSourceMsg(hit.jumpToken ?? id) }}
+                                        >
+                                          <span className={css.refEventMeta}>[{refStampOf(hit.sentAt)}] {hit.fromName === '' ? '群消息' : hit.fromName}</span>
+                                          <span className={css.refEventBody}>{hit.content}</span>
+                                        </button>
+                                      )
+                                    }
+                                    // 未命中降级:doc 保留直跳;msg 不露裸 id(「聊 群消息」),点击仍走锚点/猜群。
                                     const href = refHref(kind, id)
                                     const short = id.length > 12 ? `${id.slice(0, 8)}…` : id
                                     const label = `${REF_ICON[kind] ?? '源'} ${short}`
                                     if (href !== null) {
-                                      const docHit = refHits[id]
-                                      if (docHit !== undefined && docHit.content !== '') {
-                                        return (
-                                          <a key={raw} className={css.refEvent} href={href} target="_blank" rel="noreferrer" title={`打开文档 ${raw}`} data-testid={`yzj-advance-ref-${id}`}>
-                                            <span className={css.refEventMeta}>文档</span>
-                                            <span className={css.refEventBody}>{docHit.content}</span>
-                                          </a>
-                                        )
-                                      }
                                       return <a key={raw} className={css.refChip} href={href} target="_blank" rel="noreferrer" title={raw} data-testid={`yzj-advance-ref-${id}`}>{label}</a>
                                     }
                                     if (kind === 'msg') {
-                                      const hit = refHits[id]
-                                      if (hit !== undefined) {
-                                        return (
-                                          <button
-                                            key={raw}
-                                            type="button"
-                                            className={css.refEvent}
-                                            title={`打开来源群消息 ${raw}`}
-                                            data-testid={`yzj-advance-ref-${id}`}
-                                            onClick={() => { jumpToSourceMsg(id) }}
-                                          >
-                                            <span className={css.refEventMeta}>[{refStampOf(hit.sentAt)}] {hit.fromName === '' ? '群消息' : hit.fromName}</span>
-                                            <span className={css.refEventBody}>{hit.content}</span>
-                                          </button>
-                                        )
-                                      }
-                                      return <button key={raw} type="button" className={css.refChip} title={`打开来源群消息 ${raw}`} data-testid={`yzj-advance-ref-${id}`} onClick={() => { jumpToSourceMsg(id) }}>{label}</button>
+                                      return <button key={raw} type="button" className={css.refChip} title={`打开来源群消息 ${raw}`} data-testid={`yzj-advance-ref-${id}`} onClick={() => { jumpToSourceMsg(id) }}>聊 群消息</button>
                                     }
                                     const domain = kind === 'todo' ? 'todo' : kind === 'event' ? 'calendar' : null
                                     if (domain !== null) {

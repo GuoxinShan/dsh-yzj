@@ -53,6 +53,8 @@ export const yzjAdvanceDreamPoolDomainSpec = defineDomain({
 export interface DreamPoolFace {
   /** Pending (undistilled) entries, oldest first. */
   pending(): DreamPoolEntry[]
+  /** By-id lookup including done (entries are never deleted, so dp-* refs on 事元 stay resolvable). */
+  lookup(ids: readonly string[]): DreamPoolEntry[]
   /** Enqueue one signal copy; duplicate refId+channel stays single (pool dedup). */
   enqueue(entry: Omit<DreamPoolEntry, 'id' | 'enqueuedAt' | 'done'>): Promise<DreamPoolEntry>
   /** Mark entries done after a Dream distillation. */
@@ -102,6 +104,11 @@ export class DreamPoolStore implements DreamPoolFace {
 
   pending(): DreamPoolEntry[] {
     return this.list().filter(entry => !entry.done)
+  }
+
+  lookup(ids: readonly string[]): DreamPoolEntry[] {
+    const wanted = new Set(ids)
+    return this.list().filter(entry => wanted.has(entry.id))
   }
 
   async enqueue(entry: Omit<DreamPoolEntry, 'id' | 'enqueuedAt' | 'done'>): Promise<DreamPoolEntry> {

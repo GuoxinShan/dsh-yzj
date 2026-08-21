@@ -742,6 +742,9 @@ function imCacheStore(): SqliteDb {
         // 决策 39 后续: 原始信息叶子可读化 — msg refs 从 bound log（捞过的
         // 消息本体）解析成 谁/何时/说了什么；doc refs 经 `doc get` 拿文件名
         // （进程内缓存）。而板渲染三层树的事件层。
+        // 08-21 视觉走查扩展: dp-* 池 id → 蓄水池条目(永不删)还原原始 msg/doc;
+        // 裸 msgId(legacy refs) → 扫全部绑定会话的 bound log;命中带 jumpToken
+        // (im:<g>:<m>) 让点击直达那条消息。
         const io = homeIoFrom(ctx.get('yzjHome'))
         const refsRaw = typeof payload === 'object' && payload !== null
           ? (payload as Record<string, unknown>).refs
@@ -753,36 +756,81 @@ function imCacheStore(): SqliteDb {
           }).filter(row => row.token !== '')
           : []
         if (refs.length === 0) return { ok: true, value: { hits: [] } }
-        const hits: { token: string; kind: string; fromName: string; content: string; sentAt: number }[] = []
+        const hits: { token: string; kind: string; fromName: string; content: string; sentAt: number; jumpToken?: string; docId?: string }[] = []
+        /** doc get → fileName(进程内缓存);miss 不缓存。 */
+        const docTitleOf = async (docId: string): Promise<string> => {
+          const cached = refDocTitleCache.get(docId)
+          if (cached !== undefined) return cached
+          let ran
+          try {
+            ran = await ctx.yzjBridge.run(['doc', 'get', '--id', docId])
+          } catch {
+            ran = undefined
+          }
+          const fileName = ran !== undefined && ran.ok && typeof ran.json === 'object' && ran.json !== null
+            ? String((ran.json as Record<string, unknown>).fileName ?? '')
+            : ''
+          if (fileName !== '') refDocTitleCache.set(docId, fileName)
+          return fileName
+        }
+        // dp-* 池 id 一次性批量解析(含 done;agent 曾把池 id 抄进 refs — 视觉走查 08-21)。
+        const advance = ctx.get('yzjAdvance')
+        const poolIds = refs.map(ref => ref.token).filter(token => token.startsWith('dp-'))
+        const poolRows = poolIds.length > 0 && advance !== undefined && typeof advance.dreamPoolLookup === 'function'
+          ? advance.dreamPoolLookup(poolIds)
+          : []
+        const poolById = new Map(poolRows.map(row => [row.id, row]))
+        /** 池条目 sendTime(`yyyy-MM-DD HH:mm:ss.SSS`) → epoch ms;非法为 0。 */
+        const poolSentAtOf = (sendTime: string): number => {
+          const parsed = Date.parse(sendTime.replace(' ', 'T'))
+          return Number.isNaN(parsed) ? 0 : parsed
+        }
         for (const ref of refs) {
           if (ref.kind === 'doc') {
-            let title = refDocTitleCache.get(ref.token)
-            if (title === undefined) {
-              let ran
-              try {
-                ran = await ctx.yzjBridge.run(['doc', 'get', '--id', ref.token])
-              } catch {
-                ran = undefined
-              }
-              const fileName = ran !== undefined && ran.ok && typeof ran.json === 'object' && ran.json !== null
-                ? String((ran.json as Record<string, unknown>).fileName ?? '')
-                : ''
-              if (fileName !== '') {
-                refDocTitleCache.set(ref.token, fileName)
-                title = fileName
-              }
+            const title = await docTitleOf(ref.token)
+            if (title !== '') hits.push({ token: ref.token, kind: 'doc', fromName: '', content: title, sentAt: 0, docId: ref.token })
+            continue
+          }
+          if (ref.token.startsWith('dp-')) {
+            const pooled = poolById.get(ref.token)
+            if (pooled === undefined) continue
+            if (pooled.channel.startsWith('im:')) {
+              const groupId = pooled.channel.slice(3)
+              const logEntry = io?.getLog(groupId)?.entries.find(row => row.msgId === pooled.refId)
+              hits.push({
+                token: ref.token,
+                kind: 'msg',
+                fromName: logEntry?.fromName ?? '',
+                content: (logEntry?.content ?? pooled.content).slice(0, 80),
+                sentAt: logEntry?.sentAt ?? poolSentAtOf(pooled.sendTime),
+                jumpToken: `${pooled.channel}:${pooled.refId}`,
+              })
+              continue
             }
-            if (title !== undefined) {
-              hits.push({ token: ref.token, kind: 'doc', fromName: '', content: title, sentAt: 0 })
+            if (pooled.channel.startsWith('dir:')) {
+              const title = await docTitleOf(pooled.refId)
+              if (title !== '') hits.push({ token: ref.token, kind: 'doc', fromName: '', content: title, sentAt: 0, docId: pooled.refId })
+              continue
             }
+            hits.push({ token: ref.token, kind: 'msg', fromName: '', content: pooled.content.slice(0, 80), sentAt: poolSentAtOf(pooled.sendTime) })
             continue
           }
           if (io === undefined) continue
           const match = /^im:([^:\s]+):(.+)$/.exec(ref.token)
-          if (match === null) continue
-          const entry = io.getLog(match[1]!)?.entries.find(row => row.msgId === match[2])
-          if (entry === undefined) continue
-          hits.push({ token: ref.token, kind: 'msg', fromName: entry.fromName, content: entry.content.slice(0, 80), sentAt: entry.sentAt })
+          if (match !== null) {
+            const entry = io.getLog(match[1]!)?.entries.find(row => row.msgId === match[2])
+            if (entry === undefined) continue
+            hits.push({ token: ref.token, kind: 'msg', fromName: entry.fromName, content: entry.content.slice(0, 80), sentAt: entry.sentAt, jumpToken: ref.token })
+            continue
+          }
+          // 裸 msgId(legacy refs):扫全部绑定会话的 bound log,命中补 jumpToken。
+          if (ref.kind !== 'msg') continue
+          for (const binding of io.listBindings?.() ?? []) {
+            const entry = io.getLog(binding.yzjConversationId)?.entries.find(row => row.msgId === ref.token)
+            if (entry === undefined) continue
+            hits.push({ token: ref.token, kind: 'msg', fromName: entry.fromName, content: entry.content.slice(0, 80), sentAt: entry.sentAt, jumpToken: `im:${binding.yzjConversationId}:${ref.token}` })
+            break
+          }
         }
         return { ok: true, value: { hits } }
       }
