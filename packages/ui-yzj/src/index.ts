@@ -23,6 +23,7 @@ import {
 import { digestCandidates } from './handoff-digest.ts'
 import { attachYzjSession, ensureYzjHostWorkspace } from './yzj-cwd.ts'
 import { applyTopicDeliver } from './topic-deliver.ts'
+import { runAdvanceAction } from './advance-action.ts'
 import { parseContactUser } from './contact-parse.ts'
 import { collectCalendarEvents } from '@dsh-yzj/tool-yzj/src/calendar-range.ts'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
@@ -872,6 +873,54 @@ function imCacheStore(): SqliteDb {
           return { ok: true, value: { sources: await advance.sourceRemove(advanceId, token) } }
         } catch (error) {
           return internalError(`advance-source-remove failed: ${String(error)}`)
+        }
+      }
+      case 'advance-action-run': {
+        // 决策卡动作执行（决策 45 闭环强制）：host 编排 执行→执行事元留痕
+        // （refs=效应指针 + detail 动作序）→ 效应对象自动订阅，幂等闸防双执行。
+        const advance = ctx.get('yzjAdvance')
+        if (advance === undefined) return internalError('advance-action-run: yzjAdvance 服务不可用（tool-yzj 未挂载）')
+        const advanceId = stringField(payload, 'advanceId')
+        const actionKey = stringField(payload, 'actionKey')
+        const kind = stringField(payload, 'kind')
+        const text = stringField(payload, 'text')
+        if (advanceId === undefined || actionKey === undefined || text === undefined
+          || (kind !== 'todo' && kind !== 'im' && kind !== 'event')) {
+          return internalError('advance-action-run endpoint requires advanceId/actionKey/kind(todo|im|event)/text payloads')
+        }
+        const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
+        const rawFields = record.fields
+        const fields: Record<string, string> = {}
+        if (typeof rawFields === 'object' && rawFields !== null) {
+          for (const [key, value] of Object.entries(rawFields)) {
+            if (typeof value === 'string') fields[key] = value
+          }
+        }
+        const todo = ctx.get('yzjTodo')
+        const imGroupId = stringField(payload, 'imGroupId')
+        const imGroupLabel = stringField(payload, 'imGroupLabel')
+        try {
+          return {
+            ok: true,
+            value: await runAdvanceAction({
+              advance,
+              ...(todo === undefined ? {} : { todo }),
+              sendIm: async (groupId, content) => {
+                const sent = await sendImAndLog(ctx, homeIoFrom(ctx.get('yzjHome')), { groupId, msgType: 'text', content, images: [], atOpenIds: [], atAll: false })
+                return sent.ok ? { ok: true as const, value: sent.value } : { ok: false as const, error: sent.error }
+              },
+            }, {
+              advanceId,
+              actionKey,
+              kind,
+              text,
+              fields,
+              ...(imGroupId === undefined ? {} : { imGroupId }),
+              ...(imGroupLabel === undefined ? {} : { imGroupLabel }),
+            }),
+          }
+        } catch (error) {
+          return internalError(`advance-action-run failed: ${String(error)}`)
         }
       }
       case 'advance-feed': {

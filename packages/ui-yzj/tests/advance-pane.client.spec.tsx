@@ -44,8 +44,7 @@ interface Face {
   focused: string[]
   groupFetches: number
   feeds: { advanceId: string; summary: string; sourceType?: string; refs?: string[] }[]
-  todos: { title: string; ddl?: string; priority?: string; tags?: string[] }[]
-  sent: { groupId: string; content: string }[]
+  actionRuns: { advanceId: string; actionKey: string; kind: string; text: string; fields?: Record<string, string>; imGroupId?: string; imGroupLabel?: string }[]
 }
 
 function mountPane(config: {
@@ -72,8 +71,7 @@ function mountPane(config: {
   const focused: string[] = []
   const groupState = { fetches: 0 }
   const feeds: { advanceId: string; summary: string; sourceType?: string; refs?: string[] }[] = []
-  const todos: { title: string; ddl?: string; priority?: string; tags?: string[] }[] = []
-  const sent: { groupId: string; content: string }[] = []
+  const actionRuns: { advanceId: string; actionKey: string; kind: string; text: string; fields?: Record<string, string>; imGroupId?: string; imGroupLabel?: string }[] = []
   const items = config.items ?? []
   const props: AdvancePaneProps = {
     inject: {
@@ -141,13 +139,22 @@ function mountPane(config: {
         feeds.push(input)
         return { ok: true, value: { advanceId: input.advanceId, stage: 'running' } } as Rpc
       },
-      createTodo: async (input: { title: string; ddl?: string; priority?: string; tags?: string[] }) => {
-        todos.push(input)
-        return { ok: true, value: { todoId: 'T-NEW', title: input.title } } as Rpc
-      },
-      sendMessage: async (groupId: string, content: string | undefined) => {
-        sent.push({ groupId, content: content ?? '' })
-        return { ok: true, value: { msgId: 'm-sent' } } as Rpc
+      advanceActionRun: async (input: { advanceId: string; actionKey: string; kind: string; text: string; fields?: Record<string, string>; imGroupId?: string; imGroupLabel?: string }) => {
+        actionRuns.push(input)
+        // 模拟 host 落执行事元（决策 45）：refreshDetail 后 foldDoneActions 折叠出已执行态
+        const detail = config.detail
+        if (detail !== undefined) {
+          const label = input.kind === 'todo'
+            ? `执行建议动作：建待办「${input.text}」`
+            : input.kind === 'im'
+              ? '执行建议动作：发消息到「830 项目」对齐'
+              : `执行建议动作：定会议「${input.fields?.['主题'] ?? input.text}」（已跳日程域，建成后经订阅回流）`
+          detail.entries.push(entry({
+            entryId: `E-run-${actionRuns.length}`, changeType: '进度更新', summary: label, actor: 'user',
+            detail: `动作序: ${input.actionKey} | 种类: ${input.kind} | 文本: ${input.text}`,
+          }))
+        }
+        return { ok: true, value: { idempotent: false, effectRef: 'T-NEW', warnings: [] } } as Rpc
       },
       homeNav: async () => ({
         ok: true,
@@ -198,7 +205,7 @@ function mountPane(config: {
   })
   return {
     container, root, judged, created, ensured, getRequests, sourceAdds, sourceRemoves, patrols,
-    feeds, todos, sent,
+    feeds, actionRuns,
     get dreamRuns() { return dreamRuns.count },
     focused,
     get groupFetches() { return groupState.fetches },
@@ -969,14 +976,16 @@ describe('YzjAdvancePane', () => {
     expect(actions?.textContent).toContain('建待办：确认会议模板排期')
     expect(actions?.textContent).toContain('发消息：范围补充想跟你对齐一下')
     expect(actions?.textContent).toContain('定会议：原型评审二次会')
-    // 建待办:点击直落库 + 置灰 + user 事元留痕
+    // 建待办:点击 → advanceActionRun(host 编排执行+留痕+订阅) → 折叠置灰
     const todoBtn = face.container.querySelector('[data-testid="yzj-advance-action-0"]') as HTMLButtonElement
     await act(async () => { todoBtn.click(); await Promise.resolve() })
     await settle()
-    expect(face.todos).toEqual([{ title: '确认会议模板排期', ddl: '2026-08-25', tags: ['王剑'] }])
-    expect(face.feeds.map(row => row.summary)).toContain('执行建议动作：建待办「确认会议模板排期」')
+    expect(face.actionRuns[0]).toMatchObject({
+      advanceId: 'A-1', actionKey: 'E-9:0', kind: 'todo', text: '确认会议模板排期',
+      fields: { 截止: '2026-08-25', 负责人: '王剑' },
+    })
     expect((face.container.querySelector('[data-testid="yzj-advance-action-0"]') as HTMLButtonElement).textContent).toContain('已建待办')
-    // 发消息:就地草稿框预填,点发送投到恰一订阅群 + 留痕
+    // 发消息:就地草稿框预填,点发送投到恰一订阅群(host 落 refs=im:g:m 留痕)
     const imBtn = face.container.querySelector('[data-testid="yzj-advance-action-1"]') as HTMLButtonElement
     await act(async () => { imBtn.click(); await Promise.resolve() })
     const draft = face.container.querySelector('[data-testid="yzj-advance-action-draft"]') as HTMLTextAreaElement
@@ -985,11 +994,11 @@ describe('YzjAdvancePane', () => {
     expect(send.textContent).toContain('830 项目')
     await act(async () => { send.click(); await Promise.resolve() })
     await settle()
-    expect(face.sent).toEqual([{ groupId: 'g1', content: '范围补充想跟你对齐一下' }])
-    expect(face.feeds.map(row => row.summary)).toContain('执行建议动作：发消息到「830 项目」对齐')
-    // 定会议:跳日程域
+    expect(face.actionRuns[1]).toMatchObject({ kind: 'im', text: '范围补充想跟你对齐一下', imGroupId: 'g1', imGroupLabel: '830 项目' })
+    // 定会议:留痕 + 跳日程域
     const eventBtn = face.container.querySelector('[data-testid="yzj-advance-action-2"]') as HTMLButtonElement
     await act(async () => { eventBtn.click(); await Promise.resolve() })
+    expect(face.actionRuns[2]).toMatchObject({ kind: 'event', text: '原型评审二次会' })
     expect(getWorkbenchDomain()).toBe('calendar')
     setWorkbenchDomain('advance')
     // 有 agent 产动作时写死动词降级为次要行;「回到对话继续聊」预填 discuss 草稿(决策 41)
@@ -1004,6 +1013,34 @@ describe('YzjAdvancePane', () => {
     expect(getWorkbenchDomain()).toBe('im')
     // 讨论回环:直开订阅群最新话题抽屉(决策 41)
     expect(consumeTopicOpen('g1')?.sessionId).toBe('t-latest')
+    act(() => { face.root.unmount() })
+  })
+
+  it('执行态从事元流折叠(决策 45)：已有执行事元的动作直接渲染已执行且禁用；综合卡重排后 key 失效以 kind+文本 兼底', async () => {
+    setWorkbenchDomain('advance')
+    const decision = entry({
+      entryId: 'E-10', changeType: '决策请求', summary: '综合卡', tone: 'red',
+      detail: '问题\n动作: 建待办 | 内容: 确认会议模板排期 | 截止: 2026-08-25\n动作: 发消息 | 内容: 对齐一下',
+    })
+    const face = mountPane({
+      items: [item({ advanceId: 'A-1', stage: 'decision-needed', title: '要决定' })],
+      detail: {
+        item: item({ advanceId: 'A-1', stage: 'decision-needed', title: '要决定' }),
+        entries: [
+          decision,
+          // 执行事元的动作序 key 是旧卡 E-9:0（综合卡重排后该动作在新卡 E-10:0）——kind+文本 兼底命中
+          entry({ entryId: 'E-run-1', changeType: '进度更新', summary: '执行建议动作：建待办「确认会议模板排期」', actor: 'user', detail: '动作序: E-9:0 | 种类: todo | 文本: 确认会议模板排期' }),
+        ],
+      },
+    })
+    await settle()
+    const todoBtn = face.container.querySelector('[data-testid="yzj-advance-action-0"]') as HTMLButtonElement
+    expect(todoBtn.textContent).toContain('已建待办')
+    expect(todoBtn.disabled).toBe(true)
+    // 未执行的发消息动作仍可点
+    const imBtn = face.container.querySelector('[data-testid="yzj-advance-action-1"]') as HTMLButtonElement
+    expect(imBtn.textContent).toContain('发消息：对齐一下')
+    expect(imBtn.disabled).toBe(false)
     act(() => { face.root.unmount() })
   })
 
