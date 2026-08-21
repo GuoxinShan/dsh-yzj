@@ -1023,3 +1023,29 @@ client 渲染改为 **hit 优先**：命中一律按 hit.kind 渲染（文档卡
 测试：panel-switch 补搜索框用例（Enter→fetchDocSearch→命中行→点击开预览）；真机 doc-search.png：搜「830纪要」命中 4 行、点击打开全文预览。644 绿。
 
 **§24.23 续（同日，知识库类型分组）**：用户「能不能区分个人和其他类型啊还是有什么类型那看看先」——先查数据：51 库中 visibility=2（个人）仅 2 个（AI速记知识库、我的知识），visibility=1（企业）49 个，无更多类型（allMember 全 None，无企业全员库）。左栏按 visibility 分组渲染：「个人」组置顶 +「企业 / 团队」组随后，组标头小字（paneGroupLabel）。panel-switch 补分组用例（标头存在 + 个人组整体在企业组前，与数据源顺序无关）；真机 ws-groups.png。645 绿。
+
+## 24.24 tool-yzj+ui-yzj｜决策队列与待决出口主权：决策不被下一次 Dream 覆盖（2026-08-21，决策 43）
+
+用户「产生的决策会给下一次 dream 覆盖掉？我感觉这不太对」——核查两路覆盖都属实：① 卡面取最新决策请求（latest-wins），新 Dream 喂新卡就把未处理旧卡顶出决策区（只剩时间线）；② 状态机允许 agent feed decision-needed/ready-for-review→running，未处理决策可被静默拖出待决。修复：
+
+| 面 | 交付 | 证据 |
+|---|---|---|
+| 决策队列（面板） | 决策请求按时间排队，卡面=最旧未处理条；judge 事元带 `判定动作` 字段（ENTRY_F.judge，service.judge 落），最近判定之前的决策请求算已处理；>1 条时区头「待你决定 N 条」+ 卡内排队提示。处理完一条自动浮出下一条 | client spec：judge 结算前旧卡不被顶（E-1 隐藏、E-3 浮出）+ 无结算时最旧先出与「2 条待决定排队」 |
+| 待决出口主权（host） | `decision-needed`/`ready-for-review` 的 stageTo 离开在 actor≠user 时抛错（「只能由用户在看板拍板；agent 请补进现有决策请求或保持静默」），与决策 27 终局主权同构 | advance.spec：decision-needed/ready-for-review 被 agent 拖出均拒绝、阶段不动、零事元；judge 标记落库+parse 回读 |
+
+648 绿 + typecheck 绿；真机 18:33 重启 verify-advance-actions.mjs 全 PASS。配套说明：抑制判据（同判据补进现有决策请求不新起）仍是第一道闸，队列是兜底防踩；agent 侧无需新纪律。
+
+**§24.24 续（同日，队列→单卡综合修正）**：用户「应该只有一条决策 但是后续要根据这个综合起来产生新的才对 因为会有实效性」——队列方案（最旧先出+排队列表）被修正为**单卡综合**：① 面板卡面=最近 judge 事元之后的最新决策请求（永远只有一条）；② host 强制「综合自」合同：已有未处理决策请求时，新决策请求 detail 必须带「综合自: <旧卡 entryId>」并写明旧问题并入/失效，缺一即拒（错误信息教写法）；③ 卡面渲染「此卡综合了 E-x 的未决内容」链，旧卡留时间线。INSPECT_DISCIPLINE（抑制与综合）/ feed 工具 description / dreamAskPrompt 同步。撤销排队列表 UI（queueList 只活了一轮）。测试：host 综合自强制（无标记被拒/带标记放行）、client 单卡+综合链渲染、parse mergedFrom；650 绿。真机活卡：830 首张真决策请求上线（评审两个范围补充：问题+分析+建待办/发消息动作+三选项+影响行，截图 ux-decision-card-live.png，seed-decision-card.mjs 全 PASS，出处=session-ace209e5）。
+
+## 24.25 领域模型收敛：事元驱动闭环 + 行动建模（2026-08-21，决策 44/45，设计留痕）
+
+从「演进应该有什么类型」起的五轮讨论收敛：演进无类型（类型是事元标签）→ 行动不设 changeType（决策卡动作行 + todo 域承接）→ 行动抽象 > todo（执行器多态：人/IM/日程/未来 AI）→ 系统本体 = 观察→分析→决策→执行→再观察闭环 → 领域模型按「环上每段弧必须有载体」构造。交付：
+
+| 面 | 交付 | 证据 |
+|---|---|---|
+| 领域模型合同 | [`../spec/advance-domain-model.md`](../spec/advance-domain-model.md) v1.0：五环弧→载体映射、对象清单（推进事项/事元/上下文来源/蓄水池/行动）、三条公理、断点清单；刻意不设信号/建议卡/清单实体 | 文档入库 |
+| 领域模型图 | [`../diagrams/advance-9-domain-model.{html,png}`](../diagrams/advance-9-domain-model.png)：手写 HTML+SVG（archscribe panorama 模板布线限制放弃——右面板入线硬编码来自中间面板，「④执行→执行器」分派线画不出）；分派/效应回流/落事元三线齐全 | 图入库，PNG 走查通过 |
+| 决策 44 | 行动 = 事元结构化载荷起步，实体化留缝（推翻信号明文化） | 决策表留痕，未实现不涉及代码 |
+| 决策 45（**待实现**） | 闭环强制：执行事元必带效应指针 refs + 效应对象自动进订阅集；done 态从事元流折叠 | 决策表留痕；现状三断点（回流断/溯源断/done 态丢）记录在案待排 |
+
+archscribe 旧产物（advance-9 spec.json/gif/excalidraw）与 HTML 版不一致，已删（git 可恢复）。无代码变更，不动测试。
