@@ -56,4 +56,6 @@
 3. 坑的解法变更时更新条目而非删掉；条目过时（对应代码已删）标注「已失效」并保留历史。
 | 40 | 外部 seed sqlite 事元缺 entry_id fields 键被 parse 静默过滤；早期验证被裸 msgId 事元的恰一群路径假阳性掩盖 | `.acceptance` 直插库脚本 / parseAdvanceEntry | [pitfall-040-seed-fields-need-id-keys.md](pitfall-040-seed-fields-need-id-keys.md) |
 | 41 | dir: 订阅扫不到会议速记纪要：速记归档独立库 + doc list 一层列取 + 首扫基 线不回灌三重叠加 | advance scan dir: 线程 / 速记归档认知 | [pitfall-041-dir-subscription-misses-lingee-minutes.md](pitfall-041-dir-subscription-misses-lingee-minutes.md) |
-| 42 | CSS 变量笔误 `--dsh-*`（应为 `--dsw-*`）静默失效：ref 卡边框/底色/文字色全丢，单测 typecheck 全绿只有真机可见 | ui-yzj browser half 一切 module.css / 主题 token 引用 | [pitfall-042-unknown-css-var-silent-noop.md](pitfall-042-unknown-css-var-silent-noop.md) |
+| 42 | CSS 变量笔误 `--dsh-*`（应为 `--dsw-*`）静默失效：ref 卡边框/底色/文字色 全丢，单测 typecheck 全绿只有真机可见 | ui-yzj browser half 一切 module.css / 主题 token 引用 | [pitfall-042-unknown-css-var-silent-noop.md](pitfall-042-unknown-css-var-silent-noop.md) |
+| 43 | sidecar 裸 Context 跑 core 函数写进幽灵库：默认后端是 dbt，真机是 sqlite（决策 36），不对齐则报「未开通」或写成功但读不到 | 一切 sidecar/验收驱动脚本 mount 时 | [pitfall-043-sidecar-backend-alignment.md](pitfall-043-sidecar-backend-alignment.md) |
+| 44 | 推进看板验收时序：点已激活事项不重拉 detail（setActiveId 同值）；Dream 抽取后页面已被切到 dream 会话 | Playwright 验收推进面板的断言前导航 | [pitfall-044-acceptance-timing-reload.md](pitfall-044-acceptance-timing-reload.md) |
