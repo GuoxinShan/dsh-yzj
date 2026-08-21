@@ -11,7 +11,7 @@
   "title": {
     "prefix": "AI推进 ·",
     "highlight": "架构与环路",
-    "subtitle": "事元流绕环一周 = 一次推进回合（v1.8：本地 SQLite + 机械巡检 + Dream 直建会话 + 四层数据树）"
+    "subtitle": "事元流绕环一周 = 一次推进回合（v1.8：本地 SQLite + 机械巡检 + Dream 直建会话 + 三层数据树）"
   },
   "input_title": "Event Sources",
   "inputs": [
@@ -146,7 +146,7 @@
       },
       {
         "title": "推进页签",
-        "body": "四层数据树：进度节点\n→事元描述→原始信息",
+        "body": "三层：演进→事元\n(进度行+描述)→原始信息",
         "icon": "eye",
         "icon_style": "illustrated"
       },

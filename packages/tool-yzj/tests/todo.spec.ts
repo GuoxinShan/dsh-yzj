@@ -128,14 +128,20 @@ describe('todo pure helpers', () => {
 
 describe('yzj_todo_list', () => {
   it('lists open todos parsed from JSON-string fields, sorted by DDL', async () => {
+    // DDL 用相对日期(fixme 日期炸弹:硬编码 DDL 会随真实日期过期变 overdue)。
+    const day = (offset: number): string => {
+      const d = new Date(Date.now() + offset * 86_400_000)
+      const pad = (n: number): string => String(n).padStart(2, '0')
+      return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())}`
+    }
     const { tools } = mount(resolvedLibraryScript({
       'sheet record': () => ok({
         page_token: '',
         records: [
-          { id: 'a', fields: JSON.stringify({ todo_id: 'T-1', 标题: '后做的', 状态: 'pending', DDL: '2026/09/01', 标签: '#b' }) },
-          { id: 'b', fields: JSON.stringify({ todo_id: 'T-2', 标题: '先做的', 状态: 'in_progress', DDL: '2026/08/20', 标签: '#a #前端' }) },
-          { id: 'c', fields: JSON.stringify({ todo_id: 'T-3', 标题: '已完成的', 状态: 'done', DDL: '2026/08/01' }) },
-          { id: 'd', fields: JSON.stringify({ todo_id: 'T-4', 标题: '过期的', 状态: 'pending', DDL: '2026/01/01' }) },
+          { id: 'a', fields: JSON.stringify({ todo_id: 'T-1', 标题: '后做的', 状态: 'pending', DDL: day(30), 标签: '#b' }) },
+          { id: 'b', fields: JSON.stringify({ todo_id: 'T-2', 标题: '先做的', 状态: 'in_progress', DDL: day(7), 标签: '#a #前端' }) },
+          { id: 'c', fields: JSON.stringify({ todo_id: 'T-3', 标题: '已完成的', 状态: 'done', DDL: day(-20) }) },
+          { id: 'd', fields: JSON.stringify({ todo_id: 'T-4', 标题: '过期的', 状态: 'pending', DDL: day(-30) }) },
         ],
       }),
     }))
