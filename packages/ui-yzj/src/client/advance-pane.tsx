@@ -144,7 +144,7 @@ function sourceIconOf(token: string): string {
 
 /** Props: the RPC verbs the board needs (subset of the panel inject). */
 export interface AdvancePaneProps {
-  inject: Pick<YzjPanelInject, 'advanceState' | 'advanceGet' | 'advanceCreate' | 'advanceJudge' | 'advanceEnsure' | 'advanceScanState' | 'advancePatrolNow' | 'advanceSourceAdd' | 'advanceSourceRemove' | 'fetchGroups' | 'fetchWorkspaces' | 'fetchDocs' | 'advanceDreamState' | 'advanceDreamRun' | 'advanceRefLookup' | 'focusBoundSession' | 'advanceFeed' | 'createTodo' | 'sendMessage' | 'homeNav'>
+  inject: Pick<YzjPanelInject, 'advanceState' | 'advanceGet' | 'advanceCreate' | 'advanceJudge' | 'advanceEnsure' | 'advanceScanState' | 'advancePatrolNow' | 'advanceSourceAdd' | 'advanceSourceRemove' | 'fetchGroups' | 'fetchWorkspaces' | 'fetchDocs' | 'advanceDreamState' | 'advanceDreamRun' | 'advanceRefLookup' | 'focusBoundSession' | 'advanceFeed' | 'advanceActionRun' | 'homeNav'>
 }
 
 /** Queue-head patrol line (spec §14.5). */
@@ -227,6 +227,27 @@ export function parseDecisionOptions(detail: string): { options: string[]; impac
   return { options, impact, rest: rest.join('\n'), actions, mergedFrom }
 }
 
+/**
+ * Fold executed decision-card actions from the entry stream (决策 45): every
+ * execution 事元 carries a detail mark `动作序: <key> | 种类: <kind> | 文本:
+ * <text>` written by the host (advance-action-run). The set holds both the
+ * raw key and the `kind|text` fallback pair — 综合卡 re-orders action rows
+ * (决策 43), so the key alone is not stable across card revisions. Done
+ * state is derived from the stream, never held in memory (refresh-safe).
+ */
+export function foldDoneActions(entries: UnknownRecord[]): ReadonlySet<string> {
+  const done = new Set<string>()
+  for (const entry of entries) {
+    for (const line of asString(entry.detail).split('\n')) {
+      const mark = /^动作序:\s*([^|]+)\|\s*种类:\s*(\w+)\s*\|\s*文本:\s*(.*)$/.exec(line.trim())
+      if (mark === null) continue
+      done.add((mark[1] ?? '').trim())
+      done.add(`${mark[2]}|${(mark[3] ?? '').trim()}`)
+    }
+  }
+  return done
+}
+
 interface BoardState {
   loading: boolean
   ready: boolean
@@ -255,8 +276,7 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
   const [cancelArmed, setCancelArmed] = useState(false)
   /** 「已结束」折叠区(completed/cancelled 事项,终局提示事后可达)。 */
   const [showClosed, setShowClosed] = useState(false)
-  /** 动作型建议卡执行态(决策 41):`${entryId}:${actionIndex}` 已执行集 + 发消息草稿框。 */
-  const [doneActions, setDoneActions] = useState<ReadonlySet<string>>(new Set())
+  /** 发消息动作的就地草稿框(决策 41)。 */
   const [imDraft, setImDraft] = useState<{ key: string; text: string } | null>(null)
   /** 时间线事元详情展开集(默认折叠,展开才见原始来源)。 */
   const [expandedEntries, setExpandedEntries] = useState<ReadonlySet<string>>(new Set())
@@ -452,6 +472,8 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
   }, [activeId, showAll])
 
   const queues = useMemo(() => queuesOf(board.items), [board.items])
+  /** 动作执行态从事元流折叠(决策 45)：执行事元 detail 带动作序标记，刷新不丢。 */
+  const doneActions = useMemo(() => foldDoneActions(detail?.entries ?? []), [detail])
 
   const judge = async (action: 'confirm_condition' | 'confirm_advance' | 'accept' | 'reject' | 'ignore' | 'cancel', note?: string): Promise<void> => {
     if (busy || activeId === '') return
@@ -497,36 +519,34 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
     })
   }
 
-  /** 动作型建议卡执行(决策 41):建待办直落库;发消息开就地草稿框;定会议跳日程。执行后落 user 事元留痕。 */
+  /** 动作执行(决策 45)：一个 RPC 由 host 编排 执行→执行事元留痕(refs+动作序)
+   *  →效应对象自动订阅。event 无效应对象——留痕后跳日程域，建成后经订阅回流。 */
   const runAction = async (key: string, action: DecisionAction): Promise<void> => {
-    if (action.kind === 'event') {
-      setDoneActions(prev => new Set(prev).add(key))
-      setWorkbenchDomain('calendar')
-      return
-    }
     if (action.kind === 'im') {
       setImDraft({ key, text: action.fields['内容'] ?? action.text })
       return
     }
     setBusy(true)
     setError('')
-    const result = await props.inject.createTodo({
-      title: action.text,
-      ...(action.fields['截止'] === undefined ? {} : { ddl: action.fields['截止'] }),
-      ...(action.fields['负责人'] === undefined ? {} : { tags: [action.fields['负责人']] }),
+    const result = await props.inject.advanceActionRun({
+      advanceId: activeId,
+      actionKey: key,
+      kind: action.kind,
+      text: action.text,
+      fields: action.fields,
     })
+    setBusy(false)
     if (!result.ok) {
-      setBusy(false)
       setError(result.error.message)
       return
     }
-    setDoneActions(prev => new Set(prev).add(key))
-    await props.inject.advanceFeed({ advanceId: activeId, summary: `执行建议动作：建待办「${action.text}」`, sourceType: '人工' })
-    setBusy(false)
+    const warnings = asArray(asRecord(result.value).warnings).map(asString).filter(row => row !== '')
+    if (warnings.length > 0) setError(`已完成，但：${warnings.join('；')}`)
+    if (action.kind === 'event') setWorkbenchDomain('calendar')
     await refreshDetail()
   }
 
-  /** 发消息动作发送(决策 41):用户在看板过目草稿后点发,投到恰一订阅群(D9 本人意志)。 */
+  /** 发消息动作发送(决策 41/45):用户在看板过目草稿后点发;host 落 refs=im:g:m 留痕。 */
   const sendActionMessage = async (): Promise<void> => {
     if (imDraft === null || imDraft.text.trim() === '') return
     const groupId = (imGroupTokens[0] ?? '').slice(3)
@@ -536,16 +556,23 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
     }
     setBusy(true)
     setError('')
-    const result = await props.inject.sendMessage(groupId, imDraft.text.trim())
+    const result = await props.inject.advanceActionRun({
+      advanceId: activeId,
+      actionKey: imDraft.key,
+      kind: 'im',
+      text: imDraft.text.trim(),
+      fields: {},
+      imGroupId: groupId,
+      imGroupLabel,
+    })
+    setBusy(false)
     if (!result.ok) {
-      setBusy(false)
       setError(result.error.message)
       return
     }
-    setDoneActions(prev => new Set(prev).add(imDraft.key))
-    await props.inject.advanceFeed({ advanceId: activeId, summary: `执行建议动作：发消息到「${imGroupLabel}」对齐`, sourceType: '对话' })
-    setBusy(false)
+    const warnings = asArray(asRecord(result.value).warnings).map(asString).filter(row => row !== '')
     setImDraft(null)
+    if (warnings.length > 0) setError(`已完成，但：${warnings.join('；')}`)
     await refreshDetail()
   }
 
@@ -952,7 +979,7 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                             <div className={css.actions} data-testid="yzj-advance-actions">
                               {decisionParsed.actions.map((action, actionIndex) => {
                                 const key = `${asString(latestDecision.entryId) || 'latest'}:${actionIndex}`
-                                const done = doneActions.has(key)
+                                const done = doneActions.has(key) || doneActions.has(`${action.kind}|${action.text}`)
                                 return (
                                   <div key={key} className={css.actionRow}>
                                     <button

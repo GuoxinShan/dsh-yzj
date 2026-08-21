@@ -1063,3 +1063,15 @@ archscribe 旧产物（advance-9 spec.json/gif/excalidraw）与 HTML 版不一�
 | 领域模型文档 | 公理 3 升级「生死人主权」（入口确认卡 + 出口 judge）；新增 §4.1 诞生分流 / §4.2 判断的实体化 / §4.3 延迟决策登记 | advance-domain-model.md v1.0 同提交演进 |
 
 全量测试 + typecheck 随提交验证。决策 45（闭环强制 advance-action-run）仍为待实现，方案已评审（新 RPC host 编排三效应：执行→refs 留痕→自动订阅 + 幂等闸 + done 态流折叠）。
+
+## 24.27 ui-yzj｜闭环强制落地：`/yzj advance-action-run`（2026-08-21，决策 45 实现）
+
+按 §24.26 评审过的方案实现——「执行→再观察」弧闭合：
+
+| 面 | 交付 | 证据 |
+|---|---|---|
+| host 编排 | 新模块 `advance-action.ts`：`runAdvanceAction` 幂等闸（同动作序 key 或同 kind+文本已留痕则不双执行）→ 三 kind 执行（todo.create / sendImAndLog+extractSendMsgId / event 跳转留痕）→ 执行事元（refs=效应指针，detail 带 `动作序: \| 种类 \| 文本` 标记）→ todo 效应对象自动 sourceAdd 订阅；效应失败整体不落事元，订阅失败降级 warning | `advance-action-run.spec.ts` 9 项：三效应原子 / im refs / msgId 缺失降级 / event 留痕 / 双键幂等 / 效应失败零事元 / 服务缺失明示 / 订阅失败不回滚 |
+| RPC | `/yzj advance-action-run` 端点（payload 校验 + yzjTodo/yzjHome 服务注入） | index.ts case；typecheck 绿 |
+| client | advance-pane：runAction/sendActionMessage 换调新端点（废止 createTodo+advanceFeed 两步手拼）；`doneActions` 内存 Set 废止 → `foldDoneActions` 从事元流折叠（刷新不丢；kind+文本 兼底扛综合卡重排）；warnings 显示「已完成，但：…」 | `advance-pane.client.spec.tsx` 动作卡用例改写 + 新增折叠用例（已有执行事元渲染已执行且禁用、未执行可点） |
+
+全量 660 绿（68 文件）+ typecheck 绿；build + bundle 已跑。真机验收待重启 GUI 后走查（面板点动作卡 → 事元带 refs + 订阅出现 todo: 源 + 刷新后已执行态保持）。

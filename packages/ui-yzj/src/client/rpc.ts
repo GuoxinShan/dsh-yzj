@@ -86,6 +86,16 @@ export interface YzjPanelInject {
   advanceRefLookup: (refs: { token: string; kind: string }[]) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** User-direct 事元 feed (D9, no confirm card; no stageTo). */
   advanceFeed: (input: { advanceId: string; summary: string; sourceType?: string; refs?: string[] }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** 决策卡动作执行（决策 45）: host 编排 执行→执行事元留痕(refs+动作序)→效应对象自动订阅；幂等。 */
+  advanceActionRun: (input: {
+    advanceId: string
+    actionKey: string
+    kind: 'todo' | 'im' | 'event'
+    text: string
+    fields?: Record<string, string>
+    imGroupId?: string
+    imGroupLabel?: string
+  }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Subscribe one context source (关联来源; user-direct, spec §15.2). */
   advanceSourceAdd: (advanceId: string, token: string, label?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Unsubscribe one context source (registry only; entries untouched). */
@@ -269,6 +279,15 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
       summary: input.summary,
       ...(input.sourceType === undefined || input.sourceType === '' ? {} : { sourceType: input.sourceType }),
       ...(input.refs === undefined || input.refs.length === 0 ? {} : { refs: input.refs }),
+    }),
+    advanceActionRun: (input) => call('advance-action-run', {
+      advanceId: input.advanceId,
+      actionKey: input.actionKey,
+      kind: input.kind,
+      text: input.text,
+      ...(input.fields === undefined ? {} : { fields: input.fields }),
+      ...(input.imGroupId === undefined ? {} : { imGroupId: input.imGroupId }),
+      ...(input.imGroupLabel === undefined ? {} : { imGroupLabel: input.imGroupLabel }),
     }),
     advanceSourceAdd: (advanceId, token, label) => call('advance-source-add', {
       advanceId,
