@@ -619,7 +619,7 @@ function userTurn(text: string): ReturnType<typeof identifiedUserMessage> {
  * 不再经 client askDraft / 话题问助手栏。
  */
 export function dreamAskPrompt(): string {
-  return '请做一轮 Dream 抽取:先 yzj_advance_dream_status 读蓄水池 pending 清单,然后逐条与 open 事项比对(yzj_advance_inspect):有价值的按纪律 feed(refs 用池条目的 channel+refId 组装成 im:<groupId>:<msgId> token 抄进去,面板才能定位到具体群消息;禁止把池条目 id(dp-*)抄进 refs——那只是池内键,不是原始出处;进度正常静默挂,命中打扰判据才 stageTo=decision-needed 形成建议卡片),无关的跳过;最后 yzj_advance_dream_mark(ids=[已处理条目 id]) 并给我一句「抽取 N 条/产出 M 条建议」的总结。直接连续调用工具完成,不要询问我。'
+  return '请做一轮 Dream 抽取:先 yzj_advance_dream_status 读蓄水池 pending 清单,然后逐条与 open 事项比对(yzj_advance_inspect):有价值的按纪律 feed(refs 用池条目的 channel+refId 组装成 im:<groupId>:<msgId> token 抄进去,面板才能定位到具体群消息;禁止把池条目 id(dp-*)抄进 refs——那只是池内键,不是原始出处;进度正常静默挂),命中打扰判据才 feed changeType=决策请求 stageTo=decision-needed 形成建议卡:summary=要我决定的问题,detail=问题分析+动作行(每行一个,可多个:`动作: 建待办 | 内容: <标题> | 截止: <yyyy-MM-dd> | 负责人: <名字>` / `动作: 发消息 | 内容: <草稿>` / `动作: 定会议 | 主题: <主题> | 时间: <yyyy-MM-dd HH:mm>`)——建议必须落到可执行动作,我在看板一键执行;无关的跳过;最后 yzj_advance_dream_mark(ids=[已处理条目 id]) 并给我一句「抽取 N 条/产出 M 条建议」的总结。直接连续调用工具完成,不要询问我。'
 }
 
 /** `yzj-dream-<yyyymmdd-hhmmss>` stamp, newest-last sortable. */

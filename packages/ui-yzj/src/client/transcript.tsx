@@ -555,7 +555,7 @@ export function YzjFusedView(props: YzjFusedInjected) {
         )}
         {askDraft !== null && (
           <div className={css.chrome} data-testid="yzj-advance-ask-banner">
-            <span>{askDraft.kind === 'export' ? '复盘沉淀已预备' : '验收问题已预备'} · {askDraft.title}{askDraft.advanceId === '' ? '' : `（${askDraft.advanceId}）`}。打开话题后会出现在问助手栏。</span>
+            <span>{askDraft.kind === 'export' ? '复盘沉淀已预备' : askDraft.kind === 'discuss' ? '进展讨论已预备' : '验收问题已预备'} · {askDraft.title}{askDraft.advanceId === '' ? '' : `（${askDraft.advanceId}）`}。打开话题后会出现在问助手栏。</span>
             <button type="button" className={css.chromeLink} onClick={() => setAdvanceAskDraft(null)}>取消</button>
           </div>
         )}

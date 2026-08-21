@@ -11,8 +11,8 @@ export interface AdvanceAskDraft {
   readonly advanceId: string
   readonly title: string
   readonly text: string
-  /** Which flow produced the draft — drives the banner copy (验收 vs 复盘). */
-  readonly kind: 'review' | 'export'
+  /** Which flow produced the draft — drives the banner copy (验收 vs 复盘 vs 事元讨论)。 */
+  readonly kind: 'review' | 'export' | 'discuss'
 }
 
 let current: AdvanceAskDraft | null = null
@@ -45,6 +45,11 @@ export function useAdvanceAskDraft(): AdvanceAskDraft | null {
 /** Topic 问助手 prefill for 验收辅助 (spec §12 / PRD §6.3). */
 export function reviewAskText(advanceId: string, title: string): string {
   return `请对推进事项 ${advanceId}「${title}」做验收辅助。先调用 yzj_advance_inspect（mode=review，advanceId=${advanceId}），对照成功指标逐条说明是否达标、有无踩红线，给一句话结论。不要 stageTo=completed，也不要替我点确认达到目标；若产物已齐，用 yzj_advance_feed changeType=验收请求 stageTo=ready-for-review（确认卡）；未齐则只 feed 备注说明缺口。`
+}
+
+/** Entry-level 「问助手」prefill (决策 41): discuss one timeline 事元 with the agent, in the bound home session。 */
+export function discussAskText(advanceId: string, title: string, at: string, summary: string): string {
+  return `关于推进事项 ${advanceId}「${title}」${at} 的这条进展：「${summary}」。先 yzj_advance_get（advanceId=${advanceId}）看上下文，然后我想讨论：`
 }
 
 /** Topic 问助手 prefill for 终局复盘沉淀 (spec §16, 决策 26: 复盘=终局收口). */

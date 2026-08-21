@@ -401,6 +401,23 @@ describe('yzj_advance_feed', () => {
     expect(String(store.items[0]!.fields['最新动态'])).toContain('决策请求')
   })
 
+  it('rejects stageTo=decision-needed without 决策请求 (决策 41: 决策区只渲染决策请求,偏差推阶段会出空决策区)', async () => {
+    const store = new FakeStore(true)
+    store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'running', 描述: '原目标' } })
+    const { tools } = mount(store)
+    const feed = tools.find(tool => tool.name === 'yzj_advance_feed')!
+    const result = await feed.execute({
+      advanceId: 'A-1',
+      summary: '评审浮现范围补充',
+      sourceType: '会议',
+      changeType: '偏差',
+      stageTo: 'decision-needed',
+    })
+    expect(result.content).toContain('stageTo=decision-needed 必须配 changeType=决策请求')
+    expect(store.entries).toHaveLength(0)
+    expect(store.items[0]!.fields['阶段']).toBe('running')
+  })
+
   it('rejects an illegal stage move without writing any entry', async () => {
     const store = new FakeStore(true)
     store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'draft' } })
