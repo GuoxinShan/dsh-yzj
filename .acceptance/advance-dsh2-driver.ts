@@ -4,6 +4,7 @@
  * through the core functions (agent-parity). Verbs:
  *   send <text>            — post one signal message to the dsh-2 group
  *   decide <advanceId>     — feed the blocking-signal 决策请求 (推论链 + 动作行)
+ *   probe <advanceId>      — draft→running + 决策请求（回流探针，动作行：建待办）
  *   review <advanceId>     — feed the 验收请求 (stageTo=ready-for-review)
  *   todo-done <todoId>     — mark one todo done (S4 回流探测)
  *   entries <advanceId>    — dump the item's entry stream from local SQLite
@@ -68,6 +69,28 @@ if (verb === 'send') {
       '动作: 发消息 | 内容: 数据包预计 08-24 到位，彩排可能被压缩，先同步一下风险与备选方案',
       '动作: 定会议 | 主题: 彩排评审会 | 时间: 2026-08-26 10:00',
     ].join('\n'),
+    stageTo: 'decision-needed',
+    actor: 'agent',
+  })
+  emit({ ok: true, advanceId, stage: fed.item.stage })
+} else if (verb === 'probe') {
+  // 回流探针（verify-advance-todo-channel）：draft→running + 决策请求（动作行：建待办）
+  const advanceId = process.argv[3] ?? ''
+  if (advanceId === '') throw new Error('probe needs advanceId')
+  await coreFeedAdvance(ctx, BUDGET, {}, caches, {
+    advanceId,
+    summary: '开始推进：跟进回流探针',
+    sourceType: '人工',
+    changeType: '阶段变化',
+    stageTo: 'running',
+    actor: 'agent',
+  })
+  const fed = await coreFeedAdvance(ctx, BUDGET, {}, caches, {
+    advanceId,
+    summary: '探针待办待建：是否现在建立跟进待办？',
+    sourceType: '对话',
+    changeType: '决策请求',
+    detail: '事实：探针事项需要一条待办验证 todo: 渠道回流。\n推论链：建待办 → 勾掉 → 巡检采集 → 完成事元应回到本时间线。\n动作: 建待办 | 内容: 回流探针待办（验证 todo 渠道） | 截止: 2026-08-23',
     stageTo: 'decision-needed',
     actor: 'agent',
   })

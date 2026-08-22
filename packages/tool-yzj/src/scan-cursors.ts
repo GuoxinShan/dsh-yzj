@@ -172,7 +172,8 @@ export function scanStateOf(store: ScanCursorStoreFace): AdvanceScanState {
   return {
     scannedAt: patrol?.scannedAt ?? null,
     found: patrol?.found ?? 0,
-    groups: store.entries().map(([groupId, cursor]) => ({
+    // todo: 渠道的指纹 cursor（决策 45 后续）不进面板巡检行——它不是群。
+    groups: store.entries().filter(([key]) => !key.startsWith('todo:')).map(([groupId, cursor]) => ({
       groupId,
       groupName: cursor.groupName,
       lastMsgId: cursor.lastMsgId,

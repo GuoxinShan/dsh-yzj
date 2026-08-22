@@ -1091,3 +1091,16 @@ archscribe 旧产物（advance-9 spec.json/gif/excalidraw）与 HTML 版不一�
 | A7 边界 | 零页面错误；写操作只触及 dsh-2 群与本人待办库 | — |
 
 **演习踩坑回写**：pitfall-043（sidecar 裸 Context 默认 dbt 后端，须 setAdvanceBackend/setTodoBackend 对齐 sqlite）+ pitfall-044（同事项点击不重拉 / Dream 切会话两时序坑）。三轮 reset-重跑均落在驱动侧，产物代码零改动。
+
+## 24.29 tool-yzj｜todo 渠道采集器落地 + 水源接通（2026-08-22，决策 48）
+
+§24.28 断层（todo: 订阅无采集器）的补钉 + 用户拍板的水源接入：
+
+| 面 | 交付 | 证据 |
+|---|---|---|
+| todo 渠道采集器 | `coreScanAdvance` 新增 todo: 渠道：订阅聚合收集 open 事项的 todo: token → 指纹（`status\|logLength`）比对 → 变化产信号入池（「待办「X」有进展：状态 A→B + 最新日志行」）；首扫基线不回灌；cursor 乘共享 cursors 表零迁移；scanStateOf 过滤不进巡检行 | advance.spec 新用例（基线/变化入池/无变化零信号/面板行过滤）；全量 661 绿 |
+| Dream 纪律 | dreamAskPrompt 补：todo: 条目 refs 直接抄 refId；sourceType 按渠道标（im→对话/dir→文档/todo→待办） | 文本落码 |
+| 水源接通 | 测试事项（A-20260819-002）挂上 im:测试群（`gid-test`）+ dir:AI速记知识库整库（`dir-kb`） | 真机面板，截图 `shots-advance-todo-channel/1-sources.png` |
+| 真机闭环 | `.acceptance/verify-advance-todo-channel.mjs` ALL PASS：探针事项 → 决策卡建待办（自动挂 todo: 订阅）→ 勾掉 → 巡检 → **池里出现 todo: 渠道条目**（「待办「…」有进展：状态 pending→done」）→ Dream 抽取 → **「待办完成」事元回流到探针事项时间线**（refs=todo:<id>） | 截图 3-pool.png（池 2 条 todo 信号）；断言面全绿 |
+
+**执行→再观察弧自此全通**：决策 45（留痕+订阅）+ 决策 48（采集）合起来，行动的结果自动回到事项。踩坑追记：弹层 × 按钮的 aria-label 是「关闭」不是「×」（accessible name 覆盖），Playwright 按 name:'×' 点不中——driver 脚本已按「关闭」修正。

@@ -24,7 +24,7 @@ import { yzjToolOutput, asRecord, asArray, asString, clipJson, failureDigest } f
 import type { YzjToolBudget } from './shared.ts'
 import {
   resolveLibrary, resolveAssignee, normalizeTags, formatTags, normalizeDdl,
-  nowStamp, todayStr, parseAssignee,
+  nowStamp, todayStr, parseAssignee, fetchTodoByTodoId,
 } from './todo.ts'
 import type { TodoBinding, TodoBindingHolder, TodoConfig } from './todo.ts'
 import { ScanCursorStore, scanStateOf, type AdvanceScanState, type ScanCursorStoreFace } from './scan-cursors.ts'
@@ -259,8 +259,8 @@ export interface ScanSignal {
   readonly fromOpenId: string
   readonly content: string
   readonly sendTime: string
-  /** 'dir' = 知识库目录线程的文档增量(msgId 位放 docId);undefined/'im' = IM 消息。 */
-  readonly kind?: 'im' | 'dir'
+  /** 'dir' = 知识库目录线程的文档增量(msgId 位放 docId);'todo' = 待办状态增量(msgId 位合成);undefined/'im' = IM 消息。 */
+  readonly kind?: 'im' | 'dir' | 'todo'
 }
 
 /** One group's scan outcome. */
@@ -377,6 +377,67 @@ async function listDirDocs(ctx: Context, budget: YzjToolBudget, dirId: string): 
     out.push({ id, title: asString(node.title), updateTime: asString(node.updateTime) })
   }
   return out
+}
+
+/**
+ * Scan one todo: thread (决策 45 后续，gap §24.28 断层补钉): fingerprint =
+ * `status|logLength`; first visit sets the baseline (no backfill, same rule
+ * as im:), a changed fingerprint enqueues one signal for Dream. The cursor
+ * rides the shared cursors table under the `todo:<id>` key (no schema
+ * migration).
+ */
+async function scanTodoThread(
+  ctx: Context,
+  budget: YzjToolBudget,
+  config: TodoConfig,
+  caches: AdvanceCaches,
+  cursors: ScanCursorStoreFace,
+  thread: { id: string; label: string },
+  signals: ScanSignal[],
+  groupResults: ScanGroupResult[],
+  now: number,
+  pool?: DreamPoolFace,
+  holder?: TodoBindingHolder,
+): Promise<void> {
+  const key = `todo:${thread.id}`
+  let todo
+  try {
+    const binding = await resolveLibrary(ctx, budget, config, caches.lib, false, holder)
+    todo = await fetchTodoByTodoId(ctx, budget, binding, thread.id)
+  } catch (error) {
+    groupResults.push({ groupId: key, groupName: thread.label || thread.id, baseline: false, newCount: 0, error: String((error as Error).message) })
+    return
+  }
+  if (todo === undefined) {
+    groupResults.push({ groupId: key, groupName: thread.label || thread.id, baseline: false, newCount: 0, error: `找不到待办 ${thread.id}（可能已删；面板解除关联）` })
+    return
+  }
+  const fingerprint = `${todo.status}|${todo.log.length}`
+  const prior = cursors.get(key)
+  if (prior === undefined) {
+    await cursors.put(key, { lastMsgId: fingerprint, scannedAt: now, groupName: thread.label || todo.title })
+    groupResults.push({ groupId: key, groupName: thread.label || todo.title, baseline: true, newCount: 0 })
+    return
+  }
+  if (prior.lastMsgId === fingerprint) {
+    groupResults.push({ groupId: key, groupName: prior.groupName, baseline: false, newCount: 0 })
+    return
+  }
+  const statusFrom = prior.lastMsgId.split('|')[0] ?? '?'
+  const lastLog = todo.log.trim().split('\n').filter(line => line.trim() !== '').pop() ?? ''
+  const content = `待办「${todo.title}」有进展：状态 ${statusFrom}→${todo.status}。${lastLog}`.trim()
+  signals.push({
+    groupId: key,
+    groupName: prior.groupName,
+    msgId: `todo:${thread.id}:${now}`,
+    fromOpenId: '',
+    content,
+    sendTime: nowStamp(),
+    kind: 'todo',
+  })
+  await pool?.enqueue({ channel: key, refId: thread.id, content, sendTime: nowStamp() })
+  await cursors.put(key, { lastMsgId: fingerprint, scannedAt: now, groupName: todo.title })
+  groupResults.push({ groupId: key, groupName: todo.title, baseline: false, newCount: 1 })
 }
 
 /** Scan one dir: thread (决策 32): first visit snapshots, later visits surface new/updated docs as signals. */
@@ -552,6 +613,7 @@ export async function coreScanAdvance(
   let effective = groups
   let preItems: { advanceId: string; title: string; stage: string }[] | undefined
   let scanDirs: { id: string; label: string }[] = []
+  let scanTodos: { id: string; label: string }[] = []
   if (effective.length === 0) {
     if (sources === undefined) throw new Error('advance scan: groups must not be empty (no source registry)')
     const binding = await resolveAdvance(ctx, budget, config, caches, false, holder)
@@ -562,6 +624,7 @@ export async function coreScanAdvance(
     const openIds = new Set(preItems.map(item => item.advanceId))
     const channelIds = new Set<string>()
     const dirIds = new Map<string, string>()
+    const todoIds = new Map<string, string>()
     for (const [advanceId, rows] of sources.entries()) {
       if (!openIds.has(advanceId)) continue
       for (const row of rows) {
@@ -569,16 +632,19 @@ export async function coreScanAdvance(
         if (parsed === undefined) continue
         if (parsed.prefix === 'im') channelIds.add(parsed.id)
         if (parsed.prefix === 'dir') dirIds.set(parsed.id, row.label)
+        // todo: 渠道（决策 45 后续，gap §24.28）：订阅待办的状态/log 增量
+        if (parsed.prefix === 'todo') todoIds.set(parsed.id, row.label)
       }
     }
-    if (channelIds.size === 0 && dirIds.size === 0) {
-      throw new Error('advance scan: 没有 open 事项订阅 im:/dir: 来源；先在面板「关联来源」或 create sources 挂群/目录')
+    if (channelIds.size === 0 && dirIds.size === 0 && todoIds.size === 0) {
+      throw new Error('advance scan: 没有 open 事项订阅 im:/dir:/todo: 来源；先在面板「关联来源」或 create sources 挂群/目录')
     }
     if (channelIds.size > MAX_SCAN_GROUPS) {
       throw new Error(`advance scan: 订阅渠道 ${channelIds.size} 个超过上限 ${MAX_SCAN_GROUPS}（决策 17）；请按事项分批传 groups`)
     }
     effective = [...channelIds]
     scanDirs = [...dirIds.entries()].map(([id, label]) => ({ id, label }))
+    scanTodos = [...todoIds.entries()].map(([id, label]) => ({ id, label }))
   }
   if (effective.length > MAX_SCAN_GROUPS) throw new Error(`advance scan: at most ${MAX_SCAN_GROUPS} groups`)
   const pageSize = !Number.isInteger(limit) || limit < 1 || limit > 20 ? 20 : limit
@@ -636,6 +702,9 @@ export async function coreScanAdvance(
   }
   for (const dir of scanDirs) {
     await scanDirThread(ctx, budget, cursors, dir, signals, groupResults, now, pool)
+  }
+  for (const todoThread of scanTodos) {
+    await scanTodoThread(ctx, budget, config, caches, cursors, todoThread, signals, groupResults, now, pool, holder)
   }
   await cursors.recordPatrol(signals.length, now)
   let openItems: { advanceId: string; title: string; stage: string }[]
