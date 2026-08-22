@@ -1104,3 +1104,17 @@ archscribe 旧产物（advance-9 spec.json/gif/excalidraw）与 HTML 版不一�
 | 真机闭环 | `.acceptance/verify-advance-todo-channel.mjs` ALL PASS：探针事项 → 决策卡建待办（自动挂 todo: 订阅）→ 勾掉 → 巡检 → **池里出现 todo: 渠道条目**（「待办「…」有进展：状态 pending→done」）→ Dream 抽取 → **「待办完成」事元回流到探针事项时间线**（refs=todo:<id>） | 截图 3-pool.png（池 2 条 todo 信号）；断言面全绿 |
 
 **执行→再观察弧自此全通**：决策 45（留痕+订阅）+ 决策 48（采集）合起来，行动的结果自动回到事项。踩坑追记：弹层 × 按钮的 aria-label 是「关闭」不是「×」（accessible name 覆盖），Playwright 按 name:'×' 点不中——driver 脚本已按「关闭」修正。
+
+## 24.30 tool-yzj+ui-yzj｜推荐订阅源落地（2026-08-22，决策 49）
+
+设计定稿（§15.6）一次实现到位 + 真机走查：
+
+| 面 | 交付 | 证据 |
+|---|---|---|
+| host 推荐检查 | `coreFeedAdvance` 尾挂 `maybeRecommendSources`：refs 提取渠道（`channelTokenOf`：im:g\:m→im:g）→ 未订阅且未忽略且无未结算推荐 → appendEntry 直写推荐事元（**不回写 latest 投影**——推荐不顶队列最新动态）；群名随事元落库（仅在真要推荐时查目录） | advance.spec 新用例：产生/幂等/已订阅不推/忽略不推/裸 docId 不推 + latest 不污染；50/50 绿 |
+| 面板 | 来源区底部推荐行（`foldPendingRecommendations` 折叠：推荐标记 − 忽略 − 已订阅）+ [挂上]（复用 sourceAdd）/ [×]（落忽略事元）；灰字「不点不影响任何事」 | client spec 新用例：折叠/挂上消失/忽略消失/已订阅不推；663 绿 |
+| RPC | `advance-feed` 透传 detail（忽略事元标记需要） | typecheck 绿 |
+| 配套修正 | **写入面 refs 统一带渠道 token**：群房间 hover 与话题透镜的喂入 refs 原先是裸 msgId（推不出渠道）——真机首轮推荐不出来才发现；现统一 `im:<groupId>:<msgId>`（transcript/topic-drawer） | 真机走查 ALL PASS；transcript.client.spec 断言同步 |
+| 真机 | `verify-advance-recommend.mjs`：探针 1 挂上路径（推荐出现→挂上→消失→再喂不推）+ 探针 2 忽略路径（出现→×→消失→再喂不推）+ SQLite 审计面 | 截图 `shots-advance-recommend/`；12 断言全过 |
+
+Dream 路（跨事项推荐）纪律入 dreamAskPrompt（顺手落推荐事元）。探针事项演练后已清理（SQLite 删 5 条）。

@@ -313,6 +313,9 @@ export function YzjFusedView(props: YzjFusedInjected) {
 
   // 决策 41 讨论回环:advance 板「问助手/回到对话继续聊」直开话题抽屉(agent 问答面),
   // 不停在群时间线。binding 就绪后消费 latch;无 sessionId 时按 title 现 mint 一个话题。
+  /** 喂给推进/话题透镜 refs 的渠道 token（决策 49）：群 id 优先 props（R24 跟随），回退绑定群。 */
+  const boundGroupId = value.binding?.yzjConversationId
+  const feedGroupId = props.groupId ?? (typeof boundGroupId === 'string' ? boundGroupId : '')
   useEffect(() => {
     const groupId = value.binding?.yzjConversationId
     if (groupId === undefined) return
@@ -771,7 +774,8 @@ export function YzjFusedView(props: YzjFusedInjected) {
                         data-testid={`yzj-advance-feed-${entry.msgId}`}
                         onClick={() => setFeedTarget({
                           summary: entry.content.slice(0, 80),
-                          refs: [entry.msgId],
+                          // refs 带渠道 token（决策 39/49）：面板可定位到群消息，推荐可反推渠道。
+                          refs: [feedGroupId === '' ? entry.msgId : `im:${feedGroupId}:${entry.msgId}`],
                         })}
                       >
                         喂给推进
@@ -797,6 +801,7 @@ export function YzjFusedView(props: YzjFusedInjected) {
           <YzjTopicDrawer
             groupName={value.groupName ?? ''}
             topics={topics}
+            {...(feedGroupId === '' ? {} : { groupId: feedGroupId })}
             {...(lensId === '' ? {} : { lensSessionId: lensId })}
             onClose={() => {
               setDrawerOpen(false)

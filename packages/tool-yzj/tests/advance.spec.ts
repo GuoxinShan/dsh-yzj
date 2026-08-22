@@ -1039,6 +1039,58 @@ describe('intent sources (spec §15 / ③.2)', () => {
     expect(scanStateOf(cursors).groups.map(row => row.groupId)).toEqual([])
   })
 
+  it('决策 49 refs 反推推荐：未订阅渠道落推荐事元（幂等/忽略/已订阅三闸）', async () => {
+    const store = new FakeStore(true)
+    store.selfOpenId = 'me-openid'
+    store.groups = [{ groupId: 'g-new', groupName: '新群' }]
+    store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '事项甲', 阶段: 'running', 最新动态: '旧动态' } })
+    const sources = new ContextSourceStore()
+    const { ctx } = mountWithThreads(store, sources)
+    const feedOnce = async (): Promise<void> => {
+      await coreFeedAdvance(ctx, BUDGET, {}, freshCaches(), {
+        advanceId: 'A-1',
+        summary: '引用了新群的一句话',
+        sourceType: '对话',
+        refs: ['im:g-new:m-1'],
+        actor: 'agent',
+      }, undefined, sources)
+    }
+    // 1. 未订阅 → 落推荐事元（备注 + 标记行），投影 latest 不被推荐污染
+    await feedOnce()
+    let recs = store.entries.filter(row => String(row.fields['变化内容'] ?? '').includes('推荐订阅:'))
+    expect(recs).toHaveLength(1)
+    expect(String(recs[0]!.fields['变化内容'])).toContain('推荐订阅: im:g-new')
+    expect(recs[0]!.fields['变化类型']).toBe('备注')
+    expect(String(store.items[0]!.fields['最新动态'])).toContain('引用了新群的一句话')
+    // 2. 已有未结算推荐 → 不重复推
+    await feedOnce()
+    recs = store.entries.filter(row => String(row.fields['变化内容'] ?? '').includes('推荐订阅:'))
+    expect(recs).toHaveLength(1)
+    // 3. 已订阅 → 不推荐（换 refs 触发检查也不推）
+    await sources.add('A-1', { token: 'im:g-new', kind: 'persistent', label: '新群', addedBy: 'user', addedAt: 2 })
+    await coreFeedAdvance(ctx, BUDGET, {}, freshCaches(), {
+      advanceId: 'A-1', summary: '又引用一次', sourceType: '对话', refs: ['im:g-new:m-2'], actor: 'user',
+    }, undefined, sources)
+    recs = store.entries.filter(row => String(row.fields['变化内容'] ?? '').includes('推荐订阅:'))
+    expect(recs).toHaveLength(1)
+    // 4. 忽略后永不推：另起一个事项喂同一渠道（先造忽略事元）
+    store.items.push({ id: 'r2', fields: { advance_id: 'A-2', 名称: '事项乙', 阶段: 'running' } })
+    await coreFeedAdvance(ctx, BUDGET, {}, freshCaches(), {
+      advanceId: 'A-2', summary: '忽略这个渠道', sourceType: '人工', detail: '推荐忽略: im:g-other', actor: 'user',
+    }, undefined, sources)
+    await coreFeedAdvance(ctx, BUDGET, {}, freshCaches(), {
+      advanceId: 'A-2', summary: '引用了被忽略的群', sourceType: '对话', refs: ['im:g-other:m-9'], actor: 'agent',
+    }, undefined, sources)
+    const recsA2 = store.entries.filter(row => String(row.fields['advance_id'] ?? '') === 'A-2' && String(row.fields['变化内容'] ?? '').includes('推荐订阅:'))
+    expect(recsA2).toHaveLength(0)
+    // 5. 裸 docId refs（无渠道形态）→ 不推荐
+    await coreFeedAdvance(ctx, BUDGET, {}, freshCaches(), {
+      advanceId: 'A-2', summary: '引用了文档', sourceType: '文档', refs: ['doc-xyz'], actor: 'agent',
+    }, undefined, sources)
+    const recsA2b = store.entries.filter(row => String(row.fields['advance_id'] ?? '') === 'A-2' && String(row.fields['变化内容'] ?? '').includes('推荐订阅:'))
+    expect(recsA2b).toHaveLength(0)
+  })
+
   it('scan without groups errors with guidance when nothing is subscribed', async () => {
     const store = new FakeStore(true)
     store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '事项甲', 阶段: 'running' } })

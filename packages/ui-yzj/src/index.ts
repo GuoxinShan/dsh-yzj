@@ -946,6 +946,7 @@ function imCacheStore(): SqliteDb {
           ? rawRefs.filter((item): item is string => typeof item === 'string' && item !== '')
           : []
         const sourceType = stringField(payload, 'sourceType')
+        const detail = stringField(payload, 'detail')
         try {
           return {
             ok: true,
@@ -954,6 +955,7 @@ function imCacheStore(): SqliteDb {
               summary,
               sourceType: sourceType ?? (refs.length > 0 ? '对话' : '人工'),
               changeType: '进度更新',
+              ...(detail === undefined ? {} : { detail }),
               ...(refs.length === 0 ? {} : { refs }),
               actor: 'user',
             }),
