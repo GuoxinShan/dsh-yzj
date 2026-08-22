@@ -32,3 +32,6 @@ spike/robot/test-model.patch.yml
 
 # Grok/Cursor skill dirty markers (local only)
 .agents/skills/**/.is-changed
+
+# OpenTurtle CLI local state (cache/drafts/state.db)
+.openturtle-cli/
