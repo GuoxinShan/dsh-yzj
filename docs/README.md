@@ -14,7 +14,7 @@ docs/
     dsh-home-session.md                DSH 唯一会话家园（v1.x 历史快照；D2/D3 被 group-room-topics 覆盖，D9 等仍有效）
     dsh-home-transcript.md             绑定会话可见时间线：插件消息日志（v1.x 历史快照；存储/去重/回填/切会话分阶段机制沿用，融合视图条款被覆盖）
     todo-design.md                     待办功能设计（v1.4，tag 理念 + §11.2 决策表；看板职责移交 ai-advance-design——待办回归轻量任务/事元角色）
-    ai-advance-design.md               AI推进（**v1.9**）：①期双表/七态/第五页签；②期用户直写 feed +「现在反馈」；③期 inspect +「请 AI 验收」；§13 门控线；§14 主动发现 scan→inspect→feed；§15 上下文来源订阅（含 dir: 目录级，决策 32；v1.8 改名）；§16 知识沉淀出口（cancelled 第七态 + 复盘/纪要模板）；§17 Dream 蓄水池（决策 33/34）；决策 1–47
+    ai-advance-design.md               AI推进（**v1.10**）：①期双表/七态/第五页签；②期用户直写 feed +「现在反馈」；③期 inspect +「请 AI 验收」；§13 门控线；§14 主动发现 scan→inspect→feed；§15 上下文来源订阅（含 dir: 目录级 + §15.6 推荐订阅源，决策 32/49）；§16 知识沉淀出口（cancelled 第七态 + 复盘/纪要模板）；§17 Dream 蓄水池（决策 33/34）；决策 1–49
     advance-domain-model.md            AI推进领域模型视图（v1.0）：事元驱动闭环（观察→分析→决策→执行→再观察）的对象/关系/不变量合同；行动 = 事元载荷 + 执行器谱系；诞生分流判据（决策 46）；判断实体化与延迟决策登记（决策 44/45/47）
     advance-review-template.md         复盘文档五段模板（§16.2：目标演化/关键决策/偏差与证据链/下一步/事元索引）
     meeting-minutes-template.md        金蝶标准四段式纪要模板（§16.1 ④-b：目标/内容/共识/下一步）
