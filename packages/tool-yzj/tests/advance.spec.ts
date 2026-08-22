@@ -49,6 +49,8 @@ interface ImMessage {
  */
 class FakeStore {
   items: Row[] = []
+  /** todo 渠道 fixture：待办任务库「任务」表（table id 4）的行。 */
+  todos: Row[] = []
   entries: Row[] = []
   tableCreates: string[] = []
   provisioned: boolean
@@ -136,7 +138,7 @@ class FakeStore {
     if (key === 'sheet record') {
       const verb = command[2]
       const tableId = command[command.indexOf('--table-id') + 1]
-      const rows = tableId === '7' ? this.items : this.entries
+      const rows = tableId === '7' ? this.items : tableId === '4' ? this.todos : this.entries
       if (verb === 'list') {
         const filterAt = command.indexOf('--filter')
         let shown = rows
@@ -997,6 +999,46 @@ describe('intent sources (spec §15 / ③.2)', () => {
     expect(digest).not.toContain('g-other')
   })
 
+  it('todo: 渠道采集：首扫建基线，状态/log 变化产信号入池（决策 45 后续）', async () => {
+    const store = new FakeStore(true)
+    store.selfOpenId = 'me-openid'
+    store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '事项甲', 阶段: 'running' } })
+    store.todos.push({ id: 'rt1', fields: { todo_id: 'T-1', 标题: '跟进数据包', 状态: 'pending', 推进日志: '08/22 10:00 创建' } })
+    const sources = new ContextSourceStore()
+    await sources.add('A-1', { token: 'todo:T-1', kind: 'persistent', label: '跟进数据包', addedBy: 'user', addedAt: 1 })
+    const cursors = new ScanCursorStore()
+    const pooled: { channel: string; refId: string; content: string }[] = []
+    const pool = {
+      pending: () => [],
+      lookup: () => [],
+      enqueue: async (e: { channel: string; refId: string; content: string }) => { pooled.push(e); return { ...e, id: 'dp-1', enqueuedAt: 1, done: false } },
+      markDone: async () => 0,
+      lastDreamAt: () => undefined,
+      recordDream: async () => {},
+    }
+    const { ctx } = mountWithThreads(store, sources)
+    // 首扫：建基线不回灌（与 im: 同规则）
+    const first = await coreScanAdvance(ctx, BUDGET, {}, freshCaches(), cursors, [], 20, undefined, sources, pool)
+    expect(first.signals).toHaveLength(0)
+    expect(first.groups[0]).toMatchObject({ groupId: 'todo:T-1', baseline: true, newCount: 0 })
+    expect(pooled).toHaveLength(0)
+    // 状态 pending→done + log 变长 → 产一条 todo 信号并入池
+    store.todos[0]!.fields['状态'] = 'done'
+    store.todos[0]!.fields['推进日志'] = '08/22 10:00 创建\n08/22 12:00 状态 pending→done（完成）'
+    const second = await coreScanAdvance(ctx, BUDGET, {}, freshCaches(), cursors, [], 20, undefined, sources, pool)
+    expect(second.signals).toHaveLength(1)
+    expect(second.signals[0]).toMatchObject({ groupId: 'todo:T-1', kind: 'todo', fromOpenId: '' })
+    expect(second.signals[0]!.content).toContain('pending→done')
+    expect(pooled).toHaveLength(1)
+    expect(pooled[0]).toMatchObject({ channel: 'todo:T-1', refId: 'T-1' })
+    // 无变化 → 零信号
+    const third = await coreScanAdvance(ctx, BUDGET, {}, freshCaches(), cursors, [], 20, undefined, sources, pool)
+    expect(third.signals).toHaveLength(0)
+    expect(third.groups[0]).toMatchObject({ groupId: 'todo:T-1', baseline: false, newCount: 0 })
+    // 面板巡检行不混进 todo: 渠道
+    expect(scanStateOf(cursors).groups.map(row => row.groupId)).toEqual([])
+  })
+
   it('scan without groups errors with guidance when nothing is subscribed', async () => {
     const store = new FakeStore(true)
     store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '事项甲', 阶段: 'running' } })
@@ -1004,7 +1046,7 @@ describe('intent sources (spec §15 / ③.2)', () => {
     const { tools } = mountWithThreads(store, sources)
     const scan = tools.find(tool => tool.name === 'yzj_advance_scan')!
     const result = await scan.execute({})
-    expect(result.content).toContain('没有 open 事项订阅 im:/dir: 来源')
+    expect(result.content).toContain('没有 open 事项订阅 im:/dir:/todo: 来源')
   })
 
   it('document-source association lands one 备注 事元; repeat is idempotent', async () => {
