@@ -40,6 +40,8 @@ export interface TopicLensBubble {
 /** Drawer mode: list of this group's topics, or one topic as an IM lens. */
 export interface YzjTopicDrawerProps {
   readonly groupName: string
+  /** 群 id（决策 49）：feed refs 组 `im:<groupId>:<msgId>` 渠道 token 用。 */
+  readonly groupId?: string
   readonly topics: readonly TopicLensRow[]
   /** When set, the drawer shows that topic's lens instead of the list. */
   readonly lensSessionId?: string
@@ -101,6 +103,8 @@ function asBubbles(value: unknown): TopicLensBubble[] {
 
 function YzjTopicLens(props: {
   readonly groupName: string
+  /** 群 id（决策 49）：feed refs 组 `im:<groupId>:<msgId>` 渠道 token 用。 */
+  readonly groupId?: string
   readonly lens: TopicLensRow | undefined
   readonly lensSessionId: string
   onBack: () => void
@@ -286,7 +290,7 @@ function YzjTopicLens(props: {
               sourceType: '对话',
               ...(rootMsgId === undefined || rootMsgId === '' || rootMsgId === LEGACY_HOST_ROOT
                 ? {}
-                : { refs: [rootMsgId] }),
+                : { refs: [props.groupId === undefined || props.groupId === '' ? rootMsgId : `im:${props.groupId}:${rootMsgId}`] }),
             })
             if (result === undefined || !result.ok) {
               return { ok: false, error: { message: result === undefined ? 'unavailable' : result.error.message } }
@@ -312,6 +316,7 @@ export function YzjTopicDrawer(props: YzjTopicDrawerProps) {
     return (
       <YzjTopicLens
         groupName={props.groupName}
+        {...(props.groupId === undefined ? {} : { groupId: props.groupId })}
         lens={lens}
         lensSessionId={props.lensSessionId}
         onBack={props.onBack}

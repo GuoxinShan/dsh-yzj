@@ -5,6 +5,7 @@
  *   send <text>            — post one signal message to the dsh-2 group
  *   decide <advanceId>     — feed the blocking-signal 决策请求 (推论链 + 动作行)
  *   probe <advanceId>      — draft→running + 决策请求（回流探针，动作行：建待办）
+ *   feed-ref <advanceId> <ref> <summary> — feed 一条带 refs 的事元（决策 49 推荐探针）
  *   review <advanceId>     — feed the 验收请求 (stageTo=ready-for-review)
  *   todo-done <todoId>     — mark one todo done (S4 回流探测)
  *   entries <advanceId>    — dump the item's entry stream from local SQLite
@@ -95,6 +96,19 @@ if (verb === 'send') {
     actor: 'agent',
   })
   emit({ ok: true, advanceId, stage: fed.item.stage })
+} else if (verb === 'feed-ref') {
+  const advanceId = process.argv[3] ?? ''
+  const ref = process.argv[4] ?? ''
+  const summary = process.argv[5] ?? ''
+  if (advanceId === '' || ref === '' || summary === '') throw new Error('feed-ref needs advanceId/ref/summary')
+  const fed = await coreFeedAdvance(ctx, BUDGET, {}, caches, {
+    advanceId,
+    summary,
+    sourceType: '对话',
+    refs: [ref],
+    actor: 'agent',
+  })
+  emit({ ok: true, advanceId, entryId: fed.entry.entryId })
 } else if (verb === 'review') {
   const advanceId = process.argv[3] ?? ''
   if (advanceId === '') throw new Error('review needs advanceId')

@@ -1463,6 +1463,79 @@ export async function coreCreateAdvance(
   return { item, entry, idempotent: false, assigneeNote, binding }
 }
 
+/**
+ * 决策 49 refs 反推（host 机械路）：feed 落库后检查 refs 里的渠道——未订阅、
+ * 未忽略、无未结算推荐 → appendEntry 直写推荐事元（不回写 latest 投影：推荐
+ * 不是进展，不顶队列最新动态）。降噪三闸在此：同渠道只推一次（pending 幂等）、
+ * 不回溯（调用方只传新事元 refs）、忽略永久（ignored 集拦截）。推荐事元经
+ * appendEntry 而非 coreFeedAdvance——无递归可能。
+ */
+const RECOMMEND_MARK = '推荐订阅:'
+const IGNORE_MARK = '推荐忽略:'
+
+/** Extract the subscribable channel token from one ref (v1: only `im:<g>:<m>` → `im:<g>`). */
+export function channelTokenOf(ref: string): string | undefined {
+  const m = /^im:([^:]+):[^:]+$/.exec(ref.trim())
+  return m === null ? undefined : `im:${m[1]}`
+}
+
+/** Fold the stream into recommend-state sets (shared host/panel contract). */
+export function recommendSetsOf(entries: readonly YzjAdvanceEntry[]): { pending: Set<string>; ignored: Set<string> } {
+  const pending = new Set<string>()
+  const ignored = new Set<string>()
+  for (const entry of entries) {
+    for (const line of entry.detail.split('\n')) {
+      const trimmed = line.trim()
+      const rec = /^推荐订阅[:：]\s*([^\s|]+)/.exec(trimmed)
+      if (rec !== null) {
+        const token = rec[1] ?? ''
+        if (token !== '' && !ignored.has(token)) pending.add(token)
+        continue
+      }
+      if (trimmed.startsWith(IGNORE_MARK)) {
+        const token = trimmed.slice(IGNORE_MARK.length).trim().split(/[\s|]/)[0] ?? ''
+        if (token !== '') {
+          ignored.add(token)
+          pending.delete(token)
+        }
+      }
+    }
+  }
+  return { pending, ignored }
+}
+
+async function maybeRecommendSources(
+  ctx: Context,
+  budget: YzjToolBudget,
+  binding: AdvanceBinding,
+  sources: ContextSourceStoreFace,
+  advanceId: string,
+  refs: readonly string[],
+  entries: readonly YzjAdvanceEntry[],
+): Promise<void> {
+  const subscribed = new Set(sources.sourcesOf(advanceId).map(row => row.token))
+  const { pending, ignored } = recommendSetsOf(entries)
+  let catalog: { groupId: string; groupName: string }[] | undefined
+  for (const ref of new Set(refs)) {
+    const channel = channelTokenOf(ref)
+    if (channel === undefined) continue
+    if (subscribed.has(channel) || ignored.has(channel) || pending.has(channel)) continue
+    // 群名随推荐事元落库（面板直接可读）；仅在真正要推荐时才查目录（稀有路径）。
+    if (catalog === undefined) catalog = await listRecentGroups(ctx, budget)
+    const name = catalog.find(row => row.groupId === channel.slice(3))?.groupName ?? channel
+    await appendEntry(ctx, budget, binding, {
+      advanceId,
+      sourceType: '人工',
+      changeType: '备注',
+      summary: `推荐订阅来源：${name}`,
+      detail: `${RECOMMEND_MARK} ${channel} | 理由: 事元 refs 引用过该渠道但尚未订阅`,
+      refs: [],
+      actor: 'agent',
+    })
+    pending.add(channel)
+  }
+}
+
 /** Result of a core feed. */
 export interface AdvanceFeedResult {
   item: YzjAdvanceItem
@@ -1489,6 +1562,7 @@ export async function coreFeedAdvance(
   caches: AdvanceCaches,
   input: AdvanceFeedInput,
   holder?: TodoBindingHolder,
+  sources?: ContextSourceStoreFace,
 ): Promise<AdvanceFeedResult> {
   if (input.summary.trim() === '') throw new Error('advance: summary must not be empty')
   const binding = await resolveAdvance(ctx, budget, config, caches, false, holder)
@@ -1604,6 +1678,11 @@ export async function coreFeedAdvance(
     assignee: projection[ITEM_F.assignee] === undefined ? item.assignee : parseAssignee(asString(projection[ITEM_F.assignee])).name,
     assigneeOpenId: projection[ITEM_F.assignee] === undefined ? item.assigneeOpenId : parseAssignee(asString(projection[ITEM_F.assignee])).openId,
     latest: asString(projection[ITEM_F.latest]),
+  }
+  // 决策 49 refs 反推推荐（host 机械路）：本条事元引用的未订阅渠道落推荐事元。
+  // 推荐事元自身 detail 无 refs，天然不递归。
+  if (sources !== undefined && incomingRefs.length > 0) {
+    await maybeRecommendSources(ctx, budget, binding, sources, input.advanceId, incomingRefs, [...existing, entry])
   }
   return { item: updated, entry, stageFrom: item.stage, stageChanged, binding, idempotent: false, overlappedRefs }
 }
@@ -1820,7 +1899,7 @@ export class YzjAdvanceService extends Service {
 
   /** Agent-parity feed exposed for host-side callers (tools use the core directly). */
   async feed(input: AdvanceFeedInput): Promise<YzjAdvanceItemView> {
-    const result = await coreFeedAdvance(this.ctx, this.budget, this.config, this.caches, input, this.holder)
+    const result = await coreFeedAdvance(this.ctx, this.budget, this.config, this.caches, input, this.holder, this.sources)
     return itemViewOf(result.item)
   }
 
@@ -2380,7 +2459,7 @@ export function applyAdvanceTools(
           actor: 'agent',
           // 决策 41 讨论回环:记录产出会话,面板「问助手」直回产出这条进展的会话。
           producerSessionId: exec?.agent?.session?.id,
-        }, holder)
+        }, holder, sources)
       } catch (error) {
         return { content: `yzj advance feed failed: ${String((error as Error).message)}`, truncated: false, data: {} }
       }

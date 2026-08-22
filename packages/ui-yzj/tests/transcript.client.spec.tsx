@@ -551,7 +551,8 @@ describe('YzjFusedView', () => {
       advanceId: 'A-1',
       summary: '群里一句进度',
       sourceType: '对话',
-      refs: ['m1'],
+      // 决策 49：refs 带渠道 token（im:<groupId>:<msgId>），推荐订阅可反推渠道
+      refs: ['im:g-a:m1'],
     }])
   })
 

@@ -135,8 +135,13 @@ function mountPane(config: {
         return { ok: true, value: { hits } } as Rpc
       },
       focusBoundSession: (sessionId: string) => { focused.push(sessionId) },
-      advanceFeed: async (input: { advanceId: string; summary: string; sourceType?: string; refs?: string[] }) => {
+      advanceFeed: async (input: { advanceId: string; summary: string; sourceType?: string; detail?: string; refs?: string[] }) => {
         feeds.push(input)
+        // 落库即时间线（决策 49 推荐忽略/确认事元随之被折叠到）
+        config.detail?.entries.push(entry({
+          entryId: `E-feed-${feeds.length}`, changeType: '备注', summary: input.summary, actor: 'user',
+          detail: input.detail ?? '',
+        }))
         return { ok: true, value: { advanceId: input.advanceId, stage: 'running' } } as Rpc
       },
       advanceActionRun: async (input: { advanceId: string; actionKey: string; kind: string; text: string; fields?: Record<string, string>; imGroupId?: string; imGroupLabel?: string }) => {
@@ -170,6 +175,8 @@ function mountPane(config: {
           return { ok: false, error: { message: `advance-source-add failed: 非法来源 token「${token}」` } } as Rpc
         }
         sourceAdds.push({ advanceId, token, ...(label === undefined ? {} : { label }) })
+        // 挂上后订阅集即变（决策 49 推荐 chip 随之消失）
+        config.detail?.contextSources?.push({ token, kind: 'persistent', label: label ?? token, addedBy: 'user', addedAt: Date.now() })
         return { ok: true, value: { sources: [], entryAppended: false } } as Rpc
       },
       advanceSourceRemove: async (advanceId, token) => {
@@ -1042,6 +1049,64 @@ describe('YzjAdvancePane', () => {
     expect(imBtn.textContent).toContain('发消息：对齐一下')
     expect(imBtn.disabled).toBe(false)
     act(() => { face.root.unmount() })
+  })
+
+  it('推荐订阅源(决策 49)：折叠出待确认推荐，挂上后消失，忽略后永不出现', async () => {
+    setWorkbenchDomain('advance')
+    const recEntry = entry({
+      entryId: 'E-r1', changeType: '备注', summary: '推荐订阅来源：新群', actor: 'agent',
+      detail: '推荐订阅: im:g-new | 理由: 事元 refs 引用过该渠道但尚未订阅',
+    })
+    const face = mountPane({
+      items: [item({ advanceId: 'A-1', stage: 'running', title: '事项' })],
+      detail: {
+        item: item({ advanceId: 'A-1', stage: 'running' }),
+        entries: [entry({}), recEntry],
+        contextSources: [{ token: 'im:g1', kind: 'persistent', label: '830 项目', addedBy: 'user', addedAt: 1 }],
+      },
+    })
+    await settle()
+    const recs = face.container.querySelector('[data-testid="yzj-advance-recommendations"]')
+    expect(recs?.textContent).toContain('新群')
+    expect(recs?.textContent).toContain('推荐订阅')
+    // 挂上 → sourceAdd 直写 + chip 消失（订阅集已含）
+    const addBtn = face.container.querySelector('[data-testid="yzj-advance-recommend-add-im-g-new"]') as HTMLButtonElement
+    await act(async () => { addBtn.click(); await Promise.resolve() })
+    await settle()
+    expect(face.sourceAdds.map(row => row.token)).toContain('im:g-new')
+    expect(face.container.querySelector('[data-testid="yzj-advance-recommendations"]')).toBeNull()
+    // 忽略 → 落「推荐忽略」事元 + chip 消失且不再出现
+    face.feeds.length = 0
+    const detail = face.container.querySelector('[data-testid="yzj-advance-recommendations"]')
+    expect(detail).toBeNull()
+    // 再造一条推荐（另一个渠道），点 ×
+    const feedEntry = entry({
+      entryId: 'E-r2', changeType: '备注', summary: '推荐订阅来源：别群', actor: 'agent',
+      detail: '推荐订阅: im:g-other | 理由: x',
+    })
+    // 直接改 mock 的 detail entries 并触发重渲（reread）
+    face.root.unmount()
+    const face2 = mountPane({
+      items: [item({ advanceId: 'A-1', stage: 'running', title: '事项' })],
+      detail: {
+        item: item({ advanceId: 'A-1', stage: 'running' }),
+        entries: [entry({}), recEntry, feedEntry],
+        contextSources: [
+          { token: 'im:g1', kind: 'persistent', label: '830 项目', addedBy: 'user', addedAt: 1 },
+          { token: 'im:g-new', kind: 'persistent', label: '新群', addedBy: 'user', addedAt: 2 },
+        ],
+      },
+    })
+    await settle()
+    const recs2 = face2.container.querySelector('[data-testid="yzj-advance-recommendations"]')
+    expect(recs2?.textContent).not.toContain('新群')  // 已订阅的不推
+    expect(recs2?.textContent).toContain('别群')
+    const ignoreBtn = face2.container.querySelector('[data-testid="yzj-advance-recommend-ignore-im-g-other"]') as HTMLButtonElement
+    await act(async () => { ignoreBtn.click(); await Promise.resolve() })
+    await settle()
+    expect(face2.feeds.some(row => row.detail === '推荐忽略: im:g-other')).toBe(true)
+    expect(face2.container.querySelector('[data-testid="yzj-advance-recommendations"]')).toBeNull()
+    act(() => { face2.root.unmount() })
   })
 
   it('decision-needed 无决策请求事元(决策 41 前存量):兜底摆驱动事元 + 提示,不空区', async () => {

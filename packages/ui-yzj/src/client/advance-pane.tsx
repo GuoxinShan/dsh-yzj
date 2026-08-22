@@ -248,6 +248,42 @@ export function foldDoneActions(entries: UnknownRecord[]): ReadonlySet<string> {
   return done
 }
 
+/**
+ * Fold pending source recommendations from the entry stream (决策 49): entries
+ * carrying a `推荐订阅: <token>` detail mark, minus `推荐忽略:` (permanent) and
+ * already-subscribed tokens. Label comes from the recommend entry's summary
+ * (「推荐订阅来源：<name>」). Recommendations are a shelf, not a bill.
+ */
+export function foldPendingRecommendations(entries: UnknownRecord[], subscribedTokens: readonly string[]): { token: string; label: string }[] {
+  const pending = new Map<string, string>()
+  const ignored = new Set<string>()
+  for (const entry of entries) {
+    const summary = asString(entry.summary)
+    for (const line of asString(entry.detail).split('\n')) {
+      const trimmed = line.trim()
+      const rec = /^推荐订阅[:：]\s*([^\s|]+)/.exec(trimmed)
+      if (rec !== null) {
+        const token = rec[1] ?? ''
+        if (token !== '' && !ignored.has(token)) {
+          const label = /^推荐订阅来源[:：]\s*(.+)$/.exec(summary)?.[1]?.trim() ?? token
+          pending.set(token, label)
+        }
+        continue
+      }
+      const ign = /^推荐忽略[:：]\s*([^\s|]+)/.exec(trimmed)
+      if (ign !== null) {
+        const token = ign[1] ?? ''
+        if (token !== '') {
+          ignored.add(token)
+          pending.delete(token)
+        }
+      }
+    }
+  }
+  const subscribed = new Set(subscribedTokens)
+  return [...pending.entries()].filter(([token]) => !subscribed.has(token)).map(([token, label]) => ({ token, label }))
+}
+
 interface BoardState {
   loading: boolean
   ready: boolean
@@ -474,6 +510,11 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
   const queues = useMemo(() => queuesOf(board.items), [board.items])
   /** 动作执行态从事元流折叠(决策 45)：执行事元 detail 带动作序标记，刷新不丢。 */
   const doneActions = useMemo(() => foldDoneActions(detail?.entries ?? []), [detail])
+  /** 待确认推荐订阅(决策 49)：货架不是账单——灰字行，不点无后果。 */
+  const pendingRecs = useMemo(
+    () => foldPendingRecommendations(detail?.entries ?? [], (detail?.contextSources ?? []).map(row => asString(row.token))),
+    [detail],
+  )
 
   const judge = async (action: 'confirm_condition' | 'confirm_advance' | 'accept' | 'reject' | 'ignore' | 'cancel', note?: string): Promise<void> => {
     if (busy || activeId === '') return
@@ -573,6 +614,25 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
     const warnings = asArray(asRecord(result.value).warnings).map(asString).filter(row => row !== '')
     setImDraft(null)
     if (warnings.length > 0) setError(`已完成，但：${warnings.join('；')}`)
+    await refreshDetail()
+  }
+
+  /** 推荐忽略(决策 49)：落「推荐忽略」事元——host 抑制同 token 永不再推。 */
+  const ignoreRecommendation = async (rec: { token: string; label: string }): Promise<void> => {
+    if (busy || activeId === '') return
+    setBusy(true)
+    setError('')
+    const result = await props.inject.advanceFeed({
+      advanceId: activeId,
+      summary: `忽略推荐来源：${rec.label}`,
+      detail: `推荐忽略: ${rec.token}`,
+      sourceType: '人工',
+    })
+    setBusy(false)
+    if (!result.ok) {
+      setError(result.error.message)
+      return
+    }
     await refreshDetail()
   }
 
@@ -1268,6 +1328,22 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                             >
                               ×
                             </button>
+                          </span>
+                        )
+                      })}
+                    </div>
+                  )}
+                  {pendingRecs.length > 0 && (
+                    <div className={css.subSources} data-testid="yzj-advance-recommendations">
+                      <p className={css.quiet}>推荐订阅（不点不影响任何事）：</p>
+                      {pendingRecs.map(rec => {
+                        const safe = rec.token.replaceAll(':', '-')
+                        return (
+                          <span key={rec.token} className={css.subChip} data-testid={`yzj-advance-recommend-${safe}`}>
+                            <i className={css.subIcon}>{sourceIconOf(rec.token)}</i>
+                            <b>{rec.label}</b>
+                            <button type="button" className={css.linkBtn} data-testid={`yzj-advance-recommend-add-${safe}`} disabled={busy} onClick={() => { void addSource(rec.token, rec.label) }}>挂上</button>
+                            <button type="button" className={css.linkBtn} aria-label={`忽略 ${rec.label}`} data-testid={`yzj-advance-recommend-ignore-${safe}`} disabled={busy} onClick={() => { void ignoreRecommendation(rec) }}>×</button>
                           </span>
                         )
                       })}
