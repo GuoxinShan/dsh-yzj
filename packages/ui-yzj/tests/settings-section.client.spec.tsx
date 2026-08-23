@@ -54,13 +54,13 @@ async function flush(): Promise<void> {
 }
 
 describe('YzjSettingsSection', () => {
-  it('renders the robot pane and does not fetch or show 记忆库', async () => {
+  it('机器人/记忆卡已撤下（决策 50）：不拉机器人数据，只剩登录卡', async () => {
     const face = mountSection()
     await flush()
-    expect(face.calls.robotStatus).toBeGreaterThanOrEqual(1)
     const text = face.container.textContent ?? ''
-    expect(text).toContain('机器人（1）')
+    expect(text).not.toContain('机器人')
     expect(text).not.toContain('记忆库')
+    expect(face.calls.robotStatus ?? 0).toBe(0)
     expect(face.calls.memoryScope ?? 0).toBe(0)
   })
 

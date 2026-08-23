@@ -1018,8 +1018,8 @@ describe('YzjAdvancePane', () => {
     expect(chatDraft?.text).toContain('两个范围补充是否纳入最小回路')
     expect(chatDraft?.text).toContain('补/更新决策请求')
     expect(getWorkbenchDomain()).toBe('im')
-    // 讨论回环:直开订阅群最新话题抽屉(决策 41)
-    expect(consumeTopicOpen('g1')?.sessionId).toBe('t-latest')
+    // 讨论回环：话题抽屉已撤（决策 50）——预填草稿 + 切对话域 + 聚焦群，不再发话题 latch
+    expect(consumeTopicOpen('g1')).toBeNull()
     act(() => { face.root.unmount() })
   })
 
@@ -1151,9 +1151,8 @@ describe('YzjAdvancePane', () => {
     expect(draftNow?.text).toContain('产品需求细化')
     expect(draftNow?.text).toContain('A-1')
     expect(getWorkbenchDomain()).toBe('im')
-    // 直开 agent 问答面:latch 指向订阅群的最新话题(transcript 消费后开抽屉,不再停在群时间线)
-    const pending = consumeTopicOpen('g1')
-    expect(pending?.sessionId).toBe('t-latest')
+    // 话题抽屉已撤（决策 50）：不发 latch，落点=群房间 + banner 草稿提示
+    expect(consumeTopicOpen('g1')).toBeNull()
     act(() => { face.root.unmount() })
   })
 

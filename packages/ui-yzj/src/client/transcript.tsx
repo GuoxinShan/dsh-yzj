@@ -9,15 +9,13 @@ import { resolveSenders, senderNameOf } from './im-cache.ts'
 import { ImLightbox, MessageBody, SenderAvatar, typeLabelOf } from './im-render.tsx'
 import { emitRoomReplyRequest } from './reply-bus.ts'
 import type { YzjPanelInject } from './rpc.ts'
-import { YzjTopicDrawer } from './topic-drawer.tsx'
+// 话题功能已撤下（决策 50）：topic-drawer / 话题 latch 保留在库中待恢复或删除。
 import { AdvanceFeedPicker } from './advance-feed-picker.tsx'
 import { setAdvanceFeedback, useAdvanceFeedback } from './advance-feedback.ts'
 import { setAdvanceAskDraft, useAdvanceAskDraft } from './advance-ask.ts'
-import { topicListBadge } from './conv-list.tsx'
-import { consumeTopicOpen } from './workbench-domain.ts'
 import { registerRoomComposerHost, ROOM_COMPOSER_HOST_ID } from './composer-host.ts'
 import {
-  artifactOf, layoutRoomItems, topicReplyCount,
+  artifactOf, layoutRoomItems,
   type LayoutImEntry,
 } from './room-layout.ts'
 import css from './home.module.css'
@@ -252,7 +250,6 @@ export function YzjFusedView(props: YzjFusedInjected) {
   const value = held.sessionId === viewKey ? held.value : (cached ?? { bound: false, items: [] })
   const phase = held.sessionId === viewKey ? held.phase : phaseOf(cached)
   const [error, setError] = useState('')
-  const [busyId, setBusyId] = useState('')
   const [more, setMore] = useState(true)
   const [loadingOlder, setLoadingOlder] = useState(false)
   // Anchor auto-paging budget per viewKey (决策 39 后续): reset when the view swaps.
@@ -260,10 +257,7 @@ export function YzjFusedView(props: YzjFusedInjected) {
   useEffect(() => { anchorPagesRef.current = 0 }, [viewKey])
   const [names, setNames] = useState<Record<string, string>>(() => seedNames(cached?.items ?? []))
   const [lightbox, setLightbox] = useState<{ src: string; kind: 'image' | 'pdf' } | null>(null)
-  const [drawerOpen, setDrawerOpen] = useState(false)
-  const [lensId, setLensId] = useState('')
   const [highlightMsgId, setHighlightMsgId] = useState('')
-  const [optimistic, setOptimistic] = useState<RoomTopic[]>([])
   const [unclamped, setUnclamped] = useState<ReadonlySet<string>>(() => new Set())
   const [feedTarget, setFeedTarget] = useState<{ summary: string; refs: string[] } | null>(null)
   const feedback = useAdvanceFeedback()
@@ -289,10 +283,7 @@ export function YzjFusedView(props: YzjFusedInjected) {
       phase: phaseOf(hit),
     })
     setNames(seedNames(hit?.items ?? []))
-    setDrawerOpen(false)
-    setLensId('')
     setHighlightMsgId('')
-    setOptimistic([])
     setUnclamped(new Set())
     setError('')
   }, [viewKey])
@@ -313,28 +304,9 @@ export function YzjFusedView(props: YzjFusedInjected) {
 
   // 决策 41 讨论回环:advance 板「问助手/回到对话继续聊」直开话题抽屉(agent 问答面),
   // 不停在群时间线。binding 就绪后消费 latch;无 sessionId 时按 title 现 mint 一个话题。
-  /** 喂给推进/话题透镜 refs 的渠道 token（决策 49）：群 id 优先 props（R24 跟随），回退绑定群。 */
+  /** 喂给推进 refs 的渠道 token（决策 49）：群 id 优先 props（R24 跟随），回退绑定群。 */
   const boundGroupId = value.binding?.yzjConversationId
   const feedGroupId = props.groupId ?? (typeof boundGroupId === 'string' ? boundGroupId : '')
-  useEffect(() => {
-    const groupId = value.binding?.yzjConversationId
-    if (groupId === undefined) return
-    const pending = consumeTopicOpen(groupId)
-    if (pending === null) return
-    void (async () => {
-      let sessionId = pending.sessionId ?? ''
-      if (sessionId === '' && props.homeTopicOpen !== undefined) {
-        const result = await props.homeTopicOpen({ groupId, ...(pending.title === undefined ? {} : { title: pending.title }) })
-        const minted = asRecord(result.ok ? result.value : null).sessionId
-        if (typeof minted === 'string') sessionId = minted
-      }
-      if (sessionId === '') return
-      setDrawerOpen(true)
-      setLensId(sessionId)
-    })()
-    // consume-once latch; binding identity churns per poll but the latch is gone after the first match.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewKey, value.binding])
 
   // 决策 39 后续:捞过的消息本体都在 bound log(每群 500 条)且 fused 全量读,
   // 但从未开过的群只 backfill 最近 50 条 — 锚点被新消息顶出窗口时自动翻页
@@ -442,40 +414,6 @@ export function YzjFusedView(props: YzjFusedInjected) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewKey])
 
-  const openTopic = async (entry: FusedImEntry): Promise<void> => {
-    const groupId = value.binding?.yzjConversationId
-    if (groupId === undefined || props.homeTopicOpen === undefined) return
-    setBusyId(entry.msgId)
-    const result = await props.homeTopicOpen({
-      groupId,
-      rootMsgId: entry.msgId,
-      originWho: entry.fromName,
-      originText: entry.content,
-    })
-    setBusyId('')
-    if (!result.ok) {
-      setError(result.error.message)
-      return
-    }
-    const sessionId = typeof asRecord(result.value).sessionId === 'string'
-      ? asRecord(result.value).sessionId as string : ''
-    if (sessionId === '') return
-    setOptimistic(prev => {
-      if (prev.some(row => row.dshSessionId === sessionId || row.rootMsgId === entry.msgId)) return prev
-      return [...prev, {
-        dshSessionId: sessionId,
-        title: entry.content.replace(/\s+/g, ' ').trim().slice(0, 24) || '新话题',
-        source: 'dsh',
-        lastActivity: Date.now(),
-        rootMsgId: entry.msgId,
-        originWho: entry.fromName,
-        originText: entry.content,
-        originTime: entry.sentAt,
-      }]
-    })
-    setDrawerOpen(true)
-    setLensId(sessionId)
-  }
 
   const loadOlder = async (): Promise<void> => {
     if (loadingOlder) return
@@ -519,52 +457,14 @@ export function YzjFusedView(props: YzjFusedInjected) {
   // InputBar flashes (pitfall-024 follow-up).
   const emptyPhase = phase === 'unbound' || (phase === 'loading' && value.items.length === 0)
 
-  const serverTopics = value.topics ?? []
-  const topics = [
-    ...serverTopics,
-    ...optimistic.filter(row => !serverTopics.some(topic => (
-      topic.dshSessionId === row.dshSessionId
-      || (row.rootMsgId !== undefined && topic.rootMsgId === row.rootMsgId)
-    ))),
-  ]
-  const topicByRoot = new Map(topics.flatMap(topic => (
-    topic.rootMsgId === undefined ? [] : [[topic.rootMsgId, topic] as const]
-  )))
-  const topicBySession = new Map(topics.map(topic => [topic.dshSessionId, topic]))
   const fileInject = { fetchFileData: props.fetchFileData ?? (async () => ({ ok: false as const, error: { message: 'file-data unavailable' } })) }
-  const isGroup = value.binding?.yzjKind !== 'dm'
-  const topicBadge = topicListBadge(topics)
-  const openLens = (sessionId: string): void => {
-    if (sessionId === '') return
-    setDrawerOpen(true)
-    setLensId(sessionId)
-  }
 
   return (
     <div className={css.roomMain}>
       {error !== '' && !emptyPhase && <div className={css.hint} role="alert">{error}</div>}
       <div className={css.roomMainHead}>
-        {isGroup && !emptyPhase && (
-          <button
-            type="button"
-            className={css.topicToggle}
-            data-testid="yzj-topic-toggle"
-            aria-pressed={drawerOpen}
-            onClick={() => {
-              if (drawerOpen) {
-                setDrawerOpen(false)
-                setLensId('')
-                return
-              }
-              setDrawerOpen(true)
-            }}
-          >
-            话题 {topics.length}
-            {topicBadge.confirmCount > 0 && (
-              <span className={css.topicToggleBadge} data-testid="yzj-topic-badge">{topicBadge.confirmCount}</span>
-            )}
-          </button>
-        )}
+        {/* 话题功能已撤下（决策 50，2026-08-23）：话题抽屉/交给助手/话题 chip 的产品面未想清，
+            机制层（topic-drawer.tsx / 话题 latch）保留待恢复或删除。 */}
       </div>
       <div className={css.roomStage}>
         <div className={css.roomTimeline}>
@@ -637,10 +537,6 @@ export function YzjFusedView(props: YzjFusedInjected) {
             const entry = node.entry
             const mine = entry.isSelf
             const assistant = entry.origin === 'robot-outbound'
-            const linked = topicByRoot.get(entry.msgId)
-            const fromTopic = entry.topicSessionId === undefined
-              ? undefined
-              : topicBySession.get(entry.topicSessionId)
             const openId = entry.fromOpenId ?? ''
             const sender = displayNameOf(entry, openId !== '' ? names[openId] : undefined)
             const clamped = agentClampOf(entry) && !unclamped.has(entry.msgId)
@@ -729,25 +625,6 @@ export function YzjFusedView(props: YzjFusedInjected) {
                         </span>
                       </span>
                     )}
-                    {linked !== undefined && (
-                      <button
-                        type="button"
-                        className={css.replyChip}
-                        data-testid={`yzj-reply-chip-${entry.msgId}`}
-                        onClick={() => openLens(linked.dshSessionId)}
-                      >
-                        {topicReplyCount(linked, value.items)} 条回复
-                      </button>
-                    )}
-                    {assistant && fromTopic !== undefined && linked === undefined && (
-                      <button
-                        type="button"
-                        className={css.replyChip}
-                        onClick={() => openLens(fromTopic.dshSessionId)}
-                      >
-                        来自话题 · {fromTopic.title}
-                      </button>
-                    )}
                   </span>
                   <span className={css.roomRowActions}>
                     <button
@@ -757,16 +634,7 @@ export function YzjFusedView(props: YzjFusedInjected) {
                     >
                       回复
                     </button>
-                    {linked === undefined && !assistant && (
-                      <button
-                        type="button"
-                        className={css.roomAction}
-                        disabled={busyId === entry.msgId || props.homeTopicOpen === undefined}
-                        onClick={() => { void openTopic(entry) }}
-                      >
-                        {busyId === entry.msgId ? '交给助手…' : '交给助手'}
-                      </button>
-                    )}
+
                     {props.advanceState !== undefined && props.advanceFeed !== undefined && !assistant && (
                       <button
                         type="button"
@@ -797,28 +665,6 @@ export function YzjFusedView(props: YzjFusedInjected) {
           data-testid="yzj-room-composer-host"
         />
         </div>
-        {isGroup && drawerOpen && (
-          <YzjTopicDrawer
-            groupName={value.groupName ?? ''}
-            topics={topics}
-            {...(feedGroupId === '' ? {} : { groupId: feedGroupId })}
-            {...(lensId === '' ? {} : { lensSessionId: lensId })}
-            onClose={() => {
-              setDrawerOpen(false)
-              setLensId('')
-            }}
-            onBack={() => setLensId('')}
-            onOpenLens={openLens}
-            onNative={(sessionId) => {
-              if (sessionId !== '') props.focusBoundSession?.(sessionId)
-            }}
-            onJumpOrigin={(msgId) => setHighlightMsgId(msgId)}
-            {...(props.homeTopicLens === undefined ? {} : { homeTopicLens: props.homeTopicLens })}
-            {...(props.homeTopicAsk === undefined ? {} : { homeTopicAsk: props.homeTopicAsk })}
-            {...(props.advanceState === undefined ? {} : { advanceState: props.advanceState })}
-            {...(props.advanceFeed === undefined ? {} : { advanceFeed: props.advanceFeed })}
-          />
-        )}
       </div>
       {feedTarget !== null && props.advanceState !== undefined && props.advanceFeed !== undefined && (
         <AdvanceFeedPicker

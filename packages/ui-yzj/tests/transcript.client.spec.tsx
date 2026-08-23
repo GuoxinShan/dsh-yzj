@@ -65,7 +65,7 @@ describe('YzjFusedView', () => {
     setAdvanceFeedback(null)
   })
 
-  it('renders the group room as IM plus 交给助手, not a fused agent stream', async () => {
+  it('renders the group room as IM rows（话题入口已撤下，决策 50）, not a fused agent stream', async () => {
     const fused: Rpc = {
       ok: true,
       value: {
@@ -84,9 +84,10 @@ describe('YzjFusedView', () => {
     const text = container.textContent ?? ''
     expect(text).toContain('群里一句')
     expect(text).toContain('发进群')
-    expect(text).toContain('交给助手')
+    expect(text).not.toContain('交给助手')  // 决策 50：话题入口已撤
     expect(text).toContain('加载更早消息')
     expect(text).toContain('回复')
+    expect(container.querySelector('[data-testid="yzj-topic-toggle"]')).toBeNull()
     expect(container.querySelector('[data-testid="yzj-room-row-m2"]')?.className).toMatch(/roomRowSelf/)
     expect(container.querySelector('[data-testid="yzj-room-row-m1"]')?.className).toMatch(/roomRowOther/)
     expect(container.querySelector('[data-testid="yzj-room-row-m2"] [class*="roomBubbleSelf"]')).not.toBeNull()
@@ -134,9 +135,8 @@ describe('YzjFusedView', () => {
     const container = renderView(fused)
     await flush()
     expect(container.textContent).toContain('已排好')
-    expect(container.textContent).toContain('来自话题 · 排期')
-    const handoff = [...container.querySelectorAll('button')].some(node => node.textContent?.includes('交给助手'))
-    expect(handoff).toBe(false)
+    expect(container.textContent).not.toContain('来自话题')  // 决策 50：话题 backlink chip 已撤
+    expect(container.textContent).not.toContain('交给助手')
   })
 
   it('labels BOT- senders 机器人, never the raw openId tail', async () => {
@@ -224,7 +224,7 @@ describe('YzjFusedView', () => {
     expect(container.textContent).not.toContain('群消息')
   })
 
-  it('shows 话题 N on a group room and opens the drawer without leaving the timeline', async () => {
+  it('话题 toggle 与抽屉已撤下（决策 50）：群房间无话题入口', async () => {
     const fused: Rpc = {
       ok: true,
       value: {
@@ -239,17 +239,14 @@ describe('YzjFusedView', () => {
     }
     const container = renderView(fused)
     await flush()
-    expect(container.textContent).toContain('话题 1')
+    expect(container.querySelector('[data-testid="yzj-topic-toggle"]')).toBeNull()
     expect(container.querySelector('[data-testid="yzj-topic-drawer"]')).toBeNull()
-    act(() => { (container.querySelector('[data-testid="yzj-topic-toggle"]') as HTMLButtonElement).click() })
-    expect(container.querySelector('[data-testid="yzj-topic-drawer"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="yzj-fused-stream"]')).not.toBeNull()
     expect(container.textContent).toContain('群里一句')
-    expect(container.textContent).toContain('1 条回复')
+    expect(container.textContent).not.toContain('条回复')
   })
 
-  it('交给助手 opens the drawer lens and does not focus the topic session', async () => {
-    const focused: string[] = []
+  it('无「交给助手」入口（决策 50 撤下）', async () => {
     const fused: Rpc = {
       ok: true,
       value: {
@@ -262,20 +259,10 @@ describe('YzjFusedView', () => {
         ],
       },
     }
-    const container = renderView(fused, {
-      focused,
-      homeTopicOpen: async () => ({ ok: true, value: { sessionId: 'yzj-topic-g-a-m2' } }),
-    })
+    const container = renderView(fused)
     await flush()
-    const handoff = [...container.querySelectorAll('button')].find(node => node.textContent?.includes('交给助手'))
-    await act(async () => { handoff?.click(); await Promise.resolve(); await Promise.resolve() })
-    await flush()
-    expect(focused).toEqual([])
-    expect(container.querySelector('[data-testid="yzj-topic-drawer"]')).not.toBeNull()
-    expect(container.textContent).toContain('原生会话')
-    expect(container.querySelector('[data-testid="yzj-fused-stream"]')).not.toBeNull()
-    expect(container.textContent).toContain('1 条回复')
     expect(container.textContent).not.toContain('交给助手')
+    expect(container.querySelector('[data-testid="yzj-topic-drawer"]')).toBeNull()
   })
 
   it('hides the topic drawer toggle on a dm room', async () => {
@@ -297,7 +284,7 @@ describe('YzjFusedView', () => {
     expect(container.textContent).toContain('私聊一句')
   })
 
-  it('merges same-speaker rows, inserts 今天, and chips the topic root', async () => {
+  it('merges same-speaker rows, inserts 今天（话题根 chip 已撤，决策 50）', async () => {
     const now = Date.now()
     const fused: Rpc = {
       ok: true,
@@ -319,8 +306,7 @@ describe('YzjFusedView', () => {
     expect(container.querySelector('[data-testid="yzj-room-row-m1"]')?.getAttribute('data-merged')).toBe('false')
     expect(container.querySelector('[data-testid="yzj-room-row-m2"]')?.getAttribute('data-merged')).toBe('true')
     expect(container.querySelector('[data-testid="yzj-room-row-m2"]')?.textContent).not.toContain('同事')
-    expect(container.textContent).toContain('2 条回复')
-    expect(container.querySelector('[data-testid="yzj-reply-chip-m1"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="yzj-reply-chip-m1"]')).toBeNull()  // 决策 50：话题根 chip 已撤
     expect(container.querySelector('[data-testid="yzj-artifact-bot"]')?.textContent).toContain('排期.md')
     expect(container.querySelector('[data-testid="yzj-artifact-bot"]')?.textContent).toContain('已发进群')
     expect(container.querySelector('[data-testid="yzj-room-row-m1"]')?.textContent).not.toContain('交给助手')
@@ -352,7 +338,7 @@ describe('YzjFusedView', () => {
     expect(container.textContent).toContain('还没有对话')
   })
 
-  it('shows an accent count on 话题 N when a topic is 待确认', async () => {
+  it('话题待确认 badge 已随 toggle 撤下（决策 50）', async () => {
     const fused: Rpc = {
       ok: true,
       value: {
@@ -369,7 +355,7 @@ describe('YzjFusedView', () => {
     }
     const container = renderView(fused)
     await flush()
-    expect(container.querySelector('[data-testid="yzj-topic-badge"]')?.textContent).toBe('1')
+    expect(container.querySelector('[data-testid="yzj-topic-badge"]')).toBeNull()
   })
 
   it('re-registers the composer host after the timeline unmounts', async () => {

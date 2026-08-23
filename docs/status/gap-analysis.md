@@ -1118,3 +1118,16 @@ archscribe 旧产物（advance-9 spec.json/gif/excalidraw）与 HTML 版不一�
 | 真机 | `verify-advance-recommend.mjs`：探针 1 挂上路径（推荐出现→挂上→消失→再喂不推）+ 探针 2 忽略路径（出现→×→消失→再喂不推）+ SQLite 审计面 | 截图 `shots-advance-recommend/`；12 断言全过 |
 
 Dream 路（跨事项推荐）纪律入 dreamAskPrompt（顺手落推荐事元）。探针事项演练后已清理（SQLite 删 5 条）。
+
+## 24.31 ui-yzj｜话题功能 + 机器人/记忆卡撤下（2026-08-23，决策 50）
+
+用户拍板「群聊话题什么机器人还有记忆的功能全部去掉，我还没想好怎么做」。范围与程度经两轮澄清：**只撤话题功能 UI 入口**（群房间/IM 消息读写保留）+ **只撤 UI 不摘插件**（robot-yzj/memory-yzj 挂载保留，通道与工具后台在跑，R29 投递不受影响）。
+
+| 面 | 交付 | 证据 |
+|---|---|---|
+| 话题入口撤除 | 群房间撤：话题 toggle（含待确认 badge）、「交给助手」按钮、话题回复 chip、话题抽屉渲染；transcript.tsx 清理 unused（openTopic/drawerOpen/lensId/optimistic/topics 派生链/isGroup/topicBadge）；讨论回环（决策 41）落点改道：不再发话题 latch，落点=群房间 + banner 草稿提示 | typecheck 0 错；transcript.client.spec 6 个话题用例改写为「入口已撤」断言（钉住防回潮） |
+| 设置页 | 机器人管理卡撤下（settings-section 只剩登录卡）；记忆卡本来就 deferred（R21 v1.6）——两面俱空 | settings-section.client.spec 改写「只剩登录卡」断言 |
+| 机制保留 | topic-drawer.tsx / memory-pane.tsx / robot-pane.tsx 文件保留不挂载；话题 latch（workbench-domain）保留；robot-yzj/memory-yzj 插件挂载行不动 | cordis.patch.yml 零改动 |
+| 真机 | `verify-advance-no-topics.mjs` ALL PASS：群房间无话题入口 + hover 仍有回复/喂给推进（不误伤）+ 推进看板完好 + 零页面错误 | 截图 `shots-no-topics/`；全量 663 绿 |
+
+可逆性：恢复路径 = 加回渲染点（机制与数据无损）。group-room-topics.md 版本头 v1.20 留痕。
