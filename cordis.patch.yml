@@ -1,9 +1,11 @@
 # The @dsh-yzj/bundle patch layer: mounts the Yunzhijia bridge, tool family,
-# robot channel, memory vault, model defaults, and the browser surface over
-# the base + web-app layers. All rows resolve into this single monobundle
-# package via its exports subpaths; @deepseek-ai/* come from the registry.
-# Deployments override per-row config in their own cordis.patch.yml (an
-# id-targeted patch replaces the whole config).
+# model defaults, and the browser surface over the base + web-app layers.
+# robot-yzj / memory-yzj 挂载行已摘除（决策 51，2026-08-23）：机器人通道与记忆
+# 库后台停运——产品面未想清；包保留（packages/robot-yzj、packages/memory-yzj），
+# 想清后加回两行即恢复。All rows resolve into this single monobundle package via
+# its exports subpaths; @deepseek-ai/* come from the registry. Deployments override
+# per-row config in their own cordis.patch.yml (an id-targeted patch replaces the
+# whole config).
 - insert:
     # Host channel to the yzj-cli binary (spawns it directly, reusing the
     # machine's yzj-cli login state; the harness never sees credentials).
@@ -21,22 +23,7 @@
     - id: ui-yzj
       name: '@dsh-yzj/bundle/ui-yzj'
 
-    # Robot channel: measured WebSocket inbound + sendMsgUrl outbound, session
-    # router (reply-chain continuation, bang command family, ack-then-push),
-    # DSH→robot controls, group shared workspaces, chatnode bridge.
-    - id: robot-yzj
-      name: '@dsh-yzj/bundle/robot-yzj'
-      config: {}
-
-    # Memory vault: sections/entities/observations scopes under
-    # $DSH_HOME/yzj-memory, memory_* tools, dream consolidation surfaces,
-    # and bounded prompt injection (ctx.yzjMemory). Group scopes activate by
-    # widening allowScopes — see docs/spec/memory-vault-design.md §8.
-    - id: memory-yzj
-      name: '@dsh-yzj/bundle/memory-yzj'
-
-    # Plugin-wide default model route ($DSH_HOME/yzj-model.json): the last
-    # link of the robot model-resolution chain and the dream executor's
-    # fallback (ctx.yzjModels).
+    # Plugin-wide default model route ($DSH_HOME/yzj-model.json): the fallback
+    # of the robot model-resolution chain and the dream executor (ctx.yzjModels).
     - id: model-yzj
       name: '@dsh-yzj/bundle/model-yzj'

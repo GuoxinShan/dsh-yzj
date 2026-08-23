@@ -32,7 +32,6 @@ export const YZJ_WRITE_TOOL_NAMES = [
   'yzj_calendar_event_create', 'yzj_calendar_event_update',
   'yzj_todo_create', 'yzj_todo_update', 'yzj_todo_complete',
   'yzj_advance_create', 'yzj_advance_feed',
-  'robot_notify', 'robot_continue',
 ] as const
 
 /** The injected decision face the confirmation card receives. */
@@ -97,8 +96,6 @@ const WRITE_TITLES: Record<string, string> = {
   yzj_todo_complete: '完成待办',
   yzj_advance_create: '立项推进事项',
   yzj_advance_feed: '喂入事元',
-  robot_notify: '机器人推送',
-  robot_continue: '注入机器人会话',
 }
 
 /** Domain labels for the card header. */

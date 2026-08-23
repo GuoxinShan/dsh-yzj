@@ -1131,3 +1131,15 @@ Dream 路（跨事项推荐）纪律入 dreamAskPrompt（顺手落推荐事元�
 | 真机 | `verify-advance-no-topics.mjs` ALL PASS：群房间无话题入口 + hover 仍有回复/喂给推进（不误伤）+ 推进看板完好 + 零页面错误 | 截图 `shots-no-topics/`；全量 663 绿 |
 
 可逆性：恢复路径 = 加回渲染点（机制与数据无损）。group-room-topics.md 版本头 v1.20 留痕。
+
+## 24.32 bundle｜机器人/记忆后台停运（2026-08-23，决策 51）
+
+用户追问「机器人和记忆是不是后台也先停了」——决策 50 撤 UI 后连后台一起停：
+
+| 面 | 交付 | 证据 |
+|---|---|---|
+| 挂载行摘除 | cordis.patch.yml 移除 robot-yzj + memory-yzj 两行（包保留不删，加回即恢复）；头注记恢复路径 | GUI 重启正常（200），无 robot/memory 报错；`verify-no-topics.mjs` ALL PASS（摘挂载后面板+群房间完好） |
+| 死重清理 | guard 删 robot_notify/robot_continue/robot_share_write 条目 + isBoundHomeSession；write-gate 删 robot 判断；write-card 删 robot 标签；三个 spec 的 robot 用例清除 | 654 绿 + typecheck 0 错 |
+| 连带停运（明示） | R29 话题产物投递、@机器人入站、memory_* 工具族、dream 固化（记忆库侧 dream.json/dailyAt 在 memory-yzj）全停；AI推进 Dream 池/巡检（tool-yzj）不受影响 | 依赖点逐一验证降级安全（yzjRobot/yzjMemory 缺席均有「未挂载」明示；ownsConfirm undefined 安全） |
+
+恢复路径：cordis.patch.yml 加回两行 + guard/write-gate 条目恢复（git 可翻）。

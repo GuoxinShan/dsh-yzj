@@ -1,7 +1,5 @@
 /**
  * Approval-guard specs: WRITE_SPECS asks for gated writes and delegates
- * the rest. Bound-home robot_notify / robot_continue must ask (D9); the
- * unbound operator console and leftover yzj-robot-* ids do not.
  * yzj_advance_feed only asks when it rewrites the baseline (决策 14 / §13.5).
  */
 import { Context } from '@deepseek-ai/cordis'
@@ -94,7 +92,6 @@ describe('approval guard', () => {
       'yzj_doc_block_insert', 'yzj_doc_block_update', 'yzj_sheet_create',
       'yzj_sheet_table_create', 'yzj_sheet_table_rename', 'yzj_sheet_record_create',
       'yzj_sheet_record_update', 'yzj_calendar_event_create', 'yzj_calendar_event_update',
-      'robot_share_write',
     ]
     for (const name of names) {
       const decision = await listener({ name, callId: `c${name}`, arguments: {} }, async () => ({ kind: 'allow' }))
@@ -104,57 +101,10 @@ describe('approval guard', () => {
     expect(pending.every(entry => entry.level === 'standard')).toBe(true)
   })
 
-  it('asks for robot_share_write with the workspace confirmation prefix', async () => {
-    const { listener, pending } = guard()
-    const decision = await listener({ name: 'robot_share_write', callId: 'c1', arguments: { filename: 'report.md' } }, async () => ({ kind: 'allow' }))
-    expect(decision.kind).toBe('ask')
-    expect((decision as { reason: string }).reason).toContain('工作区写操作确认')
-    expect(pending[0]).toMatchObject({ toolName: 'robot_share_write', level: 'standard', args: { filename: 'report.md' } })
-  })
 
-  it('asks for robot_notify / robot_continue on a bound yzj-home-* session (D9)', async () => {
-    const { listener, pending } = guard()
-    const home = { agent: { session: { id: 'yzj-home-g-a' } } }
-    for (const name of ['robot_notify', 'robot_continue'] as const) {
-      const decision = await listener({
-        name, callId: `c-${name}`, arguments: { text: '推群' }, ...home,
-      }, async () => ({ kind: 'allow' }))
-      expect(decision.kind, name).toBe('ask')
-    }
-    expect(pending.map(entry => entry.toolName)).toEqual(['robot_notify', 'robot_continue'])
-    expect(pending.every(entry => entry.level === 'standard')).toBe(true)
-  })
 
-  it('asks for robot_notify / robot_continue on a yzj-topic-* session (R10)', async () => {
-    const { listener, pending } = guard()
-    const topic = { agent: { session: { id: 'yzj-topic-g-a-root' } } }
-    for (const name of ['robot_notify', 'robot_continue'] as const) {
-      const decision = await listener({
-        name, callId: `c-t-${name}`, arguments: { text: '推群' }, ...topic,
-      }, async () => ({ kind: 'allow' }))
-      expect(decision.kind, name).toBe('ask')
-    }
-    expect(pending.map(entry => entry.toolName)).toEqual(['robot_notify', 'robot_continue'])
-  })
 
-  it('asks for robot_notify when the calling session id is missing (fail closed)', async () => {
-    const { listener, pending } = guard()
-    const decision = await listener({ name: 'robot_notify', callId: 'c1', arguments: { text: 'x' } }, async () => ({ kind: 'allow' }))
-    expect(decision.kind).toBe('ask')
-    expect(pending[0]?.toolName).toBe('robot_notify')
-  })
 
-  it('does not ask for robot_notify / robot_continue on the unbound operator console', async () => {
-    const { listener, pending } = guard()
-    const unbound = { agent: { session: { id: 'sess-private' } } }
-    for (const name of ['robot_notify', 'robot_continue'] as const) {
-      const decision = await listener({
-        name, callId: `c-${name}`, arguments: { text: '推群' }, ...unbound,
-      }, async () => ({ kind: 'allow' }))
-      expect(decision.kind, name).toBe('allow')
-    }
-    expect(pending).toEqual([])
-  })
 
   it('does not ask for robot_notify on leftover yzj-robot-* (operatorOnly still throws at execute)', async () => {
     const { listener, pending } = guard()

@@ -85,22 +85,6 @@ describe('YzjWriteToolCard', () => {
     expect(text).not.toContain('d1')
   })
 
-  it('renders robot_notify text on the IM confirmation body', async () => {
-    const injected: WriteCardInjected = {
-      fetchWrite: async () => pendingRecord({
-        toolName: 'robot_notify',
-        args: { text: '群内推送正文', robotIndex: 0 },
-      }),
-      decideWrite: vi.fn(async () => true),
-      fetchWhoami: async () => '',
-      editDraft: vi.fn(), openContext: () => {},
-    }
-    const text = await renderCard(baseProps({ toolName: 'robot_notify', ...injected }))
-    expect(text).toContain('机器人推送')
-    expect(text).toContain('群内推送正文')
-    expect(text).toContain('确认')
-  })
-
   it('shows the executing state once approved', async () => {
     const injected: WriteCardInjected = {
       fetchWrite: async () => pendingRecord({ status: 'approved' }),

@@ -110,7 +110,7 @@ type AuditEventShape = AskedEventShape | DecidedEventShape | { type: string; dat
 
 /** Map a tool name to its confirmation-card domain. */
 export function domainOf(toolName: string): string {
-  if (toolName.startsWith('yzj_im_') || toolName === 'robot_notify' || toolName === 'robot_continue') return 'im'
+  if (toolName.startsWith('yzj_im_')) return 'im'
   if (toolName.startsWith('yzj_doc_workspace_')) return 'kb'
   if (toolName.startsWith('yzj_doc_')) return 'doc'
   if (toolName.startsWith('yzj_sheet_')) return 'sheet'
@@ -121,9 +121,9 @@ export function domainOf(toolName: string): string {
   return 'other'
 }
 
-/** Tools this gate answers. yzj_* family plus bound-home robot group-push (D9). */
+/** Tools this gate answers: the yzj_* family. */
 export function isWriteGateTool(toolName: string): boolean {
-  return toolName.startsWith('yzj_') || toolName === 'robot_notify' || toolName === 'robot_continue'
+  return toolName.startsWith('yzj_')
 }
 
 /** True when the latest user/message is a plugin followup (inbound @机器人). */

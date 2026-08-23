@@ -19,12 +19,7 @@ interface DangerousSpec {
   level: YzjRiskLevel
   /** Optional predicate over the parsed call arguments; defaults to always ask. */
   when?: (args: Record<string, unknown>) => boolean
-  /**
-   * Optional session filter. `undefined` session id asks (fail closed).
-   * Used by robot_notify/continue: group-room hosts and topic sessions must
-   * confirm (D9 / R10); the unbound operator console stays ungated; leftover
-   * yzj-robot-* still refuse at execute (operatorOnly).
-   */
+  /** Optional session filter. `undefined` session id asks (fail closed). */
   whenSession?: (sessionId: string | undefined) => boolean
   /** Confirmation-prefix override for non-yzj tools (e.g. the shared workspace); defaults to the yzj wording. */
   prefix?: string
@@ -73,19 +68,8 @@ const WRITE_SPECS: Record<string, DangerousSpec> = {
     level: 'standard',
     when: rewritesAdvanceBaseline,
   },
-  // --- robot-yzj group shared workspace (design robot-channel-plan §8.4) ---
-  robot_share_write: { reason: '写入群共享工作区文件（<cwd>/groups/<groupId>/shared/）', level: 'standard', prefix: '工作区写操作确认' },
-  // --- robot-yzj group push from a bound home (D9; operator console stays ungated) ---
-  robot_notify: {
-    reason: '通过机器人通道向云之家会话推送消息，发出后不可撤回',
-    level: 'standard',
-    whenSession: isBoundHomeSession,
-  },
-  robot_continue: {
-    reason: '向机器人会话注入操作者消息并走入站管线（含群内回复推送）',
-    level: 'standard',
-    whenSession: isBoundHomeSession,
-  },
+  // robot-yzj 已摘挂载（决策 51）：robot_notify/robot_continue/robot_share_write 条目随之移除——
+  // 工具不注册，条目永不命中，留着是死重。包保留，恢复挂载时连条目一起加回。
 }
 
 /** Projection fields whose rewrite replaces the baseline every later comparison rests on. */
@@ -105,12 +89,6 @@ function rewritesAdvanceBaseline(args: Record<string, unknown>): boolean {
   })
 }
 
-/** Group-room host or a topic session. Missing id → ask (fail closed on the D9 hole). */
-function isBoundHomeSession(sessionId: string | undefined): boolean {
-  return sessionId === undefined
-    || sessionId.startsWith('yzj-home-')
-    || sessionId.startsWith('yzj-topic-')
-}
 
 /** Structural session id on a tools/pre-execute exec (agent is present in harness). */
 function callingSessionId(exec: { agent?: { session?: { id?: unknown } } }): string | undefined {
