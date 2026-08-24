@@ -124,6 +124,6 @@ skill 已交付「影子任务库」章节（表结构 + 使用规则），但�
 | 6 | 「我的」tab | 维持删除；待办 tab 使面板回归四 tab 形态（第四 tab 内容为待办） |
 | 7 | 拖入快捷动作 | 维持移除（全屏 drop overlay 直接成 chip） |
 | 8 | 确认同名目标辨识 | 主显名称；ID 明文展开暂缓（todo 卡显示 todo_id 本身即天然可辨识） |
-| 9 | tag 自由聚合理念去留（2026-08-24 拍板） | **终态放弃**：复用云之家 worktask（无 tag 模型）时不再要求 tag 聚合能力——既不外挂自有 tag 存储，也不做 `#tag` 文本降级承载；§0「迁移不变量」条随之废止。MVP 现状面（SQLite 后端 tags 字段、面板标签轨 chips、工具面 `tags` 参数）不动，仅不再作为终态需求与迁移约束。依据：[`openapi-dependency.md`](openapi-dependency.md) §2.3 |
+| 9 | tag 自由聚合理念去留（2026-08-24 拍板） | **终态放弃**：复用云之家 worktask（无 tag 模型）时不再要求 tag 聚合能力——既不外挂自有 tag 存储，也不做 `#tag` 文本降级承载；§0「迁移不变量」条随之废止。MVP 现状面（SQLite 后端 tags 字段、面板标签轨 chips、工具面 `tags` 参数）不动，仅不再作为终态需求与迁移约束。依据：[`yzj-openapi-requirements.md`](yzj-openapi-requirements.md) §2 #8 |
 
 ### 11.3 Contact/Date 写入验证 → **已完成（结论进 §3，探针证据进迁移文档 §3/§5）**

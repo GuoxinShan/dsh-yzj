@@ -1120,6 +1120,12 @@ export class YzjTodoService extends Service {
     return viewOf(result.todo)
   }
 
+  /** One todo by id（todo-dispatch RPC 读任务卡）。 */
+  async get(todoId: string): Promise<YzjTodoView> {
+    const { todo } = await mustFetch(this.ctx, this.budget, this.config, this.cache, todoId, this.holder)
+    return viewOf(todo)
+  }
+
   /** Human reopen of a cancelled todo (cancelled→todo，回可认领列)。 */
   async reopen(todoId: string): Promise<YzjTodoView> {
     const result = await coreSetStatus(this.ctx, this.budget, this.config, this.cache, todoId, 'todo', { verb: '重开' }, this.holder)

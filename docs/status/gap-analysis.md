@@ -1164,3 +1164,16 @@ Dream 路（跨事项推荐）纪律入 dreamAskPrompt（顺手落推荐事元�
 | 期②边界 | claim 后自动开 agent 会话干活（任务上下文注入）未做——期②；定时自动 claim 期③ | 见 swimlane spec §5 分期表 |
 
 注意：本仓验收脚本族里 verify-advance-loop/dsh2 等引用旧六态的文案已同步；存量真机数据无需动作（读取归一化覆盖）。
+
+## 24.35 泳道待办期②：执行回路 MVP 手动径（2026-08-24，已落地）
+
+期②「claim 后会话自动开工」落地为手动触发径：泳道「可认领」列卡片新增「让 agent 做」→ `/yzj todo-dispatch` → host 直建 `yzj-todo-<stamp>` 会话、首 turn 注入任务卡（`todoDispatchPrompt`：id/标题/描述/DDL/标签/版本 + 四条纪律——先 claim、写动作走确认卡、submit_review 交卷、阻塞即 release 带回流备注）→ 聚焦新会话。复用 Dream 手动径形态（决策 38）；会话纪律是提示词、闸门是 host 状态机（S2/S3 不靠模型自觉）。
+
+| 面 | 交付 | 证据 |
+|---|---|---|
+| 派发链路 | bound-io `runTodoSession` + `todoDispatchPrompt`（空描述降级、可空字段省略）；`/yzj todo-dispatch` 端点（仅 todo 态可派，其他态明示拒绝）；`yzjTodo.get` 服务读卡 | bound-io.spec +2（会话创建/首 turn/钉标题/提示词内容） |
+| 面板 | 「可认领」列「让 agent 做」主按钮 → dispatch → flash + `focusBoundSession` 聚焦新会话 | todo-pane.client.spec 派发用例（RPC 调用 + 聚焦断言；非可认领列不出钮） |
+| 真机 | `verify-todo-dispatch.mjs` ALL PASS：建卡→编辑描述→派发→会话自动开工→认领（in_progress）→交卷（in_review 带评语）→人验收→done；探针事后全部验收归档 | 截图 `shots-todo-swimlane/dispatch-*.png`；SQLite 推进日志逐边留痕 |
+| 验收坑 | 面板轮询不到新状态 = 同 tab 重点不刷新：待办页签仅在切入时拉 todo-state（panel.tsx），轮询脚本须「对话→待办」切tab强制重拉 | 与 pitfall-044 同族（验收时序），脚本内注释留痕 |
+
+全量 662 绿 + typecheck 0 错。期③（定时/水位自动 claim，巡检骨架复用）未开工。

@@ -20,7 +20,7 @@ credentials-local: the value for "refs" in ~/.dsh/.credentials.yaml must be a st
 
 1. 重启 GUI 前若 boot 报 credentials 解析错，先看文件**结构**（只打印键与值类型，绝不打印值——这文件全是凭据）；
 2. 修复 = 备份（`cp … .bak-日期`）后**压平**：`version` 加引号成字符串，`refs:` 下的嵌套键逐条提升为顶层 `key: "value"`（值统一双引号包裹；键须匹配 POSIX 标识符 `[A-Za-z0-9_.-]+`，否则 parser 同样拒）；
-3. 压平后 GUI 即刻可起；desktop 运行时之后若再次重写为嵌套，同一修法再来一次（治本要 harness 侧两 schema 对齐，超出本仓边界）。
+3. 压平后 GUI 即刻可起；**desktop 运行时在屏期间会再次重写为嵌套（同日两次重启两次中招）**——GUI 迭代验收的节奏里，重启前顺手重跑一遍压平即可；治本要 harness 侧两 schema 对齐（desktop 与 CLI checkout 版本偏斜），超出本仓边界。
 
 ## 回归覆盖
 

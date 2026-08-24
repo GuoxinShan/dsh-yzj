@@ -1655,6 +1655,8 @@ export function YzjPanel(props: YzjPanelProps) {
                     cancelTodo={props.cancelTodo}
                     reopenTodo={props.reopenTodo}
                     editTodo={props.editTodo}
+                    dispatchTodo={props.dispatchTodo}
+                    {...(props.focusBoundSession === undefined ? {} : { focusBoundSession: props.focusBoundSession })}
           todoLibraries={props.todoLibraries}
           selectTodoLibrary={props.selectTodoLibrary}
           ensureTeamTodo={props.ensureTeamTodo}

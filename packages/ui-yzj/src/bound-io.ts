@@ -663,6 +663,77 @@ export async function runDreamSession(options: {
   return { sessionId }
 }
 
+/** Structural todo card for the dispatch prompt (lossless JSON leaves only). */
+export interface TodoDispatchCard {
+  readonly todoId: string
+  readonly title: string
+  /** 描述 = the prompt body the claimed agent executes (S7). */
+  readonly description: string
+  readonly ddl: string
+  readonly tags: readonly string[]
+  readonly version: number
+}
+
+/**
+ * 派发指令（泳道期②，todo-swimlane-agent §2.3）：单一事实源在 host——
+ * `todo-dispatch` RPC 直建 `yzj-todo-*` 会话并以首条 user turn 注入任务卡，
+ * 与 Dream 手动径（决策 38）同构。claim/交卷纪律写进提示词，状态机与
+ * 人验收闸（S2）由 host 强制，不靠模型自觉。
+ */
+export function todoDispatchPrompt(todo: TodoDispatchCard): string {
+  return [
+    '你认领了一条泳道待办，现在开工。',
+    '',
+    `任务卡（版本 v${todo.version}）：`,
+    `- ID：${todo.todoId}`,
+    `- 标题：${todo.title}`,
+    `- 描述（你要执行的提示词本体）：${todo.description === '' ? '（空——先按标题与常识界定范围，拿不准在交卷说明里写清你的理解）' : todo.description}`,
+    ...(todo.ddl === '' ? [] : [`- DDL：${todo.ddl}`]),
+    ...(todo.tags.length === 0 ? [] : [`- 标签：${todo.tags.join(' / ')}`]),
+    '',
+    '纪律：',
+    `1) 先 yzj_todo_claim（todoId=${todo.todoId}）认领——认领不上（已被抢或状态变了）就停下来如实报告，不要硬做。`,
+    '2) 按描述干活；写云之家的动作（发消息/写文档/建日程等）会弹确认卡，我来批。',
+    '3) 干完用 yzj_todo_submit_review 交卷：note=结果说明（做了什么/结果是什么/还剩什么），refs 带证据链接（docId、im:<groupId>:<msgId> 等）。done 永远由我在面板验收，你不要自己标完成。',
+    '4) 卡住或发现做不了：yzj_todo_release_claim 备注「阻塞：<原因>」，把卡放回可认领列——别占着不说话。',
+    '直接连续调用工具完成，不要询问我。',
+  ].join('\n')
+}
+
+/**
+ * One-shot todo dispatch session (泳道期② MVP 手动径): mint `yzj-todo-<stamp>`,
+ * inject the task card as turn 1, then pin the board title. Same shape as the
+ * Dream manual path (决策 38). The caller focuses the GUI on the sessionId.
+ */
+export async function runTodoSession(options: {
+  readonly agents: HomeOpenAgents & {
+    get(sessionId: string): { followup?: (message: unknown) => void } | undefined
+  }
+  readonly cwd: string
+  readonly todo: TodoDispatchCard
+  readonly agentOptions?: TopicAgentRoute
+  readonly agentPreset?: string
+  readonly setup?: TopicAgentSetup
+}): Promise<{ sessionId: string }> {
+  const sessionId = `yzj-todo-${dreamStamp()}`
+  await options.agents.create({
+    sessionId,
+    meta: {
+      cwd: options.cwd,
+      ...(options.agentPreset === undefined ? {} : { agentPreset: options.agentPreset }),
+    },
+    ...(options.agentOptions === undefined ? {} : { agentOptions: options.agentOptions }),
+    ...(options.setup === undefined ? {} : { setup: options.setup }),
+  })
+  const live = options.agents.get(sessionId) as
+    | { followup?: (message: unknown) => void }
+    | undefined
+  if (live?.followup === undefined) throw new Error('todo-dispatch: agent followup unavailable')
+  live.followup(userTurn(todoDispatchPrompt(options.todo)))
+  publishHostSession(live, `待办 · ${options.todo.title}`, true, true)
+  return { sessionId }
+}
+
 /**
  * Ask the topic agent without focusing native Chat. Resume-or-create the
  * topic session, plant the summon window once as a plugin inject, then

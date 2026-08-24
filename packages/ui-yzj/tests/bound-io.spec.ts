@@ -8,7 +8,7 @@ import {
 } from '@dsh-yzj/tool-yzj/src/bound-log.ts'
 import {
   backfillBoundLog, fusedSnapshot, groupSpaceSnapshot, handoffToGroup, parseImSend, parseWhoami, robotSkipOpenIds,
-  sendImAndLog, topicLensBubbles, askTopicAssistant, runDreamSession, type HomeIoFace,
+  sendImAndLog, topicLensBubbles, askTopicAssistant, runDreamSession, runTodoSession, todoDispatchPrompt, type HomeIoFace,
 } from '../src/bound-io.ts'
 
 function entry(over: Partial<YzjLogEntry> & Pick<YzjLogEntry, 'msgId'>): YzjLogEntry {
@@ -531,5 +531,46 @@ describe('runDreamSession', () => {
     expect(turn.content[0]?.text).toContain('yzj_advance_dream_mark')
     const title = appended.find(event => event.type === 'session/title')
     expect(JSON.stringify(title?.data)).toContain('Dream 抽取 · 池中 3 条')
+  })
+})
+
+describe('runTodoSession（泳道期②，todo-swimlane-agent §2.3）', () => {
+  it('mints yzj-todo-*, injects the task card as turn 1, pins 待办·标题', async () => {
+    const followups: unknown[] = []
+    const appended: { type: string; data: unknown }[] = []
+    const live = new Map<string, unknown>()
+    const result = await runTodoSession({
+      agents: {
+        get: (id: string) => live.get(id),
+        resume: async () => { throw new Error('no such session') },
+        create: async (opts: { sessionId: string }) => {
+          live.set(opts.sessionId, {
+            followup: (msg: unknown) => { followups.push(msg) },
+            session: { events: [] as { type: string; data?: unknown }[], append: (type: string, data: unknown) => { appended.push({ type, data }) } },
+          })
+        },
+      },
+      cwd: '/dsh-yzj/workspace',
+      todo: { todoId: 'T-20260824-001', title: '核对彩排名单', description: '把名单和日历对一遍', ddl: '2026/08/26', tags: ['演示'], version: 2 },
+    })
+    expect(result.sessionId).toMatch(/^yzj-todo-\d{8}-\d{6}$/)
+    const turn = followups[0] as { role: string; content: { type: string; text: string }[] }
+    const text = turn.content[0]?.text ?? ''
+    expect(text).toContain('T-20260824-001')
+    expect(text).toContain('核对彩排名单')
+    expect(text).toContain('把名单和日历对一遍')
+    expect(text).toContain('yzj_todo_claim')
+    expect(text).toContain('yzj_todo_submit_review')
+    expect(text).toContain('yzj_todo_release_claim')
+    expect(text).toContain('done 永远由我在面板验收')
+    const title = appended.find(event => event.type === 'session/title')
+    expect(JSON.stringify(title?.data)).toContain('待办 · 核对彩排名单')
+  })
+
+  it('todoDispatchPrompt 空描述降级 + 可空字段省略', () => {
+    const text = todoDispatchPrompt({ todoId: 'T-1', title: '空描述', description: '', ddl: '', tags: [], version: 0 })
+    expect(text).toContain('（空——先按标题与常识界定范围')
+    expect(text).not.toContain('DDL：')
+    expect(text).not.toContain('标签：')
   })
 })

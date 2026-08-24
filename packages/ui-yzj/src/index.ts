@@ -18,7 +18,7 @@ import { applyWriteGate, type YzjWriteRecord } from './write-gate.ts'
 import { openBoundHome, openTopicHome, isPlaceholderRoomTitle, topicAgentRoute, topicAgentComposition, type HomeOpenFace } from './home-open.ts'
 import {
   backfillBoundLog, fusedSnapshot, groupSpaceSnapshot, handoffToGroup, homeIoFrom, parseImSend, roomSnapshot, roomSnapshotForGroup, sendImAndLog,
-  sessionEventsOf, topicLensBubbles, askTopicAssistant, runDreamSession,
+  sessionEventsOf, topicLensBubbles, askTopicAssistant, runDreamSession, runTodoSession,
 } from './bound-io.ts'
 import { digestCandidates } from './handoff-digest.ts'
 import { attachYzjSession, ensureYzjHostWorkspace } from './yzj-cwd.ts'
@@ -678,6 +678,44 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
           }
         } catch (error) {
           return internalError(`todo-edit failed: ${String(error)}`)
+        }
+      }
+      case 'todo-dispatch': {
+        // 期②执行回路（todo-swimlane-agent §2.3）：人点「让 agent 做」→ host 直建
+        // yzj-todo-* 会话注入任务卡（复用 Dream 手动径形态，决策 38）；agent 进场先
+        // claim（会话 id 落认领会话字段）再干活，done 只经人验收（S2）。
+        const todo = ctx.get('yzjTodo')
+        if (todo === undefined) return internalError('todo-dispatch: yzjTodo 服务不可用（tool-yzj 未挂载）')
+        const todoId = stringField(payload, 'todoId')
+        if (todoId === undefined) return internalError('todo-dispatch endpoint requires a todoId payload')
+        const agents = agentsFace(ctx)
+        if (agents === undefined) return internalError('todo-dispatch: agents 服务不可用')
+        try {
+          const card = await todo.get(todoId)
+          if (card.status !== 'todo') {
+            return internalError(`todo-dispatch: 「${card.title}」当前 ${card.status}，只有「可认领」能派发`)
+          }
+          const cwd = await ensureYzjHostWorkspace(ctx)
+          const route = topicAgentRoute(ctx)
+          const composition = await topicAgentComposition(ctx)
+          const value = await runTodoSession({
+            agents,
+            cwd,
+            todo: {
+              todoId: card.todoId,
+              title: card.title,
+              description: card.description,
+              ddl: card.ddl,
+              tags: card.tags,
+              version: card.version,
+            },
+            ...(route === undefined ? {} : { agentOptions: route }),
+            ...composition,
+          })
+          await attachYzjSession(ctx, value.sessionId)
+          return { ok: true, value }
+        } catch (error) {
+          return internalError(`todo-dispatch failed: ${String(error)}`)
         }
       }
       case 'advance-state': {

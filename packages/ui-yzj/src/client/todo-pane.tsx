@@ -156,6 +156,10 @@ export interface TodoPaneProps {
   reopenTodo: (todoId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   /** Edit task details (S7): 标题/描述（agent 执行的提示词本体）/DDL/负责人。 */
   editTodo: (todoId: string, patch: { title?: string; description?: string; ddl?: string; assignee?: string }) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
+  /** Dispatch one claimable todo to a fresh agent session（期②手动径，todo-swimlane-agent §2.3）。 */
+  dispatchTodo: (todoId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
+  /** Focus the fresh agent session after dispatch (optional; absence = no jump). */
+  focusBoundSession?: ((sessionId: string) => void) | undefined
   todoLibraries: () => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   selectTodoLibrary: (docId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   ensureTeamTodo: (workspace: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
@@ -450,6 +454,22 @@ export function TodoPane(props: TodoPaneProps) {
     })
   }
 
+  /** 「让 agent 做」（期②）：host 直建 yzj-todo-* 会话注入任务卡，成功后聚焦。 */
+  const onDispatch = (todoId: string): void => {
+    setBusyId(todoId)
+    void props.dispatchTodo(todoId).then((result) => {
+      setBusyId('')
+      if (result.ok) {
+        const sessionId = asString(asRecord(result.value).sessionId)
+        flash('已开工：agent 会话已起，认领与交卷都在那边进行')
+        if (sessionId !== '') props.focusBoundSession?.(sessionId)
+      } else {
+        flash(`派发失败：${result.error.message}`)
+        refresh()
+      }
+    })
+  }
+
   const saveEdit = (todoId: string): void => {
     if (editDraft.title.trim() === '' || busyId === todoId) return
     setBusyId(todoId)
@@ -538,6 +558,7 @@ export function TodoPane(props: TodoPaneProps) {
           )}
           {status === 'todo' && (
             <>
+              <button type="button" className={`${css.verb} ${css.verbPrimary}`} data-testid={`yzj-todo-dispatch-${todoId}`} disabled={busy} title="开一个 agent 会话认领并执行这条待办（期②）" onClick={() => { onDispatch(todoId) }}>让 agent 做</button>
               <button type="button" className={css.verb} data-testid={`yzj-todo-edit-${todoId}`} disabled={busy} onClick={() => { openEdit(todo) }}>编辑</button>
               <button type="button" className={css.verb} data-testid={`yzj-todo-done-${todoId}`} disabled={busy} title="人直写完成的快路径（不经验收）" onClick={() => { onToggle(todo) }}>✓ 完成</button>
               <button type="button" className={css.verb} data-testid={`yzj-todo-return-${todoId}`} disabled={busy} onClick={() => { setNoteFor({ todoId, verb: 'return' }); setNoteDraft('') }}>打回</button>

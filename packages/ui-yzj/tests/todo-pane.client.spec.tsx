@@ -52,6 +52,10 @@ function mountPane(over: Partial<TodoPaneProps> & { todos?: unknown[] }): Face {
     returnTodo: verbRpc('return'),
     cancelTodo: verbRpc('cancel'),
     reopenTodo: verbRpc('reopen'),
+    dispatchTodo: async (todoId) => {
+      verbs.push({ verb: 'dispatch', todoId })
+      return { ok: true, value: { sessionId: 'yzj-todo-1' } } as Rpc
+    },
     editTodo: async (todoId, patch) => {
       verbs.push({ verb: 'edit', todoId, ...(patch.title === undefined ? {} : { note: patch.title }) })
       return { ok: true, value: { todoId, title: patch.title ?? 'x', status: 'todo', tags: [] } } as Rpc
@@ -167,6 +171,21 @@ describe('TodoPane', () => {
     expect(confirm.textContent).toContain('确认验收')
     await act(async () => { confirm.click(); await Promise.resolve() })
     expect(face.verbs.some(v => v.verb === 'accept' && v.todoId === 'T-2')).toBe(true)
+  })
+
+  it('「让 agent 做」派发可认领卡（期②）：dispatch RPC + 聚焦新会话', async () => {
+    const focused: string[] = []
+    const face = mountPane({
+      todos: [todo({ todoId: 'T-9', title: '可认领的活', status: 'todo' })],
+      focusBoundSession: (sessionId: string) => { focused.push(sessionId) },
+    })
+    const dispatch = face.container.querySelector('[data-testid="yzj-todo-dispatch-T-9"]') as HTMLButtonElement
+    expect(dispatch.textContent).toContain('让 agent 做')
+    await act(async () => { dispatch.click(); await Promise.resolve() })
+    expect(face.verbs.some(v => v.verb === 'dispatch' && v.todoId === 'T-9')).toBe(true)
+    expect(focused).toEqual(['yzj-todo-1'])
+    // 非可认领列不出派发钮
+    expect(face.container.querySelector('[data-testid="yzj-todo-dispatch-T-1"]')).toBeNull()
   })
 
   it('inline edit writes the task details（S7：描述=提示词本体）', async () => {

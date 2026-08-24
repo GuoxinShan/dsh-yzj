@@ -1,7 +1,7 @@
 # 泳道待办 + Agent 自动执行
 
-> 版本：v1.1（六态定稿：blocked 降级为 release 备注；新增 S6 落点/S7 描述可编辑/S8 砍 blocked）
-> 日期：2026-08-24（v1.1）；2026-08-24（v1.0 设计定稿，未实现）
+> 版本：v1.2（期①②已落地；v1.1 六态定稿）
+> 日期：2026-08-24（v1.2/v1.1/v1.0）
 > 决策人：Guoxin Shan
 > 触发：08-24 早会结论——待办用泳道图方式实现 + 要有 agent 自动执行概念；参考 [`DSH-taskboard`](https://github.com/shengsheng90/DSH-taskboard)（Harness 原生任务板插件）。
 > 定位：todo 域的演进设计。与推进域的接力关系见 §3。
@@ -53,7 +53,7 @@ backlog（待我决定）──人批准──► todo（可认领）──agent
 
 ### 2.3 agent 执行回路
 
-claim 后 agent 开工的落点：开一个新 agent 会话，首条消息注入任务上下文（任务 id + 标题 + **描述** + 版本）——与 DSH-taskboard 的「Open in new session」同款，也与我们的 Dream 手动径（host 直建会话注入指令，决策 38）同构。**描述是 agent 执行的提示词本体（S7）**：待办新增 `描述` 字段，人可在面板随时编辑任务详情（标题/描述/DDL/负责人，用户直写无卡）——批准前先改好提示词，验收时对照的也是它。MVP 形态：**手动触发**（面板「让 agent 认领」按钮 / 口述「把 todo 里能做的做了」）；定时自动 claim 留到期③（复用巡检 routine 骨架）。
+claim 后 agent 开工的落点：开一个新 agent 会话，首条消息注入任务上下文（任务 id + 标题 + **描述** + 版本）——与 DSH-taskboard 的「Open in new session」同款，也与我们的 Dream 手动径（host 直建会话注入指令，决策 38）同构（复用其形态：`yzj-todo-<stamp>` 会话 + `todoDispatchPrompt` 首 turn）。**描述是 agent 执行的提示词本体（S7）**：待办新增 `描述` 字段，人可在面板随时编辑任务详情（标题/描述/DDL/负责人，用户直写无卡）——批准前先改好提示词，验收时对照的也是它。MVP 形态：**手动触发**（泳道「可认领」列卡片「让 agent 做」按钮 → `/yzj todo-dispatch` / 口述「把 todo 里能做的做了」）；定时自动 claim 留到期③（复用巡检 routine 骨架）。
 
 ### 2.4 泳道看板 UI
 
@@ -93,8 +93,8 @@ claim 后 agent 开工的落点：开一个新 agent 会话，首条消息注入
 
 | 期 | 内容 | 验收 |
 |---|---|---|
-| ① 状态机+泳道 | 六态 + claim 工具族 + 泳道 UI + 人验收 + 行内编辑（S7） | 单测全绿；真机：建 backlog→批准→agent claim→干活→交卷→人 accept 全程走通 |
-| ② 执行回路 | claim 后自动开 agent 会话干活（任务上下文注入） | 真机：claim 后会话自动开工，产出落 in_review 评语 |
+| ① 状态机+泳道（**已落地** 2026-08-24） | 六态 + claim 工具族 + 泳道 UI + 人验收 + 行内编辑（S7） | 单测全绿；密封 e2e 17/17；真机 GUI 五列+动词走查全绿（verify-todo-swimlane.mjs） |
+| ② 执行回路（**已落地 MVP 手动径** 2026-08-24） | claim 后自动开 agent 会话干活（任务上下文注入）：「让 agent 做」→ `/yzj todo-dispatch` → host 直建 `yzj-todo-*` 会话注入任务卡 | 真机：派发后会话自动开工，产出落 in_review 评语（verify-todo-dispatch.mjs） |
 | ③ 自动调度 | 定时/水位自动 claim | 巡检骨架复用；quota 上限 |
 
 ## 6. 边界（明示不做）

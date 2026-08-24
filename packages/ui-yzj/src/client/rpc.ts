@@ -63,6 +63,8 @@ export interface YzjPanelInject {
   cancelTodo: (todoId: string, note?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Reopen a cancelled todo back to 可认领 (user-direct write). */
   reopenTodo: (todoId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Dispatch one claimable todo to a fresh agent session（期②：host 直建 yzj-todo-* 会话注入任务卡）。 */
+  dispatchTodo: (todoId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Edit task details (S7): title/description（agent 执行的提示词本体）/ddl/assignee/priority/tags. */
   editTodo: (todoId: string, patch: { title?: string; description?: string; ddl?: string; assignee?: string; priority?: string; tags?: string[] }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Library switcher data: discovered libraries + provisionable team workspaces. */
@@ -257,6 +259,7 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
     returnTodo: (todoId, note) => call('todo-return', { todoId, ...(note === undefined || note === '' ? {} : { note }) }),
     cancelTodo: (todoId, note) => call('todo-cancel', { todoId, ...(note === undefined || note === '' ? {} : { note }) }),
     reopenTodo: (todoId) => call('todo-reopen', { todoId }),
+    dispatchTodo: (todoId) => call('todo-dispatch', { todoId }),
     editTodo: (todoId, patch) => call('todo-edit', {
           todoId,
           ...(patch.title === undefined ? {} : { title: patch.title }),

@@ -1,7 +1,7 @@
 # 待办后端迁移说明（demo 载体 → 原生待办后端）
 
 > 版本：v1.1 ｜ 日期：2026-08-15（v1.0）；2026-08-24（v1.1）
-> v1.1 变更：真机后端已切本地 SQLite（v1.8 决策 36/37；云多维表格 record 服务间歇 500 弃用，dbt 仅剩测试 double）；原生后端候选锁定云之家 worktask（[`../spec/openapi-dependency.md`](../spec/openapi-dependency.md) §2.3：activate 重开 / 回调 2001-2009 / executors 原生成员引用）；tag 聚合终态已拍板放弃（todo-design §11.2 决策 9）。§1–§3 的 dbt 细节保留为历史快照与测试语义。
+> v1.1 变更：真机后端已切本地 SQLite（v1.8 决策 36/37；云多维表格 record 服务间歇 500 弃用，dbt 仅剩测试 double）；原生后端候选锁定云之家 worktask（[`../spec/yzj-openapi-requirements.md`](../spec/yzj-openapi-requirements.md) §2 #8：activate 重开 / 回调 2001-2009 / executors 原生成员引用）；tag 聚合终态已拍板放弃（todo-design §11.2 决策 9）。§1–§3 的 dbt 细节保留为历史快照与测试语义。
 > 配套实现：`packages/tool-yzj/src/todo.ts`（工具族 + `ctx.yzjTodo` 服务）、`packages/ui-yzj/src/client/todo-pane.tsx`（面板待办 tab）
 > 一句话：后端只是存储，可换。全部业务不变量（稳定 ID、状态机、幂等、追加日志、#tag 聚合）都收在 host 侧的 todo 核心层；真机默认后端 = 本地 SQLite（v1.8 决策 37），多维表格 dbt 仅剩测试 double；切原生后端时**换适配器不换工具面**。
 
@@ -74,7 +74,7 @@ todo 核心（不变）   coreCreate / coreSetStatus / fetchTodos / resolveLibra
 - [ ] 记录级 deep link（现状：只有任务库级 `openWebUrl`）
 - [ ] 批量状态流转 / 批量改期（现在逐条 update，确认卡逐条弹）
 - [ ] 按 DDL 排序 / 按标签聚合的服务端视图（现在 host 本地排序过滤，demo 量级够用）
-- [ ] 变更 webhook（催办/播报的触发源升级）——**2026-08-24 修正**：官方 im-todo 仍无；但时间助手域（cloudwork newwork/worktask/meeting）有完整回调机制（callBackUrl，method 1001-3010），见 [`../spec/openapi-dependency.md`](../spec/openapi-dependency.md) §2.2/§2.3
+- [ ] 变更 webhook（催办/播报的触发源升级）——**2026-08-24 修正**：官方 im-todo 仍无；但时间助手域（cloudwork newwork/worktask/meeting）有完整回调机制（callBackUrl，method 1001-3010），见 [`../spec/yzj-openapi-requirements.md`](../spec/yzj-openapi-requirements.md) §2 #9 / §3 #12
 - [ ] 负责人被分配时的站内/IM 通知（催办现在靠 agent 发消息 + 确认卡）
 - [ ] 循环待办（recurring）
 - [ ] 逾期判定服务端化（现在客户端/host 时区本地比较）
