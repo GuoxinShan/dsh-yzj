@@ -5,9 +5,7 @@
 > 决策人：Guoxin Shan
 > 定位：AI推进的**领域模型视图**——对象、关系、不变量的合同。行为面（工具契约/状态机/门控/判据）以 [`ai-advance-design.md`](ai-advance-design.md) 为准；本文回答「这个域里有什么、为什么恰好是这些」。迁移分层（A 合同 / B 机制 / C 脚手架）见 [`../migration/advance-lingee-migration.md`](../migration/advance-lingee-migration.md)——本文全部内容属 A 层。
 
-![领域模型全景](../diagrams/advance-9-domain-model.png)
-
-图源：[`../diagrams/advance-9-domain-model.html`](../diagrams/advance-9-domain-model.html)（手写 HTML+SVG，直接编辑；PNG 由 playwright 截图生成）。
+> 配图：原领域模型全景图已随 `docs/diagrams/` 图集整体移除（2026-08-24，另有重绘安排），本文以文字合同为准。
 
 ## 1. 构造方法：环上每段弧必须有载体
 

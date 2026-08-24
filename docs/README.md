@@ -20,6 +20,7 @@ docs/
     advance-review-template.md         复盘文档五段模板（§16.2：目标演化/关键决策/偏差与证据链/下一步/事元索引）
     meeting-minutes-template.md        金蝶标准四段式纪要模板（§16.1 ④-b：目标/内容/共识/下一步）
     robot-channel-plan.md              机器人通道调研与双向打通方案（v0.2：会话落点改打绑定对象）
+    openapi-dependency.md              OpenAPI 依赖清单（终态开放 API 直连口径：逐域端点对照 + 鉴权档 + 缺口分级；任务复用 = worktask 终版答案）
     routines-delivery.md               定时任务引擎选型（dsh-routines 参考调研）+ yzj chatnode 投递契约
     memory-vault-design.md             记忆库组件设计（v0.2：vault 模型 + dream 开关/进程内固化/模型链 + 插件默认模型 + 群组留缝）
     memory-dream-routine.yaml          dream 固化 routine 模板（dsh-routines，备选路径）
@@ -30,14 +31,6 @@ docs/
     advance-lingee-migration.md        AI推进 dsh MVP → 灵基终态（合同/机制/脚手架三层拆分 + 断层清单 + 验证清单；「存钱 vs 镀金」取舍原则）
   status/                             ← 实现与设计的对照与验收证据
     gap-analysis.md                    设计×实现 gap 对照（每功能提交留痕，含验收证据；§24.1–24.10 为 AI推进 ①–④期 + 门控 + 主动发现 + 真机实验 + Dream 蓄水池）
-  diagrams/                           ← AI推进图集（archscribe：*-spec.json 为源，*.html 为交互产物；advance-9 例外 = 手写 HTML 源直编；编号留空号不重排）
-    advance-1-architecture             MVP 架构与环路（v1.7：蓄水池 + 七态 + dir 目录订阅入图）
-    advance-3-gate                     增量感应门 × 门控线（打扰判据 vs 批写规则，不叠问）
-    advance-5-target                   灵基终态映射（v1.7：Signal Pool + 七态 + dir 增量；组件对照以 migration/advance-lingee-migration.md 三层表为准）
-    advance-6-journey                  用户旅程（@灵基 → 弹卡立项 → 上下文来源订阅 → Dream 抽取 → 验收）
-    advance-7-gaps                     待补能力七块（策略选择已随 ③.2 落地；余：拆解/会前材料/阻塞升级/跨推进依赖/指标读数/巡检建议立项）
-    advance-9-domain-model             领域模型全景（事元驱动闭环：五环 + 事元模型 + 行动执行器含派任务 + 三条公理；决策 44/45 入图）
-                                       （汇报产物不留仓库：模块关系图/故事线图/架构蓝图/接口契约/故事线文字版已发 测试群，见 gap §24.5；合同唯一事实源 = ai-advance-design + migration）
   pitfalls/                           ← 实现级坑库（一坑一文件 + 索引）
 ```
 
