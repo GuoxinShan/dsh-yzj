@@ -1143,3 +1143,7 @@ Dream 路（跨事项推荐）纪律入 dreamAskPrompt（顺手落推荐事元�
 | 连带停运（明示） | R29 话题产物投递、@机器人入站、memory_* 工具族、dream 固化（记忆库侧 dream.json/dailyAt 在 memory-yzj）全停；AI推进 Dream 池/巡检（tool-yzj）不受影响 | 依赖点逐一验证降级安全（yzjRobot/yzjMemory 缺席均有「未挂载」明示；ownsConfirm undefined 安全） |
 
 恢复路径：cordis.patch.yml 加回两行 + guard/write-gate 条目恢复（git 可翻）。
+
+## 24.33 泳道待办 + agent 自动执行：设计定稿（2026-08-24，待实现）
+
+08-24 早会结论「待办用泳道图 + 要有 agent 自动执行」+ 参考 [`DSH-taskboard`](https://github.com/shengsheng90/DSH-taskboard) 的缺口对照。设计定稿落 [`../spec/todo-swimlane-agent.md`](../spec/todo-swimlane-agent.md)：五态状态机（+backlog 待批准 +in_review 待验收）+ claim 排他版本锁 + agent 执行回路（claim 后开会话干活，MVP 手动触发）+ 人验收主权（done 只经人 accept，与推进终局同构）+ 与推进域接力（推进建待办→待办被做→done 回流，决策 45/48 已有）。存储本地 SQLite（现状已是）。分期：①状态机+泳道 ②执行回路 ③自动调度。**未实现，待排期开工。**
