@@ -59,3 +59,4 @@
 | 42 | CSS 变量笔误 `--dsh-*`（应为 `--dsw-*`）静默失效：ref 卡边框/底色/文字色 全丢，单测 typecheck 全绿只有真机可见 | ui-yzj browser half 一切 module.css / 主题 token 引用 | [pitfall-042-unknown-css-var-silent-noop.md](pitfall-042-unknown-css-var-silent-noop.md) |
 | 43 | sidecar 裸 Context 跑 core 函数写进幽灵库：默认后端是 dbt，真机是 sqlite（决策 36），不对齐则报「未开通」或写成功但读不到 | 一切 sidecar/验收驱动脚本 mount 时 | [pitfall-043-sidecar-backend-alignment.md](pitfall-043-sidecar-backend-alignment.md) |
 | 44 | 推进看板验收时序：点已激活事项不重拉 detail（setActiveId 同值）；Dream 抽取后页面已被切到 dream 会话 | Playwright 验收推进面板的断言前导航 | [pitfall-044-acceptance-timing-reload.md](pitfall-044-acceptance-timing-reload.md) |
+| 45 | GUI 重启撞 credentials schema 冲突（desktop 写嵌套 / CLI 读扁平；旧进程健康 ≠ 可重启） | 重启 web GUI 后 :3080 不起、boot 报 credentials-local | [pitfall-045-gui-restart-credentials-schema.md](pitfall-045-gui-restart-credentials-schema.md) |

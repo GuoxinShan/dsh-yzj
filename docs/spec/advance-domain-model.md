@@ -23,7 +23,7 @@
 
 | 对象 | 模式 | 职责 | 可变性 |
 |---|---|---|---|
-| **推进事项** AdvanceItem | 聚合根 | 标识（advanceId 幂等键）+ 七态状态机 + 投影 | 投影可重建；状态机 host 强制合法流转 |
+| **推进事项** AdvanceItem | 聚合根 | 标识（advanceId 幂等键）+ 五态状态机（决策 52：draft/updated 已砍，立项即 running） + 投影 | 投影可重建；状态机 host 强制合法流转 |
 | **事元** Entry | 领域事件 | 环上一切转折的焊缝：时间 · 来源类型(7) · 变化类型(7) · 摘要 · detail(原值→新值) · refs · 操作者 | **不可变**（append-only，永不裁剪） |
 | 投影 Projection | 值对象 | 名称/目标/负责人/目标日期/阶段/背景/指标/最新动态 | 缓存，从流折叠，可重建 |
 | **上下文来源** ContextSource | 值对象 | 订阅渠道 token：`im:/doc:/dir:/todo:/event:/file:` | 可关联/解除（user 记录留痕） |

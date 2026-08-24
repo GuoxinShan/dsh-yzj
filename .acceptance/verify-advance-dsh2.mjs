@@ -127,7 +127,7 @@ await page.getByTestId('yzj-advance-queue').getByText(TITLE, { exact: true }).cl
 await page.waitForTimeout(3000)
 let tlText = await page.getByTestId('yzj-advance-timeline').innerText()
 ok('A2a S1 事元在时间线', tlText.includes('演示脚本初稿完成'))
-ok('A2b 阶段未被拖动（仍 draft）', (await pane.innerText()).includes('草稿') || !(await pane.innerText()).includes('待我决定'))
+ok('A2b 阶段未被拖动（仍 running，不在待我决定）', !(await pane.innerText()).includes('待我决定') || (await pane.innerText()).includes('推进中'))
 await page.screenshot({ path: join(OUT, 's1-fed.png') })
 
 // ---------- S2 阻塞信号 → 决策卡 ----------

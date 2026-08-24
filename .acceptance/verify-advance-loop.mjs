@@ -1,8 +1,8 @@
 /**
- * Live six-stage loop against the GUI (:3080) + real 待办任务库.
- * Agent-parity feeds go through the bridge sidecar (draft→running→
- * decision-needed, then updated→ready-for-review). Panel judge verbs
- * (确认推进 / 确认达到目标) are clicked in the board — D9 direct writes.
+ * Live five-stage loop against the GUI (:3080) + local SQLite (决策 36/52).
+ * Agent-parity feeds go through the bridge sidecar (running→decision-needed,
+ * then running→ready-for-review). Panel judge verbs (确认推进 / 确认达到目标)
+ * are clicked in the board — D9 direct writes.
  * Requires rebuilt client, running dsh web, logged-in yzj-cli.
  */
 import { chromium } from 'playwright'
@@ -78,7 +78,7 @@ try {
   await page.getByTestId('yzj-advance-judge-confirm_advance').click()
   await page.waitForTimeout(12000)
   paneText = await pane.innerText()
-  ok('确认推进 → 已按方案更新 (no confirm card)', paneText.includes('已按方案更新') && !paneText.includes('需确认'), paneText.slice(0, 120).replace(/\n/g, ' '))
+  ok('确认推进 → 回到推进中 (no confirm card)', paneText.includes('确认推进') && paneText.includes('推进中') && !paneText.includes('需确认'), paneText.slice(0, 120).replace(/\n/g, ' '))
   await page.screenshot({ path: join(OUT, '7-loop-updated.png') })
 
   const reviewed = sidecar(['to-review', seeded.advanceId])

@@ -58,9 +58,11 @@ const WRITE_SPECS: Record<string, DangerousSpec> = {
   yzj_calendar_event_create: { reason: '新建日程', level: 'standard' },
   yzj_calendar_event_update: { reason: '更新日程', level: 'standard' },
   // --- todo family (demo-stage sheet backend) ---
-  yzj_todo_create: { reason: '在待办任务库创建待办（首用时会自动开通任务库）', level: 'standard' },
-  yzj_todo_update: { reason: '更新待办（状态/负责人/DDL/标签/日志）', level: 'standard' },
-  yzj_todo_complete: { reason: '完成待办（状态置 done）', level: 'standard' },
+  yzj_todo_create: { reason: '在待办任务库创建待办（首用时会自动开通任务库；落「待我决定」待人批准，决策 S6）', level: 'standard' },
+  yzj_todo_update: { reason: '更新待办（描述/负责人/DDL/标签/日志）', level: 'standard' },
+  yzj_todo_complete: { reason: '完成待办（状态置 done，不经验收的快路径）', level: 'standard' },
+  // 泳道 claim 族（yzj_todo_claim / submit_review / release_claim）刻意不进表（S3）：
+  // 可逆、无外部写——claim 只是状态标记；done 永远只经人面板 accept（S2）。
   // --- advance family (AI推进看板; docs/spec/ai-advance-design.md §4) ---
   yzj_advance_create: { reason: '在AI推进看板立项推进事项（首用时自动开通事项/事元双表）', level: 'standard' },
   yzj_advance_feed: {

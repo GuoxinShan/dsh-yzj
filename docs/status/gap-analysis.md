@@ -1147,3 +1147,20 @@ Dream 路（跨事项推荐）纪律入 dreamAskPrompt（顺手落推荐事元�
 ## 24.33 泳道待办 + agent 自动执行：设计定稿（2026-08-24，待实现）
 
 08-24 早会结论「待办用泳道图 + 要有 agent 自动执行」+ 参考 [`DSH-taskboard`](https://github.com/shengsheng90/DSH-taskboard) 的缺口对照。设计定稿落 [`../spec/todo-swimlane-agent.md`](../spec/todo-swimlane-agent.md)：五态状态机（+backlog 待批准 +in_review 待验收）+ claim 排他版本锁 + agent 执行回路（claim 后开会话干活，MVP 手动触发）+ 人验收主权（done 只经人 accept，与推进终局同构）+ 与推进域接力（推进建待办→待办被做→done 回流，决策 45/48 已有）。存储本地 SQLite（现状已是）。分期：①状态机+泳道 ②执行回路 ③自动调度。**未实现，待排期开工。**
+
+## 24.34 泳道待办期① + 推进五态收敛（2026-08-24，决策 52 / S6-S8，已落地）
+
+泳道待办期①（状态机+claim 工具族+泳道 UI+人验收）与推进七态→五态收敛同会话落地。定稿过程：用户两连问「怎么和推进看板结合」「两系统都 7 态是否过度复杂」——答案落进设计：两域是**接力不是融合**（推进=判断面建待办落 backlog → 待办=执行面人批准+agent 认领+人验收 → done 经决策 48 渠道回流推进时间线）；状态审计砍掉三块非承重墙（推进 draft/updated + 待办 blocked），两板同构为「稳态 / 待我决定 / 待我验收 / 终局」四格心智，泳道列名与推进三栏目同词。
+
+| 面 | 交付 | 证据 |
+|---|---|---|
+| 推进五态（决策 52） | advance.ts：五态机（running⇄decision-needed/ready-for-review→completed/cancelled）+ 立项即 running + `normalizeStage` 读取归一（draft/updated→running，SQLite 零迁移脚本）；judge `confirm_advance` 改落 running；面板 STAGE_LABEL/dotToneOf/quiet 文案同步 | `advance.spec.ts` 五态机全边表 + 归一化断言；推进域测试 95 绿 |
+| 待办六态（S5/S8） | todo.ts：六态机 + `TODO_NEXT` 合法边表 + `normalizeTodoStatus`（pending→todo）+ 版本字段（每次流转递增）+ 认领会话/验收说明/描述新字段（SQLite fields blob 零迁移）；`isOverdue` 排除 cancelled | `todo.spec.ts` 六态全边 + 排他/版本断言；全量 659 绿 + typecheck 0 错 |
+| claim 工具族（S2/S3） | `yzj_todo_claim`（排他+会话留痕）/ `yzj_todo_submit_review`（结果说明+证据 refs）/ `yzj_todo_release_claim`（阻塞是备注不是状态）——**静默无卡**（S3 刻意例外，guard.ts 注释留痕）；`yzj_todo_update` 摘除 status 参数（状态只走合法边）；`yzj_todo_complete` 保留为人直写 done 快路径 | 工具级单测覆盖 claim 排他/backlog 拦截/交卷/释放；`cards.tsx` keyed 卡三枚 |
+| 落点分流（S6） | agent 建一律落 backlog：`yzj_todo_create` + 决策卡动作行（advance-action 改走 `createFromAgent`）；面板快捷新建落 todo（用户本人意志即隐式批准，D9） | todo.spec 建库断言 `状态=backlog`；advance-action-run.spec 签名同步 |
+| 泳道 UI（S7） | todo-pane 五列泳道（待我决定 \| 可认领 \| 进行中 \| 待我验收 \| 已完成）+ 已终止折叠区（与推进「已结束」同款）；卡片动词即状态（批准/编辑/完成/打回/中止/验收/重开）；行内编辑（标题/描述/DDL/负责人——描述=agent 执行的提示词本体）；打回/验收带内联备注表单 | todo-pane.client.spec 泳道用例（五列/折叠/动词 RPC/编辑保存）全绿 |
+| 人动词 RPC | `/yzj` 新增 `todo-approve/accept/return/cancel/reopen/edit`（面板直写无卡；打回落点 host 按当前态选合法边：todo→backlog / in_progress→todo / in_review→in_progress） | 面板用例驱动断言；hermetic e2e 覆盖同边 |
+| 验收 | `.acceptance/verify-todo-e2e.mjs` 重写为**密封版**（YZJ_ADVANCE_DB 指临时库 + sqlite 后端，无需登录/GUI）：六态全环 17/17 PASS；`verify-todo-swimlane.mjs` 新建（GUI 五列+动词走查）；`verify-todo-style.mjs` 删除（悬浮球时代遗物，泳道脚本覆盖）；`verify-advance-loop.mjs`/drivers 同步五态（loop driver 顺手补上缺失的 `setAdvanceBackend('sqlite')`） | e2e 17/17；GUI 走查见 shots-todo-swimlane |
+| 期②边界 | claim 后自动开 agent 会话干活（任务上下文注入）未做——期②；定时自动 claim 期③ | 见 swimlane spec §5 分期表 |
+
+注意：本仓验收脚本族里 verify-advance-loop/dsh2 等引用旧六态的文案已同步；存量真机数据无需动作（读取归一化覆盖）。

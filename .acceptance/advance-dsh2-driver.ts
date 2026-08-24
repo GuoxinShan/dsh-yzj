@@ -49,15 +49,7 @@ if (verb === 'send') {
 } else if (verb === 'decide') {
   const advanceId = process.argv[3] ?? ''
   if (advanceId === '') throw new Error('decide needs advanceId')
-  // draft → running first (the stage machine rejects draft → decision-needed).
-  await coreFeedAdvance(ctx, BUDGET, {}, caches, {
-    advanceId,
-    summary: '开始推进：对照成功指标跟进',
-    sourceType: '人工',
-    changeType: '阶段变化',
-    stageTo: 'running',
-    actor: 'agent',
-  })
+  // 决策 52：立项即 running，无需先推 running。
   const fed = await coreFeedAdvance(ctx, BUDGET, {}, caches, {
     advanceId,
     summary: '演示数据包最早 08-24 才到位，08-26 彩排目标是否顺延？',
@@ -75,17 +67,9 @@ if (verb === 'send') {
   })
   emit({ ok: true, advanceId, stage: fed.item.stage })
 } else if (verb === 'probe') {
-  // 回流探针（verify-advance-todo-channel）：draft→running + 决策请求（动作行：建待办）
+  // 回流探针（verify-advance-todo-channel）：决策 52 后立项即 running，直接喂决策请求（动作行：建待办）
   const advanceId = process.argv[3] ?? ''
   if (advanceId === '') throw new Error('probe needs advanceId')
-  await coreFeedAdvance(ctx, BUDGET, {}, caches, {
-    advanceId,
-    summary: '开始推进：跟进回流探针',
-    sourceType: '人工',
-    changeType: '阶段变化',
-    stageTo: 'running',
-    actor: 'agent',
-  })
   const fed = await coreFeedAdvance(ctx, BUDGET, {}, caches, {
     advanceId,
     summary: '探针待办待建：是否现在建立跟进待办？',

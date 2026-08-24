@@ -657,7 +657,7 @@ export function TodoPane(props: TodoPaneProps) {
   }
 
   return (
-    <div className={css.body}>
+    <div className={css.body} data-testid="yzj-todo-pane">
       {/* Library switcher: personal / team libraries, one-click team setup. */}
       <div className={css.libRow} ref={switcherRef}>
         <button

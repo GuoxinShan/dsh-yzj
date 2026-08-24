@@ -12,7 +12,7 @@ Model-facing Yunzhijia tools over `ctx.yzjBridge`. This package owns tool schema
 | calendar | `yzj_calendar_event_list/get/create/update/delete/participants`, `yzj_calendar_room_find` |
 | im | `yzj_im_message_send/list`, `yzj_im_group_recent`, `yzj_im_group_search/create/members_add/members_remove` (v0.1.4) |
 | file | `yzj_file_upload`, `yzj_file_download` |
-| todo | `yzj_todo_list/create/update/complete` (semantic todo core, demo-stage sheet backend; see `ctx.yzjTodo`) |
+| todo | `yzj_todo_list/create/update/complete` + 泳道 claim 族 `yzj_todo_claim/submit_review/release_claim`（六态泳道机，agent 建落 backlog 待人批准；claim 族静默无卡 S3；see `ctx.yzjTodo` 与 docs/spec/todo-swimlane-agent.md） |
 | advance | `yzj_advance_list/get/inspect/scan/create/feed` (AI推进 board; see `ctx.yzjAdvance`) |
 
 Every tool returns `{ content, truncated, data }`:
