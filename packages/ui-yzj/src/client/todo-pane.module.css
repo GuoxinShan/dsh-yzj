@@ -264,20 +264,40 @@
   text-decoration: underline;
 }
 
-/* --- buckets ------------------------------------------------------------ */
+/* --- swimlane board (todo-swimlane-agent §2.4) --------------------------- */
 
-.list {
+.lanes {
   flex: 1;
   min-height: 0;
   display: flex;
-  flex-direction: column;
   gap: 10px;
+  overflow-x: auto;
+  align-items: flex-start;
 }
 
-.bucket {
+.lane {
+  flex: 1 1 0;
+  min-width: 176px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  padding: 8px;
+}
+
+.laneHint {
+  color: var(--dsw-alias-label-caption);
+  font-size: 11px;
+  line-height: 15px;
+  padding: 0 2px;
+}
+
+.laneEmpty {
+  color: var(--dsw-alias-label-caption);
+  font-size: 11px;
+  text-align: center;
+  padding: 10px 0;
 }
 
 .bucketHead {
@@ -318,7 +338,203 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* --- rows --------------------------------------------------------------- */
+/* --- cards --------------------------------------------------------------- */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  padding: 8px 9px;
+  background: var(--dsw-alias-bg-base);
+  transition: border-color 0.15s ease;
+}
+
+.card:hover {
+  border-color: var(--dsw-static-deepseek-500);
+}
+
+.cardOverdue {
+  border-color: var(--dsw-static-red-100, rgb(255 228 225 / 0.85));
+}
+
+.cardDone {
+  opacity: 0.62;
+}
+
+.cardDone .rowTitle {
+  text-decoration: line-through;
+  text-decoration-color: var(--dsw-alias-label-caption);
+}
+
+.cardDesc {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.claimBadge {
+  align-self: flex-start;
+  font-size: 11px;
+  line-height: 1;
+  border-radius: 5px;
+  padding: 3px 7px;
+  background: var(--dsw-static-deepseek-100);
+  color: var(--dsw-static-deepseek-600);
+}
+
+.reviewBox {
+  border-left: 2px solid var(--dsw-static-deepseek-500);
+  background: var(--dsw-alias-bg-layer-2);
+  border-radius: 0 7px 7px 0;
+  padding: 6px 8px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 17px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* --- card verbs ----------------------------------------------------------- */
+
+.cardVerbs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.verb {
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 7px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11.5px;
+  line-height: 1;
+  padding: 5px 9px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.verb:hover {
+  border-color: var(--dsw-static-deepseek-500);
+  color: var(--dsw-static-deepseek-600);
+}
+
+.verb:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.verbPrimary {
+  border-color: var(--dsw-alias-button-info-fill);
+  background: var(--dsw-alias-button-info-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+}
+
+.verbPrimary:hover {
+  background: var(--dsw-alias-button-info-hover);
+  border-color: var(--dsw-alias-button-info-hover);
+  color: var(--dsw-alias-label-primary-foreground);
+}
+
+.verbDanger {
+  color: var(--dsw-alias-label-caption);
+}
+
+.verbDanger:hover {
+  border-color: var(--dsw-static-red-400);
+  color: var(--dsw-static-red-400);
+}
+
+/* --- inline note / edit forms --------------------------------------------- */
+
+.noteForm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.noteInput {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 7px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 18px;
+  padding: 5px 8px;
+  outline: none;
+  font-family: inherit;
+}
+
+.noteInput:focus {
+  border-color: var(--dsw-static-deepseek-500);
+}
+
+.editForm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px dashed var(--dsw-alias-border-l2);
+  padding-top: 7px;
+}
+
+.editArea {
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 7px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 17px;
+  padding: 6px 8px;
+  outline: none;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.editArea:focus {
+  border-color: var(--dsw-static-deepseek-500);
+}
+
+.editRow {
+  display: flex;
+  gap: 6px;
+}
+
+/* --- cancelled fold (与推进看板「已结束」同款) ------------------------------ */
+
+.closedZone {
+  border-top: 1px dashed var(--dsw-alias-border-l2);
+  padding-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.closedToggle {
+  align-self: flex-start;
+  border: none;
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  padding: 3px 2px;
+  cursor: pointer;
+}
+
+.closedToggle:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+/* --- rows (card head) ----------------------------------------------------- */
 
 .row {
   display: flex;
@@ -328,21 +544,11 @@
   border-radius: 10px;
   padding: 7px 9px;
   background: var(--dsw-alias-bg-layer-1);
-  cursor: grab;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 
 .row:hover {
   background: var(--dsw-alias-interactive-bg-hover);
-}
-
-.rowOverdue {
-  border-color: var(--dsw-static-red-100, rgb(255 228 225 / 0.55));
-  background: var(--dsw-alias-interactive-bg-hover-danger);
-}
-
-.rowDone {
-  opacity: 0.62;
 }
 
 .rowMain {
@@ -364,11 +570,6 @@
   font-size: 13px;
   line-height: 18px;
   word-break: break-word;
-}
-
-.rowDone .rowTitle {
-  text-decoration: line-through;
-  text-decoration-color: var(--dsw-alias-label-caption);
 }
 
 .rowMeta {
@@ -418,51 +619,11 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* --- status dot ---------------------------------------------------------- */
-
-.dot {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  border: 1.5px solid var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));
-  background: var(--dsw-alias-bg-base);
-  margin-top: 1px;
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  cursor: pointer;
-  color: var(--dsw-alias-label-primary-foreground);
-  transition: border-color 0.15s ease, background 0.15s ease, transform 0.1s ease;
-}
-
-.dot:hover {
-  border-color: var(--dsw-static-deepseek-500);
-  transform: scale(1.08);
-}
-
-.dotProgress {
-  border-color: var(--dsw-static-deepseek-500);
-  background: linear-gradient(90deg, var(--dsw-static-deepseek-500) 50%, var(--dsw-alias-bg-base) 50%);
-}
-
-.dotDone {
-  border-color: var(--dsw-static-deepseek-500);
-  background: var(--dsw-static-deepseek-500);
-}
-
-.dotBusy {
-  opacity: 0.55;
-  cursor: wait;
-}
-
 /* --- expanded detail ----------------------------------------------------- */
 
 .detail {
-  margin: 2px 2px 4px 36px;
   border-left: 2px solid var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));
-  padding: 4px 0 4px 10px;
+  padding: 2px 0 2px 10px;
   display: flex;
   flex-direction: column;
   gap: 3px;

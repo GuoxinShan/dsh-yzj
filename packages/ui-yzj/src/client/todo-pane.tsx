@@ -1,12 +1,11 @@
 /**
- * The 待办 tab: a friction-light todo surface over the demo-stage sheet
- * backend (待办任务库). Buckets by urgency (逾期 / 今天 / 进行中 / 待办 /
- * 已完成), #tag chips aggregate anything (a tag can be a project, a group,
- * a theme), quick-create parses `#tag` + dates straight from the input, and
- * Completing/reopening and quick-creating are user-direct writes (no
- * confirmation card — the panel acts as the user's own hand); agent writes
- * still go through the tool confirmation flow. Data arrives through the
- * /yzj RPC face only.
+ * The 待办 tab: swimlane board over the six-state machine
+ * (todo-swimlane-agent.md §2.4): 待我决定 | 可认领 | 进行中 | 待我验收 |
+ * 已完成，已终止收进折叠区（与推进看板「已结束」同款）。卡片操作即状态动词——
+ * 批准/验收/打回/中止/编辑都是用户直写（D9 无确认卡；面板即用户本人的手）；
+ * agent 走 claim 工具族（yzj_todo_claim/submit_review/release_claim，静默）。
+ * #tag chips aggregate anything; quick-create parses `#tag` + dates straight
+ * from the input. Data arrives through the /yzj RPC face only.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { BakedActions } from '@deepseek-ai/dsh-client-ui-slots'
@@ -92,17 +91,24 @@ export function parseQuickCreate(input: string): { title: string; tags: string[]
   return { title, tags: [...new Set(tags)], ddl }
 }
 
-/** One bucket of todos. */
-interface Bucket {
-  key: string
+/** One swimlane lane of the board. */
+interface Lane {
+  key: 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done'
   label: string
-  tone: 'danger' | 'warn' | 'info' | 'muted' | 'done'
+  tone: 'danger' | 'muted' | 'info' | 'warn' | 'done'
+  hint: string
   todos: UnknownRecord[]
 }
 
-/** Bucket todos by urgency; done shows the 10 most recent. */
-function bucketsOf(todos: UnknownRecord[]): Bucket[] {
-  const today = todayStr()
+/** Client-side status normalization mirrors the host (S5: legacy pending → todo). */
+function laneStatusOf(todo: UnknownRecord): string {
+  const status = asString(todo.status)
+  return status === 'pending' ? 'todo' : status
+}
+
+/** Swimlane lanes (todo-swimlane-agent §2.4): five fixed lanes in state-machine
+ *  order; cancelled folds into the 已终止 zone below the board (no lane). */
+export function lanesOf(todos: UnknownRecord[]): { lanes: Lane[]; cancelled: UnknownRecord[] } {
   const byDdl = (a: UnknownRecord, b: UnknownRecord): number => {
     const da = asString(a.ddl)
     const db = asString(b.ddl)
@@ -111,44 +117,16 @@ function bucketsOf(todos: UnknownRecord[]): Bucket[] {
     if (db === '') return -1
     return da === db ? (asString(a.todoId) < asString(b.todoId) ? -1 : 1) : (da < db ? -1 : 1)
   }
-  const open = todos.filter(todo => asString(todo.status) !== 'done')
-  const done = todos.filter(todo => asString(todo.status) === 'done')
-  const overdue = open.filter(todo => asString(todo.ddl) !== '' && asString(todo.ddl) < today)
-  const dueToday = open.filter(todo => asString(todo.ddl) === today)
-  const inProgress = open.filter(todo => asString(todo.status) === 'in_progress' && !overdue.includes(todo) && !dueToday.includes(todo))
-  const plain = open.filter(todo => !overdue.includes(todo) && !dueToday.includes(todo) && !inProgress.includes(todo))
-  const buckets: Bucket[] = ([
-    { key: 'overdue', label: '逾期', tone: 'danger', todos: overdue.sort(byDdl) },
-    { key: 'today', label: '今天到期', tone: 'warn', todos: dueToday.sort(byDdl) },
-    { key: 'progress', label: '进行中', tone: 'info', todos: inProgress.sort(byDdl) },
-    { key: 'pending', label: '待办', tone: 'muted', todos: plain.sort(byDdl) },
-    { key: 'done', label: '已完成', tone: 'done', todos: done.sort((a, b) => asString(a.todoId) < asString(b.todoId) ? 1 : -1).slice(0, 10) },
-  ] as Bucket[]).filter(bucket => bucket.todos.length > 0)
-  return buckets
-}
-
-/** The circular status control: empty (pending), half (in_progress), check (done). */
-function StatusDot({ status, busy, onToggle, title }: { status: string; busy: boolean; onToggle: () => void; title: string }) {
-  const cls = status === 'done'
-    ? `${css.dot} ${css.dotDone}`
-    : status === 'in_progress' ? `${css.dot} ${css.dotProgress}` : css.dot
-  return (
-    <button
-      type="button"
-      className={busy ? `${cls} ${css.dotBusy}` : cls}
-      onClick={onToggle}
-      disabled={busy}
-      title={title}
-      aria-label={title}
-      aria-pressed={status === 'done'}
-    >
-      {status === 'done' && (
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M5 12.5l4.5 4.5L19 7.5" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      )}
-    </button>
-  )
+  const pick = (status: string): UnknownRecord[] => todos.filter(todo => laneStatusOf(todo) === status).sort(byDdl)
+  const lanes: Lane[] = [
+    { key: 'backlog', label: '待我决定', tone: 'danger', hint: '批准后 agent 才能认领', todos: pick('backlog') },
+    { key: 'todo', label: '可认领', tone: 'muted', hint: '对 agent 说「把能做的做了」', todos: pick('todo') },
+    { key: 'in_progress', label: '进行中', tone: 'info', hint: '', todos: pick('in_progress') },
+    { key: 'in_review', label: '待我验收', tone: 'warn', hint: '验收才算完', todos: pick('in_review') },
+    { key: 'done', label: '已完成', tone: 'done', hint: '', todos: pick('done').reverse().slice(0, 10) },
+  ]
+  const cancelled = todos.filter(todo => laneStatusOf(todo) === 'cancelled')
+  return { lanes, cancelled }
 }
 
 /** Props the panel passes down; data + verbs only, no ctx. */
@@ -170,6 +148,14 @@ export interface TodoPaneProps {
   ensureTodo: () => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   createTodo: (input: { title: string; ddl?: string; priority?: string; tags?: string[] }) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   toggleTodo: (todoId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
+  /** Swimlane human verbs (todo-swimlane-agent §3; user-direct writes, no card). */
+  approveTodo: (todoId: string, note?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
+  acceptTodo: (todoId: string, note?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
+  returnTodo: (todoId: string, note?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
+  cancelTodo: (todoId: string, note?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
+  reopenTodo: (todoId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
+  /** Edit task details (S7): 标题/描述（agent 执行的提示词本体）/DDL/负责人。 */
+  editTodo: (todoId: string, patch: { title?: string; description?: string; ddl?: string; assignee?: string }) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   todoLibraries: () => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   selectTodoLibrary: (docId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   ensureTeamTodo: (workspace: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
@@ -197,6 +183,13 @@ export function TodoPane(props: TodoPaneProps) {
   const [busyId, setBusyId] = useState('')
   const [notice, setNotice] = useState('')
   const [expanded, setExpanded] = useState('')
+  /** 打回/验收的备注内联表单（验收可空，打回建议写评语）。 */
+  const [noteFor, setNoteFor] = useState<{ todoId: string; verb: 'accept' | 'return' } | null>(null)
+  const [noteDraft, setNoteDraft] = useState('')
+  /** 行内编辑（S7）：标题 + 描述（提示词本体）+ DDL + 负责人。 */
+  const [editFor, setEditFor] = useState('')
+  const [editDraft, setEditDraft] = useState({ title: '', description: '', ddl: '', assignee: '' })
+  const [showCancelled, setShowCancelled] = useState(false)
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const [teamPick, setTeamPick] = useState(false)
   const [teamWorkspaces, setTeamWorkspaces] = useState<{ id: string; name: string; docCount: number; permissionLevel: number }[]>([])
@@ -258,8 +251,8 @@ export function TodoPane(props: TodoPaneProps) {
   }, [todos])
 
   const visible = props.tagFilter === '' ? todos : todos.filter(todo => asTags(todo.tags).includes(props.tagFilter))
-  const buckets = useMemo(() => bucketsOf(visible), [visible])
-  const openCount = todos.filter(todo => asString(todo.status) !== 'done').length
+  const { lanes, cancelled } = useMemo(() => lanesOf(visible), [visible])
+  const openCount = todos.filter(todo => laneStatusOf(todo) !== 'done' && laneStatusOf(todo) !== 'cancelled').length
   // Label identity: cheap state-provided scope/name first (always present),
   // then the picker's library list, then a neutral fallback.
   const activeLib = useMemo(() => {
@@ -413,7 +406,7 @@ export function TodoPane(props: TodoPaneProps) {
     const todoId = asString(todo.todoId)
     setBusyId(todoId)
     // Optimistic flip; revert via refresh on failure.
-    props.actions.patchTodo({ ...todo, status: asString(todo.status) === 'done' ? 'in_progress' : 'done' })
+    props.actions.patchTodo({ ...todo, status: laneStatusOf(todo) === 'done' ? 'in_progress' : 'done' })
     void props.toggleTodo(todoId).then((result) => {
       setBusyId('')
       if (result.ok) {
@@ -423,6 +416,225 @@ export function TodoPane(props: TodoPaneProps) {
         refresh()
       }
     })
+  }
+
+  /** One human verb → RPC → patch/refresh (泳道卡片操作即状态动词，D9 无卡). */
+  const runVerb = (verb: 'approve' | 'accept' | 'return' | 'cancel' | 'reopen', todoId: string, note?: string): void => {
+    setBusyId(todoId)
+    const call = verb === 'approve' ? props.approveTodo(todoId, note)
+      : verb === 'accept' ? props.acceptTodo(todoId, note)
+      : verb === 'return' ? props.returnTodo(todoId, note)
+      : verb === 'cancel' ? props.cancelTodo(todoId, note)
+      : props.reopenTodo(todoId)
+    void call.then((result) => {
+      setBusyId('')
+      setNoteFor(null)
+      setNoteDraft('')
+      if (result.ok) {
+        props.actions.patchTodo(result.value)
+        refresh()
+      } else {
+        flash(`操作失败：${result.error.message}`)
+        refresh()
+      }
+    })
+  }
+
+  const openEdit = (todo: UnknownRecord): void => {
+    setEditFor(asString(todo.todoId))
+    setEditDraft({
+      title: asString(todo.title),
+      description: asString(todo.description),
+      ddl: asString(todo.ddl),
+      assignee: asString(todo.assignee),
+    })
+  }
+
+  const saveEdit = (todoId: string): void => {
+    if (editDraft.title.trim() === '' || busyId === todoId) return
+    setBusyId(todoId)
+    void props.editTodo(todoId, {
+      title: editDraft.title.trim(),
+      description: editDraft.description,
+      ...(editDraft.ddl.trim() === '' ? {} : { ddl: editDraft.ddl.trim() }),
+      ...(editDraft.assignee.trim() === '' ? {} : { assignee: editDraft.assignee.trim() }),
+    }).then((result) => {
+      setBusyId('')
+      if (result.ok) {
+        setEditFor('')
+        props.actions.patchTodo(result.value)
+        refresh()
+      } else {
+        flash(`保存失败：${result.error.message}`)
+      }
+    })
+  }
+
+  /** One swimlane card: title + meta + description preview + lane verbs (卡片操作即状态动词). */
+  const renderCard = (todo: UnknownRecord) => {
+    const todoId = asString(todo.todoId)
+    const status = laneStatusOf(todo)
+    const isExpanded = expanded === todoId
+    const ddl = asString(todo.ddl)
+    const terminal = status === 'done' || status === 'cancelled'
+    const overdue = !terminal && ddl !== '' && ddl < todayStr()
+    const dueToday = !terminal && ddl === todayStr()
+    const description = asString(todo.description)
+    const claimedBy = asString(todo.claimedBy)
+    const reviewNote = asString(todo.reviewNote)
+    const busy = busyId === todoId
+    return (
+      <div
+        key={todoId}
+        className={`${css.card}${status === 'done' ? ` ${css.cardDone}` : ''}${status === 'cancelled' ? ` ${css.cardDone}` : ''}${overdue ? ` ${css.cardOverdue}` : ''}`}
+        data-testid={`yzj-todo-card-${todoId}`}
+        data-status={status}
+      >
+        <button
+          type="button"
+          className={css.rowMain}
+          onClick={() => { setExpanded(isExpanded ? '' : todoId) }}
+          aria-expanded={isExpanded}
+        >
+          <span className={css.rowTitle}>{asString(todo.title)}</span>
+          <span className={css.rowMeta}>
+            {ddl !== '' && (
+              <span className={overdue ? `${css.chip} ${css.chipDanger}` : dueToday ? `${css.chip} ${css.chipWarn}` : css.chip}>
+                {overdue ? '逾期 ' : dueToday ? '今天 ' : ''}{ddl}
+              </span>
+            )}
+            {asTags(todo.tags).map(tag => (
+              <span
+                key={tag}
+                className={css.chipTag}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  props.actions.setTodoTag(props.tagFilter === tag ? '' : tag)
+                }}
+              >
+                #{tag}
+              </span>
+            ))}
+            {asString(todo.priority) !== '' && <span className={css.chipMuted}>{asString(todo.priority)}</span>}
+            {asString(todo.assignee) !== '' && <span className={css.chipMuted}>@{asString(todo.assignee)}</span>}
+          </span>
+        </button>
+        {description !== '' && status !== 'done' && status !== 'cancelled' && (
+          <div className={css.cardDesc} title={description}>{description}</div>
+        )}
+        {status === 'in_progress' && (
+          <div className={css.claimBadge}>agent 认领中{claimedBy === '' ? '' : ` · ${claimedBy.slice(0, 16)}`}</div>
+        )}
+        {status === 'in_review' && reviewNote !== '' && (
+          <div className={css.reviewBox}>{reviewNote}</div>
+        )}
+        <div className={css.cardVerbs}>
+          {status === 'backlog' && (
+            <>
+              <button type="button" className={`${css.verb} ${css.verbPrimary}`} data-testid={`yzj-todo-approve-${todoId}`} disabled={busy} onClick={() => { runVerb('approve', todoId) }}>批准</button>
+              <button type="button" className={css.verb} data-testid={`yzj-todo-edit-${todoId}`} disabled={busy} onClick={() => { openEdit(todo) }}>编辑</button>
+              <button type="button" className={`${css.verb} ${css.verbDanger}`} data-testid={`yzj-todo-cancel-${todoId}`} disabled={busy} onClick={() => { runVerb('cancel', todoId) }}>中止</button>
+            </>
+          )}
+          {status === 'todo' && (
+            <>
+              <button type="button" className={css.verb} data-testid={`yzj-todo-edit-${todoId}`} disabled={busy} onClick={() => { openEdit(todo) }}>编辑</button>
+              <button type="button" className={css.verb} data-testid={`yzj-todo-done-${todoId}`} disabled={busy} title="人直写完成的快路径（不经验收）" onClick={() => { onToggle(todo) }}>✓ 完成</button>
+              <button type="button" className={css.verb} data-testid={`yzj-todo-return-${todoId}`} disabled={busy} onClick={() => { setNoteFor({ todoId, verb: 'return' }); setNoteDraft('') }}>打回</button>
+              <button type="button" className={`${css.verb} ${css.verbDanger}`} data-testid={`yzj-todo-cancel-${todoId}`} disabled={busy} onClick={() => { runVerb('cancel', todoId) }}>中止</button>
+            </>
+          )}
+          {status === 'in_progress' && (
+            <>
+              <button type="button" className={css.verb} data-testid={`yzj-todo-done-${todoId}`} disabled={busy} title="人直写完成的快路径（不经验收）" onClick={() => { onToggle(todo) }}>✓ 完成</button>
+              <button type="button" className={css.verb} data-testid={`yzj-todo-return-${todoId}`} disabled={busy} title="打回可认领列（清认领）" onClick={() => { setNoteFor({ todoId, verb: 'return' }); setNoteDraft('') }}>打回</button>
+              <button type="button" className={`${css.verb} ${css.verbDanger}`} data-testid={`yzj-todo-cancel-${todoId}`} disabled={busy} onClick={() => { runVerb('cancel', todoId) }}>中止</button>
+            </>
+          )}
+          {status === 'in_review' && (
+            <>
+              <button type="button" className={`${css.verb} ${css.verbPrimary}`} data-testid={`yzj-todo-accept-${todoId}`} disabled={busy} onClick={() => { setNoteFor({ todoId, verb: 'accept' }); setNoteDraft('') }}>验收 ✓</button>
+              <button type="button" className={css.verb} data-testid={`yzj-todo-return-${todoId}`} disabled={busy} title="带评语打回进行中" onClick={() => { setNoteFor({ todoId, verb: 'return' }); setNoteDraft('') }}>打回</button>
+            </>
+          )}
+          {status === 'done' && (
+            <button type="button" className={css.verb} data-testid={`yzj-todo-reopen-${todoId}`} disabled={busy} onClick={() => { onToggle(todo) }}>重开</button>
+          )}
+          {status === 'cancelled' && (
+            <button type="button" className={css.verb} data-testid={`yzj-todo-reopen-${todoId}`} disabled={busy} onClick={() => { runVerb('reopen', todoId) }}>重开</button>
+          )}
+        </div>
+        {noteFor !== null && noteFor.todoId === todoId && (
+          <div className={css.noteForm}>
+            <input
+              className={css.noteInput}
+              data-testid={`yzj-todo-note-input-${todoId}`}
+              value={noteDraft}
+              placeholder={noteFor.verb === 'accept' ? '验收备注（可空）' : '打回评语（告诉对方差在哪）'}
+              onChange={(event) => { setNoteDraft(event.target.value) }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault()
+                  runVerb(noteFor.verb, todoId, noteDraft)
+                }
+              }}
+            />
+            <button type="button" className={`${css.verb} ${css.verbPrimary}`} data-testid={`yzj-todo-note-confirm-${todoId}`} disabled={busy} onClick={() => { runVerb(noteFor.verb, todoId, noteDraft) }}>
+              {noteFor.verb === 'accept' ? '确认验收' : '确认打回'}
+            </button>
+            <button type="button" className={css.verb} onClick={() => { setNoteFor(null); setNoteDraft('') }}>取消</button>
+          </div>
+        )}
+        {editFor === todoId && (
+          <div className={css.editForm} data-testid={`yzj-todo-edit-form-${todoId}`}>
+            <input
+              className={css.noteInput}
+              data-testid={`yzj-todo-edit-title-${todoId}`}
+              value={editDraft.title}
+              placeholder="标题"
+              onChange={(event) => { setEditDraft({ ...editDraft, title: event.target.value }) }}
+            />
+            <textarea
+              className={css.editArea}
+              data-testid={`yzj-todo-edit-desc-${todoId}`}
+              value={editDraft.description}
+              placeholder="描述：agent 认领后执行的那段提示词——目标、上下文、完成标准"
+              rows={3}
+              onChange={(event) => { setEditDraft({ ...editDraft, description: event.target.value }) }}
+            />
+            <div className={css.editRow}>
+              <input
+                className={css.noteInput}
+                value={editDraft.ddl}
+                placeholder="DDL（如 2026-08-30）"
+                onChange={(event) => { setEditDraft({ ...editDraft, ddl: event.target.value }) }}
+              />
+              <input
+                className={css.noteInput}
+                value={editDraft.assignee}
+                placeholder="负责人"
+                onChange={(event) => { setEditDraft({ ...editDraft, assignee: event.target.value }) }}
+              />
+            </div>
+            <div className={css.cardVerbs}>
+              <button type="button" className={`${css.verb} ${css.verbPrimary}`} data-testid={`yzj-todo-edit-save-${todoId}`} disabled={busy || editDraft.title.trim() === ''} onClick={() => { saveEdit(todoId) }}>保存</button>
+              <button type="button" className={css.verb} onClick={() => { setEditFor('') }}>取消</button>
+            </div>
+          </div>
+        )}
+        {isExpanded && (
+          <div className={css.detail}>
+            <div className={css.detailLine}>ID {todoId} · 状态 {status}{ddl === '' ? '' : ` · DDL ${ddl}`}{asString(todo.claimedBy) === '' ? '' : ` · 认领会话 ${asString(todo.claimedBy)}`}</div>
+            {asString(todo.assignee) !== '' && <div className={css.detailLine}>负责人：{asString(todo.assignee)}</div>}
+            {asString(todo.log) !== '' && (
+              <div className={css.detailLog}>
+                {asString(todo.log).split('\n').slice(-4).map((line, index) => <div key={index}>{line}</div>)}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    )
   }
 
   // --- Empty state: one-click provisioning (never flash while loading) ---
@@ -577,90 +789,43 @@ export function TodoPane(props: TodoPaneProps) {
         </div>
       )}
 
-      {/* Buckets. */}
-      <div className={css.list}>
-        {buckets.length === 0 && !props.loading && (
-          <div className={css.empty}>
-            <div className={css.emptyIcon}>🗒️</div>
-            <div>{props.tagFilter === '' ? (openCount === 0 && todos.length === 0 ? '还没有待办，从上面记一条开始' : '当前筛选下没有待办') : `#${props.tagFilter} 下没有待办`}</div>
-          </div>
-        )}
-        {buckets.map(bucket => (
-          <section key={bucket.key} className={css.bucket} aria-label={bucket.label}>
-            <header className={`${css.bucketHead} ${css[`tone-${bucket.tone}`]}`}>
-              <span>{bucket.label}</span>
-              <span className={css.bucketCount}>{bucket.todos.length}</span>
-            </header>
-            {bucket.todos.map(todo => {
-              const todoId = asString(todo.todoId)
-              const status = asString(todo.status)
-              const isExpanded = expanded === todoId
-              const meta: string[] = []
-              if (asString(todo.priority) !== '') meta.push(asString(todo.priority))
-              if (asString(todo.assignee) !== '') meta.push(`@${asString(todo.assignee)}`)
-              const overdue = status !== 'done' && asString(todo.ddl) !== '' && asString(todo.ddl) < todayStr()
-              const dueToday = status !== 'done' && asString(todo.ddl) === todayStr()
-              return (
-                <div key={todoId}>
-                  <div
-                    className={status === 'done' ? `${css.row} ${css.rowDone}` : overdue ? `${css.row} ${css.rowOverdue}` : css.row}
-                  >
-                    <StatusDot
-                      status={status}
-                      busy={busyId === todoId}
-                      onToggle={() => { onToggle(todo) }}
-                      title={status === 'done' ? '重开待办' : '完成待办'}
-                    />
-                    <button
-                      type="button"
-                      className={css.rowMain}
-                      onClick={() => { setExpanded(isExpanded ? '' : todoId) }}
-                      aria-expanded={isExpanded}
-                    >
-                      <span className={css.rowTitle}>{asString(todo.title)}</span>
-                      <span className={css.rowMeta}>
-                        {asString(todo.ddl) !== '' && (
-                          <span className={overdue ? `${css.chip} ${css.chipDanger}` : dueToday ? `${css.chip} ${css.chipWarn}` : css.chip}>
-                            {overdue ? '逾期 ' : dueToday ? '今天 ' : ''}{asString(todo.ddl)}
-                          </span>
-                        )}
-                        {asTags(todo.tags).map(tag => (
-                          <span
-                            key={tag}
-                            className={css.chipTag}
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              props.actions.setTodoTag(props.tagFilter === tag ? '' : tag)
-                            }}
-                          >
-                            #{tag}
-                          </span>
-                        ))}
-                        {meta.map(part => <span key={part} className={css.chipMuted}>{part}</span>)}
-                      </span>
-                    </button>
-                  </div>
-                  {isExpanded && (
-                    <div className={css.detail}>
-                      <div className={css.detailLine}>ID {todoId} · 状态 {status}{asString(todo.ddl) === '' ? '' : ` · DDL ${asString(todo.ddl)}`}</div>
-                      {asString(todo.assignee) !== '' && <div className={css.detailLine}>负责人：{asString(todo.assignee)}</div>}
-                      {asString(todo.log) !== '' && (
-                        <div className={css.detailLog}>
-                          {asString(todo.log).split('\n').slice(-4).map((line, index) => <div key={index}>{line}</div>)}
-                        </div>
-                      )}
-                      <div className={css.detailHint}>改期/改负责人请直接告诉 agent。</div>
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </section>
-        ))}
-      </div>
+      {/* Swimlane board: five lanes in state-machine order (todo-swimlane-agent §2.4). */}
+      {visible.length === 0 && !props.loading ? (
+        <div className={css.empty}>
+          <div className={css.emptyIcon}>🗒️</div>
+          <div>{props.tagFilter === '' ? (openCount === 0 && todos.length === 0 ? '还没有待办，从上面记一条开始' : '当前筛选下没有待办') : `#${props.tagFilter} 下没有待办`}</div>
+        </div>
+      ) : (
+        <div className={css.lanes}>
+          {lanes.map(lane => (
+            <section key={lane.key} className={css.lane} aria-label={lane.label} data-testid={`yzj-todo-lane-${lane.key}`}>
+              <header className={`${css.bucketHead} ${css[`tone-${lane.tone}`]}`}>
+                <span>{lane.label}</span>
+                <span className={css.bucketCount}>{lane.todos.length}</span>
+              </header>
+              {lane.hint !== '' && <div className={css.laneHint}>{lane.hint}</div>}
+              {lane.todos.map(renderCard)}
+              {lane.todos.length === 0 && <div className={css.laneEmpty}>（空）</div>}
+            </section>
+          ))}
+        </div>
+      )}
+      {cancelled.length > 0 && (
+        <div className={css.closedZone}>
+          <button
+            type="button"
+            className={css.closedToggle}
+            data-testid="yzj-todo-cancelled-toggle"
+            onClick={() => { setShowCancelled(!showCancelled) }}
+          >
+            {showCancelled ? '▾' : '▸'} 已终止 {cancelled.length}
+          </button>
+          {showCancelled && cancelled.map(renderCard)}
+        </div>
+      )}
 
       <footer className={css.foot}>
-        <span>演示阶段：待办存于多维表格「待办任务库」，后续切换原生后端时数据与标签平滑迁移</span>
+        <span>泳道待办：你管批准与验收，agent 认领执行；卡片可直接编辑任务描述——那就是 agent 认领后执行的那段提示词</span>
       </footer>
 
       {notice !== '' && <div className={css.notice} role="status">{notice}</div>}

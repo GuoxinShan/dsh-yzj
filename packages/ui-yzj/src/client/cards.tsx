@@ -76,6 +76,9 @@ export const YZJ_TOOL_NAMES = [  'yzj_whoami',
   'yzj_todo_create',
   'yzj_todo_update',
   'yzj_todo_complete',
+  'yzj_todo_claim',
+  'yzj_todo_submit_review',
+  'yzj_todo_release_claim',
   'yzj_advance_list',
   'yzj_advance_get',
   'yzj_advance_inspect',
@@ -144,6 +147,9 @@ const FAMILY_TITLES: Record<string, string> = {
   yzj_todo_create: '新建待办',
   yzj_todo_update: '更新待办',
   yzj_todo_complete: '完成待办',
+  yzj_todo_claim: '认领待办',
+  yzj_todo_submit_review: '交卷待验收',
+  yzj_todo_release_claim: '释放认领',
   yzj_advance_list: '推进队列',
   yzj_advance_get: '推进详情',
   yzj_advance_inspect: '比对材料',
@@ -423,7 +429,8 @@ function ImBody(meta: UnknownRecord, openPanel: YzjCardInjected['openPanel']): R
 
 /** Todo-domain body: list rows or one action summary, ids never shown. */
 function TodoBody(meta: UnknownRecord, toolName: string): ReactNode {
-  const statusLabel: Record<string, string> = { pending: '待办', in_progress: '进行中', done: '已完成' }
+  // 泳道六态（todo-swimlane-agent §2.1；pending 是归一化前的存量值）
+  const statusLabel: Record<string, string> = { backlog: '待我决定', todo: '可认领', pending: '可认领', in_progress: '进行中', in_review: '待我验收', done: '已完成', cancelled: '已中止' }
   if (toolName === 'yzj_todo_list') {
     if (meta.ready === false) {
       return <div className={css.rows}>{row('任务库未开通', '创建第一条待办时会自动开通', 'np')}</div>
@@ -456,9 +463,15 @@ function TodoBody(meta: UnknownRecord, toolName: string): ReactNode {
     tags.length === 0 ? '' : tags.map(tag => `#${tag}`).join(' '),
   ].filter(part => part !== '').join(' · ')
   if (toolName === 'yzj_todo_create') {
-    rowsOut.push(row(meta.idempotentHit === true ? `已存在：${title}` : `已创建：${title}`, sub, 'c'))
+    rowsOut.push(row(meta.idempotentHit === true ? `已存在：${title}` : `已创建：${title}（待人批准）`, sub, 'c'))
   } else if (toolName === 'yzj_todo_complete') {
     rowsOut.push(row(`已完成：${title}`, sub, 'd'))
+  } else if (toolName === 'yzj_todo_claim') {
+    rowsOut.push(row(`已认领：${title}`, '版本 v' + asString(meta.version) + ' · 干完用 yzj_todo_submit_review 交卷', 'c'))
+  } else if (toolName === 'yzj_todo_submit_review') {
+    rowsOut.push(row(`已交卷：${title}`, asString(meta.reviewNote), 'u'))
+  } else if (toolName === 'yzj_todo_release_claim') {
+    rowsOut.push(row(`已释放认领：${title}`, asString(meta.note), 'u'))
   } else {
     const changes = asArray(meta.changes).filter((change): change is string => typeof change === 'string')
     rowsOut.push(row(`已更新：${title}`, changes.join('；'), 'u'))
@@ -469,10 +482,10 @@ function TodoBody(meta: UnknownRecord, toolName: string): ReactNode {
   return <div className={css.rows}>{rowsOut}</div>
 }
 
-/** Stage label for advance cards (six-stage machine, ai-advance-design §2). */
+/** Stage label for advance cards (five-stage machine, ai-advance-design §2 / 决策 52). */
 const ADVANCE_STAGE_LABEL: Record<string, string> = {
-  'draft': '草稿', 'running': '推进中', 'decision-needed': '待决定',
-  'updated': '已更新', 'ready-for-review': '待验收', 'completed': '已完成',
+  'running': '推进中', 'decision-needed': '待决定',
+  'ready-for-review': '待验收', 'completed': '已完成', 'cancelled': '已中止',
 }
 
 /** Advance-domain body: queue rows, one item detail, or one feed summary. */

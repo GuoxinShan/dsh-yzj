@@ -30,12 +30,10 @@ function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : []
 }
 
-/** Chinese stage labels (seven-stage machine, v1.6 +cancelled). */
+/** Chinese stage labels (five-stage machine, v1.11 决策 52: draft/updated 砍). */
 export const STAGE_LABEL: Record<string, string> = {
-  'draft': '草稿',
   'running': '推进中',
   'decision-needed': '待你决定',
-  'updated': '已按方案更新',
   'ready-for-review': '待你验收',
   'completed': '已完成',
   'cancelled': '已中止',
@@ -120,11 +118,11 @@ function refHref(kind: string, id: string): string | null {
   return null
 }
 
-/** Queue dot tone per stage (prototype: 红=待决定 蓝=推进 绿=完成 灰=草稿/中止). */
+/** Queue dot tone per stage (prototype: 红=待决定 蓝=推进 绿=完成 灰=中止). */
 function dotToneOf(stage: string): 'red' | 'blue' | 'green' | 'gray' {
   if (stage === 'decision-needed') return 'red'
   if (stage === 'completed') return 'green'
-  if (stage === 'draft' || stage === 'cancelled') return 'gray'
+  if (stage === 'cancelled') return 'gray'
   return 'blue'
 }
 
@@ -1103,7 +1101,7 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                       </div>
                     </div>
                   )}
-                  {(stage === 'running' || stage === 'updated' || stage === 'draft') && (
+                  {stage === 'running' && (
                     <p className={css.quiet}>AI 正在跟进，当前不需要你处理；有目标变化或材料不足时会再提醒。</p>
                   )}
                   {(stage === 'completed' || stage === 'cancelled') && (

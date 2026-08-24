@@ -92,13 +92,26 @@ describe('todo pure helpers', () => {
     expect(normalizeDdl('2026/8/5')).toBe('2026/08/05')
   })
 
-  it('enforces the state machine with an actionable message', () => {
-    expect(checkTransition('pending', 'in_progress')).toBeNull()
-    expect(checkTransition('in_progress', 'done')).toBeNull()
+  it('enforces the six-state swimlane machine with an actionable message', () => {
+    // 主流：backlog→todo→in_progress→in_review→done
+    expect(checkTransition('backlog', 'todo')).toBeNull()
+    expect(checkTransition('todo', 'in_progress')).toBeNull()
+    expect(checkTransition('in_progress', 'in_review')).toBeNull()
+    expect(checkTransition('in_review', 'done')).toBeNull()
+    // 打回/释放（反向边）
+    expect(checkTransition('todo', 'backlog')).toBeNull()
+    expect(checkTransition('in_progress', 'todo')).toBeNull()
+    expect(checkTransition('in_review', 'in_progress')).toBeNull()
+    // 终局与重开
+    expect(checkTransition('backlog', 'cancelled')).toBeNull()
     expect(checkTransition('done', 'in_progress')).toBeNull()
-    expect(checkTransition('in_progress', 'pending')).toBeNull()
-    expect(checkTransition('pending', 'done')).toMatch(/yzj_todo_complete/)
-    expect(checkTransition('done', 'pending')).toMatch(/状态机拒绝/)
+    expect(checkTransition('cancelled', 'todo')).toBeNull()
+    // 非法跳变
+    expect(checkTransition('backlog', 'done')).toMatch(/yzj_todo_complete/)
+    expect(checkTransition('done', 'todo')).toMatch(/状态机拒绝/)
+    expect(checkTransition('todo', 'done')).toMatch(/状态机拒绝/)
+    // S5：legacy pending 读取归一为 todo
+    expect(checkTransition('pending', 'in_progress')).toBeNull()
   })
 
   it('sequences ids per day and appends log lines', () => {
@@ -119,6 +132,8 @@ describe('todo pure helpers', () => {
       }),
     }, '2026/08/15')
     expect(todo?.todoId).toBe('T-20260815-001')
+    // S5：存量 pending 归一为可认领（todo）
+    expect(todo?.status).toBe('todo')
     expect(todo?.tags).toEqual(['需求', 'P0'])
     expect(todo?.assigneeOpenId).toBe('oid-test')
     expect(todo?.overdue).toBe(true)
@@ -189,6 +204,8 @@ describe('yzj_todo_create', () => {
     expect(records[0]!.fieldsValue['DDL']).toBe('2026/08/20')
     expect(String(records[0]!.fieldsValue['推进日志'])).toContain('创建')
     expect(records[0]!.fieldsValue['todo_id']).toMatch(/^T-\d{8}-001$/)
+    // S6：agent 建的落 backlog（待我决定），人批准后才可认领
+    expect(records[0]!.fieldsValue['状态']).toBe('backlog')
   })
 
   it('scans every personal workspace before provisioning — a library in the second workspace is found, not duplicated', async () => {
@@ -238,41 +255,79 @@ describe('yzj_todo_create', () => {
   })
 })
 
-describe('yzj_todo_update / complete', () => {
+describe('yzj_todo_update / complete / claim 族', () => {
   function mountedWithTodo(startStatus: string) {
     let status = startStatus
-    return mount(resolvedLibraryScript({
+    const bridgeState = { claimedBy: '', version: 0, review: '' }
+    const mounted = mount(resolvedLibraryScript({
       'sheet record': (command) => {
         if (command[2] === 'list') {
-          return ok({ records: [{ id: 'r5', fields: JSON.stringify({ todo_id: 'T-1', 标题: '任务一', 状态: status, 推进日志: '2026/08/15 09:00 创建' }) }] })
+          return ok({ records: [{ id: 'r5', fields: JSON.stringify({ todo_id: 'T-1', 标题: '任务一', 状态: status, 推进日志: '2026/08/15 09:00 创建', 认领会话: bridgeState.claimedBy, 版本: bridgeState.version, 验收说明: bridgeState.review }) }] })
         }
-        // update: replay the new status into the scripted state
+        // update: replay the written fields into the scripted state
         const records = JSON.parse(command[command.length - 1]) as Array<{ fieldsValue: Record<string, unknown> }>
-        const next = records[0]?.fieldsValue['状态']
-        if (typeof next === 'string') status = next
+        const fields = records[0]?.fieldsValue ?? {}
+        if (typeof fields['状态'] === 'string') status = fields['状态']
+        if (typeof fields['认领会话'] === 'string') bridgeState.claimedBy = fields['认领会话']
+        if (typeof fields['版本'] === 'number') bridgeState.version = fields['版本']
+        if (typeof fields['验收说明'] === 'string') bridgeState.review = fields['验收说明']
         return ok({ records: [{ id: 'r5', fields: '{}' }] })
       },
     }))
+    return { ...mounted, bridgeState }
   }
 
-  it('rejects pending→done and points at yzj_todo_complete', async () => {
-    const { tools } = mountedWithTodo('pending')
+  it('update 不再有 status 参数（状态只走合法边）；描述可编辑（S7）', async () => {
+    const { tools, bridge } = mountedWithTodo('todo')
     const update = tools.find(tool => tool.name === 'yzj_todo_update')!
-    await expect(update.execute({ todoId: 'T-1', status: 'done' })).rejects.toThrow(/yzj_todo_complete/)
-  })
-
-  it('applies in_progress→done with a host-appended log line', async () => {
-    const { tools, bridge } = mountedWithTodo('in_progress')
-    const update = tools.find(tool => tool.name === 'yzj_todo_update')!
-    const result = await update.execute({ todoId: 'T-1', status: 'done', appendLog: '联调通过' })
+    const result = await update.execute({ todoId: 'T-1', description: '提示词本体：做完 X 并验证 Y' })
     expect(result.content).toContain('updated 待办')
     const writeCall = bridge.calls.find(call => call.join(' ').startsWith('sheet record update'))
-    const records = JSON.parse(writeCall![writeCall!.length - 1]) as Array<{ id: string; fieldsValue: Record<string, unknown> }>
-    expect(records[0]!.id).toBe('r5')
-    expect(records[0]!.fieldsValue['状态']).toBe('done')
-    expect(String(records[0]!.fieldsValue['推进日志'])).toContain('状态 in_progress→done')
-    expect(String(records[0]!.fieldsValue['推进日志'])).toContain('备注 联调通过')
-    expect(String(records[0]!.fieldsValue['推进日志'])).toContain('2026/08/15 09:00 创建')
+    const records = JSON.parse(writeCall![writeCall!.length - 1]) as Array<{ fieldsValue: Record<string, unknown> }>
+    expect(records[0]!.fieldsValue['描述']).toBe('提示词本体：做完 X 并验证 Y')
+  })
+
+  it('claim：todo→in_progress，排他（重复认领被拒），版本递增', async () => {
+    const { tools, bridge, bridgeState } = mountedWithTodo('todo')
+    const claim = tools.find(tool => tool.name === 'yzj_todo_claim')!
+    const result = await claim.execute({ todoId: 'T-1' })
+    expect(result.content).toContain('claimed 待办')
+    const writeCall = bridge.calls.find(call => call.join(' ').startsWith('sheet record update'))
+    const records = JSON.parse(writeCall![writeCall!.length - 1]) as Array<{ fieldsValue: Record<string, unknown> }>
+    expect(records[0]!.fieldsValue['状态']).toBe('in_progress')
+    expect(records[0]!.fieldsValue['版本']).toBe(1)
+    // 排他：已在进行中 → 第二次认领被拒
+    const again = await claim.execute({ todoId: 'T-1' })
+    expect(again.content).toContain('只有「可认领」状态能认领')
+    expect(bridgeState.claimedBy).toBe('')
+  })
+
+  it('claim 拦截未批准的 backlog（人批准闸，S6）', async () => {
+    const { tools } = mountedWithTodo('backlog')
+    const claim = tools.find(tool => tool.name === 'yzj_todo_claim')!
+    const result = await claim.execute({ todoId: 'T-1' })
+    expect(result.content).toContain('待我决定')
+    expect(result.content).toContain('批准')
+  })
+
+  it('submit_review：in_progress→in_review，验收说明落库；空说明被拒', async () => {
+    const { tools, bridgeState } = mountedWithTodo('in_progress')
+    const submit = tools.find(tool => tool.name === 'yzj_todo_submit_review')!
+    const empty = await submit.execute({ todoId: 'T-1', note: '  ' })
+    expect(empty.content).toContain('交卷必须带结果说明')
+    const result = await submit.execute({ todoId: 'T-1', note: '已上线并回归', refs: ['yzj:doc:abc'] })
+    expect(result.content).toContain('交卷待验收')
+    expect(bridgeState.review).toContain('已上线并回归')
+    expect(bridgeState.review).toContain('yzj:doc:abc')
+  })
+
+  it('release_claim：in_progress→todo，认领清空（阻塞是备注不是状态，S8）', async () => {
+    const { tools, bridgeState } = mountedWithTodo('in_progress')
+    const release = tools.find(tool => tool.name === 'yzj_todo_release_claim')!
+    const result = await release.execute({ todoId: 'T-1', note: '阻塞：等上游接口' })
+    expect(result.content).toContain('released 待办')
+    expect(result.content).toContain('阻塞：等上游接口')
+    expect(bridgeState.claimedBy).toBe('')
   })
 
   it('completes from any state and is idempotent once done', async () => {
@@ -290,7 +345,10 @@ describe('yzj_todo_update / complete', () => {
       'sheet record': () => ok({ records: [] }),
     }))
     const update = tools.find(tool => tool.name === 'yzj_todo_update')!
-    await expect(update.execute({ todoId: 'T-404', status: 'in_progress' })).rejects.toThrow(/不存在/)
+    await expect(update.execute({ todoId: 'T-404', appendLog: 'x' })).rejects.toThrow(/不存在/)
+    const claim = tools.find(tool => tool.name === 'yzj_todo_claim')!
+    const miss = await claim.execute({ todoId: 'T-404' })
+    expect(miss.content).toContain('不存在')
   })
 })
 

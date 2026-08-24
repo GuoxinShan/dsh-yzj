@@ -30,7 +30,8 @@ export interface AdvanceActionDeps {
     sourceAdd: (advanceId: string, token: string, label?: string) => Promise<unknown>
   }
   todo?: {
-    create: (input: { title: string; ddl?: string; tags?: string[] }) => Promise<{ todoId: string }>
+    /** Agent-origin create lands in backlog（待我决定）——人批准后才可认领（S6）。 */
+    createFromAgent: (input: { title: string; description?: string; ddl?: string; tags?: string[] }) => Promise<{ todoId: string }>
   }
   sendIm?: (groupId: string, content: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: string }>
 }
@@ -113,8 +114,10 @@ export async function runAdvanceAction(deps: AdvanceActionDeps, input: ActionRun
 
   if (input.kind === 'todo') {
     if (deps.todo === undefined) throw new Error('advance-action-run: yzjTodo 服务不可用（tool-yzj 未挂载）')
-    const created = await deps.todo.create({
+    // S6：agent 建的待办落 backlog（待我决定）；描述（S7）是认领后执行的提示词本体。
+    const created = await deps.todo.createFromAgent({
       title: input.text,
+      ...(input.fields['描述'] === undefined ? {} : { description: input.fields['描述'] }),
       ...(input.fields['截止'] === undefined ? {} : { ddl: input.fields['截止'] }),
       ...(input.fields['负责人'] === undefined ? {} : { tags: [input.fields['负责人']] }),
     })

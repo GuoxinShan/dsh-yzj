@@ -101,11 +101,11 @@ function mountPane(config: {
       },
       advanceCreate: async (input) => {
         created.push(input as Record<string, unknown>)
-        return { ok: true, value: { advanceId: 'A-NEW', title: input.title, stage: 'draft' } } as Rpc
+        return { ok: true, value: { advanceId: 'A-NEW', title: input.title, stage: 'running' } } as Rpc
       },
       advanceJudge: async (advanceId, action, note) => {
         judged.push({ advanceId, action, ...(note === undefined ? {} : { note }) })
-        return { ok: true, value: { advanceId, stage: 'updated' } } as Rpc
+        return { ok: true, value: { advanceId, stage: 'running' } } as Rpc
       },
       advanceEnsure: async () => {
         ensured.count += 1
@@ -248,8 +248,8 @@ describe('queuesOf', () => {
     expect(queues.watch.map(i => i.advanceId)).toEqual(['A-3'])
   })
 
-  it('labels all seven stages in Chinese', () => {
-    for (const stage of ['draft', 'running', 'decision-needed', 'updated', 'ready-for-review', 'completed', 'cancelled']) {
+  it('labels all five stages in Chinese', () => {
+    for (const stage of ['running', 'decision-needed', 'ready-for-review', 'completed', 'cancelled']) {
       expect(STAGE_LABEL[stage]).toBeTruthy()
     }
     expect(STAGE_LABEL['cancelled']).toBe('已中止')

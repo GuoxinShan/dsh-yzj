@@ -244,8 +244,10 @@ function ArgBody({ record, names }: { record: YzjWriteRecord; names: Record<stri
       if (str('title') !== '') push('标题', str('title'), 't')
       if (str('todoId') !== '') push('待办', str('todoId'), 'id')
       if (record.toolName === 'yzj_todo_update' || record.toolName === 'yzj_todo_complete') {
-        push('操作', record.toolName === 'yzj_todo_complete' ? '标记完成' : '更新字段', 'op')
+        push('操作', record.toolName === 'yzj_todo_complete' ? '标记完成（快路径）' : '更新字段', 'op')
       }
+      if (record.toolName === 'yzj_todo_create') push('落点', '待我决定（批准后 agent 可认领）', 'ld')
+      if (str('description') !== '') push('描述', str('description').slice(0, 200), 'ds')
       if (str('status') !== '') push('状态', str('status'), 'st')
       if (str('assignee') !== '') push('负责人', str('assignee'), 'as')
       if (str('ddl') !== '') push('DDL', str('ddl'), 'dl')

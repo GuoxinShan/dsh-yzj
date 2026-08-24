@@ -230,17 +230,20 @@ function freshCaches(): AdvanceCaches {
 }
 
 describe('advance pure helpers', () => {
-  it('enforces the six-stage machine', () => {
-    expect(checkStageTransition('draft', 'running')).toBeNull()
+  it('enforces the five-stage machine (决策 52)', () => {
     expect(checkStageTransition('running', 'decision-needed')).toBeNull()
-    expect(checkStageTransition('decision-needed', 'updated')).toBeNull()
-    expect(checkStageTransition('updated', 'ready-for-review')).toBeNull()
+    expect(checkStageTransition('running', 'ready-for-review')).toBeNull()
+    expect(checkStageTransition('decision-needed', 'running')).toBeNull()
     expect(checkStageTransition('ready-for-review', 'completed')).toBeNull()
     expect(checkStageTransition('ready-for-review', 'running')).toBeNull()
     expect(checkStageTransition('completed', 'running')).toBeNull()
-    expect(checkStageTransition('draft', 'completed')).toMatch(/状态机拒绝/)
-    expect(checkStageTransition('running', 'updated')).toMatch(/状态机拒绝/)
-    expect(checkStageTransition('draft', 'draft')).toBeNull()
+    expect(checkStageTransition('cancelled', 'running')).toBeNull()
+    expect(checkStageTransition('running', 'completed')).toMatch(/状态机拒绝/)
+    expect(checkStageTransition('decision-needed', 'ready-for-review')).toMatch(/状态机拒绝/)
+    expect(checkStageTransition('running', 'running')).toBeNull()
+    // 决策 52：draft/updated 不再是合法阶段（存量读取时归一为 running）
+    expect(checkStageTransition('draft', 'running')).toMatch(/状态机拒绝/)
+    expect(legalNextStages('draft')).toEqual([])
   })
 
   it('spreads inspect materials without judging', () => {
@@ -252,7 +255,7 @@ describe('advance pure helpers', () => {
     const compare = buildInspectDigest({ subjects: [{ item, recent: [] }], signals: '客户改口径', mode: 'compare' })
     expect(compare).toContain('比对材料')
     expect(compare).toContain('背景（原来的理解）：原计划本周')
-    expect(compare).toContain('合法下一阶段：decision-needed / ready-for-review / draft')
+    expect(compare).toContain('合法下一阶段：decision-needed / ready-for-review / cancelled')
     expect(compare).toContain('客户改口径')
     expect(compare).toContain('禁止 stageTo=completed')
     expect(compare).toContain(INSPECT_DISCIPLINE.split('\n')[0] ?? '纪律')
@@ -270,7 +273,7 @@ describe('advance pure helpers', () => {
     const empty = buildInspectDigest({ subjects: [], signals: '', mode: 'compare' })
     expect(empty).toContain('没有 open 推进事项')
     expect(empty).toContain('静默')
-    expect(legalNextStages('running')).toEqual(['decision-needed', 'ready-for-review', 'draft', 'cancelled'])
+    expect(legalNextStages('running')).toEqual(['decision-needed', 'ready-for-review', 'cancelled'])
   })
 
   it('sequences day-prefixed ids for items and entries', () => {
@@ -334,7 +337,7 @@ describe('advance pure helpers', () => {
   })
 
   it('maps judge verbs to entries and stage moves', () => {
-    expect(judgeVerb('confirm_advance').stageTo).toBe('updated')
+    expect(judgeVerb('confirm_advance').stageTo).toBe('running')
     expect(judgeVerb('accept').stageTo).toBe('completed')
     expect(judgeVerb('reject').stageTo).toBe('running')
     expect(judgeVerb('ignore', '不影响').summary).toContain('不构成新约束：不影响')
@@ -358,7 +361,7 @@ describe('yzj_advance_create', () => {
     expect(store.tableCreates).toEqual(['事项', '事元'])
     expect(result.content).toContain('created 推进事项')
     expect(store.items).toHaveLength(1)
-    expect(store.items[0]!.fields['阶段']).toBe('draft')
+    expect(store.items[0]!.fields['阶段']).toBe('running')
     expect(store.entries).toHaveLength(1)
     expect(store.entries[0]!.fields['引用']).toBe('yzj:msg:root')
     expect(store.entries[0]!.fields['操作者']).toBe('agent')
@@ -466,14 +469,14 @@ describe('yzj_advance_feed', () => {
 
   it('rejects an illegal stage move without writing any entry', async () => {
     const store = new FakeStore(true)
-    store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'draft' } })
+    store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'cancelled' } })
     const { tools } = mount(store)
     const feed = tools.find(tool => tool.name === 'yzj_advance_feed')!
-    // draft→ready-for-review 是非终局的非法跳变(终局拦截由「agent feed can never enter terminal stages」专项覆盖)
-    const result = await feed.execute({ advanceId: 'A-1', summary: '直接送验收', stageTo: 'ready-for-review' })
+    // cancelled→ready-for-review 是非法跳变(cancelled 只能重开 running；终局拦截由「agent feed can never enter terminal stages」专项覆盖)
+    const result = await feed.execute({ advanceId: 'A-1', summary: '中止直接送验收', stageTo: 'ready-for-review' })
     expect(result.content).toContain('状态机拒绝')
     expect(store.entries).toHaveLength(0)
-    expect(store.items[0]!.fields['阶段']).toBe('draft')
+    expect(store.items[0]!.fields['阶段']).toBe('cancelled')
   })
 
   it('keeps the stream lossless: N feeds read back complete and ordered', async () => {
@@ -671,7 +674,7 @@ describe('core judge path (panel direct write)', () => {
     const result = await coreCreateAdvance(ctx, BUDGET, {}, freshCaches(), {
       title: '面板立项', goal: '目标', actor: 'user',
     })
-    expect(result.item.stage).toBe('draft')
+    expect(result.item.stage).toBe('running')
     expect(store.entries[0]!.fields['操作者']).toBe('user')
   })
 
@@ -733,7 +736,6 @@ describe('core judge path (panel direct write)', () => {
 describe('cancelled stage machine (决策 26/27)', () => {
   it('allows non-terminal → cancelled and cancelled → running; forbids completed → cancelled', () => {
     expect(checkStageTransition('running', 'cancelled')).toBeNull()
-    expect(checkStageTransition('draft', 'cancelled')).toBeNull()
     expect(checkStageTransition('decision-needed', 'cancelled')).toBeNull()
     expect(checkStageTransition('ready-for-review', 'cancelled')).toBeNull()
     expect(checkStageTransition('cancelled', 'running')).toBeNull()

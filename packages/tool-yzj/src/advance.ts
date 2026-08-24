@@ -92,11 +92,11 @@ export function getAdvanceBackend(): 'dbt' | 'sqlite' {
 /** Binding placeholder for the local backend (no cloud doc). */
 const LOCAL_BINDING: AdvanceBinding = { docId: 'local-sqlite', itemTableId: 0, entryTableId: 1, link: '' }
 
-/** Stage machine of one advancement item (PRD §5.1.2 六态 + v1.6 第七态 cancelled 终局,决策 27). */
-export type AdvanceStage = 'draft' | 'running' | 'decision-needed' | 'updated' | 'ready-for-review' | 'completed' | 'cancelled'
+/** Stage machine of one advancement item (v1.11 五态, 决策 52: draft/updated 砍——立项即 running，拍板后直回 running). */
+export type AdvanceStage = 'running' | 'decision-needed' | 'ready-for-review' | 'completed' | 'cancelled'
 
 export const ADVANCE_STAGES: readonly AdvanceStage[] = [
-  'draft', 'running', 'decision-needed', 'updated', 'ready-for-review', 'completed', 'cancelled',
+  'running', 'decision-needed', 'ready-for-review', 'completed', 'cancelled',
 ]
 
 /** Terminal stages the agent may never stageTo — the user enters them via panel judge (决策 27; spec §13.5, host-enforced). */
@@ -107,12 +107,19 @@ export function isOpenStage(stage: string): boolean {
   return stage !== 'completed' && stage !== 'cancelled'
 }
 
+/**
+ * Read-time normalization (决策 52): legacy draft/updated values fold into
+ * running — local SQLite fields are free strings, so no migration script.
+ */
+export function normalizeStage(stage: string): AdvanceStage {
+  if (stage === 'draft' || stage === 'updated') return 'running'
+  return (ADVANCE_STAGES.includes(stage as AdvanceStage) ? stage : 'running') as AdvanceStage
+}
+
 /** Legal next stages from each node (same table as {@link checkStageTransition}). */
 export const STAGE_NEXT: Record<AdvanceStage, readonly AdvanceStage[]> = {
-  draft: ['running', 'cancelled'],
-  running: ['decision-needed', 'ready-for-review', 'draft', 'cancelled'],
-  'decision-needed': ['running', 'updated', 'cancelled'],
-  updated: ['running', 'ready-for-review', 'cancelled'],
+  running: ['decision-needed', 'ready-for-review', 'cancelled'],
+  'decision-needed': ['running', 'cancelled'],
   'ready-for-review': ['completed', 'running', 'cancelled'],
   completed: ['running'],
   cancelled: ['running'],
@@ -135,13 +142,13 @@ export function legalNextStages(from: string): readonly string[] {
 
 /**
  * Validate a stage transition; returns an error message or null.
- * running is the quiet steady state; decision-needed→updated is the minimal
- * advance loop and may fire repeatedly.
+ * running is the quiet steady state; decision-needed/ready-for-review are the
+ * two human gates; terminals reopen to running.
  */
 export function checkStageTransition(from: string, to: string): string | null {
   if (from === to) return null
   if (legalNextStages(from).includes(to)) return null
-  return `状态机拒绝 ${from} → ${to}：合法流转为 draft→running→(decision-needed→updated)*→ready-for-review→completed；ready-for-review/decision-needed 可打回 running，completed/cancelled 可重开 running；非终态可中止 cancelled`
+  return `状态机拒绝 ${from} → ${to}：合法流转为 running→(decision-needed|ready-for-review)→completed；ready-for-review/decision-needed 可打回 running，completed/cancelled 可重开 running；非终态可中止 cancelled`
 }
 
 /** Inspect discipline pasted into every yzj_advance_inspect digest (spec §12). */
@@ -812,7 +819,6 @@ export function parseAdvanceItem(record: unknown): YzjAdvanceItem | null {
   if (fields === null) return null
   const advanceId = asString(fields[ITEM_F.id])
   if (advanceId === '') return null
-  const stage = asString(fields[ITEM_F.stage])
   const parsed = parseAssignee(asString(fields[ITEM_F.assignee]))
   return {
     recordId: asString(asRecord(record).id ?? asRecord(record).recordId),
@@ -822,7 +828,7 @@ export function parseAdvanceItem(record: unknown): YzjAdvanceItem | null {
     assignee: parsed.name,
     assigneeOpenId: parsed.openId,
     targetDate: normalizeDdl(asString(fields[ITEM_F.targetDate])),
-    stage: (ADVANCE_STAGES.includes(stage as AdvanceStage) ? stage : 'draft') as AdvanceStage,
+    stage: normalizeStage(asString(fields[ITEM_F.stage])),
     background: asString(fields[ITEM_F.background]),
     metrics: asString(fields[ITEM_F.metrics]),
     tags: normalizeTags(asString(fields[ITEM_F.tags])),
@@ -1396,7 +1402,7 @@ export async function coreCreateAdvance(
   const fields: Record<string, unknown> = {
     [ITEM_F.id]: advanceId,
     [ITEM_F.title]: title,
-    [ITEM_F.stage]: 'draft',
+    [ITEM_F.stage]: 'running',
   }
   let assigneeNote = ''
   if (input.assignee !== undefined && input.assignee.trim() !== '') {
@@ -1431,7 +1437,7 @@ export async function coreCreateAdvance(
     assignee: parseAssignee(asString(fields[ITEM_F.assignee])).name,
     assigneeOpenId: parseAssignee(asString(fields[ITEM_F.assignee])).openId,
     targetDate: asString(fields[ITEM_F.targetDate]),
-    stage: 'draft',
+    stage: 'running',
     background: asString(fields[ITEM_F.background]),
     metrics: asString(fields[ITEM_F.metrics]),
     tags,
@@ -1782,7 +1788,7 @@ export function judgeVerb(action: AdvanceJudgeAction, note?: string): { summary:
   const suffix = note === undefined || note.trim() === '' ? '' : `：${note.trim()}`
   const spec: Record<AdvanceJudgeAction, { summary: string; stageTo?: AdvanceStage; changeType: string }> = {
     confirm_condition: { summary: `确认新条件${suffix}`, changeType: '备注' },
-    confirm_advance: { summary: `确认推进${suffix}`, stageTo: 'updated', changeType: '阶段变化' },
+    confirm_advance: { summary: `确认推进${suffix}`, stageTo: 'running', changeType: '阶段变化' },
     accept: { summary: `验收通过${suffix}`, stageTo: 'completed', changeType: '阶段变化' },
     reject: { summary: `打回补充${suffix}`, stageTo: 'running', changeType: '阶段变化' },
     ignore: { summary: `忽略本次评估，不构成新约束${suffix}`, stageTo: 'running', changeType: '备注' },
@@ -2127,7 +2133,7 @@ export function applyAdvanceTools(
         return true
       })
       const rank: Record<AdvanceStage, number> = {
-        'decision-needed': 0, 'ready-for-review': 1, 'updated': 2, 'running': 3, 'draft': 4, 'completed': 5, 'cancelled': 6,
+        'decision-needed': 0, 'ready-for-review': 1, 'running': 2, 'completed': 3, 'cancelled': 4,
       }
       const sorted = filtered.sort((a, b) =>
         rank[a.stage] === rank[b.stage] ? (a.advanceId < b.advanceId ? -1 : 1) : rank[a.stage] - rank[b.stage])
@@ -2357,7 +2363,7 @@ export function applyAdvanceTools(
   }))
   ctx.tools.register(defineTool({
     name: 'yzj_advance_create',
-    description: 'Create one advancement item (推进事项) on the AI推进 board (auto-provisions the 事项/事元 tables on first use). Prefill the 7 fields from the conversation so the user only confirms (AI 预填). 分流判据（决策 46）：完成标准自明、一句话说清的单动作用 `yzj_todo_create`（轻、可逆）；有业务目标 + 成功指标 + 需跨时间跟进判断的才建推进事项；拿不准建待办，做一半发现需持续跟再升级立项。When 立项 happens inside a group topic, pass sources=[im:<groupId>] so the founding group becomes 来源① (intent-thread subscription, spec §15); later patrol scans follow the subscription. Idempotent: pass advanceId to adopt an existing item. Starts at stage draft; move it with yzj_advance_feed.',
+    description: 'Create one advancement item (推进事项) on the AI推进 board (auto-provisions the 事项/事元 tables on first use). Prefill the 7 fields from the conversation so the user only confirms (AI 预填). 分流判据（决策 46）：完成标准自明、一句话说清的单动作用 `yzj_todo_create`（轻、可逆）；有业务目标 + 成功指标 + 需跨时间跟进判断的才建推进事项；拿不准建待办，做一半发现需持续跟再升级立项。When 立项 happens inside a group topic, pass sources=[im:<groupId>] so the founding group becomes 来源① (intent-thread subscription, spec §15); later patrol scans follow the subscription. Idempotent: pass advanceId to adopt an existing item. Starts at stage running (立项即推进中, 决策 52); move it with yzj_advance_feed.',
     parameters: {
       title: { type: 'string', required: true, description: 'Item name (名称).' },
       advanceId: { type: 'string', description: 'Explicit stable id (A-YYYYMMDD-NNN); when it exists the existing item is returned unchanged (idempotent).' },

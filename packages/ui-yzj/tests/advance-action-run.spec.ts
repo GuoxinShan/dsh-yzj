@@ -36,7 +36,7 @@ function fakeDeps(over?: {
     },
     ...(over?.noTodo === true ? {} : {
       todo: {
-        create: async (input: { title: string; ddl?: string; tags?: string[] }) => {
+        createFromAgent: async (input: { title: string; description?: string; ddl?: string; tags?: string[] }) => {
           if (over?.todoThrows === true) throw new Error('创建失败')
           calls.todos.push(input as Record<string, unknown>)
           return { todoId: 'T-20260821-007' }

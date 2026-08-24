@@ -56,6 +56,15 @@ export interface YzjPanelInject {
   createTodo: (input: { title: string; ddl?: string; priority?: string; tags?: string[] }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Toggle complete / reopen one todo (user-direct write). */
   toggleTodo: (todoId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Swimlane human verbs (todo-swimlane-agent §3; user-direct writes, no card). */
+  approveTodo: (todoId: string, note?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  acceptTodo: (todoId: string, note?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  returnTodo: (todoId: string, note?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  cancelTodo: (todoId: string, note?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Reopen a cancelled todo back to 可认领 (user-direct write). */
+  reopenTodo: (todoId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  /** Edit task details (S7): title/description（agent 执行的提示词本体）/ddl/assignee/priority/tags. */
+  editTodo: (todoId: string, patch: { title?: string; description?: string; ddl?: string; assignee?: string; priority?: string; tags?: string[] }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Library switcher data: discovered libraries + provisionable team workspaces. */
   todoLibraries: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Switch the active library (panel picker; agent writes follow it). */
@@ -243,6 +252,20 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
       ...(input.tags === undefined || input.tags.length === 0 ? {} : { tags: input.tags }),
     }),
     toggleTodo: (todoId) => call('todo-toggle', { todoId }),
+    approveTodo: (todoId, note) => call('todo-approve', { todoId, ...(note === undefined || note === '' ? {} : { note }) }),
+    acceptTodo: (todoId, note) => call('todo-accept', { todoId, ...(note === undefined || note === '' ? {} : { note }) }),
+    returnTodo: (todoId, note) => call('todo-return', { todoId, ...(note === undefined || note === '' ? {} : { note }) }),
+    cancelTodo: (todoId, note) => call('todo-cancel', { todoId, ...(note === undefined || note === '' ? {} : { note }) }),
+    reopenTodo: (todoId) => call('todo-reopen', { todoId }),
+    editTodo: (todoId, patch) => call('todo-edit', {
+          todoId,
+          ...(patch.title === undefined ? {} : { title: patch.title }),
+          ...(patch.description === undefined ? {} : { description: patch.description }),
+          ...(patch.ddl === undefined ? {} : { ddl: patch.ddl }),
+          ...(patch.assignee === undefined ? {} : { assignee: patch.assignee }),
+          ...(patch.priority === undefined ? {} : { priority: patch.priority }),
+          ...(patch.tags === undefined ? {} : { tags: patch.tags }),
+        }),
     todoLibraries: () => call('todo-libraries', {}),
     selectTodoLibrary: (docId) => call('todo-select', { docId }),
     ensureTeamTodo: (workspace) => call('todo-ensure-team', { workspace }),

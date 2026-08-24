@@ -570,6 +570,7 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
         try {
           const created = await todo.create({
             title,
+            description: stringField(record, 'description'),
             ddl: stringField(record, 'ddl'),
             priority: stringField(record, 'priority'),
             assignee: stringField(record, 'assignee'),
@@ -589,6 +590,94 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
           return { ok: true, value: await todo.toggle(todoId) }
         } catch (error) {
           return internalError(`todo-toggle failed: ${String(error)}`)
+        }
+      }
+      // --- 泳道人动词（todo-swimlane-agent §3：面板直写 = 用户本人意志，无确认卡） ---
+      case 'todo-approve': {
+        // backlog→todo（待我决定 → 可认领）
+        const todo = ctx.get('yzjTodo')
+        if (todo === undefined) return internalError('todo-approve: yzjTodo 服务不可用（tool-yzj 未挂载）')
+        const todoId = stringField(payload, 'todoId')
+        if (todoId === undefined) return internalError('todo-approve endpoint requires a todoId payload')
+        try {
+          return { ok: true, value: await todo.approve(todoId, stringField(payload, 'note')) }
+        } catch (error) {
+          return internalError(`todo-approve failed: ${String(error)}`)
+        }
+      }
+      case 'todo-accept': {
+        // in_review→done（待我验收 → 已完成；验收闸，S2）
+        const todo = ctx.get('yzjTodo')
+        if (todo === undefined) return internalError('todo-accept: yzjTodo 服务不可用（tool-yzj 未挂载）')
+        const todoId = stringField(payload, 'todoId')
+        if (todoId === undefined) return internalError('todo-accept endpoint requires a todoId payload')
+        try {
+          return { ok: true, value: await todo.accept(todoId, stringField(payload, 'note')) }
+        } catch (error) {
+          return internalError(`todo-accept failed: ${String(error)}`)
+        }
+      }
+      case 'todo-return': {
+        // 打回：host 按当前态选合法落点（todo→backlog / in_progress→todo / in_review→in_progress）
+        const todo = ctx.get('yzjTodo')
+        if (todo === undefined) return internalError('todo-return: yzjTodo 服务不可用（tool-yzj 未挂载）')
+        const todoId = stringField(payload, 'todoId')
+        if (todoId === undefined) return internalError('todo-return endpoint requires a todoId payload')
+        try {
+          return { ok: true, value: await todo.sendBack(todoId, stringField(payload, 'note')) }
+        } catch (error) {
+          return internalError(`todo-return failed: ${String(error)}`)
+        }
+      }
+      case 'todo-cancel': {
+        // 任意 open 态→cancelled（唯一终止坑；无删除工具）
+        const todo = ctx.get('yzjTodo')
+        if (todo === undefined) return internalError('todo-cancel: yzjTodo 服务不可用（tool-yzj 未挂载）')
+        const todoId = stringField(payload, 'todoId')
+        if (todoId === undefined) return internalError('todo-cancel endpoint requires a todoId payload')
+        try {
+          return { ok: true, value: await todo.cancel(todoId, stringField(payload, 'note')) }
+        } catch (error) {
+          return internalError(`todo-cancel failed: ${String(error)}`)
+        }
+      }
+      case 'todo-reopen': {
+        // cancelled→todo（已终止重开回可认领列）
+        const todo = ctx.get('yzjTodo')
+        if (todo === undefined) return internalError('todo-reopen: yzjTodo 服务不可用（tool-yzj 未挂载）')
+        const todoId = stringField(payload, 'todoId')
+        if (todoId === undefined) return internalError('todo-reopen endpoint requires a todoId payload')
+        try {
+          return { ok: true, value: await todo.reopen(todoId) }
+        } catch (error) {
+          return internalError(`todo-reopen failed: ${String(error)}`)
+        }
+      }
+      case 'todo-edit': {
+        // 编辑任务详情（S7）：标题/描述/DDL/负责人/优先级/标签——描述是 agent 执行的提示词本体。
+        const todo = ctx.get('yzjTodo')
+        if (todo === undefined) return internalError('todo-edit: yzjTodo 服务不可用（tool-yzj 未挂载）')
+        const todoId = stringField(payload, 'todoId')
+        if (todoId === undefined) return internalError('todo-edit endpoint requires a todoId payload')
+        const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
+        const rawTags = record.tags
+        const tags = Array.isArray(rawTags)
+          ? rawTags.filter((item): item is string => typeof item === 'string')
+          : undefined
+        try {
+          return {
+            ok: true,
+            value: await todo.edit(todoId, {
+              ...(stringField(record, 'title') === undefined ? {} : { title: stringField(record, 'title') as string }),
+              ...(stringField(record, 'description') === undefined ? {} : { description: stringField(record, 'description') as string }),
+              ...(stringField(record, 'ddl') === undefined ? {} : { ddl: stringField(record, 'ddl') as string }),
+              ...(stringField(record, 'assignee') === undefined ? {} : { assignee: stringField(record, 'assignee') as string }),
+              ...(stringField(record, 'priority') === undefined ? {} : { priority: stringField(record, 'priority') as string }),
+              ...(tags === undefined ? {} : { tags }),
+            }),
+          }
+        } catch (error) {
+          return internalError(`todo-edit failed: ${String(error)}`)
         }
       }
       case 'advance-state': {

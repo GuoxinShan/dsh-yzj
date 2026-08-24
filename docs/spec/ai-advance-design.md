@@ -52,22 +52,21 @@
 - **轻量待办与事项的关系**：`yzj_todo_*` 三态与待办页签均不动——待办是事元的一种（一条待办可挂进某事项，其完成/推进作为事元回流），不是事项本身。
 - **时间线完整性不变量**（硬要求 ②）：事元行只增不改不删（代码里不存在 update/delete 路径）；摘要/变化内容存全文；裁剪只发生在模型面 digest 与面板首屏窗口；`yzj_advance_get` 支持窗口翻页读全量。知识沉淀出口（第④期）：推进完成后把完整事元流折成复盘文档入知识库（目标演化、关键决策、偏差与证据链），并供 memory-yzj dream 固化取材。
 
-## 2. 状态机（六态 + cancelled 终局；v1.6 起七态）
+## 2. 状态机（v1.11 起五态；v1.6–v1.10 为七态，draft/updated 已砍——决策 52）
 
 ```
-draft → running
-running → decision-needed | ready-for-review | draft（打回草稿）
-decision-needed → running | updated（用户拍板后）
-updated → running | ready-for-review
-ready-for-review → completed | running（验收打回）
+running → decision-needed | ready-for-review | cancelled
+decision-needed → running | cancelled
+ready-for-review → completed | running（验收打回）| cancelled
 completed → running（重开）
-（非终态）→ cancelled（v1.6：中止——黄了/不再推进的体面收口）
 cancelled → running（重启）
 ```
 
+- 立项即 `running`（立项确认卡已是人的批准闸，draft 中转站无独立语义——且消灭「立项后还要再 feed 一次才开跑」的无效往返）。
 - `running` 是默认稳态：不进「待我决定/待我验收」栏、不打扰。
-- `decision-needed → updated` 可多次触发（最小推进回路）。
+- `decision-needed → running`：用户拍板后直接回稳态（原 `updated` 回执态砍——「方案已应用」由时间线事元承载，UI 里它与 running 同列，是冗余）。
 - `cancelled`（已中止）与 `completed` 同为终局：**只由用户 judge 进入**（agent 禁止 stageTo=cancelled，同 completed；终局判断是人的主权）。中止是「黄了/不再推进」的体面收口——失败事项是复盘价值最高的对象（决策 26）。open 队列排除 completed/cancelled。
+- 存量归一化：读取时 `draft`/`updated` 透明映射为 `running`（SQLite 自由字符串，零迁移脚本）。
 - 非法跳变拒绝并在 digest 里回说明合法路径（与 todo 状态机同一范式）。
 
 ## 3. 存储 schema v1（demo 阶段：沿用「待办任务库」dbt + 库切换器）
@@ -235,6 +234,7 @@ guard `WRITE_SPECS` +2：`yzj_advance_create` 一律标准确认；`yzj_advance_
 | 48 | todo: 渠道采集器（v1.9，**已落地**） | **`coreScanAdvance` 新增 todo: 渠道**：订阅聚合阶段收集 open 事项的 `todo:` token；指纹 = `status\|logLength`，首扫建基线不回灌（与 im: 同规则），变化产一条信号入池（content=「待办「X」有进展：状态 A→B + 最新日志行」）；cursor 乘共享 cursors 表（key=`todo:<id>`，零迁移）；`scanStateOf` 过滤 todo: 渠道不进面板巡检行；Dream prompt 补「todo: 条目 refs 直接抄 refId」+「sourceType 按渠道标：im→对话 / dir→文档 / todo→待办」 | dsh-2 演习（§24.28）证实断层：决策 45 自动订阅的 todo:<id> 无采集器，「完成回流」只能靠 agent 主动 feed；本决策补上「执行→再观察」弧的最后一截。真机证据见 §24.29 |
 | 50 | 话题功能 + 机器人/记忆卡撤下（v1.10，2026-08-23） | **只撤 UI 入口、机制保留**：群房间撤话题 toggle/「交给助手」/话题 chip/话题抽屉（topic-drawer.tsx 保留待恢复）；讨论回环（决策 41）落点从话题抽屉改为群房间 + banner 草稿提示；设置页撤机器人管理卡（登录卡保留）。robot-yzj / memory-yzj **插件挂载不动**（通道/工具后台在跑，R29 投递不受影响） | 用户拍板「机器人还有记忆的功能全部去掉，我还没想好怎么做」——可逆优先：撤呈现层入口，哪天想清了加回界面即可，不断链路 |
 | 51 | 机器人/记忆后台停运（v1.10，2026-08-23） | **cordis.patch.yml 摘除 robot-yzj + memory-yzj 挂载行**（包保留，`packages/robot-yzj` / `packages/memory-yzj` 不删，加回两行即恢复）；连带：R29 话题产物投递、@机器人入站、memory_* 工具族、dream 固化（记忆库侧）全停；guard 清 robot_notify/robot_continue/robot_share_write 死条目（isBoundHomeSession 随之删除）；write-gate/write-card 清 robot 判断与标签。AI推进的 Dream 池/巡检（tool-yzj）不受影响 | 用户追问「机器人和记忆是不是后台也先停了」——决策 50 撤 UI 后连后台一起停；所有依赖点已验证优雅降级（yzjRobot/yzjMemory 服务缺席均有「未挂载」明示错误，write-gate 的 ownsConfirm undefined 安全） |
+| 52 | 状态机七态→五态（v1.11，2026-08-24） | **砍 draft 与 updated**：立项即 running（立项确认卡已是人的批准闸，draft 中转站无独立语义，且消灭「立项后再 feed 一次才开跑」的无效往返）；decision-needed 拍板后直接回 running（updated 回执态冗余——「方案已应用」由时间线事元承载，UI 里它与 running 同列）。存量读取时 draft/updated 透明归一为 running（SQLite 自由字符串零迁移脚本）。与泳道待办六态同会话定稿：两板同构——稳态（running）/ 待我决定 / 待我验收 / 终局，泳道列名与三栏目同词 | 用户拍板「状态都不要搞得太复杂，MVP 阶段就是现在搞清楚」：审计结论 draft/updated 是中转站不是承重墙——draft 无人批准语义（闸在确认卡），updated 是事元已承载的回执；存储切 SQLite 后改状态机从「备份删表重建」降为读取归一化，MVP 阶段改模型成本最低。留下的五态每条都是承重墙：稳态不打扰 + 两道人的闸 + 终局人主权 |
 | 49 | 推荐订阅源（v1.10，**已落地**） | **扫描范围零扩张**：只推「已与事项发生过关系」的渠道（① feed 后 refs 反推——host 机械零成本；② Dream 跨事项比对——池信号与事项强相关但未订阅其渠道）；不推荐未接触渠道、不做隐式全群扫描（决策 17 不动）。**推荐事元**（备注 + `推荐订阅: <token>` 标记行）+ **降噪三闸**（同渠道终身只推一次 / 不回溯历史 / 忽略永久）+ **货架不是账单**（右栏灰字行「＋N 个推荐来源」，不进待我决定/队列/主视觉，不点无后果）。挂上/忽略 = 用户直写无卡；订阅边界始终人划。配套修正：写入面 refs 统一带渠道 token（群房间 hover + 话题透镜都组 `im:<groupId>:<msgId>`，原裸 msgId 推不出渠道——真机首轮发现） | 用户拍板「自动推荐订阅源降低摩擦，不要让用户手动订阅确认就好」+「一下推荐几百条没有意义」——推荐是点亮已证据的渠道，不是探索；呈现是可选项不是任务（与决策卡「必须拍板」本质不同） |
 
 ## 10. 验收口径（第一期）

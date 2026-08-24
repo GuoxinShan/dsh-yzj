@@ -35,6 +35,7 @@ export function setTodoBackend(next: 'dbt' | 'sqlite'): void {
 const F = {
   id: 'todo_id',
   title: '标题',
+  desc: '描述',
   status: '状态',
   assignee: '负责人',
   ddl: 'DDL',
@@ -42,20 +43,32 @@ const F = {
   tags: '标签',
   source: '来源',
   log: '推进日志',
+  claimedBy: '认领会话',
+  version: '版本',
+  review: '验收说明',
 } as const
 
 /** Library titles used for discovery/provisioning. */
 const LIBRARY_TITLE = '待办任务库'
 const TABLE_NAME = '任务'
 
-/** Status values of the todo state machine. */
-export type TodoStatus = 'pending' | 'in_progress' | 'done'
+/**
+ * Status values of the swimlane state machine (todo-swimlane-agent.md §2.1):
+ * backlog（待我决定）→ todo（可认领）→ in_progress → in_review（待我验收）→ done；
+ * cancelled 终局（人）。blocked 砍为 release 备注（S8）；legacy 'pending'
+ * reads normalize to 'todo'（S5）。
+ */
+export type TodoStatus = 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done' | 'cancelled'
+
+export const TODO_STATUSES: readonly TodoStatus[] = ['backlog', 'todo', 'in_progress', 'in_review', 'done', 'cancelled']
 
 /** One parsed todo record. */
 export interface YzjTodo {
   recordId: string
   todoId: string
   title: string
+  /** 描述 = the prompt body the claiming agent executes (S7; human-editable). */
+  description: string
   status: TodoStatus
   assignee: string
   assigneeOpenId: string
@@ -63,6 +76,12 @@ export interface YzjTodo {
   priority: string
   tags: string[]
   log: string
+  /** Agent session id holding the claim (audit trail; empty = unclaimed). */
+  claimedBy: string
+  /** Optimistic-lock version, bumped on every status transition. */
+  version: number
+  /** Latest submit_review note shown on the 待验收 card. */
+  reviewNote: string
   overdue: boolean
 }
 
@@ -103,6 +122,10 @@ export interface TodoBindingHolder {
 /** Input for creating one todo. */
 export interface TodoCreateInput {
   title: string
+  /** 描述（S7）——agent 认领后执行的提示词本体；人可在面板编辑。 */
+  description?: string | undefined
+  /** Landing column (S6): agent-created → 'backlog'（待我决定）; panel quick-create → 'todo'. */
+  initialStatus?: 'backlog' | 'todo' | undefined
   todoId?: string | undefined
   assignee?: string | undefined
   ddl?: string | undefined
@@ -158,25 +181,41 @@ export function normalizeDdl(input: string): string {
   return `${y}/${m.padStart(2, '0')}/${d.padStart(2, '0')}`
 }
 
-/** Whether a todo is overdue (DDL passed and not done). */
+/** Whether a todo is overdue (DDL passed and not terminal). */
 export function isOverdue(status: string, ddl: string, today = todayStr()): boolean {
-  return status !== 'done' && ddl !== '' && ddl < today
+  return status !== 'done' && status !== 'cancelled' && ddl !== '' && ddl < today
+}
+
+/**
+ * Legal edges of the swimlane machine (todo-swimlane-agent §2.1). Human edges
+ * (approve/accept/return/cancel) are panel-direct writes (D9, no card);
+ * agent edges go through the claim family (claim/submit_review/release);
+ * done-from-anything stays the carded fast path (yzj_todo_complete / 勾选）。
+ */
+export const TODO_NEXT: Record<TodoStatus, readonly TodoStatus[]> = {
+  backlog: ['todo', 'cancelled'],
+  todo: ['in_progress', 'backlog', 'cancelled'],
+  in_progress: ['in_review', 'todo', 'cancelled'],
+  in_review: ['done', 'in_progress', 'cancelled'],
+  done: ['in_progress'],
+  cancelled: ['todo'],
+}
+
+/** Read-time status normalization (S5): legacy pending folds into todo. */
+export function normalizeTodoStatus(status: string): TodoStatus {
+  if (status === 'pending') return 'todo'
+  return (TODO_STATUSES.includes(status as TodoStatus) ? status : 'todo') as TodoStatus
 }
 
 /**
  * Validate a status transition; returns an error message or null.
- * pending→done must go through yzj_todo_complete (or in_progress).
+ * The done-from-anything fast path bypasses this via coreSetStatus force.
  */
 export function checkTransition(from: string, to: string): string | null {
   if (from === to) return null
-  const allowed: Record<string, string[]> = {
-    pending: ['in_progress'],
-    in_progress: ['pending', 'done'],
-    done: ['in_progress'],
-  }
-  const targets = allowed[from] ?? []
-  if (targets.includes(to)) return null
-  return `状态机拒绝 ${from} → ${to}：合法流转为 pending→in_progress→done（done→in_progress 可重开，in_progress→pending 可打回）；直接完成请用 yzj_todo_complete`
+  const targets: readonly TodoStatus[] = TODO_NEXT[normalizeTodoStatus(from)] ?? []
+  if (targets.includes(to as TodoStatus)) return null
+  return `状态机拒绝 ${from} → ${to}：合法流转为 backlog→todo→in_progress→in_review→done（打回走反向边，cancelled 可重开 todo）；直接完成请用 yzj_todo_complete`
 }
 
 /** Append one line to the append-only progress log. */
@@ -207,21 +246,26 @@ export function parseTodoRecord(record: unknown, today = todayStr()): YzjTodo | 
   }
   const todoId = asString(fields[F.id])
   if (todoId === '') return null
-  const status = asString(fields[F.status]) || 'pending'
+  const status = normalizeTodoStatus(asString(fields[F.status]))
   const assignee = asString(fields[F.assignee])
   const parsed = parseAssignee(assignee)
   const ddl = normalizeDdl(asString(fields[F.ddl]))
+  const rawVersion = fields[F.version]
   return {
     recordId: asString(row.id ?? row.recordId),
     todoId,
     title: asString(fields[F.title]),
-    status: (['pending', 'in_progress', 'done'].includes(status) ? status : 'pending') as TodoStatus,
+    description: asString(fields[F.desc]),
+    status,
     assignee: parsed.name,
     assigneeOpenId: parsed.openId,
     ddl,
     priority: asString(fields[F.priority]),
     tags: normalizeTags(asString(fields[F.tags])),
     log: asString(fields[F.log]),
+    claimedBy: asString(fields[F.claimedBy]),
+    version: typeof rawVersion === 'number' && Number.isFinite(rawVersion) ? rawVersion : 0,
+    reviewNote: asString(fields[F.review]),
     overdue: isOverdue(status, ddl, today),
   }
 }
@@ -282,13 +326,17 @@ function tableFieldsJson(): string {
   return JSON.stringify([
     { name: F.id, type: 'MultiLineText' },
     { name: F.title, type: 'MultiLineText' },
-    { name: F.status, type: 'SingleSelect', data: { items: [{ value: 'pending' }, { value: 'in_progress' }, { value: 'done' }] } },
+    { name: F.desc, type: 'MultiLineText' },
+    { name: F.status, type: 'SingleSelect', data: { items: TODO_STATUSES.map(value => ({ value })) } },
     { name: F.assignee, type: 'MultiLineText' },
     { name: F.ddl, type: 'Date' },
     { name: F.priority, type: 'SingleSelect', data: { items: [{ value: 'P0' }, { value: 'P1' }, { value: 'P2' }] } },
     { name: F.tags, type: 'MultiLineText' },
     { name: F.source, type: 'Url' },
     { name: F.log, type: 'MultiLineText' },
+    { name: F.claimedBy, type: 'MultiLineText' },
+    { name: F.version, type: 'MultiLineText' },
+    { name: F.review, type: 'MultiLineText' },
   ])
 }
 
@@ -584,7 +632,9 @@ export async function coreCreate(
     throw new Error(`todo: 生成的 todo_id ${todoId} 已冲突，请显式传入 todoId`)
   }
   const tags = normalizeTags(input.tags)
-  const fields: Record<string, unknown> = { [F.id]: todoId, [F.title]: title, [F.status]: 'pending' }
+  const landing: TodoStatus = input.initialStatus ?? 'backlog'
+  const fields: Record<string, unknown> = { [F.id]: todoId, [F.title]: title, [F.status]: landing }
+  if (input.description !== undefined && input.description.trim() !== '') fields[F.desc] = input.description.trim()
   let assigneeNote = ''
   if (input.assignee !== undefined && input.assignee.trim() !== '') {
     const resolved = await resolveAssignee(ctx, budget, input.assignee)
@@ -595,7 +645,7 @@ export async function coreCreate(
   if (input.priority !== undefined && input.priority !== '') fields[F.priority] = input.priority
   if (tags.length > 0) fields[F.tags] = formatTags(tags)
   const refLine = (input.refs ?? []).length > 0 ? `\n${nowStamp()} 来源引用 ${(input.refs ?? []).join(' ')}` : ''
-  fields[F.log] = `${nowStamp()} 创建${refLine}`
+  fields[F.log] = `${nowStamp()} 创建${landing === 'backlog' ? '（落待我决定，待人批准）' : ''}${refLine}`
   const wrote = await writeRecords(ctx, budget, 'sheet record create', binding, JSON.stringify([{ fieldsValue: fields }]))
   if (!wrote.ok) throw new Error(wrote.content)
   const created = cliRecords(wrote.json).map(record => parseTodoRecord(record)).find(todo => todo !== null)
@@ -610,10 +660,26 @@ export interface CoreStatusResult {
   binding: TodoBinding
 }
 
+/** Options steering one status transition (log verb, claim bookkeeping, force). */
+export interface CoreStatusOptions {
+  /** Note appended to the transition log line. */
+  note?: string | undefined
+  /** Log verb override (默认按 target 推断). */
+  verb?: string | undefined
+  /** Skip the machine check — ONLY the human complete fast path (D9: 勾选 / complete 卡后的人意志). */
+  force?: boolean | undefined
+  /** Agent session id recorded on claim (认领会话 field + audit). */
+  sessionId?: string | undefined
+  /** Clear the claim holder (release / 打回出 in_progress). */
+  clearClaim?: boolean | undefined
+  /** Review note stored for the 待验收 card (submit_review). */
+  reviewNote?: string | undefined
+}
+
 /**
  * Set a todo's status with state-machine enforcement and host-appended log.
- * `done` from any state is the complete convenience; `changed: false` marks
- * an idempotent hit (already at target).
+ * Every transition bumps the optimistic-lock version. `force` bypasses the
+ * machine (complete fast path only); `changed: false` marks an idempotent hit.
  */
 export async function coreSetStatus(
   ctx: Context,
@@ -622,7 +688,7 @@ export async function coreSetStatus(
   cache: { binding?: TodoBinding },
   todoId: string,
   target: TodoStatus,
-  note?: string,
+  opts: CoreStatusOptions = {},
   holder?: TodoBindingHolder,
 ): Promise<CoreStatusResult> {
   const binding = await resolveLibrary(ctx, budget, config, cache, false, holder)
@@ -631,16 +697,118 @@ export async function coreSetStatus(
     throw new Error(`todo: 待办 ${todoId} 不存在；先用 yzj_todo_list 查真实 id，不要猜测`)
   }
   if (existing.status === target) return { todo: existing, from: existing.status, changed: false, binding }
-  if (target !== 'done') {
+  if (opts.force !== true) {
     const violation = checkTransition(existing.status, target)
     if (violation !== null) throw new Error(`todo: ${violation}`)
   }
-  const verb = target === 'done' ? '完成' : target === 'in_progress' ? '推进' : '打回'
-  const noteText = note === undefined ? '' : note.trim()
+  const verb = opts.verb ?? (target === 'done' ? '完成' : target === 'in_progress' ? '推进' : target === 'in_review' ? '交卷' : target === 'cancelled' ? '中止' : target === 'todo' ? '可认领' : '打回')
+  const noteText = (opts.note ?? '').trim()
   const log = appendLog(existing.log, `${nowStamp()} 状态 ${existing.status}→${target}（${verb}${noteText === '' ? '' : `：${noteText}`}）`)
-  const wrote = await writeRecords(ctx, budget, 'sheet record update', binding, JSON.stringify([{ id: existing.recordId, fieldsValue: { [F.status]: target, [F.log]: log } }]))
+  const fieldsValue: Record<string, unknown> = { [F.status]: target, [F.log]: log, [F.version]: existing.version + 1 }
+  if (opts.sessionId !== undefined && opts.sessionId !== '') fieldsValue[F.claimedBy] = opts.sessionId
+  if (opts.clearClaim === true) fieldsValue[F.claimedBy] = ''
+  if (opts.reviewNote !== undefined) fieldsValue[F.review] = opts.reviewNote
+  const wrote = await writeRecords(ctx, budget, 'sheet record update', binding, JSON.stringify([{ id: existing.recordId, fieldsValue }]))
   if (!wrote.ok) throw new Error(wrote.content)
-  return { todo: { ...existing, status: target, log }, from: existing.status, changed: true, binding }
+  const next: YzjTodo = {
+    ...existing,
+    status: target,
+    log,
+    version: existing.version + 1,
+    claimedBy: opts.clearClaim === true ? '' : (opts.sessionId ?? existing.claimedBy),
+    reviewNote: opts.reviewNote ?? existing.reviewNote,
+  }
+  return { todo: next, from: existing.status, changed: true, binding }
+}
+
+/** Fetch one todo or throw the canonical not-found error. */
+async function mustFetch(
+  ctx: Context,
+  budget: YzjToolBudget,
+  config: TodoConfig,
+  cache: { binding?: TodoBinding },
+  todoId: string,
+  holder?: TodoBindingHolder,
+): Promise<{ todo: YzjTodo; binding: TodoBinding }> {
+  const binding = await resolveLibrary(ctx, budget, config, cache, false, holder)
+  const todo = await fetchTodoByTodoId(ctx, budget, binding, todoId)
+  if (todo === undefined) {
+    throw new Error(`todo: 待办 ${todoId} 不存在；先用 yzj_todo_list 查真实 id，不要猜测`)
+  }
+  return { todo, binding }
+}
+
+/**
+ * Agent claim (yzj_todo_claim): todo→in_progress. 排他由状态机本体保证
+ *（只有 todo 态能进）；认领记录会话 id + 版本递增（谁干的可查，stale 即重读）。
+ */
+export async function coreClaim(
+  ctx: Context,
+  budget: YzjToolBudget,
+  config: TodoConfig,
+  cache: { binding?: TodoBinding },
+  todoId: string,
+  sessionId: string,
+  holder?: TodoBindingHolder,
+): Promise<CoreStatusResult> {
+  const { todo } = await mustFetch(ctx, budget, config, cache, todoId, holder)
+  if (todo.status === 'backlog') throw new Error(`todo: 「${todo.title}」还在「待我决定」——人批准后才可认领`)
+  if (todo.status !== 'todo') {
+    throw new Error(`todo: 「${todo.title}」当前 ${todo.status}，只有「可认领」状态能认领${todo.claimedBy === '' ? '' : `（已认领会话 ${todo.claimedBy}）`}`)
+  }
+  return coreSetStatus(ctx, budget, config, cache, todoId, 'in_progress', { verb: '认领', sessionId }, holder)
+}
+
+/**
+ * Agent submit for review (yzj_todo_submit_review): in_progress→in_review.
+ * done 永远只经人 accept（S2）。交卷带上结果说明（+ 证据 refs 进日志）。
+ */
+export async function coreSubmitReview(
+  ctx: Context,
+  budget: YzjToolBudget,
+  config: TodoConfig,
+  cache: { binding?: TodoBinding },
+  todoId: string,
+  note: string,
+  refs: readonly string[] | undefined,
+  sessionId: string,
+  holder?: TodoBindingHolder,
+): Promise<CoreStatusResult> {
+  const { todo } = await mustFetch(ctx, budget, config, cache, todoId, holder)
+  if (todo.status !== 'in_progress') throw new Error(`todo: 「${todo.title}」当前 ${todo.status}，只有「进行中」能交卷`)
+  if (todo.claimedBy !== '' && sessionId !== '' && todo.claimedBy !== sessionId) {
+    throw new Error(`todo: 「${todo.title}」由会话 ${todo.claimedBy} 认领，当前会话不能交卷`)
+  }
+  const trimmed = note.trim()
+  if (trimmed === '') throw new Error('todo: 交卷必须带结果说明（note）——验收人靠它判断')
+  const evidence = (refs ?? []).filter(ref => ref.trim() !== '').join(' ')
+  return coreSetStatus(ctx, budget, config, cache, todoId, 'in_review', {
+    verb: '交卷',
+    note: evidence === '' ? trimmed : `${trimmed}；证据 ${evidence}`,
+    reviewNote: evidence === '' ? trimmed : `${trimmed}\n证据：${evidence}`,
+  }, holder)
+}
+
+/**
+ * Agent release (yzj_todo_release_claim): in_progress→todo, clears the claim.
+ * 阻塞不是状态（S8）——卡住了带备注释放：「阻塞：…」，卡回可认领列。
+ */
+export async function coreReleaseClaim(
+  ctx: Context,
+  budget: YzjToolBudget,
+  config: TodoConfig,
+  cache: { binding?: TodoBinding },
+  todoId: string,
+  note: string | undefined,
+  sessionId: string,
+  holder?: TodoBindingHolder,
+): Promise<CoreStatusResult> {
+  const { todo } = await mustFetch(ctx, budget, config, cache, todoId, holder)
+  if (todo.status !== 'in_progress') throw new Error(`todo: 「${todo.title}」当前 ${todo.status}，只有「进行中」有认领可释放`)
+  if (todo.claimedBy !== '' && sessionId !== '' && todo.claimedBy !== sessionId) {
+    throw new Error(`todo: 「${todo.title}」由会话 ${todo.claimedBy} 认领，当前会话不能释放`)
+  }
+  return coreSetStatus(ctx, budget, config, cache, todoId, 'todo', { verb: '释放认领', note: note ?? '', clearClaim: true }, holder)
 }
 
 // ---------------------------------------------------------------------------
@@ -651,6 +819,7 @@ export async function coreSetStatus(
 export interface YzjTodoView {
   todoId: string
   title: string
+  description: string
   status: TodoStatus
   assignee: string
   assigneeOpenId: string
@@ -658,6 +827,9 @@ export interface YzjTodoView {
   priority: string
   tags: string[]
   log: string
+  claimedBy: string
+  version: number
+  reviewNote: string
   overdue: boolean
 }
 
@@ -881,21 +1053,135 @@ export class YzjTodoService extends Service {
     return { ready: true, library: binding, todos: [] }
   }
 
-  /** Quick-create (panel composer path). */
+  /** Quick-create (panel composer path) — user-direct write, lands in todo
+   *  （可认领）: the user creating it IS the approval (S6, D9). */
   async create(input: TodoCreateInput): Promise<YzjTodoView> {
-    const result = await coreCreate(this.ctx, this.budget, this.config, this.cache, input, this.holder)
+    const result = await coreCreate(this.ctx, this.budget, this.config, this.cache, { ...input, initialStatus: 'todo' }, this.holder)
     if (result.todo === null) throw new Error('todo: 创建成功但未能读回记录')
     return viewOf(result.todo)
   }
 
-  /** Toggle complete / reopen (panel checkbox path). */
+  /**
+   * Agent-origin create (decision-card action rows / advance-action-run) —
+   * lands in backlog（待我决定）; the human approve gate moves it to 可认领（S6）。
+   */
+  async createFromAgent(input: TodoCreateInput): Promise<YzjTodoView> {
+    const result = await coreCreate(this.ctx, this.budget, this.config, this.cache, { ...input, initialStatus: 'backlog' }, this.holder)
+    if (result.todo === null) throw new Error('todo: 创建成功但未能读回记录')
+    return viewOf(result.todo)
+  }
+
+  /** Toggle complete / reopen (panel checkbox path) — user-direct fast path (D9). */
   async toggle(todoId: string): Promise<YzjTodoView> {
     const current = await this.state()
     const existing = current.todos.find(todo => todo.todoId === todoId)
     if (existing === undefined) throw new Error(`todo: 待办 ${todoId} 不存在`)
     const target: TodoStatus = existing.status === 'done' ? 'in_progress' : 'done'
-    const result = await coreSetStatus(this.ctx, this.budget, this.config, this.cache, todoId, target, target === 'done' ? '面板勾选完成' : '面板重开', this.holder)
+    const result = await coreSetStatus(this.ctx, this.budget, this.config, this.cache, todoId, target, {
+      note: target === 'done' ? '面板勾选完成' : '面板重开',
+      verb: target === 'done' ? '完成' : '重开',
+      force: target === 'done',
+    }, this.holder)
     return viewOf(result.todo)
+  }
+
+  /** Human approve (backlog→todo) — panel direct write (D9, no card). */
+  async approve(todoId: string, note?: string): Promise<YzjTodoView> {
+    const result = await coreSetStatus(this.ctx, this.budget, this.config, this.cache, todoId, 'todo', { verb: '批准', note }, this.holder)
+    return viewOf(result.todo)
+  }
+
+  /** Human accept (in_review→done) — the review gate; done only enters here or the checkbox fast path (S2). */
+  async accept(todoId: string, note?: string): Promise<YzjTodoView> {
+    const result = await coreSetStatus(this.ctx, this.budget, this.config, this.cache, todoId, 'done', { verb: '验收通过', note }, this.holder)
+    return viewOf(result.todo)
+  }
+
+  /**
+   * Human 打回 — target derived from the current state (host owns the map):
+   * todo→backlog / in_progress→todo（清认领）/ in_review→in_progress。
+   */
+  async sendBack(todoId: string, note?: string): Promise<YzjTodoView> {
+    const { todo } = await mustFetch(this.ctx, this.budget, this.config, this.cache, todoId, this.holder)
+    const targets: Partial<Record<TodoStatus, TodoStatus>> = { todo: 'backlog', in_progress: 'todo', in_review: 'in_progress' }
+    const target = targets[todo.status]
+    if (target === undefined) throw new Error(`todo: 「${todo.title}」当前 ${todo.status}，没有可打回的边`)
+    const result = await coreSetStatus(this.ctx, this.budget, this.config, this.cache, todoId, target, {
+      verb: '打回', note, clearClaim: todo.status === 'in_progress',
+    }, this.holder)
+    return viewOf(result.todo)
+  }
+
+  /** Human cancel (any open→cancelled) — 唯一终止坑（无删除工具）。 */
+  async cancel(todoId: string, note?: string): Promise<YzjTodoView> {
+    const { todo } = await mustFetch(this.ctx, this.budget, this.config, this.cache, todoId, this.holder)
+    if (todo.status === 'done' || todo.status === 'cancelled') throw new Error(`todo: 「${todo.title}」已是终局（${todo.status}），不能中止`)
+    const result = await coreSetStatus(this.ctx, this.budget, this.config, this.cache, todoId, 'cancelled', { verb: '中止', note, clearClaim: todo.status === 'in_progress' }, this.holder)
+    return viewOf(result.todo)
+  }
+
+  /** Human reopen of a cancelled todo (cancelled→todo，回可认领列)。 */
+  async reopen(todoId: string): Promise<YzjTodoView> {
+    const result = await coreSetStatus(this.ctx, this.budget, this.config, this.cache, todoId, 'todo', { verb: '重开' }, this.holder)
+    return viewOf(result.todo)
+  }
+
+  /**
+   * Human edit of task details (S7): 标题/描述/DDL/负责人/优先级/标签。
+   * 描述是 agent 认领后执行的提示词本体——批准前改它是第一闸的本职。
+   */
+  async edit(todoId: string, patch: { title?: string; description?: string; ddl?: string; assignee?: string; priority?: string; tags?: readonly string[] }): Promise<YzjTodoView> {
+    const { todo, binding } = await mustFetch(this.ctx, this.budget, this.config, this.cache, todoId, this.holder)
+    const changes: string[] = []
+    const fields: Record<string, unknown> = {}
+    if (patch.title !== undefined && patch.title.trim() !== '' && patch.title.trim() !== todo.title) {
+      fields[F.title] = patch.title.trim()
+      changes.push(`标题→${patch.title.trim()}`)
+    }
+    if (patch.description !== undefined && patch.description.trim() !== todo.description) {
+      fields[F.desc] = patch.description.trim()
+      changes.push('描述已更新')
+    }
+    if (patch.ddl !== undefined && patch.ddl.trim() !== '') {
+      const ddl = normalizeDdl(patch.ddl)
+      if (ddl !== todo.ddl) {
+        fields[F.ddl] = ddl
+        changes.push(`DDL→${ddl}`)
+      }
+    }
+    if (patch.assignee !== undefined && patch.assignee.trim() !== '') {
+      const resolved = await resolveAssignee(this.ctx, this.budget, patch.assignee)
+      if (resolved.value !== todo.assignee) {
+        fields[F.assignee] = resolved.value
+        changes.push(`负责人→${resolved.value}`)
+      }
+    }
+    if (patch.priority !== undefined && patch.priority !== todo.priority) {
+      fields[F.priority] = patch.priority
+      changes.push(`优先级→${patch.priority}`)
+    }
+    if (patch.tags !== undefined) {
+      const tags = normalizeTags(patch.tags)
+      const nextTags = formatTags(tags)
+      if (nextTags !== formatTags(todo.tags)) {
+        fields[F.tags] = nextTags
+        changes.push(`标签→${nextTags}`)
+      }
+    }
+    if (changes.length === 0) return viewOf(todo)
+    fields[F.log] = appendLog(todo.log, `${nowStamp()} 编辑 ${changes.join('；')}`)
+    const wrote = await writeRecords(this.ctx, this.budget, 'sheet record update', binding, JSON.stringify([{ id: todo.recordId, fieldsValue: fields }]))
+    if (!wrote.ok) throw new Error(wrote.content)
+    return viewOf({
+      ...todo,
+      title: typeof fields[F.title] === 'string' ? fields[F.title] as string : todo.title,
+      description: typeof fields[F.desc] === 'string' ? fields[F.desc] as string : todo.description,
+      ddl: typeof fields[F.ddl] === 'string' ? fields[F.ddl] as string : todo.ddl,
+      assignee: typeof fields[F.assignee] === 'string' ? parseAssignee(fields[F.assignee] as string).name : todo.assignee,
+      priority: typeof fields[F.priority] === 'string' ? fields[F.priority] as string : todo.priority,
+      tags: patch.tags === undefined ? todo.tags : normalizeTags(patch.tags),
+      log: fields[F.log] as string,
+    })
   }
 
   /** Keep a selected binding visible in the picker across scans. */
@@ -920,6 +1206,7 @@ function viewOf(todo: YzjTodo): YzjTodoView {
   return {
     todoId: todo.todoId,
     title: todo.title,
+    description: todo.description,
     status: todo.status,
     assignee: todo.assignee,
     assigneeOpenId: todo.assigneeOpenId,
@@ -927,6 +1214,9 @@ function viewOf(todo: YzjTodo): YzjTodoView {
     priority: todo.priority,
     tags: todo.tags,
     log: todo.log,
+    claimedBy: todo.claimedBy,
+    version: todo.version,
+    reviewNote: todo.reviewNote,
     overdue: todo.overdue,
   }
 }
@@ -953,9 +1243,9 @@ export function applyTodoTools(ctx: Context, budget: YzjToolBudget, config: Todo
 
   ctx.tools.register(defineTool({
     name: 'yzj_todo_list',
-    description: 'List todos from the 待办任务库 (demo-stage sheet backend). Filter by status (pending/in_progress/done/overdue/open/all, default open), tag, or assignee name; sorted by DDL. Use tags to aggregate anything — a tag can be a project, a group, or any theme.',
+    description: 'List todos from the 泳道待办库. Filter by status (backlog 待我决定 / todo 可认领 / in_progress 进行中 / in_review 待我验收 / done / cancelled / overdue / open / all, default open), tag, or assignee name; sorted by DDL. Use tags to aggregate anything — a tag can be a project, a group, or any theme.',
     parameters: {
-      status: { type: 'string', enum: ['pending', 'in_progress', 'done', 'overdue', 'open', 'all'], description: 'open = not done; overdue = DDL passed and not done; default open.' },
+      status: { type: 'string', enum: ['backlog', 'todo', 'in_progress', 'in_review', 'done', 'cancelled', 'overdue', 'open', 'all'], description: 'open = not done/cancelled; overdue = DDL passed and not terminal; default open.' },
       tag: { type: 'string', description: 'Only todos carrying this tag (no # prefix needed).' },
       assignee: { type: 'string', description: 'Only todos whose 负责人 name matches (substring).' },
       limit: { type: 'number', description: 'Max rows in the digest, 1-100, default 50.' },
@@ -980,10 +1270,8 @@ export function applyTodoTools(ctx: Context, budget: YzjToolBudget, config: Todo
       const tag = args.tag === undefined ? '' : args.tag.replace(/^#+/, '').trim()
       const assignee = (args.assignee ?? '').trim()
       const filtered = todos.filter(todo => {
-        if (status === 'open' && todo.status === 'done') return false
-        if (status === 'pending' || status === 'in_progress' || status === 'done') {
-          if (todo.status !== status) return false
-        }
+        if (status === 'open' && (todo.status === 'done' || todo.status === 'cancelled')) return false
+        if ((TODO_STATUSES as readonly string[]).includes(status) && todo.status !== status) return false
         if (status === 'overdue' && !todo.overdue) return false
         if (tag !== '' && !todo.tags.includes(tag)) return false
         if (assignee !== '' && !todo.assignee.includes(assignee)) return false
@@ -1018,9 +1306,10 @@ export function applyTodoTools(ctx: Context, budget: YzjToolBudget, config: Todo
 
   ctx.tools.register(defineTool({
     name: 'yzj_todo_create',
-    description: 'Create a todo in the 待办任务库 (auto-provisions the library on first use). Idempotent: pass todoId to adopt an existing todo instead of creating a duplicate. Tags aggregate freely (#项目 #群名 …). 分流判据（决策 46）：待办 = 完成标准自明的轻量单动作；有业务目标/成功指标、需跨时间跟进与验收的事用 `yzj_advance_create` 建推进事项（一条待办可作为事元挂进事项，其完成经 todo:<id> 订阅回流）。',
+    description: 'Create a todo in the 泳道待办库 (auto-provisions the library on first use). Lands in backlog（待我决定）——人批准后才进可认领列（S6）；描述 = 认领后执行的提示词本体，写给未来的自己（S7）。Idempotent: pass todoId to adopt an existing todo instead of creating a duplicate. Tags aggregate freely (#项目 #群名 …). 分流判据（决策 46）：待办 = 完成标准自明的轻量单动作；有业务目标/成功指标、需跨时间跟进与验收的事用 `yzj_advance_create` 建推进事项（一条待办可作为事元挂进事项，其完成经 todo:<id> 订阅回流）。',
     parameters: {
       title: { type: 'string', required: true, description: 'Todo title.' },
+      description: { type: 'string', description: '描述（S7）：认领这条待办的 agent 要执行的提示词本体——目标、上下文、完成标准。人可在面板改。' },
       todoId: { type: 'string', description: 'Explicit stable id (T-YYYYMMDD-NNN); when it already exists the existing todo is returned unchanged (idempotent).' },
       assignee: { type: 'string', description: 'Assignee name (resolved to 姓名(openId) when the directory match is unique) or a preformatted 姓名(openId) value.' },
       ddl: { type: 'string', description: 'Deadline as YYYY-MM-DD or YYYY/MM/DD.' },
@@ -1036,6 +1325,8 @@ export function applyTodoTools(ctx: Context, budget: YzjToolBudget, config: Todo
       try {
         result = await coreCreate(ctx, budget, config, cache, {
           title: args.title,
+          description: args.description,
+          initialStatus: 'backlog',
           todoId: args.todoId,
           assignee: args.assignee,
           ddl: args.ddl,
@@ -1055,7 +1346,7 @@ export function applyTodoTools(ctx: Context, budget: YzjToolBudget, config: Todo
       }
       const todo = result.todo
       const content = [
-        `created 待办 ${todo?.todoId ?? ''} · ${args.title.trim()}${(args.tags ?? []).length > 0 ? ` · ${formatTags(normalizeTags(args.tags))}` : ''}${result.assigneeNote}`,
+        `created 待办 ${todo?.todoId ?? ''} · ${args.title.trim()}（落「待我决定」，人批准后 agent 可认领）${(args.tags ?? []).length > 0 ? ` · ${formatTags(normalizeTags(args.tags))}` : ''}${result.assigneeNote}`,
         `任务库 ${result.binding.link}`,
       ].join('\n')
       return {
@@ -1065,6 +1356,7 @@ export function applyTodoTools(ctx: Context, budget: YzjToolBudget, config: Todo
           kind: 'todo-create',
           todoId: todo?.todoId ?? '',
           title: args.title.trim(),
+          description: args.description ?? '',
           tags: normalizeTags(args.tags),
           assignee: args.assignee ?? '',
           ddl: args.ddl === undefined ? '' : normalizeDdl(args.ddl),
@@ -1078,10 +1370,10 @@ export function applyTodoTools(ctx: Context, budget: YzjToolBudget, config: Todo
 
   ctx.tools.register(defineTool({
     name: 'yzj_todo_update',
-    description: 'Update one todo by todoId: status (state machine enforced), assignee, ddl, priority, tags (replaced), plus an optional appendLog note. The progress log is appended host-side and cannot be rewritten.',
+    description: 'Update one todo by todoId: 描述（认领后执行的提示词本体）, assignee, ddl, priority, tags (replaced), plus an optional appendLog note. The progress log is appended host-side and cannot be rewritten. 状态不走这里——状态只能走合法边：agent 用 yzj_todo_claim / yzj_todo_submit_review / yzj_todo_release_claim，done 快路径用 yzj_todo_complete。',
     parameters: {
       todoId: { type: 'string', required: true, description: 'Stable todo id (from yzj_todo_list).' },
-      status: { type: 'string', enum: ['pending', 'in_progress', 'done'], description: 'New status; legal moves: pending→in_progress, in_progress↔pending/done, done→in_progress. pending→done must use yzj_todo_complete.' },
+      description: { type: 'string', description: 'New 描述（提示词本体）。' },
       assignee: { type: 'string', description: 'New assignee (name resolved when unique, or 姓名(openId)).' },
       ddl: { type: 'string', description: 'New deadline (YYYY-MM-DD or YYYY/MM/DD).' },
       priority: { type: 'string', enum: ['P0', 'P1', 'P2'], description: 'New priority.' },
@@ -1104,11 +1396,9 @@ export function applyTodoTools(ctx: Context, budget: YzjToolBudget, config: Todo
       }
       const changes: string[] = []
       const fields: Record<string, unknown> = {}
-      if (args.status !== undefined && args.status !== existing.status) {
-        const violation = checkTransition(existing.status, args.status)
-        if (violation !== null) throw new Error(`yzj_todo_update: ${violation}`)
-        fields[F.status] = args.status
-        changes.push(`状态 ${existing.status}→${args.status}`)
+      if (args.description !== undefined) {
+        fields[F.desc] = args.description.trim()
+        changes.push('描述已更新')
       }
       if (args.assignee !== undefined && args.assignee.trim() !== '') {
         const resolved = await resolveAssignee(ctx, budget, args.assignee)
@@ -1146,8 +1436,6 @@ export function applyTodoTools(ctx: Context, budget: YzjToolBudget, config: Todo
           kind: 'todo-update',
           todoId: args.todoId,
           title: existing.title,
-          statusFrom: existing.status,
-          statusTo: args.status ?? existing.status,
           changes,
           library: libraryMeta(binding),
         } as unknown as JsonValue,
@@ -1157,7 +1445,7 @@ export function applyTodoTools(ctx: Context, budget: YzjToolBudget, config: Todo
 
   ctx.tools.register(defineTool({
     name: 'yzj_todo_complete',
-    description: 'Complete a todo from any state (sets 状态=done and appends a log line); reopening is yzj_todo_update with status in_progress.',
+    description: 'Complete a todo from any state (sets 状态=done and appends a log line) — 人直写 done 的快路径（不经 review；标准确认卡门控）。泳道主径是 claim→交卷→人验收；重开是面板「打回」或重开操作。',
     parameters: {
       todoId: { type: 'string', required: true, description: 'Stable todo id.' },
       note: { type: 'string', description: 'Optional completion note appended to the log.' },
@@ -1168,7 +1456,7 @@ export function applyTodoTools(ctx: Context, budget: YzjToolBudget, config: Todo
     async execute(args) {
       let result: CoreStatusResult
       try {
-        result = await coreSetStatus(ctx, budget, config, cache, args.todoId, 'done', args.note, holder)
+        result = await coreSetStatus(ctx, budget, config, cache, args.todoId, 'done', { note: args.note, verb: '完成', force: true }, holder)
       } catch (error) {
         return { content: `yzj todo complete failed: ${String((error as Error).message)}`, truncated: false, data: {} }
       }
@@ -1186,6 +1474,86 @@ export function applyTodoTools(ctx: Context, budget: YzjToolBudget, config: Todo
           statusTo: 'done',
           library: libraryMeta(result.binding),
         } as unknown as JsonValue,
+      }
+    },
+  }))
+
+  // --- claim family (泳道待办, todo-swimlane-agent §2.2)：agent 执行回路。 ---
+  // S3：三个都静默无卡（可逆、无外部写；done 永远只经人 accept）。
+
+  ctx.tools.register(defineTool({
+    name: 'yzj_todo_claim',
+    description: 'Claim one todo from the 可认领 column (todo→in_progress). Exclusive: only an unclaimed todo-state task qualifies, the machine rejects double claims; your session id is recorded for audit. the todo 的 描述 field is the task brief you execute. Workflow: claim → do the work → yzj_todo_submit_review; blocked or giving up → yzj_todo_release_claim with note「阻塞：<原因>」（阻塞是备注不是状态, S8）。You can NEVER set done — only the human accepts (S2). Silent by design (S3): reversible, no external write.',
+    parameters: {
+      todoId: { type: 'string', required: true, description: 'Stable todo id (from yzj_todo_list status=todo).' },
+    },
+    output: yzjToolOutput,
+    timeoutMs: budget.timeoutMs * 2,
+    isConcurrencySafe: () => false,
+    async execute(args, exec) {
+      try {
+        const result = await coreClaim(ctx, budget, config, cache, args.todoId, exec?.agent?.session?.id ?? '', holder)
+        const todo = result.todo
+        return {
+          content: [
+            `claimed 待办 ${todo.todoId} · ${todo.title}（版本 v${todo.version}）`,
+            todo.description === '' ? '描述：（空）——开工前先把上下文弄清，或请人在面板补充描述' : `描述（执行提示词）：${todo.description}`,
+            '干完用 yzj_todo_submit_review 交卷；done 只经人验收。卡住用 yzj_todo_release_claim note=「阻塞：…」。',
+          ].join('\n'),
+          truncated: false,
+          data: { kind: 'todo-claim', todoId: todo.todoId, title: todo.title, description: todo.description, version: todo.version, statusFrom: result.from, statusTo: 'in_progress' } as unknown as JsonValue,
+        }
+      } catch (error) {
+        return { content: `yzj todo claim failed: ${String((error as Error).message)}`, truncated: false, data: {} }
+      }
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'yzj_todo_submit_review',
+    description: 'Submit a claimed todo for human acceptance (in_progress→in_review) with a result note and optional evidence refs. done never enters here — only the human accepts on the panel (S2). Silent by design (S3).',
+    parameters: {
+      todoId: { type: 'string', required: true, description: 'Stable todo id (must be claimed by you, in_progress).' },
+      note: { type: 'string', required: true, description: '结果说明——验收人靠它判断：做了什么 / 结果是什么 / 还剩什么。' },
+      refs: { type: 'array', items: { type: 'string' }, description: 'Optional evidence ref tokens (yzj:... / im:<groupId>:<msgId> / docId) recorded in the log.' },
+    },
+    output: yzjToolOutput,
+    timeoutMs: budget.timeoutMs * 2,
+    isConcurrencySafe: () => false,
+    async execute(args, exec) {
+      try {
+        const result = await coreSubmitReview(ctx, budget, config, cache, args.todoId, args.note, args.refs, exec?.agent?.session?.id ?? '', holder)
+        return {
+          content: `交卷待验收 待办 ${args.todoId} · ${result.todo.title}\n验收说明：${result.todo.reviewNote}\n人在面板「待我验收」列验收；被打回会带评语回到进行中。`,
+          truncated: false,
+          data: { kind: 'todo-submit-review', todoId: args.todoId, title: result.todo.title, statusFrom: result.from, statusTo: 'in_review', reviewNote: result.todo.reviewNote } as unknown as JsonValue,
+        }
+      } catch (error) {
+        return { content: `yzj todo submit_review failed: ${String((error as Error).message)}`, truncated: false, data: {} }
+      }
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'yzj_todo_release_claim',
+    description: 'Release your claim on a todo (in_progress→todo, clears the claim record). Blocked? Pass note「阻塞：<原因>」——阻塞是备注不是状态（S8），卡片带着你的备注回到可认领列。Silent by design (S3).',
+    parameters: {
+      todoId: { type: 'string', required: true, description: 'Stable todo id (must be claimed by you, in_progress).' },
+      note: { type: 'string', description: '释放原因；阻塞时写「阻塞：<原因>」。' },
+    },
+    output: yzjToolOutput,
+    timeoutMs: budget.timeoutMs * 2,
+    isConcurrencySafe: () => false,
+    async execute(args, exec) {
+      try {
+        const result = await coreReleaseClaim(ctx, budget, config, cache, args.todoId, args.note, exec?.agent?.session?.id ?? '', holder)
+        return {
+          content: `released 待办 ${args.todoId} · ${result.todo.title}（回可认领列${(args.note ?? '').trim() === '' ? '' : `，备注：${(args.note ?? '').trim()}`}）`,
+          truncated: false,
+          data: { kind: 'todo-release-claim', todoId: args.todoId, title: result.todo.title, statusFrom: result.from, statusTo: 'todo', note: args.note ?? '' } as unknown as JsonValue,
+        }
+      } catch (error) {
+        return { content: `yzj todo release_claim failed: ${String((error as Error).message)}`, truncated: false, data: {} }
       }
     },
   }))

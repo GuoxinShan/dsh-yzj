@@ -1649,6 +1649,12 @@ export function YzjPanel(props: YzjPanelProps) {
           ensureTodo={props.ensureTodo}
           createTodo={props.createTodo}
           toggleTodo={props.toggleTodo}
+                    approveTodo={props.approveTodo}
+                    acceptTodo={props.acceptTodo}
+                    returnTodo={props.returnTodo}
+                    cancelTodo={props.cancelTodo}
+                    reopenTodo={props.reopenTodo}
+                    editTodo={props.editTodo}
           todoLibraries={props.todoLibraries}
           selectTodoLibrary={props.selectTodoLibrary}
           ensureTeamTodo={props.ensureTeamTodo}
