@@ -1637,29 +1637,22 @@ export function YzjPanel(props: YzjPanelProps) {
         <TodoPane
           todos={state.todos}
           ready={state.todoReady}
-          libraryLink={state.todoLink}
           tagFilter={state.todoTag}
           loading={state.loading}
-          activeDocId={state.todoActiveDocId}
-          libraries={state.todoLibraries}
-          libName={state.todoLibName}
-          libScope={state.todoLibScope}
           actions={props.actions}
           todoState={props.todoState}
           ensureTodo={props.ensureTodo}
           createTodo={props.createTodo}
           toggleTodo={props.toggleTodo}
-                    approveTodo={props.approveTodo}
-                    acceptTodo={props.acceptTodo}
-                    returnTodo={props.returnTodo}
-                    cancelTodo={props.cancelTodo}
-                    reopenTodo={props.reopenTodo}
-                    editTodo={props.editTodo}
-                    dispatchTodo={props.dispatchTodo}
-                    {...(props.focusBoundSession === undefined ? {} : { focusBoundSession: props.focusBoundSession })}
-          todoLibraries={props.todoLibraries}
-          selectTodoLibrary={props.selectTodoLibrary}
-          ensureTeamTodo={props.ensureTeamTodo}
+          approveTodo={props.approveTodo}
+          acceptTodo={props.acceptTodo}
+          returnTodo={props.returnTodo}
+          cancelTodo={props.cancelTodo}
+          reopenTodo={props.reopenTodo}
+          archiveTodo={props.archiveTodo}
+          editTodo={props.editTodo}
+          dispatchTodo={props.dispatchTodo}
+          {...(props.focusBoundSession === undefined ? {} : { focusBoundSession: props.focusBoundSession })}
         />
       )}
 

@@ -653,6 +653,20 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
           return internalError(`todo-reopen failed: ${String(error)}`)
         }
       }
+      case 'todo-archive': {
+        // 归档/恢复（S10：视图层隐藏标记，非状态；面板直写 D9）
+        const todo = ctx.get('yzjTodo')
+        if (todo === undefined) return internalError('todo-archive: yzjTodo 服务不可用（tool-yzj 未挂载）')
+        const todoId = stringField(payload, 'todoId')
+        if (todoId === undefined) return internalError('todo-archive endpoint requires a todoId payload')
+        const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
+        const archived = record.archived !== false
+        try {
+          return { ok: true, value: await todo.setArchived(todoId, archived) }
+        } catch (error) {
+          return internalError(`todo-archive failed: ${String(error)}`)
+        }
+      }
       case 'todo-edit': {
         // 编辑任务详情（S7）：标题/描述/DDL/负责人/优先级/标签——描述是 agent 执行的提示词本体。
         const todo = ctx.get('yzjTodo')

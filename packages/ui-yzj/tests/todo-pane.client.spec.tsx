@@ -35,13 +35,8 @@ function mountPane(over: Partial<TodoPaneProps> & { todos?: unknown[] }): Face {
   const base: TodoPaneProps = {
     todos: [],
     ready: true,
-    libraryLink: 'https://example/lib',
     tagFilter: '',
     loading: false,
-    libName: '',
-    libScope: '',
-    activeDocId: '',
-    libraries: [],
     actions: instance.actions,
     todoState: async () => ({ ok: true, value: { ready: true, library: { link: 'https://example/lib' }, todos: over.todos ?? [] } }) as Rpc,
     ensureTodo: async () => ({ ok: true, value: { ready: true, library: { link: 'https://example/lib' }, todos: [] } }) as Rpc,
@@ -52,6 +47,10 @@ function mountPane(over: Partial<TodoPaneProps> & { todos?: unknown[] }): Face {
     returnTodo: verbRpc('return'),
     cancelTodo: verbRpc('cancel'),
     reopenTodo: verbRpc('reopen'),
+    archiveTodo: async (todoId, archived) => {
+      verbs.push({ verb: archived ? 'archive' : 'unarchive', todoId })
+      return { ok: true, value: { todoId, title: 'x', status: 'done', tags: [], archived } } as Rpc
+    },
     dispatchTodo: async (todoId) => {
       verbs.push({ verb: 'dispatch', todoId })
       return { ok: true, value: { sessionId: 'yzj-todo-1' } } as Rpc
@@ -60,9 +59,6 @@ function mountPane(over: Partial<TodoPaneProps> & { todos?: unknown[] }): Face {
       verbs.push({ verb: 'edit', todoId, ...(patch.title === undefined ? {} : { note: patch.title }) })
       return { ok: true, value: { todoId, title: patch.title ?? 'x', status: 'todo', tags: [] } } as Rpc
     },
-    todoLibraries: async () => ({ ok: true, value: { libraries: [], activeDocId: '', teamWorkspaces: [] } }) as Rpc,
-    selectTodoLibrary: async () => ({ ok: true, value: { ready: true, library: { docId: 'docB', link: 'https://example/lib' }, todos: [] } }) as Rpc,
-    ensureTeamTodo: async () => ({ ok: true, value: { ready: true, library: { docId: 'docTeam', link: 'https://example/lib' }, todos: [] } }) as Rpc,
     ...over,
   }
   act(() => {
@@ -206,6 +202,31 @@ describe('TodoPane', () => {
     expect(face.verbs.some(v => v.verb === 'edit' && v.todoId === 'T-1')).toBe(true)
   })
 
+  it('归档收进「已归档」折叠区（S10：可恢复），标签轨只算在途卡', async () => {
+    const face = mountPane({
+      todos: [
+        todo({ todoId: 'T-1', title: '完成的活', status: 'done', tags: ['泳道'] }),
+        todo({ todoId: 'T-2', title: '在途的活', status: 'todo', tags: ['泳道'] }),
+        todo({ todoId: 'T-3', title: '已归档的活', status: 'done', tags: ['泳道'], archived: true }),
+      ],
+    })
+    // 已归档不占列；折叠区计数；标签轨只算在途（T-2 一条）
+    expect(face.container.textContent).not.toContain('已归档的活')
+    const toggle = face.container.querySelector('[data-testid="yzj-todo-archived-toggle"]') as HTMLButtonElement
+    expect(toggle.textContent).toContain('已归档 1')
+    expect(face.container.textContent).toContain('#泳道 · 1')
+    // done 列卡片有「归档」动词；点它走 archiveTodo
+    const archiveBtn = face.container.querySelector('[data-testid="yzj-todo-archive-T-1"]') as HTMLButtonElement
+    await act(async () => { archiveBtn.click(); await Promise.resolve() })
+    expect(face.verbs.some(v => v.verb === 'archive' && v.todoId === 'T-1')).toBe(true)
+    // 折叠区里恢复动词
+    await act(async () => { toggle.click() })
+    const restoreBtn = face.container.querySelector('[data-testid="yzj-todo-unarchive-T-3"]') as HTMLButtonElement
+    expect(restoreBtn).not.toBeNull()
+    await act(async () => { restoreBtn.click(); await Promise.resolve() })
+    expect(face.verbs.some(v => v.verb === 'unarchive' && v.todoId === 'T-3')).toBe(true)
+  })
+
   it('aggregates tag chips and filters on click', () => {
     const face = mountPane({
       todos: [
@@ -243,42 +264,5 @@ describe('TodoPane', () => {
     expect(face.container.textContent).toContain('泳道待办')
   })
 
-  it('renders the library switcher with scope badges and switches on click', async () => {
-    const face = mountPane({
-      activeDocId: 'docP',
-      libraries: [
-        { scope: 'personal', workspaceName: '我的知识', docId: 'docP', tableId: 1, link: '' },
-        { scope: 'team', workspaceName: '六大场景内测', docId: 'docT', tableId: 2, link: '' },
-      ],
-    })
-    expect(face.container.textContent).toContain('个人 · 我的知识')
-    // Open the menu: both libraries with the active one checked.
-    const switcher = [...face.container.querySelectorAll('button')].find(button => (button.getAttribute('aria-haspopup') ?? '') === 'listbox')
-    expect(switcher).toBeDefined()
-    act(() => { switcher!.click() })
-    const text = face.container.textContent ?? ''
-    expect(text).toContain('团队 · 六大场景内测')
-    // Select the team library: the selection is persisted + RPC called.
-    const teamItem = [...face.container.querySelectorAll('[role="option"]')].find(option => (option.textContent ?? '').includes('团队'))
-    expect(teamItem).toBeDefined()
-    await act(async () => { teamItem!.click() })
-    expect(face.container.textContent).toContain('已切换任务库')
-  })
 
-  it('offers team provisioning from the switcher (second level)', async () => {
-    const face = mountPane({
-      activeDocId: 'docP',
-      libraries: [{ scope: 'personal', workspaceName: '我的知识', docId: 'docP', tableId: 1, link: '' }],
-    })
-    const switcher = [...face.container.querySelectorAll('button')].find(button => (button.getAttribute('aria-haspopup') ?? '') === 'listbox')
-    act(() => { switcher!.click() })
-    const provision = [...face.container.querySelectorAll('button')].find(button => (button.textContent ?? '').includes('新建 / 选择团队任务库'))
-    expect(provision).toBeDefined()
-    act(() => { provision!.click() })
-    // The workspace list loads asynchronously; after resolution at least the
-    // hint line of the second level is present.
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)) })
-    const text = face.container.textContent ?? ''
-    expect(text).toContain('选择团队知识库')
-  })
 })

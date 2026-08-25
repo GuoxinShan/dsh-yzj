@@ -10,7 +10,7 @@ import type { YzjRunResult } from '@dsh-yzj/bridge'
 import { applyTodoTools } from '../src/todo.ts'
 import {
   normalizeTags, formatTags, parseAssignee, normalizeDdl, checkTransition,
-  nextTodoId, appendLog, parseTodoRecord, todayStr,
+  nextTodoId, appendLog, parseTodoRecord, todayStr, coreSetArchived,
 } from '../src/todo.ts'
 import type { YzjToolBudget } from '../src/shared.ts'
 
@@ -153,10 +153,11 @@ describe('yzj_todo_list', () => {
       'sheet record': () => ok({
         page_token: '',
         records: [
-          { id: 'a', fields: JSON.stringify({ todo_id: 'T-1', 标题: '后做的', 状态: 'pending', DDL: day(30), 标签: '#b' }) },
+          { id: 'a', fields: JSON.stringify({ todo_id: 'T-1', 标题: '后做的', 状态: 'todo', DDL: day(30), 标签: '#b' }) },
           { id: 'b', fields: JSON.stringify({ todo_id: 'T-2', 标题: '先做的', 状态: 'in_progress', DDL: day(7), 标签: '#a #前端' }) },
           { id: 'c', fields: JSON.stringify({ todo_id: 'T-3', 标题: '已完成的', 状态: 'done', DDL: day(-20) }) },
-          { id: 'd', fields: JSON.stringify({ todo_id: 'T-4', 标题: '过期的', 状态: 'pending', DDL: day(-30) }) },
+          { id: 'd', fields: JSON.stringify({ todo_id: 'T-4', 标题: '过期的', 状态: 'todo', DDL: day(-30) }) },
+          { id: 'e', fields: JSON.stringify({ todo_id: 'T-5', 标题: '已归档的', 状态: 'done', 归档: true }) },
         ],
       }),
     }))
@@ -176,6 +177,10 @@ describe('yzj_todo_list', () => {
     const byTag = await list.execute({ tag: '前端' })
     expect(byTag.content).toContain('先做的')
     expect(byTag.content).not.toContain('后做的')
+
+    // S10：已归档不进列表（含 all）
+    const all = await list.execute({ status: 'all' })
+    expect(all.content).not.toContain('已归档的')
   })
 })
 
@@ -258,11 +263,12 @@ describe('yzj_todo_create', () => {
 describe('yzj_todo_update / complete / claim 族', () => {
   function mountedWithTodo(startStatus: string) {
     let status = startStatus
-    const bridgeState = { claimedBy: '', version: 0, review: '' }
+    const logLines = ['2026/08/15 09:00 创建']
+    const bridgeState = { claimedBy: '', version: 0, review: '', archived: false }
     const mounted = mount(resolvedLibraryScript({
       'sheet record': (command) => {
         if (command[2] === 'list') {
-          return ok({ records: [{ id: 'r5', fields: JSON.stringify({ todo_id: 'T-1', 标题: '任务一', 状态: status, 推进日志: '2026/08/15 09:00 创建', 认领会话: bridgeState.claimedBy, 版本: bridgeState.version, 验收说明: bridgeState.review }) }] })
+          return ok({ records: [{ id: 'r5', fields: JSON.stringify({ todo_id: 'T-1', 标题: '任务一', 状态: status, 推进日志: logLines.join('\n'), 认领会话: bridgeState.claimedBy, 版本: bridgeState.version, 验收说明: bridgeState.review, 归档: bridgeState.archived }) }] })
         }
         // update: replay the written fields into the scripted state
         const records = JSON.parse(command[command.length - 1]) as Array<{ fieldsValue: Record<string, unknown> }>
@@ -271,6 +277,8 @@ describe('yzj_todo_update / complete / claim 族', () => {
         if (typeof fields['认领会话'] === 'string') bridgeState.claimedBy = fields['认领会话']
         if (typeof fields['版本'] === 'number') bridgeState.version = fields['版本']
         if (typeof fields['验收说明'] === 'string') bridgeState.review = fields['验收说明']
+        if (typeof fields['归档'] === 'boolean') bridgeState.archived = fields['归档']
+        if (typeof fields['推进日志'] === 'string') logLines.push(fields['推进日志'].split('\n').at(-1) ?? '')
         return ok({ records: [{ id: 'r5', fields: '{}' }] })
       },
     }))
@@ -328,6 +336,19 @@ describe('yzj_todo_update / complete / claim 族', () => {
     expect(result.content).toContain('released 待办')
     expect(result.content).toContain('阻塞：等上游接口')
     expect(bridgeState.claimedBy).toBe('')
+  })
+
+  it('归档/恢复：视图层隐藏标记，不动状态不增版本，日志留痕（S10）', async () => {
+    const { bridge } = mountedWithTodo('done')
+    const archived = await coreSetArchived(bridge.ctx, BUDGET, {}, {}, 'T-1', true)
+    expect(archived.todo.archived).toBe(true)
+    expect(archived.todo.status).toBe('done')
+    expect(archived.todo.version).toBe(0)
+    expect(archived.todo.log).toContain('归档')
+    // 读回（bridgeState 重放）再恢复
+    const back = await coreSetArchived(bridge.ctx, BUDGET, {}, {}, 'T-1', false)
+    expect(back.todo.archived).toBe(false)
+    expect(back.todo.log).toContain('恢复')
   })
 
   it('completes from any state and is idempotent once done', async () => {

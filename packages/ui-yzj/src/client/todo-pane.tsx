@@ -7,7 +7,7 @@
  * #tag chips aggregate anything; quick-create parses `#tag` + dates straight
  * from the input. Data arrives through the /yzj RPC face only.
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import type { BakedActions } from '@deepseek-ai/dsh-client-ui-slots'
 import type { YzjPanelActions, YzjPanelState } from './stores.ts'
 
@@ -25,10 +25,6 @@ function asString(value: unknown): string {
 
 function asTags(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
-}
-
-function asArray(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : []
 }
 
 /** Local today as `YYYY/MM/DD` for bucket math. */
@@ -107,8 +103,9 @@ function laneStatusOf(todo: UnknownRecord): string {
 }
 
 /** Swimlane lanes (todo-swimlane-agent §2.4): five fixed lanes in state-machine
- *  order; cancelled folds into the 已终止 zone below the board (no lane). */
-export function lanesOf(todos: UnknownRecord[]): { lanes: Lane[]; cancelled: UnknownRecord[] } {
+ *  order over NON-archived cards; cancelled folds into 已终止, archived into
+ *  已归档 (S10: view-layer hide, recoverable) — neither occupies a lane. */
+export function lanesOf(todos: UnknownRecord[]): { lanes: Lane[]; cancelled: UnknownRecord[]; archived: UnknownRecord[] } {
   const byDdl = (a: UnknownRecord, b: UnknownRecord): number => {
     const da = asString(a.ddl)
     const db = asString(b.ddl)
@@ -117,7 +114,8 @@ export function lanesOf(todos: UnknownRecord[]): { lanes: Lane[]; cancelled: Unk
     if (db === '') return -1
     return da === db ? (asString(a.todoId) < asString(b.todoId) ? -1 : 1) : (da < db ? -1 : 1)
   }
-  const pick = (status: string): UnknownRecord[] => todos.filter(todo => laneStatusOf(todo) === status).sort(byDdl)
+  const live = todos.filter(todo => todo.archived !== true)
+  const pick = (status: string): UnknownRecord[] => live.filter(todo => laneStatusOf(todo) === status).sort(byDdl)
   const lanes: Lane[] = [
     { key: 'backlog', label: '待我决定', tone: 'danger', hint: '批准后 agent 才能认领', todos: pick('backlog') },
     { key: 'todo', label: '可认领', tone: 'muted', hint: '对 agent 说「把能做的做了」', todos: pick('todo') },
@@ -125,24 +123,17 @@ export function lanesOf(todos: UnknownRecord[]): { lanes: Lane[]; cancelled: Unk
     { key: 'in_review', label: '待我验收', tone: 'warn', hint: '验收才算完', todos: pick('in_review') },
     { key: 'done', label: '已完成', tone: 'done', hint: '', todos: pick('done').reverse().slice(0, 10) },
   ]
-  const cancelled = todos.filter(todo => laneStatusOf(todo) === 'cancelled')
-  return { lanes, cancelled }
+  const cancelled = live.filter(todo => laneStatusOf(todo) === 'cancelled')
+  const archived = todos.filter(todo => todo.archived === true)
+  return { lanes, cancelled, archived }
 }
 
 /** Props the panel passes down; data + verbs only, no ctx. */
 export interface TodoPaneProps {
   todos: unknown[]
   ready: boolean
-  libraryLink: string
   tagFilter: string
   loading: boolean
-  /** Active library identity for the switcher label (cheap, always present). */
-  libName: string
-  libScope: string
-  /** Active library docId (for the switcher's radio state). */
-  activeDocId: string
-  /** Discovered libraries from todo-state (may be absent on older hosts). */
-  libraries?: unknown[]
   actions: BakedActions<YzjPanelState, YzjPanelActions>
   todoState: () => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   ensureTodo: () => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
@@ -154,30 +145,14 @@ export interface TodoPaneProps {
   returnTodo: (todoId: string, note?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   cancelTodo: (todoId: string, note?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   reopenTodo: (todoId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
+  /** Archive/unarchive (S10：视图层隐藏，非状态）。 */
+  archiveTodo: (todoId: string, archived: boolean) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   /** Edit task details (S7): 标题/描述（agent 执行的提示词本体）/DDL/负责人。 */
   editTodo: (todoId: string, patch: { title?: string; description?: string; ddl?: string; assignee?: string }) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   /** Dispatch one claimable todo to a fresh agent session（期②手动径，todo-swimlane-agent §2.3）。 */
   dispatchTodo: (todoId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   /** Focus the fresh agent session after dispatch (optional; absence = no jump). */
   focusBoundSession?: ((sessionId: string) => void) | undefined
-  todoLibraries: () => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
-  selectTodoLibrary: (docId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
-  ensureTeamTodo: (workspace: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
-}
-
-/** Persisted library selection (docId) so the team library survives reloads
- *  without hand-editing host config. */
-const LIB_PREF_KEY = 'dsh.yzj.todo.lib'
-
-function readLibPref(): string {
-  try { return window.localStorage.getItem(LIB_PREF_KEY) ?? '' } catch { return '' }
-}
-
-function writeLibPref(docId: string): void {
-  try {
-    if (docId === '') window.localStorage.removeItem(LIB_PREF_KEY)
-    else window.localStorage.setItem(LIB_PREF_KEY, docId)
-  } catch { /* storage unavailable — selection stays in-memory */ }
 }
 
 export function TodoPane(props: TodoPaneProps) {
@@ -194,59 +169,20 @@ export function TodoPane(props: TodoPaneProps) {
   const [editFor, setEditFor] = useState('')
   const [editDraft, setEditDraft] = useState({ title: '', description: '', ddl: '', assignee: '' })
   const [showCancelled, setShowCancelled] = useState(false)
-  const [switcherOpen, setSwitcherOpen] = useState(false)
-  const [teamPick, setTeamPick] = useState(false)
-  const [teamWorkspaces, setTeamWorkspaces] = useState<{ id: string; name: string; docCount: number; permissionLevel: number }[]>([])
-  const [switching, setSwitching] = useState(false)
+  const [showArchived, setShowArchived] = useState(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
-  const switcherRef = useRef<HTMLDivElement | null>(null)
-
-  // Restore the persisted library selection on first mount (before the
-  // first state render takes over): the host override is per-process, the
-  // browser preference survives reloads.
-  useEffect(() => {
-    const pref = readLibPref()
-    if (pref === '' || pref === props.activeDocId) return
-    void props.selectTodoLibrary(pref).then((result) => {
-      if (!result.ok) writeLibPref('')
-    }).catch(() => {})
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Load the switcher's library list once per mount (host caches ~5min; the
-  // scan is slow so it never blocks the todo list itself).
-  useEffect(() => {
-    void props.todoLibraries().then((result) => {
-      if (!result.ok) return
-      const value = asRecord(result.value)
-      props.actions.setTodoLibraries(
-        Array.isArray(value.libraries) ? value.libraries : [],
-        typeof value.activeDocId === 'string' ? value.activeDocId : props.activeDocId,
-      )
-    }).catch(() => {})
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Close the switcher on outside clicks.
-  useEffect(() => {
-    if (!switcherOpen) return
-    const onDown = (event: MouseEvent): void => {
-      if (switcherRef.current !== null && !switcherRef.current.contains(event.target as Node)) {
-        setSwitcherOpen(false)
-        setTeamPick(false)
-      }
-    }
-    window.addEventListener('mousedown', onDown)
-    return () => window.removeEventListener('mousedown', onDown)
-  }, [switcherOpen])
 
   // Defensive: persisted stores from older builds may carry `todos` as
   // anything but an array — never crash the pane on stale state.
   const todos = useMemo(() => (Array.isArray(props.todos) ? props.todos : []).map(asRecord), [props.todos])
   const parsed = useMemo(() => parseQuickCreate(draft), [draft])
+  // 标签轨只统计在途卡（未归档 + 非终局）——已完成/已中止/已归档的 tag 不再占位（S10 同期）。
   const tagCounts = useMemo(() => {
     const counts = new Map<string, number>()
     for (const todo of todos) {
+      if (todo.archived === true) continue
+      const status = laneStatusOf(todo)
+      if (status === 'done' || status === 'cancelled') continue
       for (const tag of asTags(todo.tags)) {
         counts.set(tag, (counts.get(tag) ?? 0) + 1)
       }
@@ -255,22 +191,8 @@ export function TodoPane(props: TodoPaneProps) {
   }, [todos])
 
   const visible = props.tagFilter === '' ? todos : todos.filter(todo => asTags(todo.tags).includes(props.tagFilter))
-  const { lanes, cancelled } = useMemo(() => lanesOf(visible), [visible])
-  const openCount = todos.filter(todo => laneStatusOf(todo) !== 'done' && laneStatusOf(todo) !== 'cancelled').length
-  // Label identity: cheap state-provided scope/name first (always present),
-  // then the picker's library list, then a neutral fallback.
-  const activeLib = useMemo(() => {
-    if (props.libScope === 'team' || props.libScope === 'personal') {
-      return { scope: props.libScope, workspaceName: props.libName }
-    }
-    const libs = Array.isArray(props.libraries) ? props.libraries : []
-    for (const lib of libs.map(asRecord)) {
-      if (asString(lib.docId) === props.activeDocId) {
-        return { scope: asString(lib.scope), workspaceName: asString(lib.workspaceName) }
-      }
-    }
-    return undefined
-  }, [props.libScope, props.libName, props.libraries, props.activeDocId])
+  const { lanes, cancelled, archived } = useMemo(() => lanesOf(visible), [visible])
+  const openCount = todos.filter(todo => todo.archived !== true && laneStatusOf(todo) !== 'done' && laneStatusOf(todo) !== 'cancelled').length
 
   const flash = (message: string): void => {
     setNotice(message)
@@ -294,81 +216,6 @@ export function TodoPane(props: TodoPaneProps) {
       typeof record.libraryName === 'string' ? record.libraryName : undefined,
       typeof record.libraryScope === 'string' ? record.libraryScope : undefined,
     )
-    if (Array.isArray(record.libraries) || typeof record.activeDocId === 'string') {
-      props.actions.setTodoLibraries(
-        Array.isArray(record.libraries) ? record.libraries : [],
-        typeof record.activeDocId === 'string' ? record.activeDocId : '',
-      )
-    }
-  }
-
-  /** Pull the switcher list fresh (host cache was cleared by select/ensure). */
-  const refreshLibraries = (): void => {
-    void props.todoLibraries().then((result) => {
-      if (!result.ok) return
-      const value = asRecord(result.value)
-      props.actions.setTodoLibraries(
-        Array.isArray(value.libraries) ? value.libraries : [],
-        typeof value.activeDocId === 'string' ? value.activeDocId : '',
-      )
-    }).catch(() => {})
-  }
-
-  const onSelectLibrary = (docId: string): void => {
-    if (docId === props.activeDocId || switching) return
-    setSwitching(true)
-    void props.selectTodoLibrary(docId).then((result) => {
-      setSwitching(false)
-      setSwitcherOpen(false)
-      setTeamPick(false)
-      if (result.ok) {
-        writeLibPref(docId)
-        applyState(result.value)
-        refreshLibraries()
-        flash('已切换任务库')
-      } else {
-        flash(`切换失败：${result.error.message}`)
-      }
-    })
-  }
-
-  const openTeamPicker = (): void => {
-    setTeamPick(true)
-    if (teamWorkspaces.length === 0) {
-      void props.todoLibraries().then((result) => {
-        if (!result.ok) return
-        const list = asArray(asRecord(result.value).teamWorkspaces)
-        setTeamWorkspaces(list.map(item => {
-          const ws = asRecord(item)
-          return {
-            id: asString(ws.id),
-            name: asString(ws.name),
-            docCount: typeof ws.docCount === 'number' ? ws.docCount : 0,
-            permissionLevel: typeof ws.permissionLevel === 'number' ? ws.permissionLevel : 3,
-          }
-        }))
-      })
-    }
-  }
-
-  const onEnsureTeam = (workspace: string): void => {
-    if (switching) return
-    setSwitching(true)
-    void props.ensureTeamTodo(workspace).then((result) => {
-      setSwitching(false)
-      setSwitcherOpen(false)
-      setTeamPick(false)
-      if (result.ok) {
-        const library = asRecord(asRecord(result.value).library)
-        const docId = asString(library.docId)
-        if (docId !== '') writeLibPref(docId)
-        applyState(result.value)
-        refreshLibraries()
-        flash('团队任务库已就绪')
-      } else {
-        flash(`开通失败：${result.error.message}`)
-      }
-    })
   }
 
   const onEnsure = (): void => {
@@ -423,12 +270,14 @@ export function TodoPane(props: TodoPaneProps) {
   }
 
   /** One human verb → RPC → patch/refresh (泳道卡片操作即状态动词，D9 无卡). */
-  const runVerb = (verb: 'approve' | 'accept' | 'return' | 'cancel' | 'reopen', todoId: string, note?: string): void => {
+  const runVerb = (verb: 'approve' | 'accept' | 'return' | 'cancel' | 'reopen' | 'archive' | 'unarchive', todoId: string, note?: string): void => {
     setBusyId(todoId)
     const call = verb === 'approve' ? props.approveTodo(todoId, note)
       : verb === 'accept' ? props.acceptTodo(todoId, note)
       : verb === 'return' ? props.returnTodo(todoId, note)
       : verb === 'cancel' ? props.cancelTodo(todoId, note)
+      : verb === 'archive' ? props.archiveTodo(todoId, true)
+      : verb === 'unarchive' ? props.archiveTodo(todoId, false)
       : props.reopenTodo(todoId)
     void call.then((result) => {
       setBusyId('')
@@ -502,6 +351,7 @@ export function TodoPane(props: TodoPaneProps) {
     const description = asString(todo.description)
     const claimedBy = asString(todo.claimedBy)
     const reviewNote = asString(todo.reviewNote)
+    const isArchived = todo.archived === true
     const busy = busyId === todoId
     return (
       <div
@@ -539,7 +389,7 @@ export function TodoPane(props: TodoPaneProps) {
             {asString(todo.assignee) !== '' && <span className={css.chipMuted}>@{asString(todo.assignee)}</span>}
           </span>
         </button>
-        {description !== '' && status !== 'done' && status !== 'cancelled' && (
+        {description !== '' && !isArchived && status !== 'done' && status !== 'cancelled' && (
           <div className={css.cardDesc} title={description}>{description}</div>
         )}
         {status === 'in_progress' && (
@@ -549,14 +399,17 @@ export function TodoPane(props: TodoPaneProps) {
           <div className={css.reviewBox}>{reviewNote}</div>
         )}
         <div className={css.cardVerbs}>
-          {status === 'backlog' && (
+          {isArchived && (
+            <button type="button" className={css.verb} data-testid={`yzj-todo-unarchive-${todoId}`} disabled={busy} onClick={() => { runVerb('unarchive', todoId) }}>恢复</button>
+          )}
+          {!isArchived && status === 'backlog' && (
             <>
               <button type="button" className={`${css.verb} ${css.verbPrimary}`} data-testid={`yzj-todo-approve-${todoId}`} disabled={busy} onClick={() => { runVerb('approve', todoId) }}>批准</button>
               <button type="button" className={css.verb} data-testid={`yzj-todo-edit-${todoId}`} disabled={busy} onClick={() => { openEdit(todo) }}>编辑</button>
               <button type="button" className={`${css.verb} ${css.verbDanger}`} data-testid={`yzj-todo-cancel-${todoId}`} disabled={busy} onClick={() => { runVerb('cancel', todoId) }}>中止</button>
             </>
           )}
-          {status === 'todo' && (
+          {!isArchived && status === 'todo' && (
             <>
               <button type="button" className={`${css.verb} ${css.verbPrimary}`} data-testid={`yzj-todo-dispatch-${todoId}`} disabled={busy} title="开一个 agent 会话认领并执行这条待办（期②）" onClick={() => { onDispatch(todoId) }}>让 agent 做</button>
               <button type="button" className={css.verb} data-testid={`yzj-todo-edit-${todoId}`} disabled={busy} onClick={() => { openEdit(todo) }}>编辑</button>
@@ -565,24 +418,30 @@ export function TodoPane(props: TodoPaneProps) {
               <button type="button" className={`${css.verb} ${css.verbDanger}`} data-testid={`yzj-todo-cancel-${todoId}`} disabled={busy} onClick={() => { runVerb('cancel', todoId) }}>中止</button>
             </>
           )}
-          {status === 'in_progress' && (
+          {!isArchived && status === 'in_progress' && (
             <>
               <button type="button" className={css.verb} data-testid={`yzj-todo-done-${todoId}`} disabled={busy} title="人直写完成的快路径（不经验收）" onClick={() => { onToggle(todo) }}>✓ 完成</button>
               <button type="button" className={css.verb} data-testid={`yzj-todo-return-${todoId}`} disabled={busy} title="打回可认领列（清认领）" onClick={() => { setNoteFor({ todoId, verb: 'return' }); setNoteDraft('') }}>打回</button>
               <button type="button" className={`${css.verb} ${css.verbDanger}`} data-testid={`yzj-todo-cancel-${todoId}`} disabled={busy} onClick={() => { runVerb('cancel', todoId) }}>中止</button>
             </>
           )}
-          {status === 'in_review' && (
+          {!isArchived && status === 'in_review' && (
             <>
               <button type="button" className={`${css.verb} ${css.verbPrimary}`} data-testid={`yzj-todo-accept-${todoId}`} disabled={busy} onClick={() => { setNoteFor({ todoId, verb: 'accept' }); setNoteDraft('') }}>验收 ✓</button>
               <button type="button" className={css.verb} data-testid={`yzj-todo-return-${todoId}`} disabled={busy} title="带评语打回进行中" onClick={() => { setNoteFor({ todoId, verb: 'return' }); setNoteDraft('') }}>打回</button>
             </>
           )}
-          {status === 'done' && (
-            <button type="button" className={css.verb} data-testid={`yzj-todo-reopen-${todoId}`} disabled={busy} onClick={() => { onToggle(todo) }}>重开</button>
+          {!isArchived && status === 'done' && (
+            <>
+              <button type="button" className={css.verb} data-testid={`yzj-todo-reopen-${todoId}`} disabled={busy} onClick={() => { onToggle(todo) }}>重开</button>
+              <button type="button" className={css.verb} data-testid={`yzj-todo-archive-${todoId}`} disabled={busy} title="收进已归档折叠区（可恢复）" onClick={() => { runVerb('archive', todoId) }}>归档</button>
+            </>
           )}
-          {status === 'cancelled' && (
-            <button type="button" className={css.verb} data-testid={`yzj-todo-reopen-${todoId}`} disabled={busy} onClick={() => { runVerb('reopen', todoId) }}>重开</button>
+          {!isArchived && status === 'cancelled' && (
+            <>
+              <button type="button" className={css.verb} data-testid={`yzj-todo-reopen-${todoId}`} disabled={busy} onClick={() => { runVerb('reopen', todoId) }}>重开</button>
+              <button type="button" className={css.verb} data-testid={`yzj-todo-archive-${todoId}`} disabled={busy} title="收进已归档折叠区（可恢复）" onClick={() => { runVerb('archive', todoId) }}>归档</button>
+            </>
           )}
         </div>
         {noteFor !== null && noteFor.todoId === todoId && (
@@ -679,79 +538,6 @@ export function TodoPane(props: TodoPaneProps) {
 
   return (
     <div className={css.body} data-testid="yzj-todo-pane">
-      {/* Library switcher: personal / team libraries, one-click team setup. */}
-      <div className={css.libRow} ref={switcherRef}>
-        <button
-          type="button"
-          className={switcherOpen ? `${css.libSwitch} ${css.libSwitchOpen}` : css.libSwitch}
-          onClick={() => { setSwitcherOpen(!switcherOpen); setTeamPick(false) }}
-          aria-haspopup="listbox"
-          aria-expanded={switcherOpen}
-          title="切换任务库（个人 / 团队）"
-        >
-          <span aria-hidden="true">{activeLib?.scope === 'team' ? '👥' : '📋'}</span>
-          <span className={css.libName}>{activeLib === undefined ? '任务库' : activeLib.scope === 'team' ? `团队 · ${activeLib.workspaceName === '' ? '共享库' : activeLib.workspaceName}` : `个人 · ${activeLib.workspaceName === '' ? '我的' : activeLib.workspaceName}`}</span>
-          <span className={css.libCaret} aria-hidden="true">▾</span>
-        </button>
-        <span className={css.tagRailSpace} />
-        {props.libraryLink !== '' && (
-          <a className={css.libraryLink} href={props.libraryLink} target="_blank" rel="noreferrer" title="在云之家打开任务库（多维表格）">
-            任务库 ↗
-          </a>
-        )}
-        {switcherOpen && (
-          <div className={css.libMenu} role="listbox" aria-label="任务库">
-            {!teamPick && (Array.isArray(props.libraries) ? props.libraries : []).map(asRecord).map((lib) => {
-              const docId = asString(lib.docId)
-              const scope = asString(lib.scope)
-              const name = asString(lib.workspaceName)
-              return (
-                <button
-                  key={docId}
-                  type="button"
-                  role="option"
-                  aria-selected={docId === props.activeDocId}
-                  className={docId === props.activeDocId ? `${css.libItem} ${css.libItemActive}` : css.libItem}
-                  onClick={() => { onSelectLibrary(docId) }}
-                  disabled={switching}
-                >
-                  <span aria-hidden="true">{scope === 'team' ? '👥' : '📋'}</span>
-                  <span className={css.libItemName}>{scope === 'team' ? `团队 · ${name === '' ? '共享库' : name}` : `个人 · ${name === '' ? '我的' : name}`}</span>
-                  {docId === props.activeDocId && <span className={css.libCheck} aria-hidden="true">✓</span>}
-                </button>
-              )
-            })}
-            {!teamPick && (
-              <button type="button" className={css.libItem} onClick={openTeamPicker} disabled={switching}>
-                <span aria-hidden="true">➕</span>
-                <span className={css.libItemName}>新建 / 选择团队任务库…</span>
-              </button>
-            )}
-            {teamPick && (
-              <>
-                <button type="button" className={css.libBack} onClick={() => { setTeamPick(false) }}>‹ 返回</button>
-                <div className={css.libMenuHint}>选择团队知识库（将创建或复用其中的「待办任务库」，有编辑权限才可选）</div>
-                {teamWorkspaces.map(ws => (
-                  <button
-                    key={ws.id}
-                    type="button"
-                    className={css.libItem}
-                    onClick={() => { onEnsureTeam(ws.id) }}
-                    disabled={switching || ws.permissionLevel > 2}
-                    title={ws.permissionLevel > 2 ? '只读知识库，无法开通' : `在「${ws.name}」开通团队任务库`}
-                  >
-                    <span aria-hidden="true">👥</span>
-                    <span className={css.libItemName}>{ws.name}</span>
-                    <span className={css.libItemMeta}>{ws.permissionLevel > 2 ? '只读' : `${ws.docCount} 文档`}</span>
-                  </button>
-                ))}
-                {teamWorkspaces.length === 0 && <div className={css.libMenuHint}>（无可用的团队知识库）</div>}
-              </>
-            )}
-          </div>
-        )}
-      </div>
-
       {/* Quick create: title + #tags + date fragments in one input. */}
       <div className={css.quick}>
         <span className={css.quickPlus} aria-hidden="true">+</span>
@@ -842,6 +628,19 @@ export function TodoPane(props: TodoPaneProps) {
             {showCancelled ? '▾' : '▸'} 已终止 {cancelled.length}
           </button>
           {showCancelled && cancelled.map(renderCard)}
+        </div>
+      )}
+      {archived.length > 0 && (
+        <div className={css.closedZone}>
+          <button
+            type="button"
+            className={css.closedToggle}
+            data-testid="yzj-todo-archived-toggle"
+            onClick={() => { setShowArchived(!showArchived) }}
+          >
+            {showArchived ? '▾' : '▸'} 已归档 {archived.length}
+          </button>
+          {showArchived && archived.map(renderCard)}
         </div>
       )}
 

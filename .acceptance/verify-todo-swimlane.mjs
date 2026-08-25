@@ -100,9 +100,31 @@ if (cardOk) {
   const reopened = await pane.getByTestId('yzj-todo-lane-todo').locator(`[data-testid="yzj-todo-card-${todoId}"]`).count()
   console.log(`${reopened === 1 ? 'PASS' : 'FAIL'}  已终止重开回可认领`)
   if (reopened !== 1) fails += 1
-  // 留证 + 清理：探针中止，不留板面垃圾
+  // 归档面（S10）：完成快路径 → 已完成列 → 归档 → 已归档折叠 → 恢复回已完成
+  await pane.getByTestId(`yzj-todo-done-${todoId}`).click()
+  await page.waitForTimeout(4000)
+  const inDone = await pane.getByTestId('yzj-todo-lane-done').locator(`[data-testid="yzj-todo-card-${todoId}"]`).count()
+  console.log(`${inDone === 1 ? 'PASS' : 'FAIL'}  完成快路径落已完成`)
+  if (inDone !== 1) fails += 1
+  await pane.getByTestId(`yzj-todo-archive-${todoId}`).click()
+  await page.waitForTimeout(4000)
+  const goneFromLanes = await pane.locator(`[data-testid="yzj-todo-card-${todoId}"]`).count() === 0
+  console.log(`${goneFromLanes ? 'PASS' : 'FAIL'}  归档后不占列`)
+  if (!goneFromLanes) fails += 1
+  const archFold = pane.getByTestId('yzj-todo-archived-toggle')
+  const archFoldOk = await archFold.count() === 1 && (await archFold.innerText()).includes('已归档')
+  console.log(`${archFoldOk ? 'PASS' : 'FAIL'}  已归档折叠区出现`)
+  if (!archFoldOk) fails += 1
+  await archFold.click()
+  await page.waitForTimeout(600)
+  await pane.getByTestId(`yzj-todo-unarchive-${todoId}`).click()
+  await page.waitForTimeout(4000)
+  const backInDone = await pane.getByTestId('yzj-todo-lane-done').locator(`[data-testid="yzj-todo-card-${todoId}"]`).count()
+  console.log(`${backInDone === 1 ? 'PASS' : 'FAIL'}  恢复后回已完成`)
+  if (backInDone !== 1) fails += 1
+  // 留证 + 清理：探针最终归档（已完成列不留垃圾）
   await page.screenshot({ path: join(OUT, 'swimlane-board.png') })
-  await pane.getByTestId(`yzj-todo-cancel-${todoId}`).click()
+  await pane.getByTestId(`yzj-todo-archive-${todoId}`).click()
   await page.waitForTimeout(3000)
 }
 

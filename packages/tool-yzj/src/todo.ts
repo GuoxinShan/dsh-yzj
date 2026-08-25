@@ -46,6 +46,7 @@ const F = {
   claimedBy: '认领会话',
   version: '版本',
   review: '验收说明',
+  archived: '归档',
 } as const
 
 /** Library titles used for discovery/provisioning. */
@@ -82,6 +83,8 @@ export interface YzjTodo {
   version: number
   /** Latest submit_review note shown on the 待验收 card. */
   reviewNote: string
+  /** 归档 = 视图层隐藏标记（S10：与状态机正交，不是第七态）；已归档收进折叠区，可恢复。 */
+  archived: boolean
   overdue: boolean
 }
 
@@ -266,6 +269,7 @@ export function parseTodoRecord(record: unknown, today = todayStr()): YzjTodo | 
     claimedBy: asString(fields[F.claimedBy]),
     version: typeof rawVersion === 'number' && Number.isFinite(rawVersion) ? rawVersion : 0,
     reviewNote: asString(fields[F.review]),
+    archived: fields[F.archived] === true || asString(fields[F.archived]) === '1' || asString(fields[F.archived]) === 'true',
     overdue: isOverdue(status, ddl, today),
   }
 }
@@ -721,6 +725,28 @@ export async function coreSetStatus(
   return { todo: next, from: existing.status, changed: true, binding }
 }
 
+/**
+ * Archive/unarchive one todo (S10): a view-layer hide flag, NOT a status —
+ * the state machine stays untouched, no version bump, no claim interaction.
+ * Board hygiene is the human's hand; 归档可恢复（已归档折叠区恢复回原列）。
+ */
+export async function coreSetArchived(
+  ctx: Context,
+  budget: YzjToolBudget,
+  config: TodoConfig,
+  cache: { binding?: TodoBinding },
+  todoId: string,
+  archived: boolean,
+  holder?: TodoBindingHolder,
+): Promise<{ todo: YzjTodo; binding: TodoBinding }> {
+  const { todo, binding } = await mustFetch(ctx, budget, config, cache, todoId, holder)
+  if (todo.archived === archived) return { todo, binding }
+  const log = appendLog(todo.log, `${nowStamp()} ${archived ? '归档（收进已归档折叠区）' : '恢复（已归档 → 回板）'}`)
+  const wrote = await writeRecords(ctx, budget, 'sheet record update', binding, JSON.stringify([{ id: todo.recordId, fieldsValue: { [F.archived]: archived, [F.log]: log } }]))
+  if (!wrote.ok) throw new Error(wrote.content)
+  return { todo: { ...todo, archived, log }, binding }
+}
+
 /** Fetch one todo or throw the canonical not-found error. */
 async function mustFetch(
   ctx: Context,
@@ -830,6 +856,8 @@ export interface YzjTodoView {
   claimedBy: string
   version: number
   reviewNote: string
+  /** 归档标记（S10：视图层隐藏，非状态机第七态）。 */
+  archived: boolean
   overdue: boolean
 }
 
@@ -1132,6 +1160,12 @@ export class YzjTodoService extends Service {
     return viewOf(result.todo)
   }
 
+  /** Human archive/unarchive (S10)——视图层隐藏，非状态。 */
+  async setArchived(todoId: string, archived: boolean): Promise<YzjTodoView> {
+    const result = await coreSetArchived(this.ctx, this.budget, this.config, this.cache, todoId, archived, this.holder)
+    return viewOf(result.todo)
+  }
+
   /**
    * Human edit of task details (S7): 标题/描述/DDL/负责人/优先级/标签。
    * 描述是 agent 认领后执行的提示词本体——批准前改它是第一闸的本职。
@@ -1223,6 +1257,7 @@ function viewOf(todo: YzjTodo): YzjTodoView {
     claimedBy: todo.claimedBy,
     version: todo.version,
     reviewNote: todo.reviewNote,
+    archived: todo.archived,
     overdue: todo.overdue,
   }
 }
@@ -1276,6 +1311,7 @@ export function applyTodoTools(ctx: Context, budget: YzjToolBudget, config: Todo
       const tag = args.tag === undefined ? '' : args.tag.replace(/^#+/, '').trim()
       const assignee = (args.assignee ?? '').trim()
       const filtered = todos.filter(todo => {
+        if (todo.archived) return false
         if (status === 'open' && (todo.status === 'done' || todo.status === 'cancelled')) return false
         if ((TODO_STATUSES as readonly string[]).includes(status) && todo.status !== status) return false
         if (status === 'overdue' && !todo.overdue) return false

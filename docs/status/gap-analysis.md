@@ -1177,3 +1177,16 @@ Dream 路（跨事项推荐）纪律入 dreamAskPrompt（顺手落推荐事元�
 | 验收坑 | 面板轮询不到新状态 = 同 tab 重点不刷新：待办页签仅在切入时拉 todo-state（panel.tsx），轮询脚本须「对话→待办」切tab强制重拉 | 与 pitfall-044 同族（验收时序），脚本内注释留痕 |
 
 全量 662 绿 + typecheck 0 错。期③（定时/水位自动 claim，巡检骨架复用）未开工。
+
+## 24.36 泳道板面治理：切换器退役 + 归档（2026-08-25，S9/S10，已落地）
+
+用户问「任务库是不是可以不要了 + 能不能归档 + #泳道是啥」——三问三答：切换器是 SQLite 后端后的纯残留（偏好不被读取，v1.2 版本说明书早标「待清理」）→ 退役；已完成/已终止无限堆积 → 归档；#泳道是 08-24 验收探针的测试 tag → 全部归档清理 + 标签轨改为只统计在途卡。
+
+| 面 | 交付 | 证据 |
+|---|---|---|
+| 切换器退役（S9） | todo-pane 拆切换器整行（activeLib/切换/团队开通/localStorage 偏好/useEffect 簇全删，-76 行）+ panel 拔 6 个死 props；dbt 发现代码路径保留给测试；CSS 清 147 行死样式 | todo-pane.client.spec 切换器 2 用例删除；typecheck 0 错 |
+| 归档（S10） | `归档` 字段（布尔，SQLite fields blob 零迁移）+ `coreSetArchived`（不动状态/不增版本/日志留痕）+ `yzjTodo.setArchived` + `/yzj todo-archive`；done/cancelled 卡片「归档」动词 → 「已归档」折叠区 → 「恢复」回原列；`yzj_todo_list`（含 all）排除已归档；归档卡只剩「恢复」动词 | todo.spec 归档往返用例 + list 排除断言；todo-pane.client.spec 归档折叠/恢复/标签轨用例 |
+| 标签轨口径 | 只统计在途卡（未归档 + 非终局）——历史 tag 不再占位 | todo-pane.client.spec `#泳道 · 1` 断言 |
+| 真机 | `verify-todo-swimlane.mjs` ALL PASS 21 检查点（含新增归档 4 点：完成快路径→归档不占列→折叠区→恢复回已完成）；08-24 验收探针 7 条全部归档，板面/标签轨干净 | 截图 `shots-todo-swimlane/swimlane-board.png` |
+
+全量测试绿 + typecheck 0 错。本仓归档口径与 todo-design v1.1「不做删除」一致：历史事实保留，只是视图收起。
