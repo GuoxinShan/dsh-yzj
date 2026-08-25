@@ -1205,3 +1205,17 @@ Dream 路（跨事项推荐）纪律入 dreamAskPrompt（顺手落推荐事元�
 | 踩坑 | pitfall-046：删 sessionHasSummonWindow 深路径 import 断掉 cordis augmentation 链，ctx.get 类型静默 any——修复 = 显式 `import type {} from '@dsh-yzj/tool-yzj/src/index.ts'` | 全量 typecheck 0 错 |
 
 验收：全量测试绿 + typecheck 0 错 + build/bundle 绿 + GUI 重启后 verify-no-topics / verify-todo-swimlane 回归。恢复路径：**无软恢复**——只能从 git 历史重建（决策 53 的明确取舍）。
+
+## 24.38 决策 54：多维表格双后端拆除（2026-08-25，已落地）
+
+用户拍板「多维表格这个东西干掉」——澄清后范围锁定**只拆双后端**：`yzj_sheet_*` 工具族保留（agent 操作云之家多维表格的通用能力），todo/advance 域的云 dbt 分支、库发现/开通/切换面全部清死，本地 SQLite 成唯一后端。
+
+| 面 | 交付 | 证据 |
+|---|---|---|
+| todo.ts | `setTodoBackend` 双后端开关删除；resolveLibrary 恒返 LOCAL_BINDING；fetchTodos/fetchTodoByTodoId 同步化直读 local-store；writeRecords→applyRecords；dbt 基础设施（bindingForDoc/provisionTable/tableFieldsJson/runTodoJson/cliRecords/LIBRARY_TITLE）删除；服务层 listLibraries/select/ensureTeam/teamWorkspaces/workspaceIndex/libraryIdentity/rememberLibrary/librariesCache 删除 | typecheck 0 错；todo.spec 14 用例 sqlite 直验 |
+| advance.ts | `setAdvanceBackend` 同删；六处 `advanceBackend==='sqlite'` 分支展开为唯一路径；fetchItems/fetchItemById/fetchEntries/todaysEntryIds 同步化；advanceTablesOf/provisionAdvanceTables/assertStageOption（dbt SingleSelect 守卫）/itemFieldsJson/entryFieldsJson/writeTable/cliRecords 删除；resolveAdvance 恒返 LOCAL_BINDING | advance.spec 全绿（assertStageOption 用例改断言 sqlite 直写——无预注册约束） |
+| RPC | /yzj 删 `todo-libraries`/`todo-select`/`todo-ensure-team`；client rpc.ts 三函数删；stores.ts 切换器状态字段（todoLink/todoLib*/todoLibraries/todoActiveDocId）与 setTodoLibraries 删，setTodoState 瘦身为 (todos, ready) | rpc 面编译绿 |
+| 测试 | 新 `tests/sqlite-harness.ts`（每测新 db 文件 + afterEach reset）；todo.spec 重写（fake bridge → sqlite 直验）；advance.spec 的 FakeStore 改为 local-store 只读视图 + seed* 助手（IM/目录 fixture 保留） | 全量 468 绿 |
+| 验收脚本 | verify-todo-team.mjs 删除（团队库开通面已不存在） | — |
+
+附带修正：panel-controller todo 分支传播链简化；todo-pane ensure 文案改「待办库已就绪」。

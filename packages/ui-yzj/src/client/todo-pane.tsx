@@ -208,13 +208,9 @@ export function TodoPane(props: TodoPaneProps) {
 
   const applyState = (value: unknown): void => {
     const record = asRecord(value)
-    const library = asRecord(record.library)
     props.actions.setTodoState(
       Array.isArray(record.todos) ? record.todos : [],
       record.ready === true,
-      typeof library.link === 'string' ? library.link : '',
-      typeof record.libraryName === 'string' ? record.libraryName : undefined,
-      typeof record.libraryScope === 'string' ? record.libraryScope : undefined,
     )
   }
 
@@ -223,10 +219,8 @@ export function TodoPane(props: TodoPaneProps) {
     void props.ensureTodo().then((result) => {
       setEnsuring(false)
       if (result.ok) {
-        const value = asRecord(result.value)
-        const library = asRecord(value.library)
-        props.actions.setTodoState([], true, typeof library.link === 'string' ? library.link : '')
-        flash('任务库已开通，创建第一条待办吧')
+        props.actions.setTodoState([], true)
+        flash('待办库已就绪，创建第一条待办吧')
         inputRef.current?.focus()
       } else {
         flash(`开通失败：${result.error.message}`)

@@ -69,12 +69,6 @@ export interface YzjPanelInject {
   dispatchTodo: (todoId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Edit task details (S7): title/description（agent 执行的提示词本体）/ddl/assignee/priority/tags. */
   editTodo: (todoId: string, patch: { title?: string; description?: string; ddl?: string; assignee?: string; priority?: string; tags?: string[] }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Library switcher data: discovered libraries + provisionable team workspaces. */
-  todoLibraries: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Switch the active library (panel picker; agent writes follow it). */
-  selectTodoLibrary: (docId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Adopt-or-provision a team library in one enterprise workspace. */
-  ensureTeamTodo: (workspace: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** AI推进 board snapshot (items + library) over the yzjAdvance core. */
   advanceState: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** One advancement item: projection + 事元 stream window + sources. */
@@ -232,9 +226,6 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
           ...(patch.priority === undefined ? {} : { priority: patch.priority }),
           ...(patch.tags === undefined ? {} : { tags: patch.tags }),
         }),
-    todoLibraries: () => call('todo-libraries', {}),
-    selectTodoLibrary: (docId) => call('todo-select', { docId }),
-    ensureTeamTodo: (workspace) => call('todo-ensure-team', { workspace }),
     advanceState: () => call('advance-state', {}),
     advanceGet: (advanceId, entryOffset, entryLimit) => call('advance-get', {
       advanceId,

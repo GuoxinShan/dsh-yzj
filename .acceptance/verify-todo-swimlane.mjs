@@ -122,9 +122,11 @@ if (cardOk) {
   const backInDone = await pane.getByTestId('yzj-todo-lane-done').locator(`[data-testid="yzj-todo-card-${todoId}"]`).count()
   console.log(`${backInDone === 1 ? 'PASS' : 'FAIL'}  恢复后回已完成`)
   if (backInDone !== 1) fails += 1
-  // 留证 + 清理：探针最终归档（已完成列不留垃圾）
+  // 留证 + 清理：探针最终归档（已完成列不留垃圾；先收起可能展开的折叠区防挡点击）
   await page.screenshot({ path: join(OUT, 'swimlane-board.png') })
-  await pane.getByTestId(`yzj-todo-archive-${todoId}`).click()
+  const cancelFold = pane.getByTestId('yzj-todo-cancelled-toggle')
+  if (await cancelFold.count() === 1 && (await cancelFold.innerText()).includes('▾')) await cancelFold.click().catch(() => {})
+  await pane.getByTestId(`yzj-todo-archive-${todoId}`).click({ force: true })
   await page.waitForTimeout(3000)
 }
 

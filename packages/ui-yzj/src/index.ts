@@ -500,46 +500,9 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
         if (entry === undefined) return internalError(`file-data failed to download fileId ${fileId}`)
         return { ok: true, value: entry }
       }
-      case 'todo-libraries': {
-        // Switcher data: discovered libraries + provisionable team workspaces.
-        const todo = ctx.get('yzjTodo')
-        if (todo === undefined) return internalError('todo-libraries: yzjTodo 服务不可用（tool-yzj 未挂载）')
-        try {
-          const [libraries, teamWorkspaces, state] = await Promise.all([todo.listLibraries(), todo.teamWorkspaces(), todo.state()])
-          return {
-            ok: true,
-            value: {
-              libraries,
-              activeDocId: state.activeDocId ?? '',
-              teamWorkspaces,
-            },
-          }
-        } catch (error) {
-          return internalError(`todo-libraries failed: ${String(error)}`)
-        }
-      }
-      case 'todo-select': {
-        const todo = ctx.get('yzjTodo')
-        if (todo === undefined) return internalError('todo-select: yzjTodo 服务不可用（tool-yzj 未挂载）')
-        const docId = stringField(payload, 'docId')
-        if (docId === undefined) return internalError('todo-select endpoint requires a docId payload')
-        try {
-          return { ok: true, value: await todo.select(docId) }
-        } catch (error) {
-          return internalError(`todo-select failed: ${String(error)}`)
-        }
-      }
-      case 'todo-ensure-team': {
-        const todo = ctx.get('yzjTodo')
-        if (todo === undefined) return internalError('todo-ensure-team: yzjTodo 服务不可用（tool-yzj 未挂载）')
-        const workspace = stringField(payload, 'workspace')
-        if (workspace === undefined) return internalError('todo-ensure-team endpoint requires a workspace payload')
-        try {
-          return { ok: true, value: await todo.ensureTeam(workspace) }
-        } catch (error) {
-          return internalError(`todo-ensure-team failed: ${String(error)}`)
-        }
-      }
+
+
+
       case 'todo-state': {
         // Panel todo tab snapshot over the shared yzjTodo core (tool-yzj).
         const todo = ctx.get('yzjTodo')

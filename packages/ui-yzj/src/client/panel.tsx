@@ -405,15 +405,7 @@ function loadTab(
     void props.todoState().then((result) => {
       if (result.ok) {
         const value = asRecord(result.value)
-        const library = asRecord(value.library)
-        props.actions.setTodoState(
-          asArray(value.todos),
-          value.ready === true,
-          typeof library.link === 'string' ? library.link : '',
-          typeof value.libraryName === 'string' ? value.libraryName : undefined,
-          typeof value.libraryScope === 'string' ? value.libraryScope : undefined,
-        )
-        props.actions.setTodoLibraries([], typeof value.activeDocId === 'string' ? value.activeDocId : '')
+        props.actions.setTodoState(asArray(value.todos), value.ready === true)
         props.actions.setLoading(false)
         if (typeof value.error === 'string' && value.error !== '') {
           props.actions.setError(`待办读取失败：${value.error}`)

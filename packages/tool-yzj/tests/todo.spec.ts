@@ -1,18 +1,19 @@
 /**
- * todo tool family tests: pure helpers (tags/state machine/id/log) plus the
- * four tools over a scripted fake bridge — no real yzj-cli needed. The
- * scripts replay the CLI shapes verified by the 2026-08-15 probe: records
- * arrays for create/update, `fields` as a JSON string, `page_token` paging.
+ * todo tool family tests over the real local SQLite store (决策 54 单后端):
+ * pure helpers plus the seven tools against a throwaway temp db — no fake
+ * bridge scripts. The assignee-resolution path still scripts a bridge face.
  */
 import { describe, expect, it } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
-import type { YzjRunResult } from '@dsh-yzj/bridge'
 import { applyTodoTools } from '../src/todo.ts'
 import {
   normalizeTags, formatTags, parseAssignee, normalizeDdl, checkTransition,
-  nextTodoId, appendLog, parseTodoRecord, todayStr, coreSetArchived,
+  nextTodoId, appendLog, parseTodoRecord, todayStr, coreSetArchived, coreSetStatus, fetchTodoByTodoId,
 } from '../src/todo.ts'
 import type { YzjToolBudget } from '../src/shared.ts'
+import { useFreshSqlite } from './sqlite-harness.ts'
+
+useFreshSqlite()
 
 const BUDGET: YzjToolBudget = { timeoutMs: 5_000, maxRenderChars: 5_000, maxMetaChars: 5_000 }
 
@@ -21,57 +22,19 @@ interface CapturedTool {
   execute: (args: Record<string, unknown>) => Promise<{ content: string; truncated: boolean; data: unknown }>
 }
 
-/** Bridge run calls captured for assertions. */
-interface FakeBridge {
-  ctx: Context
-  calls: string[][]
-}
-
-/** Build a fake ctx whose yzjBridge.run resolves from a command script. */
-function mount(script: (command: string[]) => unknown, holder?: { override?: { docId: string; tableId: number; link: string } }): { tools: CapturedTool[]; bridge: FakeBridge } {
+function mount(): { tools: CapturedTool[] } {
   const tools: CapturedTool[] = []
-  const calls: string[][] = []
-  const ctx = {
-    tools: {
-      register(def: { name: string; execute: CapturedTool['execute'] }): void {
-        tools.push({ name: def.name, execute: def.execute })
-      },
-    },
-    yzjBridge: {
-      async run(command: string[]): Promise<YzjRunResult> {
-        calls.push(command)
-        const json = script(command)
-        if (json instanceof Error) {
-          return { ok: false, exitCode: 1, timedOut: false, stdout: '', stderr: json.message, json: undefined }
-        }
-        return { ok: true, exitCode: 0, timedOut: false, stdout: '', stderr: '', json }
-      },
-    },
-  } as unknown as Context
-  applyTodoTools(ctx, BUDGET, {}, holder)
-  return { tools, bridge: { ctx, calls } }
+  const ctx = { tools: { register(def: { name: string; execute: CapturedTool['execute'] }): void { tools.push({ name: def.name, execute: def.execute }) } } } as unknown as Context
+  applyTodoTools(ctx, BUDGET, {})
+  return { tools }
 }
 
-const ok = (json: unknown) => json
-
-// A resolved library as the CLI presents it: workspace → doc → sheet get.
-function resolvedLibraryScript(extra: Record<string, (command: string[]) => unknown> = {}): (command: string[]) => unknown {
-  return (command) => {
-    const key = command.slice(0, 2).join(' ')
-    if (key === 'doc workspace') {
-      return ok({ list: [{ id: 'ws1', name: '我的知识', type: '个人' }] })
-    }
-    if (key === 'doc list') {
-      return ok({ list: [{ id: 'doc1', title: '待办任务库', fileSuffix: 'dbt' }] })
-    }
-    if (key === 'sheet get') {
-      return ok({ sheets: [{ id: 4, name: '任务', fields: [{ name: 'todo_id' }, { name: '标题' }] }] })
-    }
-    const extraHit = extra[key]
-    if (extraHit !== undefined) return extraHit(command)
-    throw new Error(`unexpected command ${command.join(' ')}`)
-  }
+const run = async (tools: CapturedTool[], name: string, args: Record<string, unknown> = {}) => {
+  const tool = tools.find(t => t.name === name)
+  if (tool === undefined) throw new Error(`tool ${name} not registered`)
+  return tool.execute(args)
 }
+const readBack = (todoId: string) => fetchTodoByTodoId(todoId)
 
 describe('todo pure helpers', () => {
   it('normalizes tags from strings and arrays, deduping and stripping #', () => {
@@ -93,24 +56,19 @@ describe('todo pure helpers', () => {
   })
 
   it('enforces the six-state swimlane machine with an actionable message', () => {
-    // 主流：backlog→todo→in_progress→in_review→done
     expect(checkTransition('backlog', 'todo')).toBeNull()
     expect(checkTransition('todo', 'in_progress')).toBeNull()
     expect(checkTransition('in_progress', 'in_review')).toBeNull()
     expect(checkTransition('in_review', 'done')).toBeNull()
-    // 打回/释放（反向边）
     expect(checkTransition('todo', 'backlog')).toBeNull()
     expect(checkTransition('in_progress', 'todo')).toBeNull()
     expect(checkTransition('in_review', 'in_progress')).toBeNull()
-    // 终局与重开
     expect(checkTransition('backlog', 'cancelled')).toBeNull()
     expect(checkTransition('done', 'in_progress')).toBeNull()
     expect(checkTransition('cancelled', 'todo')).toBeNull()
-    // 非法跳变
     expect(checkTransition('backlog', 'done')).toMatch(/yzj_todo_complete/)
     expect(checkTransition('done', 'todo')).toMatch(/状态机拒绝/)
     expect(checkTransition('todo', 'done')).toMatch(/状态机拒绝/)
-    // S5：legacy pending 读取归一为 todo
     expect(checkTransition('pending', 'in_progress')).toBeNull()
   })
 
@@ -122,17 +80,16 @@ describe('todo pure helpers', () => {
     expect(appendLog('first', 'second')).toBe('first\nsecond')
   })
 
-  it('parses a CLI record with JSON-string fields and flags overdue', () => {
+  it('parses a fields bag and flags overdue; legacy pending normalizes to todo (S5)', () => {
     const todo = parseTodoRecord({
       id: 'c',
-      fields: JSON.stringify({
+      fields: {
         todo_id: 'T-20260815-001', 标题: '验证', 状态: 'pending',
         负责人: '测试用户(oid-test)', DDL: '2026/01/01',
         标签: '#需求 #P0', 推进日志: 'line',
-      }),
+      },
     }, '2026/08/15')
     expect(todo?.todoId).toBe('T-20260815-001')
-    // S5：存量 pending 归一为可认领（todo）
     expect(todo?.status).toBe('todo')
     expect(todo?.tags).toEqual(['需求', 'P0'])
     expect(todo?.assigneeOpenId).toBe('oid-test')
@@ -142,306 +99,131 @@ describe('todo pure helpers', () => {
 })
 
 describe('yzj_todo_list', () => {
-  it('lists open todos parsed from JSON-string fields, sorted by DDL', async () => {
-    // DDL 用相对日期(fixme 日期炸弹:硬编码 DDL 会随真实日期过期变 overdue)。
-    const day = (offset: number): string => {
-      const d = new Date(Date.now() + offset * 86_400_000)
-      const pad = (n: number): string => String(n).padStart(2, '0')
-      return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())}`
-    }
-    const { tools } = mount(resolvedLibraryScript({
-      'sheet record': () => ok({
-        page_token: '',
-        records: [
-          { id: 'a', fields: JSON.stringify({ todo_id: 'T-1', 标题: '后做的', 状态: 'todo', DDL: day(30), 标签: '#b' }) },
-          { id: 'b', fields: JSON.stringify({ todo_id: 'T-2', 标题: '先做的', 状态: 'in_progress', DDL: day(7), 标签: '#a #前端' }) },
-          { id: 'c', fields: JSON.stringify({ todo_id: 'T-3', 标题: '已完成的', 状态: 'done', DDL: day(-20) }) },
-          { id: 'd', fields: JSON.stringify({ todo_id: 'T-4', 标题: '过期的', 状态: 'todo', DDL: day(-30) }) },
-          { id: 'e', fields: JSON.stringify({ todo_id: 'T-5', 标题: '已归档的', 状态: 'done', 归档: true }) },
-        ],
-      }),
-    }))
-    const list = tools.find(tool => tool.name === 'yzj_todo_list')!
-    const result = await list.execute({})
-    expect(result.content).toContain('先做的')
-    expect(result.content).toContain('后做的')
-    expect(result.content).toContain('过期')
-    expect(result.content).not.toContain('已完成的')
-    expect(result.content.indexOf('先做的')).toBeLessThan(result.content.indexOf('后做的'))
-    expect(result.content.indexOf('T-4')).toBeGreaterThanOrEqual(0)
+  it('lists open todos sorted by DDL; overdue filter; archived excluded (S10)', async () => {
+    const { tools } = mount()
+    await run(tools, 'yzj_todo_create', { title: '后做的', tags: ['b'], ddl: '2099/01/01' })
+    await run(tools, 'yzj_todo_create', { title: '先做的', tags: ['a', '前端'], ddl: '2099/06/01' })
+    await run(tools, 'yzj_todo_create', { title: '过期的', ddl: '2020/01/01' })
+    const done = await run(tools, 'yzj_todo_create', { title: '已完成的' })
+    await run(tools, 'yzj_todo_complete', { todoId: (done.data as { todoId: string }).todoId })
+    const archived = await run(tools, 'yzj_todo_create', { title: '已归档的' })
+    await coreSetArchived({} as Context, BUDGET, {}, {}, (archived.data as { todoId: string }).todoId, true)
 
-    const overdue = await list.execute({ status: 'overdue' })
+    const list = await run(tools, 'yzj_todo_list', {})
+    expect(list.content).toContain('先做的')
+    expect(list.content).toContain('后做的')
+    expect(list.content).toContain('过期的')
+    expect(list.content).not.toContain('已完成的')
+    expect(list.content).not.toContain('已归档的')
+
+    const overdue = await run(tools, 'yzj_todo_list', { status: 'overdue' })
     expect(overdue.content).toContain('过期的')
     expect(overdue.content).not.toContain('先做的')
 
-    const byTag = await list.execute({ tag: '前端' })
+    const byTag = await run(tools, 'yzj_todo_list', { tag: '前端' })
     expect(byTag.content).toContain('先做的')
     expect(byTag.content).not.toContain('后做的')
 
-    // S10：已归档不进列表（含 all）
-    const all = await list.execute({ status: 'all' })
+    const all = await run(tools, 'yzj_todo_list', { status: 'all' })
     expect(all.content).not.toContain('已归档的')
   })
 })
 
-describe('yzj_todo_create', () => {
-  it('auto-provisions the library and writes an array-form record with tags and log', async () => {
-    const { tools, bridge } = mount((command) => {
-      const key = command.slice(0, 2).join(' ')
-      if (key === 'doc workspace') return ok({ list: [{ id: 'ws1', name: '我的知识' }] })
-      if (key === 'doc list') return ok({ list: [] })
-      if (key === 'sheet create') return ok({ id: 'docNew', title: '待办任务库' })
-      if (key === 'sheet table') return ok({ sheet: { id: 9, fields: [] } })
-      if (key === 'sheet get') return ok({ sheets: [{ id: 9, name: '任务', fields: [{ name: 'todo_id' }] }] })
-      if (key === 'sheet record' && command[2] === 'list') return ok({ page_token: '', records: [] })
-      if (key === 'sheet record') return ok({ records: [{ id: 'r1', fields: '{}' }] })
-      throw new Error(`unexpected ${command.join(' ')}`)
-    })
-    const create = tools.find(tool => tool.name === 'yzj_todo_create')!
-    const result = await create.execute({ title: '梳理迁移文档', tags: ['迁移', '#P0'], ddl: '2026-08-20', priority: 'P0' })
+describe('yzj_todo_create / claim 族 / complete / archive', () => {
+  it('agent create lands backlog (S6) with tags/ddl/description and a log line', async () => {
+    const { tools } = mount()
+    const result = await run(tools, 'yzj_todo_create', { title: '梳理迁移文档', description: '提示词本体', tags: ['迁移', 'P0'], ddl: '2026-08-20' })
     expect(result.content).toContain('created 待办')
-    expect(result.content).toContain('#迁移 #P0')
-    const writeCall = bridge.calls.find(call => call.join(' ').startsWith('sheet record create'))
-    expect(writeCall).toBeDefined()
-    const records = JSON.parse(writeCall![writeCall!.length - 1]) as Array<{ fieldsValue: Record<string, unknown> }>
-    expect(Array.isArray(records)).toBe(true)
-    expect(records[0]!.fieldsValue['标签']).toBe('#迁移 #P0')
-    expect(records[0]!.fieldsValue['DDL']).toBe('2026/08/20')
-    expect(String(records[0]!.fieldsValue['推进日志'])).toContain('创建')
-    expect(records[0]!.fieldsValue['todo_id']).toMatch(/^T-\d{8}-001$/)
-    // S6：agent 建的落 backlog（待我决定），人批准后才可认领
-    expect(records[0]!.fieldsValue['状态']).toBe('backlog')
+    expect(result.content).toContain('落「待我决定」')
+    const todoId = (result.data as { todoId: string }).todoId
+    expect(todoId).toMatch(/^T-\d{8}-\d{3}$/)
+    const todo = readBack(todoId)
+    expect(todo?.status).toBe('backlog')
+    expect(todo?.tags).toEqual(['迁移', 'P0'])
+    expect(todo?.description).toBe('提示词本体')
+    expect(todo?.log).toContain('创建')
   })
 
-  it('scans every personal workspace before provisioning — a library in the second workspace is found, not duplicated', async () => {
-    let provisioned = false
-    const { tools, bridge } = mount((command) => {
-      const key = command.slice(0, 2).join(' ')
-      if (key === 'doc workspace') {
-        return ok({ list: [{ id: 'wsA', name: 'AI速记知识库' }, { id: 'wsB', name: '我的知识' }] })
-      }
-      if (key === 'doc list') {
-        // wsA has no library; wsB has one with a usable 任务 table.
-        return command.includes('wsA')
-          ? ok({ list: [{ id: 'other', title: '速记', fileSuffix: 'otl' }] })
-          : ok({ list: [{ id: 'docB', title: '待办任务库', fileSuffix: 'dbt' }] })
-      }
-      if (key === 'sheet get') {
-        return command.includes('docB')
-          ? ok({ sheets: [{ id: 2, name: '任务', fields: [{ name: 'todo_id' }] }] })
-          : new Error('sheet get on unexpected doc')
-      }
-      if (key === 'sheet create') { provisioned = true; return new Error('must not provision') }
-      if (key === 'sheet record' && command[2] === 'list') return ok({ page_token: '', records: [] })
-      if (key === 'sheet record') return ok({ records: [{ id: 'r1', fields: '{}' }] })
-      throw new Error(`unexpected ${command.join(' ')}`)
-    })
-    const create = tools.find(tool => tool.name === 'yzj_todo_create')!
-    const result = await create.execute({ title: '复用既有库' })
-    expect(result.content).toContain('created 待办')
-    expect(provisioned).toBe(false)
-    const writeCall = bridge.calls.find(call => call.join(' ').startsWith('sheet record create'))
-    expect(writeCall!.includes('docB')).toBe(true)
-    expect(writeCall!.includes('wsA')).toBe(false)
-  })
+  it('claim rejects backlog (批准闸) and double claims; version bumps per transition', async () => {
+    const { tools } = mount()
+    const created = await run(tools, 'yzj_todo_create', { title: '任务一', description: '提示词本体' })
+    const todoId = (created.data as { todoId: string }).todoId
 
-  it('returns the existing todo on an idempotent hit', async () => {
-    const { tools } = mount(resolvedLibraryScript({
-      'sheet record': (command) => {
-        if (command[2] === 'list') {
-          return ok({ records: [{ id: 'r9', fields: JSON.stringify({ todo_id: 'T-20260815-001', 标题: '已有的', 状态: 'pending' }) }] })
-        }
-        return ok({ records: [] })
-      },
-    }))
-    const create = tools.find(tool => tool.name === 'yzj_todo_create')!
-    const result = await create.execute({ title: '重复创建', todoId: 'T-20260815-001' })
-    expect(result.content).toContain('幂等命中')
-  })
-})
+    const early = await run(tools, 'yzj_todo_claim', { todoId })
+    expect(early.content).toContain('待我决定')
 
-describe('yzj_todo_update / complete / claim 族', () => {
-  function mountedWithTodo(startStatus: string) {
-    let status = startStatus
-    const logLines = ['2026/08/15 09:00 创建']
-    const bridgeState = { claimedBy: '', version: 0, review: '', archived: false }
-    const mounted = mount(resolvedLibraryScript({
-      'sheet record': (command) => {
-        if (command[2] === 'list') {
-          return ok({ records: [{ id: 'r5', fields: JSON.stringify({ todo_id: 'T-1', 标题: '任务一', 状态: status, 推进日志: logLines.join('\n'), 认领会话: bridgeState.claimedBy, 版本: bridgeState.version, 验收说明: bridgeState.review, 归档: bridgeState.archived }) }] })
-        }
-        // update: replay the written fields into the scripted state
-        const records = JSON.parse(command[command.length - 1]) as Array<{ fieldsValue: Record<string, unknown> }>
-        const fields = records[0]?.fieldsValue ?? {}
-        if (typeof fields['状态'] === 'string') status = fields['状态']
-        if (typeof fields['认领会话'] === 'string') bridgeState.claimedBy = fields['认领会话']
-        if (typeof fields['版本'] === 'number') bridgeState.version = fields['版本']
-        if (typeof fields['验收说明'] === 'string') bridgeState.review = fields['验收说明']
-        if (typeof fields['归档'] === 'boolean') bridgeState.archived = fields['归档']
-        if (typeof fields['推进日志'] === 'string') logLines.push(fields['推进日志'].split('\n').at(-1) ?? '')
-        return ok({ records: [{ id: 'r5', fields: '{}' }] })
-      },
-    }))
-    return { ...mounted, bridgeState }
-  }
+    await coreSetStatus({} as Context, BUDGET, {}, {}, todoId, 'todo', { verb: '批准' })
+    const claimed = await run(tools, 'yzj_todo_claim', { todoId })
+    expect(claimed.content).toContain('claimed 待办')
+    expect(claimed.content).toContain('提示词本体')
+    expect(readBack(todoId)?.version).toBe(2)
 
-  it('update 不再有 status 参数（状态只走合法边）；描述可编辑（S7）', async () => {
-    const { tools, bridge } = mountedWithTodo('todo')
-    const update = tools.find(tool => tool.name === 'yzj_todo_update')!
-    const result = await update.execute({ todoId: 'T-1', description: '提示词本体：做完 X 并验证 Y' })
-    expect(result.content).toContain('updated 待办')
-    const writeCall = bridge.calls.find(call => call.join(' ').startsWith('sheet record update'))
-    const records = JSON.parse(writeCall![writeCall!.length - 1]) as Array<{ fieldsValue: Record<string, unknown> }>
-    expect(records[0]!.fieldsValue['描述']).toBe('提示词本体：做完 X 并验证 Y')
-  })
-
-  it('claim：todo→in_progress，排他（重复认领被拒），版本递增', async () => {
-    const { tools, bridge, bridgeState } = mountedWithTodo('todo')
-    const claim = tools.find(tool => tool.name === 'yzj_todo_claim')!
-    const result = await claim.execute({ todoId: 'T-1' })
-    expect(result.content).toContain('claimed 待办')
-    const writeCall = bridge.calls.find(call => call.join(' ').startsWith('sheet record update'))
-    const records = JSON.parse(writeCall![writeCall!.length - 1]) as Array<{ fieldsValue: Record<string, unknown> }>
-    expect(records[0]!.fieldsValue['状态']).toBe('in_progress')
-    expect(records[0]!.fieldsValue['版本']).toBe(1)
-    // 排他：已在进行中 → 第二次认领被拒
-    const again = await claim.execute({ todoId: 'T-1' })
+    const again = await run(tools, 'yzj_todo_claim', { todoId })
     expect(again.content).toContain('只有「可认领」状态能认领')
-    expect(bridgeState.claimedBy).toBe('')
   })
 
-  it('claim 拦截未批准的 backlog（人批准闸，S6）', async () => {
-    const { tools } = mountedWithTodo('backlog')
-    const claim = tools.find(tool => tool.name === 'yzj_todo_claim')!
-    const result = await claim.execute({ todoId: 'T-1' })
-    expect(result.content).toContain('待我决定')
-    expect(result.content).toContain('批准')
-  })
+  it('submit_review stores the note; release clears the claim (S8 阻塞是备注)', async () => {
+    const { tools } = mount()
+    const created = await run(tools, 'yzj_todo_create', { title: '任务一' })
+    const todoId = (created.data as { todoId: string }).todoId
+    await coreSetStatus({} as Context, BUDGET, {}, {}, todoId, 'todo', { verb: '批准' })
+    await run(tools, 'yzj_todo_claim', { todoId })
 
-  it('submit_review：in_progress→in_review，验收说明落库；空说明被拒', async () => {
-    const { tools, bridgeState } = mountedWithTodo('in_progress')
-    const submit = tools.find(tool => tool.name === 'yzj_todo_submit_review')!
-    const empty = await submit.execute({ todoId: 'T-1', note: '  ' })
+    const empty = await run(tools, 'yzj_todo_submit_review', { todoId, note: '  ' })
     expect(empty.content).toContain('交卷必须带结果说明')
-    const result = await submit.execute({ todoId: 'T-1', note: '已上线并回归', refs: ['yzj:doc:abc'] })
-    expect(result.content).toContain('交卷待验收')
-    expect(bridgeState.review).toContain('已上线并回归')
-    expect(bridgeState.review).toContain('yzj:doc:abc')
+
+    const submitted = await run(tools, 'yzj_todo_submit_review', { todoId, note: '已上线并回归', refs: ['yzj:doc:abc'] })
+    expect(submitted.content).toContain('交卷待验收')
+    expect(readBack(todoId)?.reviewNote).toContain('已上线并回归')
+
+    // 打回进行中再释放（release 只从 in_progress）
+    await coreSetStatus({} as Context, BUDGET, {}, {}, todoId, 'in_progress', { verb: '打回', note: '再改改' })
+    const released = await run(tools, 'yzj_todo_release_claim', { todoId, note: '阻塞：等上游接口' })
+    expect(released.content).toContain('released 待办')
+    expect(readBack(todoId)?.claimedBy).toBe('')
+    expect(readBack(todoId)?.status).toBe('todo')
   })
 
-  it('release_claim：in_progress→todo，认领清空（阻塞是备注不是状态，S8）', async () => {
-    const { tools, bridgeState } = mountedWithTodo('in_progress')
-    const release = tools.find(tool => tool.name === 'yzj_todo_release_claim')!
-    const result = await release.execute({ todoId: 'T-1', note: '阻塞：等上游接口' })
-    expect(result.content).toContain('released 待办')
-    expect(result.content).toContain('阻塞：等上游接口')
-    expect(bridgeState.claimedBy).toBe('')
+  it('update edits description (S7); no status parameter (状态只走合法边)', async () => {
+    const { tools } = mount()
+    const created = await run(tools, 'yzj_todo_create', { title: '任务一' })
+    const todoId = (created.data as { todoId: string }).todoId
+    const result = await run(tools, 'yzj_todo_update', { todoId, description: '新提示词', appendLog: '调整' })
+    expect(result.content).toContain('updated 待办')
+    expect(readBack(todoId)?.description).toBe('新提示词')
+    expect(readBack(todoId)?.log).toContain('描述已更新')
   })
 
-  it('归档/恢复：视图层隐藏标记，不动状态不增版本，日志留痕（S10）', async () => {
-    const { bridge } = mountedWithTodo('done')
-    const archived = await coreSetArchived(bridge.ctx, BUDGET, {}, {}, 'T-1', true)
+  it('completes from any state and is idempotent once done', async () => {
+    const { tools } = mount()
+    const created = await run(tools, 'yzj_todo_create', { title: '任务一' })
+    const todoId = (created.data as { todoId: string }).todoId
+    const result = await run(tools, 'yzj_todo_complete', { todoId, note: '先交付再收尾' })
+    expect(result.content).toContain('completed 待办')
+    const again = await run(tools, 'yzj_todo_complete', { todoId })
+    expect(again.content).toContain('幂等命中')
+  })
+
+  it('归档/恢复：不动状态不增版本，日志留痕（S10）', async () => {
+    const { tools } = mount()
+    const created = await run(tools, 'yzj_todo_create', { title: '任务一' })
+    const todoId = (created.data as { todoId: string }).todoId
+    await run(tools, 'yzj_todo_complete', { todoId })
+    const versionBefore = readBack(todoId)?.version
+    const archived = await coreSetArchived({} as Context, BUDGET, {}, {}, todoId, true)
     expect(archived.todo.archived).toBe(true)
     expect(archived.todo.status).toBe('done')
-    expect(archived.todo.version).toBe(0)
+    expect(archived.todo.version).toBe(versionBefore)
     expect(archived.todo.log).toContain('归档')
-    // 读回（bridgeState 重放）再恢复
-    const back = await coreSetArchived(bridge.ctx, BUDGET, {}, {}, 'T-1', false)
+    const back = await coreSetArchived({} as Context, BUDGET, {}, {}, todoId, false)
     expect(back.todo.archived).toBe(false)
     expect(back.todo.log).toContain('恢复')
   })
 
-  it('completes from any state and is idempotent once done', async () => {
-    const { tools } = mountedWithTodo('pending')
-    const complete = tools.find(tool => tool.name === 'yzj_todo_complete')!
-    const result = await complete.execute({ todoId: 'T-1', note: '先交付再收尾' })
-    expect(result.content).toContain('completed 待办')
-
-    const again = await complete.execute({ todoId: 'T-1' })
-    expect(again.content).toContain('幂等命中')
-  })
-
   it('refuses unknown todo ids without guessing', async () => {
-    const { tools } = mount(resolvedLibraryScript({
-      'sheet record': () => ok({ records: [] }),
-    }))
-    const update = tools.find(tool => tool.name === 'yzj_todo_update')!
-    await expect(update.execute({ todoId: 'T-404', appendLog: 'x' })).rejects.toThrow(/不存在/)
-    const claim = tools.find(tool => tool.name === 'yzj_todo_claim')!
-    const miss = await claim.execute({ todoId: 'T-404' })
+    const { tools } = mount()
+    await expect(run(tools, 'yzj_todo_update', { todoId: 'T-404', appendLog: 'x' })).rejects.toThrow(/不存在/)
+    const miss = await run(tools, 'yzj_todo_claim', { todoId: 'T-404' })
     expect(miss.content).toContain('不存在')
-  })
-})
-
-describe('sheet record digest regression (T0)', () => {
-  it('todayStr is slash-formatted for overdue comparison', () => {
-    expect(todayStr(new Date(2026, 7, 15))).toBe('2026/08/15')
-  })
-})
-
-describe('team libraries (active-binding override)', () => {
-  /** Script: personal ws has docP; team ws (wsT) has docT; both carry a
-   *  todo_id table. `sheet get` distinguishes docs by the --id argument. */
-  function teamScript() {
-    return (command: string[]) => {
-      const key = command.slice(0, 2).join(' ')
-      const idArg = command[command.indexOf('--id') + 1] ?? ''
-      if (key === 'doc workspace') {
-        return command.includes('enterprise')
-          ? ok({ list: [{ id: 'wsT', name: '六大场景内测', permissionLevel: 2 }] })
-          : ok({ list: [{ id: 'wsP', name: '我的知识' }] })
-      }
-      if (key === 'doc list') {
-        return command.includes('wsT')
-          ? ok([{ id: 'docT', title: '待办任务库', fileSuffix: 'dbt' }])
-          : ok([{ id: 'docP', title: '待办任务库', fileSuffix: 'dbt' }])
-      }
-      if (key === 'sheet get') {
-        const tableId = idArg === 'docT' ? 7 : 4
-        return ok({ sheets: [{ id: tableId, name: '任务', fields: [{ name: 'todo_id' }] }] })
-      }
-      if (key === 'sheet record' && command[2] === 'list') return ok({ page_token: '', records: [] })
-      if (key === 'sheet record') return ok({ records: [{ id: 'r1', fields: '{}' }] })
-      throw new Error(`unexpected ${command.join(' ')}`)
-    }
-  }
-
-  it('the holder override wins over personal discovery and routes writes to the team library', async () => {
-    const holder: { override?: { docId: string; tableId: number; link: string } } = {}
-    const { tools, bridge } = mount(teamScript(), holder)
-    holder.override = { docId: 'docT', tableId: 7, link: 'https://example/docT' }
-    const create = tools.find(tool => tool.name === 'yzj_todo_create')!
-    const result = await create.execute({ title: '团队任务' })
-    expect(result.content).toContain('created 待办')
-    const writeCall = bridge.calls.find(call => call.join(' ').startsWith('sheet record create'))
-    expect(writeCall!.includes('docT')).toBe(true)
-    expect(writeCall!.includes('7')).toBe(true)
-    expect(writeCall!.includes('docP')).toBe(false)
-  })
-
-  it('a stale override is cleared and resolution falls back to discovery', async () => {
-    const holder: { override?: { docId: string; tableId: number; link: string } } = {}
-    const script = (command: string[]) => {
-      const key = command.slice(0, 2).join(' ')
-      const idArg = command[command.indexOf('--id') + 1] ?? ''
-      if (key === 'doc workspace') return ok({ list: [{ id: 'wsP', name: '我的知识' }] })
-      if (key === 'doc list') return ok([{ id: 'docP', title: '待办任务库', fileSuffix: 'dbt' }])
-      if (key === 'sheet get') {
-        // docT (the stale override) answers with no todo_id table.
-        if (idArg === 'docT') return ok({ sheets: [{ id: 9, name: '别的表', fields: [{ name: '名称' }] }] })
-        return ok({ sheets: [{ id: 4, name: '任务', fields: [{ name: 'todo_id' }] }] })
-      }
-      if (key === 'sheet record' && command[2] === 'list') return ok({ page_token: '', records: [] })
-      if (key === 'sheet record') return ok({ records: [{ id: 'r1', fields: '{}' }] })
-      throw new Error(`unexpected ${command.join(' ')}`)
-    }
-    const { tools, bridge } = mount(script, holder)
-    holder.override = { docId: 'docT', tableId: 9, link: 'https://example/docT' }
-    const create = tools.find(tool => tool.name === 'yzj_todo_create')!
-    const result = await create.execute({ title: '降级' })
-    expect(result.content).toContain('created 待办')
-    expect(holder.override).toBeUndefined()
-    const writeCall = bridge.calls.find(call => call.join(' ').startsWith('sheet record create'))
-    expect(writeCall!.includes('docP')).toBe(true)
   })
 })

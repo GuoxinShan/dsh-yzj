@@ -1,35 +1,20 @@
 /**
- * Semantic todo tool family (待办). Demo stage: backed by one 多维表格
- * ("待办任务库" dbt) acting as the shadow task store — every invariant
- * (stable id, state machine, append-only log, #tag aggregation) is enforced
- * host-side so the backend can later be swapped for a native todo API
- * without changing the tool surface (see docs/migration/todo-backend-migration.md).
+ * Semantic todo tool family (泳道待办). Backend: local SQLite only
+ * (YZJ_ADVANCE_DB / local-store.ts) — the cloud 多维表格 backend was removed
+ * with the dual-backend switch (决策 54, 2026-08-25): every invariant (stable
+ * id, state machine, append-only log, #tag aggregation) stays host-side.
  *
  * The same core backs the `ctx.yzjTodo` service consumed by the ui-yzj RPC
  * channel, so the conversation tools and the panel share one implementation.
- *
- * Verified CLI formats (probed 2026-08-15): record create/update take a
- * JSON *array* `--records`; `records[].fields` comes back as a JSON string;
- * Date values are `YYYY/MM/DD` strings; SingleSelect options must be
- * pre-registered at table create; Contact/MultipleSelect writes are not
- * usable for dynamic values, so 负责人 is `姓名(openId)` text and 标签 is
- * `#tag` tokens in a text field.
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-tools'
-import type { YzjRunResult } from '@dsh-yzj/bridge'
 import type {} from '@dsh-yzj/bridge'
-import { yzjToolOutput, asRecord, asArray, asString, clipJson, failureDigest } from './shared.ts'
+import { yzjToolOutput, asRecord, asArray, asString, clipJson } from './shared.ts'
 import type { YzjToolBudget } from './shared.ts'
 import { localStore } from './local-store.ts'
-
-/** v1.8 决策 37: 'sqlite' = 真机本地 SQLite（index.ts apply 启用）；'dbt' = 测试 double（FakeStore 命令脚本）。云 dbt 在真机已死。 */
-let todoBackend: 'dbt' | 'sqlite' = 'dbt'
-export function setTodoBackend(next: 'dbt' | 'sqlite'): void {
-  todoBackend = next
-}
 
 /** Field names of the backing 任务 table (single source of truth). */
 const F = {
@@ -48,10 +33,6 @@ const F = {
   review: '验收说明',
   archived: '归档',
 } as const
-
-/** Library titles used for discovery/provisioning. */
-const LIBRARY_TITLE = '待办任务库'
-const TABLE_NAME = '任务'
 
 /**
  * Status values of the swimlane state machine (todo-swimlane-agent.md §2.1):
@@ -299,257 +280,43 @@ function todoLine(todo: YzjTodo): string {
 }
 
 // ---------------------------------------------------------------------------
-// Bridge helpers
+// Library resolution — SQLite only（决策 54：双后端已拆，云 dbt 发现/开通/切换随同退役）
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Library resolution — SQLite only（决策 54：双后端已拆，云 dbt 发现/开通/切换随同退役）
 // ---------------------------------------------------------------------------
 
-/** Run one bridge command expecting JSON; failures become a digest value. */
-async function runTodoJson(
-  ctx: Context,
-  budget: YzjToolBudget,
-  label: string,
-  command: readonly string[],
-): Promise<{ ok: true; json: unknown } | { ok: false; value: ReturnType<typeof failureDigest> }> {
-  const result: YzjRunResult = await ctx.yzjBridge.run(command, { timeoutMs: budget.timeoutMs })
-  if (!result.ok) return { ok: false, value: failureDigest(label, result, budget.maxRenderChars) }
-  return { ok: true, json: result.json }
-}
+/** Placeholder binding for the local SQLite backend (no cloud doc). */
+export const LOCAL_BINDING: TodoBinding = { docId: 'local-sqlite', tableId: 0, link: '' }
 
-/** CLI records array from a list/create/update payload. */
-function cliRecords(json: unknown): unknown[] {
-  const root = asRecord(json)
-  const records = asArray(root.records)
-  return records.length > 0 ? records : asArray(json)
-}
-
-// ---------------------------------------------------------------------------
-// Library resolution and provisioning
-// ---------------------------------------------------------------------------
-
-/** Fields definition for provisioning the 任务 table (options embedded). */
-function tableFieldsJson(): string {
-  return JSON.stringify([
-    { name: F.id, type: 'MultiLineText' },
-    { name: F.title, type: 'MultiLineText' },
-    { name: F.desc, type: 'MultiLineText' },
-    { name: F.status, type: 'SingleSelect', data: { items: TODO_STATUSES.map(value => ({ value })) } },
-    { name: F.assignee, type: 'MultiLineText' },
-    { name: F.ddl, type: 'Date' },
-    { name: F.priority, type: 'SingleSelect', data: { items: [{ value: 'P0' }, { value: 'P1' }, { value: 'P2' }] } },
-    { name: F.tags, type: 'MultiLineText' },
-    { name: F.source, type: 'Url' },
-    { name: F.log, type: 'MultiLineText' },
-    { name: F.claimedBy, type: 'MultiLineText' },
-    { name: F.version, type: 'MultiLineText' },
-    { name: F.review, type: 'MultiLineText' },
-  ])
-}
-
-/** Find a usable binding in one dbt doc: a table whose fields include todo_id. */
-async function bindingForDoc(
-  ctx: Context,
-  budget: YzjToolBudget,
-  docId: string,
-): Promise<TodoBinding | undefined> {
-  const ran = await runTodoJson(ctx, budget, 'sheet get', ['sheet', 'get', '--id', docId])
-  if (!ran.ok) return undefined
-  for (const table of asArray(asRecord(ran.json).sheets)) {
-    const row = asRecord(table)
-    const tableId = row.id
-    const names = asArray(row.fields).map(field => asString(asRecord(field).name))
-    if (typeof tableId === 'number' && names.includes(F.id)) {
-      return { docId, tableId, link: `https://www.yunzhijia.com/knowledge/lingee/#/store/doc/${docId}` }
-    }
-  }
-  return undefined
-}
-
-/** Provision the 任务 table inside an existing dbt doc. */
-async function provisionTable(
-  ctx: Context,
-  budget: YzjToolBudget,
-  docId: string,
-): Promise<TodoBinding> {
-  const ran = await runTodoJson(ctx, budget, 'sheet table create', [
-    'sheet', 'table', 'create', '--id', docId, '--name', TABLE_NAME,
-    '--fields', tableFieldsJson(), '--views', JSON.stringify([{ name: '全部', type: 'Grid' }, { name: '按DDL', type: 'Query' }]),
-  ])
-  if (!ran.ok) throw new Error(ran.value.content)
-  const binding = await bindingForDoc(ctx, budget, docId)
-  if (binding === undefined) throw new Error(`todo: 任务表创建后未在 ${docId} 中找到 todo_id 字段`)
-  return binding
-}
-
-/**
- * Resolve (and optionally provision) the todo library. Order: panel-selected
- * override (user's active library) → explicit config binding → discovery by
- * title in the configured/personal workspaces. Cached per core instance.
- * An override that no longer validates (library deleted) is cleared and
- * resolution falls through.
- */
+/** Always the local SQLite binding; signature kept for the shared core paths. */
 export async function resolveLibrary(
-  ctx: Context,
-  budget: YzjToolBudget,
-  config: TodoConfig,
+  _ctx: Context,
+  _budget: YzjToolBudget,
+  _config: TodoConfig,
   cache: { binding?: TodoBinding },
-  allowProvision: boolean,
-  holder?: TodoBindingHolder,
+  _allowProvision?: boolean,
+  _holder?: TodoBindingHolder,
 ): Promise<TodoBinding> {
-  if (todoBackend === 'sqlite') {
-    const local: TodoBinding = { docId: 'local-sqlite', tableId: 0, link: '' }
-    cache.binding = local
-    return local
-  }
-
-  if (cache.binding !== undefined) return cache.binding
-
-  // 0. Panel-selected override: validate once, then trust (and remember).
-  if (holder?.override !== undefined) {
-    const ran = await runTodoJson(ctx, budget, 'sheet get', ['sheet', 'get', '--id', holder.override.docId])
-    const stillOk = ran.ok && asArray(asRecord(ran.json).sheets).some(table =>
-      asRecord(table).id === holder.override!.tableId
-      && asArray(asRecord(table).fields).some(field => asString(asRecord(field).name) === F.id))
-    if (stillOk) {
-      cache.binding = holder.override
-      return holder.override
-    }
-    // Stale override (library deleted or table removed): drop it.
-    delete holder.override
-  }
-
-  // 1. Explicit binding from config.
-  if (config.docId !== undefined && config.tableId !== undefined) {
-    const direct: TodoBinding = {
-      docId: config.docId,
-      tableId: config.tableId,
-      link: `https://www.yunzhijia.com/knowledge/lingee/#/store/doc/${config.docId}`,
-    }
-    const ran = await runTodoJson(ctx, budget, 'sheet get', ['sheet', 'get', '--id', config.docId])
-    if (ran.ok) {
-      const ok = asArray(asRecord(ran.json).sheets).some(table =>
-        asRecord(table).id === config.tableId
-        && asArray(asRecord(table).fields).some(field => asString(asRecord(field).name) === F.id))
-      if (ok) {
-        cache.binding = direct
-        return direct
-      }
-    }
-    throw new Error(`todo: 配置的库 doc=${config.docId} table=${config.tableId} 校验失败（不存在或缺少 ${F.id} 字段）；请修正 todo 配置或清空以走自动发现`)
-  }
-
-  // 2. Pick the workspace(s) to search/create in: all personal workspaces
-  // (the CLI's first entry is not necessarily 我的知识), bounded to 8.
-  let workspaces: { id: string; name: string }[] = []
-  if (config.workspace !== undefined) {
-    workspaces = [{ id: config.workspace, name: '' }]
-  } else {
-    const ran = await runTodoJson(ctx, budget, 'doc workspace list', ['doc', 'workspace', 'list', '--type', 'personal'])
-    if (!ran.ok) throw new Error(ran.value.content)
-    // The CLI returns a bare array here (unlike most list commands).
-    const list = Array.isArray(ran.json) ? ran.json : asArray(asRecord(ran.json).list)
-    workspaces = list
-      .map(node => { const row = asRecord(node); return { id: asString(row.id), name: asString(row.name) } })
-      .filter(ws => ws.id !== '')
-      .slice(0, 8)
-    if (workspaces.length === 0) throw new Error('todo: 未找到个人知识库，无法定位待办任务库；请在 todo 配置中显式指定 workspace')
-  }
-
-  // 3. Find an existing 待办任务库 doc with a usable table (scan every
-  // candidate workspace before provisioning, so a library in any personal
-  // KB is found instead of duplicated).
-  for (const ws of workspaces) {
-    const listRan = await runTodoJson(ctx, budget, 'doc list', ['doc', 'list', '--workspace', ws.id])
-    if (!listRan.ok) continue
-    // `doc list` also returns a bare array of nodes.
-    const nodes = Array.isArray(listRan.json) ? listRan.json : asArray(asRecord(listRan.json).list)
-    for (const node of nodes) {
-      const row = asRecord(node)
-      if (row.fileSuffix === 'dbt' && asString(row.title) === LIBRARY_TITLE) {
-        const docId = asString(row.id)
-        const found = await bindingForDoc(ctx, budget, docId)
-        if (found !== undefined) {
-          cache.binding = found
-          return found
-        }
-        if (allowProvision) {
-          const provisioned = await provisionTable(ctx, budget, docId)
-          cache.binding = provisioned
-          return provisioned
-        }
-      }
-    }
-  }
-
-  if (!allowProvision) {
-    throw new Error('todo: 待办任务库尚未开通；创建第一条待办即可自动开通')
-  }
-
-  // 4. Provision the whole library in the first candidate workspace.
-  const createRan = await runTodoJson(ctx, budget, 'sheet create', [
-    'sheet', 'create', '--workspace', workspaces[0]!.id, '--title', LIBRARY_TITLE,
-  ])
-  if (!createRan.ok) throw new Error(createRan.value.content)
-  const docId = asString(asRecord(createRan.json).id)
-  if (docId === '') throw new Error('todo: 创建待办任务库未返回文档 id')
-  const binding = await provisionTable(ctx, budget, docId)
-  cache.binding = binding
-  return binding
+  cache.binding = LOCAL_BINDING
+  return LOCAL_BINDING
 }
 
-/** Fetch and parse every todo (paged up to 300 records, demo scale). */
-export async function fetchTodos(
-  ctx: Context,
-  budget: YzjToolBudget,
-  binding: TodoBinding,
-): Promise<YzjTodo[]> {
-  if (todoBackend === 'sqlite') {
-    return localStore().listTodos()
-      .map(row => parseTodoRecord({ id: row.recordId, fields: row.fields }))
-      .filter((todo): todo is YzjTodo => todo !== null)
-  }
-
-  const todos: YzjTodo[] = []
-  let pageToken: string | undefined
-  for (let page = 0; page < 3; page += 1) {
-    const command = ['sheet', 'record', 'list', '--id', binding.docId, '--table-id', String(binding.tableId), '--limit', '100']
-    if (pageToken !== undefined) command.push('--page-token', pageToken)
-    const ran = await runTodoJson(ctx, budget, 'sheet record list', command)
-    if (!ran.ok) throw new Error(ran.value.content)
-    for (const record of cliRecords(ran.json)) {
-      const todo = parseTodoRecord(record)
-      if (todo !== null) todos.push(todo)
-    }
-    pageToken = asString(asRecord(ran.json).page_token ?? asRecord(ran.json).next_page_token)
-    if (pageToken === '') break
-  }
-  return todos
+/** Every todo from the local SQLite store. */
+export function fetchTodos(): YzjTodo[] {
+  return localStore().listTodos()
+    .map(row => parseTodoRecord({ id: row.recordId, fields: row.fields }))
+    .filter((todo): todo is YzjTodo => todo !== null)
 }
 
-/** Fetch one todo by todo_id; undefined when absent. */
-export async function fetchTodoByTodoId(
-  ctx: Context,
-  budget: YzjToolBudget,
-  binding: TodoBinding,
-  todoId: string,
-): Promise<YzjTodo | undefined> {
-  if (todoBackend === 'sqlite') {
-    const row = localStore().todo(todoId)
-    if (row === undefined) return undefined
-    return parseTodoRecord({ id: row.recordId, fields: row.fields }) ?? undefined
-  }
-
-  const filter = JSON.stringify({ mode: 'AND', criteria: [{ field: F.id, operator: 'Equals', values: [todoId] }] })
-  const ran = await runTodoJson(ctx, budget, 'sheet record list', [
-    'sheet', 'record', 'list', '--id', binding.docId, '--table-id', String(binding.tableId), '--filter', filter,
-  ])
-  if (!ran.ok) throw new Error(ran.value.content)
-  for (const record of cliRecords(ran.json)) {
-    const todo = parseTodoRecord(record)
-    if (todo !== null) return todo
-  }
-  return undefined
+/** One todo by todo_id from the local store; undefined when absent. */
+export function fetchTodoByTodoId(todoId: string): YzjTodo | undefined {
+  const row = localStore().todo(todoId)
+  if (row === undefined) return undefined
+  return parseTodoRecord({ id: row.recordId, fields: row.fields }) ?? undefined
 }
 
-/** Resolve an assignee string to `姓名(openId)` when unambiguous. */
+/** Resolve an assignee string to `姓名(openId)` when unambiguous (directory lookup via the bridge). */
 export async function resolveAssignee(
   ctx: Context,
   budget: YzjToolBudget,
@@ -557,9 +324,9 @@ export async function resolveAssignee(
 ): Promise<{ value: string; resolved: boolean }> {
   const trimmed = assignee.trim()
   if (trimmed === '' || /\([\w-]+\)$/.test(trimmed)) return { value: trimmed, resolved: true }
-  const ran = await runTodoJson(ctx, budget, 'contact user search', ['contact', 'user', 'search', '--keyword', trimmed])
-  if (!ran.ok) return { value: trimmed, resolved: false }
-  const hits = asArray(asRecord(ran.json).list ?? ran.json)
+  const result = await ctx.yzjBridge.run(['contact', 'user', 'search', '--keyword', trimmed], { timeoutMs: budget.timeoutMs })
+  if (!result.ok) return { value: trimmed, resolved: false }
+  const hits = asArray(asRecord(result.json).list ?? result.json)
     .map(row => asRecord(row))
     .filter(row => asString(row.name) === trimmed)
   if (hits.length === 1) {
@@ -569,37 +336,19 @@ export async function resolveAssignee(
   return { value: trimmed, resolved: false }
 }
 
-/** Write records (create/update array form) and return the raw payload. */
-async function writeRecords(
-  ctx: Context,
-  budget: YzjToolBudget,
-  label: string,
-  binding: TodoBinding,
-  records: string,
-): Promise<{ ok: true; json: unknown } | { ok: false; content: string }> {
-  if (todoBackend === 'sqlite') {
-    const store = localStore()
-    const rows = JSON.parse(records) as { id?: string; fieldsValue?: Record<string, unknown> }[]
-    const out: { id: string; fields: Record<string, unknown> }[] = []
-    for (const row of rows) {
-      const fields = row.fieldsValue ?? {}
-      const todoId = String(row.id ?? fields[F.id] ?? '')
-      if (label.includes('create')) store.createTodo(fields)
-      else store.updateTodo(todoId, fields)
-      out.push({ id: todoId, fields: { ...store.todo(todoId)?.fields } })
-    }
-    return { ok: true, json: { records: out } }
+/** Apply one create/update records payload to the local store (CLI-shaped rows). */
+function applyRecords(records: string): { ok: true; json: unknown } {
+  const store = localStore()
+  const rows = JSON.parse(records) as { id?: string; fieldsValue?: Record<string, unknown> }[]
+  const out: { id: string; fields: Record<string, unknown> }[] = []
+  for (const row of rows) {
+    const fields = row.fieldsValue ?? {}
+    const todoId = String(row.id ?? fields[F.id] ?? '')
+    if (row.id === undefined) store.createTodo(fields)
+    else store.updateTodo(todoId, fields)
+    out.push({ id: todoId, fields: { ...store.todo(todoId)?.fields } })
   }
-
-  const command = label.includes('create')
-    ? ['sheet', 'record', 'create', '--id', binding.docId, '--table-id', String(binding.tableId), '--records', records]
-    : ['sheet', 'record', 'update', '--id', binding.docId, '--table-id', String(binding.tableId), '--records', records]
-  const result: YzjRunResult = await ctx.yzjBridge.run(command, { timeoutMs: budget.timeoutMs })
-  if (!result.ok) {
-    const digest = failureDigest(label, result, budget.maxRenderChars)
-    return { ok: false, content: digest.content }
-  }
-  return { ok: true, json: result.json }
+  return { ok: true, json: { records: out } }
 }
 
 // ---------------------------------------------------------------------------
@@ -627,10 +376,10 @@ export async function coreCreate(
   if (title === '') throw new Error('todo: title must not be empty')
   const binding = await resolveLibrary(ctx, budget, config, cache, true, holder)
   if (input.todoId !== undefined) {
-    const existing = await fetchTodoByTodoId(ctx, budget, binding, input.todoId)
+    const existing = fetchTodoByTodoId(input.todoId)
     if (existing !== undefined) return { todo: existing, idempotent: true, assigneeNote: '', binding }
   }
-  const todos = await fetchTodos(ctx, budget, binding)
+  const todos = fetchTodos()
   const todoId = input.todoId ?? nextTodoId(todos.map(todo => todo.todoId))
   if (todos.some(todo => todo.todoId === todoId)) {
     throw new Error(`todo: 生成的 todo_id ${todoId} 已冲突，请显式传入 todoId`)
@@ -650,9 +399,8 @@ export async function coreCreate(
   if (tags.length > 0) fields[F.tags] = formatTags(tags)
   const refLine = (input.refs ?? []).length > 0 ? `\n${nowStamp()} 来源引用 ${(input.refs ?? []).join(' ')}` : ''
   fields[F.log] = `${nowStamp()} 创建${landing === 'backlog' ? '（落待我决定，待人批准）' : ''}${refLine}`
-  const wrote = await writeRecords(ctx, budget, 'sheet record create', binding, JSON.stringify([{ fieldsValue: fields }]))
-  if (!wrote.ok) throw new Error(wrote.content)
-  const created = cliRecords(wrote.json).map(record => parseTodoRecord(record)).find(todo => todo !== null)
+  applyRecords(JSON.stringify([{ fieldsValue: fields }]))
+  const created = fetchTodoByTodoId(todoId) ?? null
   return { todo: created ?? null, idempotent: false, assigneeNote, binding }
 }
 
@@ -696,7 +444,7 @@ export async function coreSetStatus(
   holder?: TodoBindingHolder,
 ): Promise<CoreStatusResult> {
   const binding = await resolveLibrary(ctx, budget, config, cache, false, holder)
-  const existing = await fetchTodoByTodoId(ctx, budget, binding, todoId)
+  const existing = fetchTodoByTodoId(todoId)
   if (existing === undefined) {
     throw new Error(`todo: 待办 ${todoId} 不存在；先用 yzj_todo_list 查真实 id，不要猜测`)
   }
@@ -712,8 +460,7 @@ export async function coreSetStatus(
   if (opts.sessionId !== undefined && opts.sessionId !== '') fieldsValue[F.claimedBy] = opts.sessionId
   if (opts.clearClaim === true) fieldsValue[F.claimedBy] = ''
   if (opts.reviewNote !== undefined) fieldsValue[F.review] = opts.reviewNote
-  const wrote = await writeRecords(ctx, budget, 'sheet record update', binding, JSON.stringify([{ id: existing.recordId, fieldsValue }]))
-  if (!wrote.ok) throw new Error(wrote.content)
+  applyRecords(JSON.stringify([{ id: existing.recordId, fieldsValue }]))
   const next: YzjTodo = {
     ...existing,
     status: target,
@@ -742,8 +489,7 @@ export async function coreSetArchived(
   const { todo, binding } = await mustFetch(ctx, budget, config, cache, todoId, holder)
   if (todo.archived === archived) return { todo, binding }
   const log = appendLog(todo.log, `${nowStamp()} ${archived ? '归档（收进已归档折叠区）' : '恢复（已归档 → 回板）'}`)
-  const wrote = await writeRecords(ctx, budget, 'sheet record update', binding, JSON.stringify([{ id: todo.recordId, fieldsValue: { [F.archived]: archived, [F.log]: log } }]))
-  if (!wrote.ok) throw new Error(wrote.content)
+  applyRecords(JSON.stringify([{ id: todo.recordId, fieldsValue: { [F.archived]: archived, [F.log]: log } }]))
   return { todo: { ...todo, archived, log }, binding }
 }
 
@@ -757,7 +503,7 @@ async function mustFetch(
   holder?: TodoBindingHolder,
 ): Promise<{ todo: YzjTodo; binding: TodoBinding }> {
   const binding = await resolveLibrary(ctx, budget, config, cache, false, holder)
-  const todo = await fetchTodoByTodoId(ctx, budget, binding, todoId)
+  const todo = fetchTodoByTodoId(todoId)
   if (todo === undefined) {
     throw new Error(`todo: 待办 ${todoId} 不存在；先用 yzj_todo_list 查真实 id，不要猜测`)
   }
@@ -893,7 +639,6 @@ export class YzjTodoService extends Service {
   private readonly cache: { binding?: TodoBinding } = {}
   /** Shared with the tool family so agent writes follow the active library. */
   readonly holder: TodoBindingHolder = {}
-  private librariesCache: { at: number; list: TodoLibraryRef[] } | null = null
 
   constructor(ctx: Context, budget: YzjToolBudget, config: TodoConfig) {
     super(ctx, 'yzjTodo')
@@ -906,174 +651,18 @@ export class YzjTodoService extends Service {
    *  so this stays fast — the discovery scan is slow. The ACTIVE library's
    *  identity rides along via a cheap doc-get + cached workspace index. */
   async state(): Promise<YzjTodoState> {
-    let binding: TodoBinding
     try {
-      binding = await resolveLibrary(this.ctx, this.budget, this.config, this.cache, false, this.holder)
-    } catch {
-      return { ready: false, library: null, todos: [], activeDocId: '' }
-    }
-    const identity = await this.libraryIdentity(binding.docId)
-    try {
-      const todos = await fetchTodos(this.ctx, this.budget, binding)
-      return { ready: true, library: binding, todos: todos.map(viewOf), activeDocId: binding.docId, ...identity }
+      return { ready: true, library: LOCAL_BINDING, todos: fetchTodos().map(viewOf), activeDocId: LOCAL_BINDING.docId }
     } catch (error) {
-      return { ready: true, library: binding, todos: [], error: String((error as Error).message), activeDocId: binding.docId, ...identity }
+      return { ready: true, library: LOCAL_BINDING, todos: [], error: String((error as Error).message), activeDocId: LOCAL_BINDING.docId }
     }
   }
 
-  /** wsId → {name, scope} index from the two workspace lists (cached 5min). */
-  private wsIndexCache: { at: number; map: Map<string, { name: string; scope: 'personal' | 'team' }> } | null = null
 
-  private async workspaceIndex(): Promise<Map<string, { name: string; scope: 'personal' | 'team' }>> {
-    if (this.wsIndexCache !== null && Date.now() - this.wsIndexCache.at < 300_000) {
-      return this.wsIndexCache.map
-    }
-    const map = new Map<string, { name: string; scope: 'personal' | 'team' }>()
-    const scans: { cli: 'personal' | 'enterprise'; scope: 'personal' | 'team' }[] = [
-      { cli: 'personal', scope: 'personal' },
-      { cli: 'enterprise', scope: 'team' },
-    ]
-    for (const { cli, scope } of scans) {
-      const ran = await runTodoJson(this.ctx, this.budget, 'doc workspace list', ['doc', 'workspace', 'list', '--type', cli])
-      if (!ran.ok) continue
-      const list = Array.isArray(ran.json) ? ran.json : asArray(asRecord(ran.json).list)
-      for (const node of list) {
-        const row = asRecord(node)
-        const id = asString(row.id)
-        if (id !== '') map.set(id, { name: asString(row.name), scope })
-      }
-    }
-    this.wsIndexCache = { at: Date.now(), map }
-    return map
-  }
 
-  /** Cheap identity of one library doc: its workspace name + scope. */
-  private async libraryIdentity(docId: string): Promise<{ libraryName?: string; libraryScope?: 'personal' | 'team' }> {
-    try {
-      const ran = await runTodoJson(this.ctx, this.budget, 'doc get', ['doc', 'get', '--id', docId])
-      if (!ran.ok) return {}
-      const kbId = asString(asRecord(ran.json).kbId)
-      if (kbId === '') return {}
-      const meta = (await this.workspaceIndex()).get(kbId)
-      if (meta === undefined) return {}
-      return { libraryName: meta.name, libraryScope: meta.scope }
-    } catch {
-      return {}
-    }
-  }
 
-  /**
-   * Discover libraries for the switcher: every 待办任务库 across personal
-   * and enterprise workspaces (bounded scan) plus remembered team libraries.
-   * Cached ~5min — the scan is a dozen-plus CLI calls.
-   */
-  async listLibraries(): Promise<TodoLibraryRef[]> {
-    if (this.librariesCache !== null && Date.now() - this.librariesCache.at < 300_000) {
-      return this.librariesCache.list
-    }
-    const found: TodoLibraryRef[] = []
-    const seen = new Set<string>()
-    const scans: { cli: 'personal' | 'enterprise'; scope: 'personal' | 'team' }[] = [
-      { cli: 'personal', scope: 'personal' },
-      { cli: 'enterprise', scope: 'team' },
-    ]
-    for (const { cli, scope } of scans) {
-      const ran = await runTodoJson(this.ctx, this.budget, 'doc workspace list', ['doc', 'workspace', 'list', '--type', cli])
-      if (!ran.ok) continue
-      const list = Array.isArray(ran.json) ? ran.json : asArray(asRecord(ran.json).list)
-      for (const node of list.slice(0, 12)) {
-        const ws = asRecord(node)
-        const wsId = asString(ws.id)
-        if (wsId === '') continue
-        const docsRan = await runTodoJson(this.ctx, this.budget, 'doc list', ['doc', 'list', '--workspace', wsId])
-        if (!docsRan.ok) continue
-        const nodes = Array.isArray(docsRan.json) ? docsRan.json : asArray(asRecord(docsRan.json).list)
-        for (const doc of nodes) {
-          const row = asRecord(doc)
-          if (row.fileSuffix !== 'dbt' || asString(row.title) !== LIBRARY_TITLE) continue
-          const docId = asString(row.id)
-          if (docId === '' || seen.has(docId)) continue
-          const binding = await bindingForDoc(this.ctx, this.budget, docId)
-          if (binding === undefined) continue
-          seen.add(docId)
-          found.push({
-            scope,
-            workspaceId: wsId,
-            workspaceName: asString(ws.name),
-            docId,
-            tableId: binding.tableId,
-            link: binding.link,
-          })
-        }
-      }
-    }
-    // Remembered selections (e.g. team libraries in workspaces beyond the
-    // scan bound) stay visible in the picker.
-    for (const known of this.holder.known ?? []) {
-      if (!seen.has(known.docId)) {
-        seen.add(known.docId)
-        found.push(known)
-      }
-    }
-    this.librariesCache = { at: Date.now(), list: found }
-    return found
-  }
 
-  /** Enterprise workspaces offered when provisioning a team library. */
-  async teamWorkspaces(): Promise<TodoTeamWorkspace[]> {
-    const ran = await runTodoJson(this.ctx, this.budget, 'doc workspace list', ['doc', 'workspace', 'list', '--type', 'enterprise'])
-    if (!ran.ok) throw new Error(ran.value.content)
-    const list = Array.isArray(ran.json) ? ran.json : asArray(asRecord(ran.json).list)
-    return list
-      .map(node => {
-        const row = asRecord(node)
-        return {
-          id: asString(row.id),
-          name: asString(row.name),
-          docCount: typeof row.docCount === 'number' ? row.docCount : 0,
-          permissionLevel: typeof row.permissionLevel === 'number' ? row.permissionLevel : 3,
-        }
-      })
-      .filter(ws => ws.id !== '')
-      .sort((a, b) => (a.permissionLevel - b.permissionLevel) || a.name.localeCompare(b.name))
-  }
 
-  /** Switch the active library (panel picker). Validates before adopting. */
-  async select(docId: string): Promise<YzjTodoState> {
-    const binding = await bindingForDoc(this.ctx, this.budget, docId)
-    if (binding === undefined) throw new Error(`todo: 文档 ${docId} 不是可用的待办任务库（缺少任务表）`)
-    this.holder.override = binding
-    this.rememberLibrary(binding)
-    delete this.cache.binding
-    this.librariesCache = null
-    return this.state()
-  }
-
-  /** Adopt-or-provision a team library in one enterprise workspace, then
-   *  make it active. Returns the refreshed state. */
-  async ensureTeam(workspaceId: string): Promise<YzjTodoState> {
-    const ran = await runTodoJson(this.ctx, this.budget, 'doc list', ['doc', 'list', '--workspace', workspaceId])
-    if (!ran.ok) throw new Error(ran.value.content)
-    const nodes = Array.isArray(ran.json) ? ran.json : asArray(asRecord(ran.json).list)
-    const existing = nodes.find(node => asRecord(node).fileSuffix === 'dbt' && asString(asRecord(node).title) === LIBRARY_TITLE)
-    let binding: TodoBinding
-    if (existing !== undefined) {
-      const docId = asString(asRecord(existing).id)
-      const found = await bindingForDoc(this.ctx, this.budget, docId)
-      binding = found ?? await provisionTable(this.ctx, this.budget, docId)
-    } else {
-      const createRan = await runTodoJson(this.ctx, this.budget, 'sheet create', ['sheet', 'create', '--workspace', workspaceId, '--title', LIBRARY_TITLE])
-      if (!createRan.ok) throw new Error(createRan.value.content)
-      const docId = asString(asRecord(createRan.json).id)
-      if (docId === '') throw new Error('todo: 创建团队任务库未返回文档 id')
-      binding = await provisionTable(this.ctx, this.budget, docId)
-    }
-    this.holder.override = binding
-    this.rememberLibrary(binding, workspaceId)
-    delete this.cache.binding
-    this.librariesCache = null
-    return this.state()
-  }
 
   /** Provision the personal library on demand (one-click empty-state action). */
   async ensure(): Promise<YzjTodoState> {
@@ -1171,7 +760,7 @@ export class YzjTodoService extends Service {
    * 描述是 agent 认领后执行的提示词本体——批准前改它是第一闸的本职。
    */
   async edit(todoId: string, patch: { title?: string; description?: string; ddl?: string; assignee?: string; priority?: string; tags?: readonly string[] }): Promise<YzjTodoView> {
-    const { todo, binding } = await mustFetch(this.ctx, this.budget, this.config, this.cache, todoId, this.holder)
+    const { todo } = await mustFetch(this.ctx, this.budget, this.config, this.cache, todoId, this.holder)
     const changes: string[] = []
     const fields: Record<string, unknown> = {}
     if (patch.title !== undefined && patch.title.trim() !== '' && patch.title.trim() !== todo.title) {
@@ -1210,8 +799,7 @@ export class YzjTodoService extends Service {
     }
     if (changes.length === 0) return viewOf(todo)
     fields[F.log] = appendLog(todo.log, `${nowStamp()} 编辑 ${changes.join('；')}`)
-    const wrote = await writeRecords(this.ctx, this.budget, 'sheet record update', binding, JSON.stringify([{ id: todo.recordId, fieldsValue: fields }]))
-    if (!wrote.ok) throw new Error(wrote.content)
+    applyRecords(JSON.stringify([{ id: todo.recordId, fieldsValue: fields }]))
     return viewOf({
       ...todo,
       title: typeof fields[F.title] === 'string' ? fields[F.title] as string : todo.title,
@@ -1224,21 +812,6 @@ export class YzjTodoService extends Service {
     })
   }
 
-  /** Keep a selected binding visible in the picker across scans. */
-  private rememberLibrary(binding: TodoBinding, workspaceId?: string): void {
-    const known = this.holder.known ?? []
-    if (!known.some(ref => ref.docId === binding.docId)) {
-      known.push({
-        scope: 'team',
-        workspaceId: workspaceId ?? '',
-        workspaceName: '',
-        docId: binding.docId,
-        tableId: binding.tableId,
-        link: binding.link,
-      })
-      this.holder.known = known
-    }
-  }
 }
 
 /** Lossless projection of a parsed todo for the wire. */
@@ -1303,7 +876,7 @@ export function applyTodoTools(ctx: Context, budget: YzjToolBudget, config: Todo
       }
       let todos: YzjTodo[]
       try {
-        todos = await fetchTodos(ctx, budget, binding)
+        todos = fetchTodos()
       } catch (error) {
         return { content: `yzj todo list failed: ${String((error as Error).message)}`, truncated: false, data: {} }
       }
@@ -1432,7 +1005,7 @@ export function applyTodoTools(ctx: Context, budget: YzjToolBudget, config: Todo
       } catch (error) {
         return { content: `yzj todo update failed: ${String((error as Error).message)}`, truncated: false, data: {} }
       }
-      const existing = await fetchTodoByTodoId(ctx, budget, binding, args.todoId)
+      const existing = fetchTodoByTodoId(args.todoId)
       if (existing === undefined) {
         throw new Error(`yzj_todo_update: 待办 ${args.todoId} 不存在；先用 yzj_todo_list 查真实 id，不要猜测`)
       }
@@ -1468,9 +1041,8 @@ export function applyTodoTools(ctx: Context, budget: YzjToolBudget, config: Todo
       if (changes.length > 0) logLines.push(`${nowStamp()} ${changes.join('；')}`)
       if (args.appendLog !== undefined && args.appendLog.trim() !== '') logLines.push(`${nowStamp()} 备注 ${args.appendLog.trim()}`)
       if (logLines.length > 0) fields[F.log] = appendLog(existing.log, logLines.join('\n'))
-      const wrote = await writeRecords(ctx, budget, 'sheet record update', binding, JSON.stringify([{ id: existing.recordId, fieldsValue: fields }]))
-      if (!wrote.ok) return { content: wrote.content, truncated: false, data: {} }
-      const content = `updated 待办 ${args.todoId}${changes.length > 0 ? `（${changes.join('；')}）` : '（追加日志）'}\n任务库 ${binding.link}`
+      applyRecords(JSON.stringify([{ id: existing.recordId, fieldsValue: fields }]))
+      const content = `updated 待办 ${args.todoId}${changes.length > 0 ? `（${changes.join('；')}）` : '（追加日志）'}`
       return {
         content,
         truncated: false,

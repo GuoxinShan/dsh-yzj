@@ -23,7 +23,7 @@ import type {} from '@dsh-yzj/bridge'
 import { yzjToolOutput, asRecord, asArray, asString, clipJson, failureDigest } from './shared.ts'
 import type { YzjToolBudget } from './shared.ts'
 import {
-  resolveLibrary, resolveAssignee, normalizeTags, formatTags, normalizeDdl,
+  resolveAssignee, normalizeTags, formatTags, normalizeDdl,
   nowStamp, todayStr, parseAssignee, fetchTodoByTodoId,
 } from './todo.ts'
 import type { TodoBinding, TodoBindingHolder, TodoConfig } from './todo.ts'
@@ -71,23 +71,9 @@ export const ENTRY_F = {
   judge: '判定动作',
 } as const
 
-const ITEM_TABLE = '事项'
-const ENTRY_TABLE = '事元'
 
-/**
- * v1.8 storage switch (决策 36): 'sqlite' = local SQLite via node:sqlite
- * (real-device default; zero cloud dependency after the 多维表格 record
- * service proved intermittently unavailable); 'dbt' = cloud 多维表格
- * (tests + legacy). Tests never call setAdvanceBackend, so they stay on
- * the dbt path with the existing FakeStore mocks.
- */
-let advanceBackend: 'dbt' | 'sqlite' = 'dbt'
-export function setAdvanceBackend(next: 'dbt' | 'sqlite'): void {
-  advanceBackend = next
-}
-export function getAdvanceBackend(): 'dbt' | 'sqlite' {
-  return advanceBackend
-}
+// 决策 54（2026-08-25）：双后端已拆——本地 SQLite 是唯一后端（云 多维表格 record
+// 服务间歇 500 已弃用，dbt 分支删除）。
 
 /** Binding placeholder for the local backend (no cloud doc). */
 const LOCAL_BINDING: AdvanceBinding = { docId: 'local-sqlite', itemTableId: 0, entryTableId: 1, link: '' }
@@ -394,23 +380,22 @@ async function listDirDocs(ctx: Context, budget: YzjToolBudget, dirId: string): 
  * migration).
  */
 async function scanTodoThread(
-  ctx: Context,
-  budget: YzjToolBudget,
-  config: TodoConfig,
-  caches: AdvanceCaches,
+  _ctx: Context,
+  _budget: YzjToolBudget,
+  _config: TodoConfig,
+  _caches: AdvanceCaches,
   cursors: ScanCursorStoreFace,
   thread: { id: string; label: string },
   signals: ScanSignal[],
   groupResults: ScanGroupResult[],
   now: number,
   pool?: DreamPoolFace,
-  holder?: TodoBindingHolder,
+  _holder?: TodoBindingHolder,
 ): Promise<void> {
   const key = `todo:${thread.id}`
   let todo
   try {
-    const binding = await resolveLibrary(ctx, budget, config, caches.lib, false, holder)
-    todo = await fetchTodoByTodoId(ctx, budget, binding, thread.id)
+    todo = fetchTodoByTodoId(thread.id)
   } catch (error) {
     groupResults.push({ groupId: key, groupName: thread.label || thread.id, baseline: false, newCount: 0, error: String((error as Error).message) })
     return
@@ -623,8 +608,7 @@ export async function coreScanAdvance(
   let scanTodos: { id: string; label: string }[] = []
   if (effective.length === 0) {
     if (sources === undefined) throw new Error('advance scan: groups must not be empty (no source registry)')
-    const binding = await resolveAdvance(ctx, budget, config, caches, false, holder)
-    const items = await fetchItems(ctx, budget, binding)
+    const items = fetchItems()
     preItems = items.filter(item => isOpenStage(item.stage)).map(item => ({
       advanceId: item.advanceId, title: item.title, stage: item.stage,
     }))
@@ -720,8 +704,7 @@ export async function coreScanAdvance(
   } else {
     openItems = []
     try {
-      const binding = await resolveAdvance(ctx, budget, config, caches, false, holder)
-      const items = await fetchItems(ctx, budget, binding)
+      const items = fetchItems()
       openItems = items.filter(item => isOpenStage(item.stage)).map(item => ({
         advanceId: item.advanceId, title: item.title, stage: item.stage,
       }))
@@ -975,228 +958,34 @@ async function runJson(
   return { ok: true, json: result.json }
 }
 
-function cliRecords(json: unknown): unknown[] {
-  const root = asRecord(json)
-  const records = asArray(root.records)
-  return records.length > 0 ? records : asArray(json)
-}
-
-/** Table-provision field definitions (SingleSelect options pre-registered). */
-function itemFieldsJson(): string {
-  return JSON.stringify([
-    { name: ITEM_F.id, type: 'MultiLineText' },
-    { name: ITEM_F.title, type: 'MultiLineText' },
-    { name: ITEM_F.goal, type: 'MultiLineText' },
-    { name: ITEM_F.assignee, type: 'MultiLineText' },
-    { name: ITEM_F.targetDate, type: 'Date' },
-    { name: ITEM_F.stage, type: 'SingleSelect', data: { items: ADVANCE_STAGES.map(value => ({ value })) } },
-    { name: ITEM_F.background, type: 'MultiLineText' },
-    { name: ITEM_F.metrics, type: 'MultiLineText' },
-    { name: ITEM_F.tags, type: 'MultiLineText' },
-    { name: ITEM_F.latest, type: 'MultiLineText' },
-    { name: ITEM_F.source, type: 'Url' },
-  ])
-}
-
-function entryFieldsJson(): string {
-  return JSON.stringify([
-    { name: ENTRY_F.id, type: 'MultiLineText' },
-    { name: ENTRY_F.advanceId, type: 'MultiLineText' },
-    { name: ENTRY_F.at, type: 'MultiLineText' },
-    { name: ENTRY_F.sourceType, type: 'SingleSelect', data: { items: SOURCE_TYPES.map(value => ({ value })) } },
-    { name: ENTRY_F.changeType, type: 'SingleSelect', data: { items: CHANGE_TYPES.map(value => ({ value })) } },
-    { name: ENTRY_F.summary, type: 'MultiLineText' },
-    { name: ENTRY_F.detail, type: 'MultiLineText' },
-    { name: ENTRY_F.refs, type: 'MultiLineText' },
-    { name: ENTRY_F.actor, type: 'MultiLineText' },
-  ])
-}
-
-/** Locate both tables inside a doc; undefined when either is missing. */
-async function advanceTablesOf(
-  ctx: Context,
-  budget: YzjToolBudget,
-  docId: string,
-): Promise<AdvanceBinding | undefined> {
-  const ran = await runJson(ctx, budget, 'sheet get', ['sheet', 'get', '--id', docId])
-  if (!ran.ok) return undefined
-  let itemTableId: number | undefined
-  let entryTableId: number | undefined
-  for (const table of asArray(asRecord(ran.json).sheets)) {
-    const row = asRecord(table)
-    const tableId = row.id
-    if (typeof tableId !== 'number') continue
-    const names = asArray(row.fields).map(field => asString(asRecord(field).name))
-    if (names.includes(ENTRY_F.id)) entryTableId = tableId
-    else if (names.includes(ITEM_F.id) && names.includes(ITEM_F.stage)) itemTableId = tableId
-  }
-  if (itemTableId === undefined || entryTableId === undefined) return undefined
-  return {
-    docId,
-    itemTableId,
-    entryTableId,
-    link: `https://www.yunzhijia.com/knowledge/lingee/#/store/doc/${docId}`,
-  }
-}
-
 /**
- * v1.6 cancelled option guard: SingleSelect options are pre-registered only at
- * table-create time;存量推进库缺 cancelled 选项,写入未注册值会被静默丢弃
- * (迁移文档 §3 事实 5 / pitfall-003)——写前校验,缺则明示引导,不静默丢。
- * 实测形状(2026-08-19):sheet get → sheets[].fields[].data.items[].value。
- */
-async function assertStageOption(
-  ctx: Context,
-  budget: YzjToolBudget,
-  binding: AdvanceBinding,
-  value: string,
-): Promise<void> {
-  const ran = await runJson(ctx, budget, 'sheet get', ['sheet', 'get', '--id', binding.docId])
-  if (!ran.ok) return // schema 读不到时不在此拦,写路径自会暴露
-  for (const table of asArray(asRecord(ran.json).sheets)) {
-    if (asString(asRecord(table).name) !== ITEM_TABLE) continue
-    for (const field of asArray(asRecord(table).fields)) {
-      const f = asRecord(field)
-      if (asString(f.name) !== ITEM_F.stage) continue
-      const values = new Set(asArray(asRecord(f.data).items).map(item => asString(asRecord(item).value)))
-      if (!values.has(value)) {
-        throw new Error(`advance: 推进库「事项」表的阶段字段缺「${value}」选项(v1.6 新增);请在多维表格给该字段补加选项 ${value} 后重试(写入未注册选项会被静默丢弃)`)
-      }
-      return
-    }
-  }
-}
-
-/** Provision whichever of the two tables is missing inside the doc. */
-async function provisionAdvanceTables(
-  ctx: Context,
-  budget: YzjToolBudget,
-  docId: string,
-): Promise<AdvanceBinding> {
-  const probe = await runJson(ctx, budget, 'sheet get', ['sheet', 'get', '--id', docId])
-  const names = new Set<string>()
-  if (probe.ok) {
-    for (const table of asArray(asRecord(probe.json).sheets)) {
-      for (const field of asArray(asRecord(table).fields)) {
-        names.add(asString(asRecord(field).name))
-      }
-    }
-  }
-  if (!names.has(ITEM_F.stage) || !names.has(ITEM_F.id)) {
-    const ran = await runJson(ctx, budget, 'sheet table create', [
-      'sheet', 'table', 'create', '--id', docId, '--name', ITEM_TABLE,
-      '--fields', itemFieldsJson(), '--views', JSON.stringify([{ name: '全部', type: 'Grid' }]),
-    ])
-    if (!ran.ok) throw new Error(ran.content)
-  }
-  if (!names.has(ENTRY_F.id)) {
-    const ran = await runJson(ctx, budget, 'sheet table create', [
-      'sheet', 'table', 'create', '--id', docId, '--name', ENTRY_TABLE,
-      '--fields', entryFieldsJson(), '--views', JSON.stringify([{ name: '全部', type: 'Grid' }]),
-    ])
-    if (!ran.ok) throw new Error(ran.content)
-  }
-  const binding = await advanceTablesOf(ctx, budget, docId)
-  if (binding === undefined) throw new Error(`advance: 推进双表创建后未在 ${docId} 中找齐 ${ITEM_F.id}/${ENTRY_F.id} 字段`)
-  return binding
-}
-
-/**
- * Resolve the advancement binding: the active 待办任务库 doc (panel override
- * → config → discovery, via the todo resolver) plus the two advance tables
- * inside it (provisioned on demand). A cached binding is dropped when the
- * active library doc changed (library switcher follow).
+ * Resolve the advancement binding — always the local SQLite placeholder
+ * (决策 54 单后端；签名保留给共享 core 调用面)。
  */
 export async function resolveAdvance(
-  ctx: Context,
-  budget: YzjToolBudget,
-  config: TodoConfig,
+  _ctx: Context,
+  _budget: YzjToolBudget,
+  _config: TodoConfig,
   caches: AdvanceCaches,
-  allowProvision: boolean,
-  holder?: TodoBindingHolder,
+  _allowProvision?: boolean,
+  _holder?: TodoBindingHolder,
 ): Promise<AdvanceBinding> {
-  if (advanceBackend === 'sqlite') {
-    caches.adv.binding = LOCAL_BINDING
-    return LOCAL_BINDING
-  }
-  if (holder?.override !== undefined && caches.adv.binding !== undefined
-    && caches.adv.binding.docId !== holder.override.docId) {
-    delete caches.adv.binding
-    delete caches.lib.binding
-  }
-  let library: TodoBinding
-  try {
-    library = await resolveLibrary(ctx, budget, config, caches.lib, allowProvision, holder)
-  } catch (error) {
-    if (allowProvision) throw error
-    throw new Error(`advance: 推进看板尚未开通（依赖待办任务库）：${String((error as Error).message)}`)
-  }
-  if (caches.adv.binding !== undefined && caches.adv.binding.docId === library.docId) {
-    return caches.adv.binding
-  }
-  const found = await advanceTablesOf(ctx, budget, library.docId)
-  if (found !== undefined) {
-    caches.adv.binding = found
-    return found
-  }
-  if (!allowProvision) {
-    throw new Error('advance: 推进看板尚未开通；发起第一个推进事项（yzj_advance_create）即可自动开通事项/事元双表')
-  }
-  const provisioned = await provisionAdvanceTables(ctx, budget, library.docId)
-  caches.adv.binding = provisioned
-  return provisioned
+  caches.adv.binding = LOCAL_BINDING
+  return LOCAL_BINDING
 }
 
-/** Fetch every item (paged, demo scale). */
-export async function fetchItems(
-  ctx: Context,
-  budget: YzjToolBudget,
-  binding: AdvanceBinding,
-): Promise<YzjAdvanceItem[]> {
-  if (advanceBackend === 'sqlite') {
-    return localStore().listItems()
-      .map(row => parseAdvanceItem({ id: row.recordId, fields: row.fields }))
-      .filter((item): item is YzjAdvanceItem => item !== null)
-  }
-  const items: YzjAdvanceItem[] = []
-  let pageToken: string | undefined
-  for (let page = 0; page < 3; page += 1) {
-    const command = ['sheet', 'record', 'list', '--id', binding.docId, '--table-id', String(binding.itemTableId), '--limit', '100']
-    if (pageToken !== undefined) command.push('--page-token', pageToken)
-    const ran = await runJson(ctx, budget, 'sheet record list', command)
-    if (!ran.ok) throw new Error(ran.content)
-    for (const record of cliRecords(ran.json)) {
-      const item = parseAdvanceItem(record)
-      if (item !== null) items.push(item)
-    }
-    pageToken = asString(asRecord(ran.json).page_token ?? asRecord(ran.json).next_page_token)
-    if (pageToken === '') break
-  }
-  return items
+/** Every item from the local SQLite store. */
+export function fetchItems(): YzjAdvanceItem[] {
+  return localStore().listItems()
+    .map(row => parseAdvanceItem({ id: row.recordId, fields: row.fields }))
+    .filter((item): item is YzjAdvanceItem => item !== null)
 }
 
-/** Fetch one item by advance_id; undefined when absent. */
-export async function fetchItemById(
-  ctx: Context,
-  budget: YzjToolBudget,
-  binding: AdvanceBinding,
-  advanceId: string,
-): Promise<YzjAdvanceItem | undefined> {
-  if (advanceBackend === 'sqlite') {
-    const row = localStore().item(advanceId)
-    if (row === undefined) return undefined
-    return parseAdvanceItem({ id: row.recordId, fields: row.fields }) ?? undefined
-  }
-  const filter = JSON.stringify({ mode: 'AND', criteria: [{ field: ITEM_F.id, operator: 'Equals', values: [advanceId] }] })
-  const ran = await runJson(ctx, budget, 'sheet record list', [
-    'sheet', 'record', 'list', '--id', binding.docId, '--table-id', String(binding.itemTableId), '--filter', filter,
-  ])
-  if (!ran.ok) throw new Error(ran.content)
-  for (const record of cliRecords(ran.json)) {
-    const item = parseAdvanceItem(record)
-    if (item !== null) return item
-  }
-  return undefined
+/** One item by advance_id from the local store; undefined when absent. */
+export function fetchItemById(advanceId: string): YzjAdvanceItem | undefined {
+  const row = localStore().item(advanceId)
+  if (row === undefined) return undefined
+  return parseAdvanceItem({ id: row.recordId, fields: row.fields }) ?? undefined
 }
 
 /**
@@ -1204,77 +993,17 @@ export async function fetchItemById(
  * day-sequential, so at+entryId sorts stably). Storage-side the stream is
  * complete; callers window it for digests/first screens only.
  */
-export async function fetchEntries(
-  ctx: Context,
-  budget: YzjToolBudget,
-  binding: AdvanceBinding,
-  advanceId: string,
-): Promise<YzjAdvanceEntry[]> {
-  if (advanceBackend === 'sqlite') {
-    const entries = localStore().listEntries(advanceId)
-      .map(row => parseAdvanceEntry({ id: row.recordId, fields: row.fields }))
-      .filter((entry): entry is YzjAdvanceEntry => entry !== null)
-    return entries.sort((a, b) => (a.at === b.at ? (a.entryId < b.entryId ? -1 : 1) : (a.at < b.at ? -1 : 1)))
-  }
-  const filter = JSON.stringify({ mode: 'AND', criteria: [{ field: ENTRY_F.advanceId, operator: 'Equals', values: [advanceId] }] })
-  const entries: YzjAdvanceEntry[] = []
-  let pageToken: string | undefined
-  for (let page = 0; page < 5; page += 1) {
-    const command = ['sheet', 'record', 'list', '--id', binding.docId, '--table-id', String(binding.entryTableId), '--filter', filter, '--limit', '100']
-    if (pageToken !== undefined) command.push('--page-token', pageToken)
-    const ran = await runJson(ctx, budget, 'sheet record list', command)
-    if (!ran.ok) throw new Error(ran.content)
-    for (const record of cliRecords(ran.json)) {
-      const entry = parseAdvanceEntry(record)
-      if (entry !== null) entries.push(entry)
-    }
-    pageToken = asString(asRecord(ran.json).page_token ?? asRecord(ran.json).next_page_token)
-    if (pageToken === '') break
-  }
-  return entries.sort((a, b) => (a.at === b.at ? (a.entryId < b.entryId ? -1 : 1) : (a.at < b.at ? -1 : 1)))
+export function fetchEntries(advanceId: string): YzjAdvanceEntry[] {
+  return localStore().listEntries(advanceId)
+    .map(row => parseAdvanceEntry({ id: row.recordId, fields: row.fields }))
+    .filter((entry): entry is YzjAdvanceEntry => entry !== null)
+    .sort((a, b) => (a.at === b.at ? (a.entryId < b.entryId ? -1 : 1) : (a.at < b.at ? -1 : 1)))
 }
 
-/** Today's entry ids (Contains filter on the day prefix) for id generation. */
-async function todaysEntryIds(
-  ctx: Context,
-  budget: YzjToolBudget,
-  binding: AdvanceBinding,
-): Promise<string[]> {
+/** Today's entry ids (day-prefix Contains) for id generation. */
+function todaysEntryIds(): string[] {
   const day = todayStr().replace(/\//g, '')
-  if (advanceBackend === 'sqlite') {
-    return localStore().listAllEntryIds().filter(id => id.includes(`E-${day}-`))
-  }
-  const filter = JSON.stringify({ mode: 'AND', criteria: [{ field: ENTRY_F.id, operator: 'Contains', values: [`E-${day}-`] }] })
-  const ran = await runJson(ctx, budget, 'sheet record list', [
-    'sheet', 'record', 'list', '--id', binding.docId, '--table-id', String(binding.entryTableId), '--filter', filter, '--limit', '100',
-  ])
-  if (!ran.ok) throw new Error(ran.content)
-  return cliRecords(ran.json).map(record => parseAdvanceEntry(record)?.entryId ?? '').filter(id => id !== '')
-}
-
-async function writeTable(
-  ctx: Context,
-  budget: YzjToolBudget,
-  binding: AdvanceBinding,
-  tableId: number,
-  kind: 'create' | 'update',
-  records: string,
-): Promise<unknown> {
-  if (advanceBackend === 'sqlite') {
-    const store = localStore()
-    const rows = JSON.parse(records) as { id?: string; fieldsValue?: Record<string, unknown> }[]
-    for (const row of rows) {
-      const fields = row.fieldsValue ?? {}
-      if (tableId === LOCAL_BINDING.entryTableId) store.createEntry(fields)
-      else if (kind === 'create') store.createItem(fields)
-      else store.updateItem(String(row.id ?? fields[ITEM_F.id] ?? ''), fields)
-    }
-    return {}
-  }
-  const command = ['sheet', 'record', kind, '--id', binding.docId, '--table-id', String(tableId), '--records', records]
-  const ran = await runJson(ctx, budget, `sheet record ${kind}`, command)
-  if (!ran.ok) throw new Error(ran.content)
-  return ran.json
+  return localStore().listAllEntryIds().filter(id => id.includes(`E-${day}-`))
 }
 
 // ---------------------------------------------------------------------------
@@ -1320,9 +1049,9 @@ export interface AdvanceFeedInput {
 
 /** Append one entry row + refresh the item's 最新动态 projection cache. */
 async function appendEntry(
-  ctx: Context,
-  budget: YzjToolBudget,
-  binding: AdvanceBinding,
+  _ctx: Context,
+  _budget: YzjToolBudget,
+  _binding: AdvanceBinding,
   input: {
     advanceId: string
     sourceType: string
@@ -1335,7 +1064,7 @@ async function appendEntry(
     judge?: string | undefined
   },
 ): Promise<YzjAdvanceEntry> {
-  const entryId = nextSequentialId('E', await todaysEntryIds(ctx, budget, binding))
+  const entryId = nextSequentialId('E', todaysEntryIds())
   const at = nowStamp()
   const fields: Record<string, unknown> = {
     [ENTRY_F.id]: entryId,
@@ -1350,7 +1079,7 @@ async function appendEntry(
   if (input.refs.length > 0) fields[ENTRY_F.refs] = input.refs.join(' ')
   if (input.producer !== undefined && input.producer !== '') fields[ENTRY_F.producer] = input.producer
   if (input.judge !== undefined && input.judge !== '') fields[ENTRY_F.judge] = input.judge
-  await writeTable(ctx, budget, binding, binding.entryTableId, 'create', JSON.stringify([{ fieldsValue: fields }]))
+  localStore().createEntry(fields)
   return {
     recordId: '',
     entryId,
@@ -1391,10 +1120,10 @@ export async function coreCreateAdvance(
   if (title === '') throw new Error('advance: title must not be empty')
   const binding = await resolveAdvance(ctx, budget, config, caches, true, holder)
   if (input.advanceId !== undefined) {
-    const existing = await fetchItemById(ctx, budget, binding, input.advanceId)
+    const existing = fetchItemById(input.advanceId)
     if (existing !== undefined) return { item: existing, entry: null, idempotent: true, assigneeNote: '', binding }
   }
-  const items = await fetchItems(ctx, budget, binding)
+  const items = fetchItems()
   const advanceId = input.advanceId ?? nextSequentialId('A', items.map(item => item.advanceId))
   if (items.some(item => item.advanceId === advanceId)) {
     throw new Error(`advance: 生成的 advance_id ${advanceId} 已冲突，请显式传入 advanceId`)
@@ -1418,8 +1147,8 @@ export async function coreCreateAdvance(
   if (tags.length > 0) fields[ITEM_F.tags] = formatTags(tags)
   const summary = `立项：${title}`
   fields[ITEM_F.latest] = `${nowStamp()} 备注 ${summary}`
-  const wrote = await writeTable(ctx, budget, binding, binding.itemTableId, 'create', JSON.stringify([{ fieldsValue: fields }]))
-  const created = cliRecords(wrote).map(record => parseAdvanceItem(record)).find(item => item !== null) ?? null
+  localStore().createItem(fields)
+  const created = fetchItemById(advanceId) ?? null
   const entry = await appendEntry(ctx, budget, binding, {
     advanceId,
     sourceType: input.sourceType ?? '人工',
@@ -1572,7 +1301,7 @@ export async function coreFeedAdvance(
 ): Promise<AdvanceFeedResult> {
   if (input.summary.trim() === '') throw new Error('advance: summary must not be empty')
   const binding = await resolveAdvance(ctx, budget, config, caches, false, holder)
-  const item = await fetchItemById(ctx, budget, binding, input.advanceId)
+  const item = fetchItemById(input.advanceId)
   if (item === undefined) {
     throw new Error(`advance: 事项 ${input.advanceId} 不存在；先用 yzj_advance_list 查真实 id，不要猜测`)
   }
@@ -1581,7 +1310,7 @@ export async function coreFeedAdvance(
   const normalizedChangeType = CHANGE_TYPES.includes(rawChangeType as typeof CHANGE_TYPES[number]) ? rawChangeType : '备注'
   // refs 去重与「综合自」校验(决策 43 修正)都需要既有事元,统一取一次。
   const existing = incomingRefs.length > 0 || normalizedChangeType === '决策请求'
-    ? await fetchEntries(ctx, budget, binding, input.advanceId)
+    ? fetchEntries(input.advanceId)
     : []
   let overlappedRefs: string[] = []
   if (incomingRefs.length > 0) {
@@ -1632,7 +1361,6 @@ export async function coreFeedAdvance(
     if (violation !== null) throw new Error(`advance: ${violation}`)
     // cancelled 是 v1.6 新增 SingleSelect 选项:存量推进库建表时未预注册,写入会被
     // 静默丢弃(迁移文档 §3 事实 5)——写前校验,缺选项则明示引导,不静默丢。
-    if (input.stageTo === 'cancelled') await assertStageOption(ctx, budget, binding, 'cancelled')
     diffs.push(`阶段 ${item.stage}→${input.stageTo}`)
     projection[ITEM_F.stage] = input.stageTo
     stageChanged = true
@@ -1674,7 +1402,7 @@ export async function coreFeedAdvance(
     judge: input.judgeAction,
   })
   projection[ITEM_F.latest] = `${entry.at} ${entry.changeType} ${entry.summary}`
-  await writeTable(ctx, budget, binding, binding.itemTableId, 'update', JSON.stringify([{ id: item.recordId, fieldsValue: projection }]))
+  localStore().updateItem(item.advanceId, projection)
   const updated: YzjAdvanceItem = {
     ...item,
     stage: (projection[ITEM_F.stage] as AdvanceStage | undefined) ?? item.stage,
@@ -1857,28 +1585,20 @@ export class YzjAdvanceService extends Service {
     this.pool = pool
   }
 
-  /** Board snapshot; `ready` false = tables not provisioned yet. */
+  /** Board snapshot over the local SQLite store. */
   async state(): Promise<YzjAdvanceState> {
-    let binding: AdvanceBinding
     try {
-      binding = await resolveAdvance(this.ctx, this.budget, this.config, this.caches, false, this.holder)
-    } catch {
-      return { ready: false, library: null, items: [] }
-    }
-    try {
-      const items = await fetchItems(this.ctx, this.budget, binding)
-      return { ready: true, library: binding, items: items.map(itemViewOf) }
+      return { ready: true, library: LOCAL_BINDING, items: fetchItems().map(itemViewOf) }
     } catch (error) {
-      return { ready: true, library: binding, items: [], error: String((error as Error).message) }
+      return { ready: true, library: LOCAL_BINDING, items: [], error: String((error as Error).message) }
     }
   }
 
   /** One item's detail: projection + entry window (tail by default) + sources. */
   async get(advanceId: string, entryOffset?: number, entryLimit?: number): Promise<YzjAdvanceDetail> {
-    const binding = await resolveAdvance(this.ctx, this.budget, this.config, this.caches, false, this.holder)
-    const item = await fetchItemById(this.ctx, this.budget, binding, advanceId)
+    const item = fetchItemById(advanceId)
     if (item === undefined) throw new Error(`advance: 事项 ${advanceId} 不存在`)
-    const entries = await fetchEntries(this.ctx, this.budget, binding, advanceId)
+    const entries = fetchEntries(advanceId)
     const limit = entryLimit === undefined || entryLimit < 1 ? 20 : entryLimit
     const offset = entryOffset === undefined || entryOffset < 0 ? Math.max(0, entries.length - limit) : entryOffset
     return {
@@ -2004,8 +1724,7 @@ export class YzjAdvanceService extends Service {
     if (parsed === undefined) {
       throw new Error(`advance: 非法来源 token「${token}」；语法 im:<groupId> / doc:<docId> / dir:<docId> / todo:<todoId> / event:<eventId> / file:<fileId>`)
     }
-    const binding = await resolveAdvance(this.ctx, this.budget, this.config, this.caches, false, this.holder)
-    const item = await fetchItemById(this.ctx, this.budget, binding, advanceId)
+    const item = fetchItemById(advanceId)
     if (item === undefined) throw new Error(`advance: 事项 ${advanceId} 不存在`)
     const existing = this.sources.sourcesOf(advanceId)
     if (existing.some(row => row.token === token)) {
@@ -2118,7 +1837,7 @@ export function applyAdvanceTools(
       }
       let items: YzjAdvanceItem[]
       try {
-        items = await fetchItems(ctx, budget, binding)
+        items = fetchItems()
       } catch (error) {
         return { content: `yzj advance list failed: ${String((error as Error).message)}`, truncated: false, data: {} }
       }
@@ -2175,11 +1894,11 @@ export function applyAdvanceTools(
       let entries: YzjAdvanceEntry[]
       try {
         binding = await resolveAdvance(ctx, budget, config, caches, false, holder)
-        item = await fetchItemById(ctx, budget, binding, args.advanceId)
+        item = fetchItemById(args.advanceId)
         if (item === undefined) {
           return { content: `advance: 事项 ${args.advanceId} 不存在；先用 yzj_advance_list 查真实 id`, truncated: false, data: {} }
         }
-        entries = await fetchEntries(ctx, budget, binding, args.advanceId)
+        entries = fetchEntries(args.advanceId)
       } catch (error) {
         return { content: `yzj advance get failed: ${String((error as Error).message)}`, truncated: false, data: {} }
       }
@@ -2230,7 +1949,7 @@ export function applyAdvanceTools(
       }
       let items: YzjAdvanceItem[]
       try {
-        items = await fetchItems(ctx, budget, binding)
+        items = fetchItems()
       } catch (error) {
         return { content: `yzj advance inspect failed: ${String((error as Error).message)}`, truncated: false, data: {} }
       }
@@ -2246,7 +1965,7 @@ export function applyAdvanceTools(
       for (const item of scoped) {
         let recent: YzjAdvanceEntry[] = []
         try {
-          const entries = await fetchEntries(ctx, budget, binding, item.advanceId)
+          const entries = fetchEntries(item.advanceId)
           recent = entries.slice(Math.max(0, entries.length - 5))
         } catch {
           recent = []

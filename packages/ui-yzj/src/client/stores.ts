@@ -39,16 +39,9 @@ export type YzjPanelState = {
   anchorMsgId: string
   /** Sum of unread counts across recent sessions (the floating-ball badge). */
   unreadTotal: number
-  /** Todo tab: library snapshot (views from the yzjTodo core). */
+  /** Todo tab: swimlane snapshot (views from the yzjTodo core). */
   todos: unknown[]
   todoReady: boolean
-  todoLink: string
-  /** Active library identity for the switcher label (cheap, always present). */
-  todoLibName: string
-  todoLibScope: string
-  /** Discoverable todo libraries + active docId (switcher). */
-  todoLibraries: unknown[]
-  todoActiveDocId: string
   /** Active tag filter ('' = all). */
   todoTag: string
   loading: boolean
@@ -81,8 +74,7 @@ export type YzjPanelActions = {
   appendMessages: (draft: YzjPanelState, messages: unknown[]) => void
   setAnchorMsgId: (draft: YzjPanelState, id: string) => void
   setUnreadTotal: (draft: YzjPanelState, total: number) => void
-  setTodoState: (draft: YzjPanelState, todos: unknown[], ready: boolean, link: string, libName?: string, libScope?: string) => void
-  setTodoLibraries: (draft: YzjPanelState, libraries: unknown[], activeDocId: string) => void
+  setTodoState: (draft: YzjPanelState, todos: unknown[], ready: boolean) => void
   patchTodo: (draft: YzjPanelState, todo: unknown) => void
   setTodoTag: (draft: YzjPanelState, tag: string) => void
   setLoading: (draft: YzjPanelState, loading: boolean) => void
@@ -118,11 +110,6 @@ export function createYzjStore(): EngineStoreHandle<YzjPanelState, YzjPanelActio
       unreadTotal: 0,
       todos: [],
       todoReady: false,
-      todoLink: '',
-      todoLibName: '',
-      todoLibScope: '',
-      todoLibraries: [],
-      todoActiveDocId: '',
       todoTag: '',
       // Start "loading" so the todo pane never flashes its provisioning hero
       // for the single frame before loadTab kicks in.
@@ -170,16 +157,9 @@ export function createYzjStore(): EngineStoreHandle<YzjPanelState, YzjPanelActio
       },
       setAnchorMsgId: (d: YzjPanelState, id: string) => { d.anchorMsgId = id },
       setUnreadTotal: (d: YzjPanelState, total: number) => { d.unreadTotal = total },
-      setTodoState: (d: YzjPanelState, todos: unknown[], ready: boolean, link: string, libName?: string, libScope?: string) => {
+      setTodoState: (d: YzjPanelState, todos: unknown[], ready: boolean) => {
         d.todos = todos
         d.todoReady = ready
-        d.todoLink = link
-        if (libName !== undefined) d.todoLibName = libName
-        if (libScope !== undefined) d.todoLibScope = libScope
-      },
-      setTodoLibraries: (d: YzjPanelState, libraries: unknown[], activeDocId: string) => {
-        d.todoLibraries = libraries
-        d.todoActiveDocId = activeDocId
       },
       patchTodo: (d: YzjPanelState, todo: unknown) => {
         const todoId = String(asRecord(todo).todoId)
@@ -202,7 +182,7 @@ export function createYzjStore(): EngineStoreHandle<YzjPanelState, YzjPanelActio
       // older build (or a poisoned one) crashes array consumers.
       const arrays: (keyof YzjPanelState)[] = [
         'workspaces', 'docs', 'events', 'calEvents', 'groups', 'messages',
-        'todos', 'todoLibraries',
+        'todos',
       ]
       const broken = arrays.some(key => !Array.isArray(snap[key]))
         || typeof snap.loading !== 'boolean'

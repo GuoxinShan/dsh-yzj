@@ -96,13 +96,7 @@ export function openPanelTarget(target: YzjJumpTarget, anchorMsgId?: string): vo
     void c.inject.todoState().then((result) => {
       if (!result.ok) return
       const value = asRecord(result.value)
-      const library = asRecord(value.library)
-      actions.setTodoState(
-        asArray(value.todos),
-        value.ready === true,
-        typeof library.link === 'string' ? library.link : '',
-      )
-      actions.setTodoLibraries([], typeof value.activeDocId === 'string' ? value.activeDocId : '')
+      actions.setTodoState(asArray(value.todos), value.ready === true)
     })
   } else {
     actions.setTab('calendar')

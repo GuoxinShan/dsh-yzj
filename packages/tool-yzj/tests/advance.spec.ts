@@ -10,6 +10,10 @@ import { describe, expect, it } from 'vitest'
 import { Context as LiveContext } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
 import type { YzjRunResult } from '@dsh-yzj/bridge'
+import { useFreshSqlite } from './sqlite-harness.ts'
+import { localStore } from '../src/local-store.ts'
+
+useFreshSqlite()
 import {
   applyAdvanceTools, coreCreateAdvance, coreFeedAdvance, coreScanAdvance, judgeVerb,
   checkStageTransition, nextSequentialId, toneOf, parseMetrics,
@@ -48,10 +52,15 @@ interface ImMessage {
  * catalog / messages back the scan tool.
  */
 class FakeStore {
-  items: Row[] = []
-  /** todo 渠道 fixture：待办任务库「任务」表（table id 4）的行。 */
-  todos: Row[] = []
-  entries: Row[] = []
+  /** Views over the shared local sqlite store (决策 54 单后端) — read-only projections. */
+  get items(): Row[] { return localStore().listItems().map(r => ({ id: r.recordId, fields: r.fields })) }
+  get todos(): Row[] { return localStore().listTodos().map(r => ({ id: r.recordId, fields: r.fields })) }
+  get entries(): Row[] {
+    const items = localStore().listItems().map(r => r.fields['advance_id']).filter((id): id is string => typeof id === 'string')
+    const rows: Row[] = []
+    for (const id of items) for (const r of localStore().listEntries(id)) rows.push({ id: r.recordId, fields: r.fields })
+    return rows
+  }
   tableCreates: string[] = []
   provisioned: boolean
   selfOpenId = ''
@@ -135,44 +144,16 @@ class FakeStore {
       const after = start === -1 ? rows : rows.slice(start + 1)
       return { list: after.slice(0, Math.max(1, limit)) }
     }
-    if (key === 'sheet record') {
-      const verb = command[2]
-      const tableId = command[command.indexOf('--table-id') + 1]
-      const rows = tableId === '7' ? this.items : tableId === '4' ? this.todos : this.entries
-      if (verb === 'list') {
-        const filterAt = command.indexOf('--filter')
-        let shown = rows
-        if (filterAt !== -1) {
-          const filter = JSON.parse(command[filterAt + 1] ?? '{}') as { criteria?: { field: string; operator: string; values: string[] }[] }
-          for (const criterion of filter.criteria ?? []) {
-            shown = shown.filter(row => {
-              const value = String(row.fields[criterion.field] ?? '')
-              if (criterion.operator === 'Equals') return value === criterion.values[0]
-              if (criterion.operator === 'Contains') return value.includes(criterion.values[0] ?? '')
-              return true
-            })
-          }
-        }
-        return { page_token: '', records: shown.map(row => ({ id: row.id, fields: JSON.stringify(row.fields) })) }
-      }
-      if (verb === 'create') {
-        const records = JSON.parse(command[command.indexOf('--records') + 1] ?? '[]') as { fieldsValue: Record<string, unknown> }[]
-        const created: Row[] = records.map(record => ({ id: this.nextRecordId(), fields: record.fieldsValue }))
-        rows.push(...created)
-        return { records: created.map(row => ({ id: row.id, fields: JSON.stringify(row.fields) })) }
-      }
-      if (verb === 'update') {
-        const records = JSON.parse(command[command.indexOf('--records') + 1] ?? '[]') as { id: string; fieldsValue: Record<string, unknown> }[]
-        for (const record of records) {
-          const row = rows.find(candidate => candidate.id === record.id)
-          if (row !== undefined) Object.assign(row.fields, record.fieldsValue)
-        }
-        return { records: [] }
-      }
-    }
     throw new Error(`unexpected command ${command.join(' ')}`)
   }
 }
+
+function seedItems(...rows: Record<string, unknown>[]): void { for (const row of rows) seedItem(row) }
+function seedEntries(...rows: Record<string, unknown>[]): void { for (const row of rows) seedEntry(row) }
+function seedTodos(...rows: Record<string, unknown>[]): void { for (const row of rows) seedTodo(row) }
+function seedItem(row: Record<string, unknown>): void { localStore().createItem((row.fields ?? row) as Record<string, unknown>) }
+function seedEntry(row: Record<string, unknown>): void { localStore().createEntry((row.fields ?? row) as Record<string, unknown>) }
+function seedTodo(row: Record<string, unknown>): void { localStore().createTodo((row.fields ?? row) as Record<string, unknown>) }
 
 function mount(store: FakeStore): { ctx: Context; tools: CapturedTool[]; calls: string[][] } {
   const tools: CapturedTool[] = []
@@ -358,7 +339,6 @@ describe('yzj_advance_create', () => {
       refs: ['yzj:msg:root'],
       sourceType: '对话',
     })
-    expect(store.tableCreates).toEqual(['事项', '事元'])
     expect(result.content).toContain('created 推进事项')
     expect(store.items).toHaveLength(1)
     expect(store.items[0]!.fields['阶段']).toBe('running')
@@ -370,7 +350,7 @@ describe('yzj_advance_create', () => {
 
   it('is idempotent on an explicit advanceId', async () => {
     const store = new FakeStore(true)
-    store.items.push({ id: 'r1', fields: { advance_id: 'A-20260819-001', 名称: '已有', 阶段: 'running' } })
+    seedItem({ id: 'r1', fields: { advance_id: 'A-20260819-001', 名称: '已有', 阶段: 'running' } })
     const { tools } = mount(store)
     const create = tools.find(tool => tool.name === 'yzj_advance_create')!
     const result = await create.execute({ title: '重复', advanceId: 'A-20260819-001' })
@@ -383,7 +363,7 @@ describe('yzj_advance_create', () => {
 describe('yzj_advance_feed', () => {
   it('appends an entry with host-generated old→new diffs and refolds the projection', async () => {
     const store = new FakeStore(true)
-    store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'running', 描述: '原目标' } })
+    seedItem({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'running', 描述: '原目标' } })
     const { tools } = mount(store)
     const feed = tools.find(tool => tool.name === 'yzj_advance_feed')!
     const result = await feed.execute({
@@ -408,7 +388,7 @@ describe('yzj_advance_feed', () => {
 
   it('rejects stageTo=decision-needed without 决策请求 (决策 41: 决策区只渲染决策请求,偏差推阶段会出空决策区)', async () => {
     const store = new FakeStore(true)
-    store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'running', 描述: '原目标' } })
+    seedItem({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'running', 描述: '原目标' } })
     const { tools } = mount(store)
     const feed = tools.find(tool => tool.name === 'yzj_advance_feed')!
     const result = await feed.execute({
@@ -425,7 +405,7 @@ describe('yzj_advance_feed', () => {
 
   it('records the producing session on the entry (决策 41 讨论回环:问助手直回产出会话)', async () => {
     const store = new FakeStore(true)
-    store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'running', 描述: '原目标' } })
+    seedItem({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'running', 描述: '原目标' } })
     const { tools } = mount(store)
     const feed = tools.find(tool => tool.name === 'yzj_advance_feed')!
     const result = await feed.execute(
@@ -439,7 +419,7 @@ describe('yzj_advance_feed', () => {
 
   it('rejects agent stage moves OUT of a waiting stage (决策 43: 待决出口是人的主权,防未处理决策被下一次 Dream 冲掉)', async () => {
     const store = new FakeStore(true)
-    store.items.push(
+    seedItems(
       { id: 'r1', fields: { advance_id: 'A-1', 名称: '待决定', 阶段: 'decision-needed' } },
       { id: 'r2', fields: { advance_id: 'A-2', 名称: '待验收', 阶段: 'ready-for-review' } },
     )
@@ -455,8 +435,8 @@ describe('yzj_advance_feed', () => {
 
   it('enforces 综合自 on a second open 决策请求 (决策 43 修正: 卡面只有一条当前决策)', async () => {
     const store = new FakeStore(true)
-    store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '待决定', 阶段: 'decision-needed' } })
-    store.entries.push({ id: 'e1', fields: { entry_id: 'E-1', advance_id: 'A-1', 时间: '2026/08/21 10:00', 来源类型: '会议', 变化类型: '决策请求', 摘要: '范围补充要不要纳入', 操作者: 'agent' } })
+    seedItem({ id: 'r1', fields: { advance_id: 'A-1', 名称: '待决定', 阶段: 'decision-needed' } })
+    seedEntry({ id: 'e1', fields: { entry_id: 'E-1', advance_id: 'A-1', 时间: '2026/08/21 10:00', 来源类型: '会议', 变化类型: '决策请求', 摘要: '范围补充要不要纳入', 操作者: 'agent' } })
     const { tools } = mount(store)
     const feed = tools.find(tool => tool.name === 'yzj_advance_feed')!
     const blocked = await feed.execute({ advanceId: 'A-1', summary: '新分叉要不要加资源', changeType: '决策请求', detail: '分析:两条路径都成立' })
@@ -469,7 +449,7 @@ describe('yzj_advance_feed', () => {
 
   it('rejects an illegal stage move without writing any entry', async () => {
     const store = new FakeStore(true)
-    store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'cancelled' } })
+    seedItem({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'cancelled' } })
     const { tools } = mount(store)
     const feed = tools.find(tool => tool.name === 'yzj_advance_feed')!
     // cancelled→ready-for-review 是非法跳变(cancelled 只能重开 running；终局拦截由「agent feed can never enter terminal stages」专项覆盖)
@@ -481,7 +461,7 @@ describe('yzj_advance_feed', () => {
 
   it('keeps the stream lossless: N feeds read back complete and ordered', async () => {
     const store = new FakeStore(true)
-    store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'running' } })
+    seedItem({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'running' } })
     const { ctx, tools } = mount(store)
     const feed = tools.find(tool => tool.name === 'yzj_advance_feed')!
     for (let i = 1; i <= 5; i += 1) {
@@ -503,7 +483,7 @@ describe('yzj_advance_feed', () => {
 
   it('host-dedupes a second feed whose refs overlap an existing 事元 (决策 19)', async () => {
     const store = new FakeStore(true)
-    store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'running' } })
+    seedItem({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'running' } })
     const { tools } = mount(store)
     const feed = tools.find(tool => tool.name === 'yzj_advance_feed')!
     const first = await feed.execute({
@@ -525,7 +505,7 @@ describe('yzj_advance_feed', () => {
 
   it('appends on partial refs overlap with an overlap hint (partial-overlap regression: one doc cited by progress AND goal-update entries)', async () => {
     const store = new FakeStore(true)
-    store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'running' } })
+    seedItem({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'running' } })
     const { tools } = mount(store)
     const feed = tools.find(tool => tool.name === 'yzj_advance_feed')!
     // 回放②:refs 两个文档(进度更新)
@@ -568,7 +548,7 @@ describe('yzj_advance_feed', () => {
 describe('yzj_advance_list', () => {
   it('groups decision-needed first and hides completed from open', async () => {
     const store = new FakeStore(true)
-    store.items.push(
+    seedItems(
       { id: 'r1', fields: { advance_id: 'A-1', 名称: '安静推进', 阶段: 'running' } },
       { id: 'r2', fields: { advance_id: 'A-2', 名称: '要决定', 阶段: 'decision-needed' } },
       { id: 'r3', fields: { advance_id: 'A-3', 名称: '已完成', 阶段: 'completed' } },
@@ -584,12 +564,12 @@ describe('yzj_advance_list', () => {
     expect(completed.content).toContain('已完成')
   })
 
-  it('reports the un-provisioned board with an actionable message', async () => {
+  it('reports the empty board with an actionable hint (SQLite 恒就绪, 决策 54)', async () => {
     const store = new FakeStore(false)
     const { tools } = mount(store)
     const list = tools.find(tool => tool.name === 'yzj_advance_list')!
     const result = await list.execute({})
-    expect(result.content).toContain('推进看板尚未开通')
+    expect(result.content).toContain('无匹配事项')
     expect(store.tableCreates).toHaveLength(0)
   })
 })
@@ -597,7 +577,7 @@ describe('yzj_advance_list', () => {
 describe('yzj_advance_inspect', () => {
   it('spreads open items and hides completed', async () => {
     const store = new FakeStore(true)
-    store.items.push(
+    seedItems(
       { id: 'r1', fields: { advance_id: 'A-1', 名称: '安静推进', 阶段: 'running', 描述: '按期', 任务背景: '原计划' } },
       { id: 'r2', fields: { advance_id: 'A-2', 名称: '已完成', 阶段: 'completed' } },
     )
@@ -634,7 +614,7 @@ describe('core judge path (panel direct write)', () => {
 
   it('accept lands a user 事元 and completes the item', async () => {
     const store = new FakeStore(true)
-    store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'ready-for-review' } })
+    seedItem({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'ready-for-review' } })
     const ctx = coreCtx(store)
     const verb = judgeVerb('accept', '指标齐了')
     const result = await coreFeedAdvance(ctx, BUDGET, {}, freshCaches(), {
@@ -652,7 +632,7 @@ describe('core judge path (panel direct write)', () => {
 
   it('judge verbs land the 判定动作 marker so the board settles the queue head (决策 43)', async () => {
     const store = new FakeStore(true)
-    store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '待决定', 阶段: 'decision-needed' } })
+    seedItem({ id: 'r1', fields: { advance_id: 'A-1', 名称: '待决定', 阶段: 'decision-needed' } })
     const ctx = coreCtx(store)
     const verb = judgeVerb('ignore')
     await coreFeedAdvance(ctx, BUDGET, {}, freshCaches(), {
@@ -680,7 +660,7 @@ describe('core judge path (panel direct write)', () => {
 
   it('cancel lands cancelled as a user 事元 (决策 27: 失败/黄了的体面收口)', async () => {
     const store = new FakeStore(true)
-    store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'running' } })
+    seedItem({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'running' } })
     const ctx = coreCtx(store)
     const verb = judgeVerb('cancel', '方向变了')
     const result = await coreFeedAdvance(ctx, BUDGET, {}, freshCaches(), {
@@ -700,25 +680,26 @@ describe('core judge path (panel direct write)', () => {
     expect(reopen.item.stage).toBe('running')
   })
 
-  it('legacy 库缺 cancelled 选项时 judge cancel 明示报错(不静默丢)', async () => {
+  it('judge cancel 直写 cancelled（决策 54：SQLite 无 SingleSelect 预注册约束，dbt 时代守卫已删）', async () => {
     const store = new FakeStore(true)
     store.legacyStageOptions = true
-    store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'running' } })
+    seedItem({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'running' } })
     const ctx = coreCtx(store)
     const verb = judgeVerb('cancel')
-    await expect(coreFeedAdvance(ctx, BUDGET, {}, freshCaches(), {
+    const settled = await coreFeedAdvance(ctx, BUDGET, {}, freshCaches(), {
       advanceId: 'A-1',
       summary: verb.summary,
       changeType: verb.changeType,
       stageTo: verb.stageTo,
       actor: 'user',
-    })).rejects.toThrow(/缺.*cancelled.*选项/)
-    expect(store.entries).toHaveLength(0)
+    })
+    expect(settled.item.stage).toBe('cancelled')
+    expect(store.entries).toHaveLength(1)
   })
 
   it('agent feed can never enter terminal stages (spec §13.5 host-enforced, 决策 27)', async () => {
     const store = new FakeStore(true)
-    store.items.push(
+    seedItems(
       { id: 'r1', fields: { advance_id: 'A-1', 名称: '待验收', 阶段: 'ready-for-review' } },
       { id: 'r2', fields: { advance_id: 'A-2', 名称: '进行中', 阶段: 'running' } },
     )
@@ -745,7 +726,7 @@ describe('cancelled stage machine (决策 26/27)', () => {
 
   it('list open excludes cancelled (same as completed)', async () => {
     const store = new FakeStore(true)
-    store.items.push(
+    seedItems(
       { id: 'r1', fields: { advance_id: 'A-1', 名称: '跑着', 阶段: 'running' } },
       { id: 'r2', fields: { advance_id: 'A-2', 名称: '黄了', 阶段: 'cancelled' } },
       { id: 'r3', fields: { advance_id: 'A-3', 名称: '成了', 阶段: 'completed' } },
@@ -845,7 +826,7 @@ describe('yzj_advance_scan', () => {
   it('dir: thread snapshots first, then surfaces new/updated docs as signals (决策 32)', async () => {
     const store = new FakeStore(true)
     seedIm(store)
-    store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'running' } })
+    seedItem({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'running' } })
     store.dirDocs['dir-test'] = [
       { id: 'd1', title: '纪要 0806', updateTime: '2026-08-19 10:00' },
     ]
@@ -967,7 +948,7 @@ describe('intent sources (spec §15 / ③.2)', () => {
     store.messages['g-dsh2'] = [
       { msgId: 'm0', fromOpenId: 'alice', content: '历史消息', sendTime: '2026/08/19 10:00' },
     ]
-    store.items.push(
+    seedItems(
       { id: 'r1', fields: { advance_id: 'A-1', 名称: '事项甲', 阶段: 'running' } },
       { id: 'r2', fields: { advance_id: 'A-2', 名称: '事项乙', 阶段: 'running' } },
       { id: 'r3', fields: { advance_id: 'A-3', 名称: '已完成', 阶段: 'completed' } },
@@ -1004,8 +985,8 @@ describe('intent sources (spec §15 / ③.2)', () => {
   it('todo: 渠道采集：首扫建基线，状态/log 变化产信号入池（决策 45 后续）', async () => {
     const store = new FakeStore(true)
     store.selfOpenId = 'me-openid'
-    store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '事项甲', 阶段: 'running' } })
-    store.todos.push({ id: 'rt1', fields: { todo_id: 'T-1', 标题: '跟进数据包', 状态: 'pending', 推进日志: '08/22 10:00 创建' } })
+    seedItem({ id: 'r1', fields: { advance_id: 'A-1', 名称: '事项甲', 阶段: 'running' } })
+    seedTodo({ id: 'rt1', fields: { todo_id: 'T-1', 标题: '跟进数据包', 状态: 'pending', 推进日志: '08/22 10:00 创建' } })
     const sources = new ContextSourceStore()
     await sources.add('A-1', { token: 'todo:T-1', kind: 'persistent', label: '跟进数据包', addedBy: 'user', addedAt: 1 })
     const cursors = new ScanCursorStore()
@@ -1026,7 +1007,7 @@ describe('intent sources (spec §15 / ③.2)', () => {
     expect(pooled).toHaveLength(0)
     // 状态 pending→done + log 变长 → 产一条 todo 信号并入池
     store.todos[0]!.fields['状态'] = 'done'
-    store.todos[0]!.fields['推进日志'] = '08/22 10:00 创建\n08/22 12:00 状态 pending→done（完成）'
+    localStore().updateTodo('T-1', { '推进日志': '08/22 10:00 创建\n08/22 12:00 状态 pending→done（完成）', '状态': 'done' })
     const second = await coreScanAdvance(ctx, BUDGET, {}, freshCaches(), cursors, [], 20, undefined, sources, pool)
     expect(second.signals).toHaveLength(1)
     expect(second.signals[0]).toMatchObject({ groupId: 'todo:T-1', kind: 'todo', fromOpenId: '' })
@@ -1045,7 +1026,7 @@ describe('intent sources (spec §15 / ③.2)', () => {
     const store = new FakeStore(true)
     store.selfOpenId = 'me-openid'
     store.groups = [{ groupId: 'g-new', groupName: '新群' }]
-    store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '事项甲', 阶段: 'running', 最新动态: '旧动态' } })
+    seedItem({ id: 'r1', fields: { advance_id: 'A-1', 名称: '事项甲', 阶段: 'running', 最新动态: '旧动态' } })
     const sources = new ContextSourceStore()
     const { ctx } = mountWithThreads(store, sources)
     const feedOnce = async (): Promise<void> => {
@@ -1076,7 +1057,7 @@ describe('intent sources (spec §15 / ③.2)', () => {
     recs = store.entries.filter(row => String(row.fields['变化内容'] ?? '').includes('推荐订阅:'))
     expect(recs).toHaveLength(1)
     // 4. 忽略后永不推：另起一个事项喂同一渠道（先造忽略事元）
-    store.items.push({ id: 'r2', fields: { advance_id: 'A-2', 名称: '事项乙', 阶段: 'running' } })
+    seedItem({ id: 'r2', fields: { advance_id: 'A-2', 名称: '事项乙', 阶段: 'running' } })
     await coreFeedAdvance(ctx, BUDGET, {}, freshCaches(), {
       advanceId: 'A-2', summary: '忽略这个渠道', sourceType: '人工', detail: '推荐忽略: im:g-other', actor: 'user',
     }, undefined, sources)
@@ -1095,7 +1076,7 @@ describe('intent sources (spec §15 / ③.2)', () => {
 
   it('scan without groups errors with guidance when nothing is subscribed', async () => {
     const store = new FakeStore(true)
-    store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '事项甲', 阶段: 'running' } })
+    seedItem({ id: 'r1', fields: { advance_id: 'A-1', 名称: '事项甲', 阶段: 'running' } })
     const sources = new ContextSourceStore()
     const { tools } = mountWithThreads(store, sources)
     const scan = tools.find(tool => tool.name === 'yzj_advance_scan')!
@@ -1105,7 +1086,7 @@ describe('intent sources (spec §15 / ③.2)', () => {
 
   it('document-source association lands one 备注 事元; repeat is idempotent', async () => {
     const store = new FakeStore(true)
-    store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'running' } })
+    seedItem({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'running' } })
     const sources = new ContextSourceStore()
     const ctx = new LiveContext()
     ;(ctx as unknown as { yzjBridge: { run: (command: string[]) => Promise<YzjRunResult> } }).yzjBridge = {
@@ -1148,7 +1129,7 @@ describe('intent sources (spec §15 / ③.2)', () => {
   it('im association registers only (no entry); invalid token and missing item are rejected', async () => {
     const store = new FakeStore(true)
     store.groups = [{ groupId: 'g-dsh2', groupName: 'dsh-2' }]
-    store.items.push({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'running' } })
+    seedItem({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'running' } })
     const sources = new ContextSourceStore()
     const ctx = new LiveContext()
     ;(ctx as unknown as { yzjBridge: { run: (command: string[]) => Promise<YzjRunResult> } }).yzjBridge = {

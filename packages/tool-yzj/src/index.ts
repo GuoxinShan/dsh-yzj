@@ -20,8 +20,7 @@ import { applyFileTools } from './file.ts'
 import { applyTodoTools } from './todo.ts'
 import { YzjTodoService } from './todo.ts'
 import type { TodoConfig } from './todo.ts'
-import { applyAdvanceTools, YzjAdvanceService, setAdvanceBackend } from './advance.ts'
-import { setTodoBackend } from './todo.ts'
+import { applyAdvanceTools, YzjAdvanceService } from './advance.ts'
 import { ScanCursorStore } from './scan-cursors.ts'
 import { ContextSourceStore } from './advance-sources.ts'
 import { DreamPoolStore } from './advance-dreampool.ts'
@@ -99,8 +98,6 @@ export function apply(ctx: Context, config: Config): void {
   // create/scan tools and the panel thread RPC.
   // v1.8 storage switch (decision 36): advance two-table on local SQLite;
   // todo family stays on the cloud dbt. Tests stay on dbt (never call this).
-  setAdvanceBackend('sqlite')
-  setTodoBackend('sqlite')
   const scanCursors = new ScanCursorStore()
   const advanceSources = new ContextSourceStore()
   // Dream 蓄水池(spec §17,决策 33):scan 信号 copy 入池,Dream 抽取统一提炼。
