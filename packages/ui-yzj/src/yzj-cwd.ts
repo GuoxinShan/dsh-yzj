@@ -95,8 +95,7 @@ export async function detachYzjRoomHosts(ctx: CwdContext): Promise<void> {
 /**
  * Attach one topic session to 云之家. Room hosts (`yzj-home-*`) and any
  * other id are skipped — they must not appear in that official sidebar
- * group (R20 v1.4). Swallows mismatch (legacy process.cwd() headers) so
- * open never fails closed.
+ * group (R20 v1.4). Swallows header cwd mismatch so open never fails closed.
  */
 export async function attachYzjSession(ctx: CwdContext, sessionId: string): Promise<void> {
   if (!isYzjTopicSessionId(sessionId)) return
