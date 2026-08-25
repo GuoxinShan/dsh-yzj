@@ -435,24 +435,6 @@ describe('createRpcHandler', () => {
     }
   })
 
-  it('home-open with leftover ③④ attaches only the 历史对话 topic', async () => {
-    const ctx = mountBridge({})
-    const { attached, registry } = recordingRegistry()
-    ctx.provide('workspaceRegistry', registry)
-    ctx.provide('yzjHome', topicHome())
-    const agents = liveAgents()
-    await agents.create({ sessionId: 'yzj-home-g-a' })
-    agents.live.get('yzj-home-g-a')?.session.append('user/message', { content: '旧问题' })
-    ctx.provide('agents', agents)
-    const handler = createRpcHandler(ctx, { list: () => [], decide: () => false })
-    const opened = await handler('home-open', { groupId: 'g-a' }, undefined as never)
-    expect(opened.ok && opened.value).toMatchObject({
-      sessionId: 'yzj-home-g-a',
-      legacyTopicSessionId: 'yzj-topic-g-a-legacy-host',
-    })
-    expect(attached).toEqual(['yzj-topic-g-a-legacy-host'])
-  })
-
   it('home-handoff attaches only the minted topic, not the room host', async () => {
     const { BoundLogStore } = await import('@dsh-yzj/tool-yzj/src/bound-log.ts')
     const store = new BoundLogStore()

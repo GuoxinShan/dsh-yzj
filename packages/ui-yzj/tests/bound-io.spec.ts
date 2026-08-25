@@ -333,43 +333,6 @@ describe('groupSpaceSnapshot', () => {
 })
 
 describe('topic lens / ask', () => {
-  it('merges fromSessionId host ③④ with topic turns and hides plugin injects', () => {
-    const bubbles = topicLensBubbles({
-      dshSessionId: 'yzj-topic-1',
-      yzjConversationId: 'g-a',
-      title: '历史对话',
-      source: 'handoff',
-      createdAt: 1,
-      fromSessionId: 'yzj-home-g-a',
-    }, {
-      get: (id) => {
-        if (id === 'yzj-home-g-a') {
-          return {
-            session: {
-              events: [
-                { type: 'user/message', time: 1, data: { content: '旧问题', source: { kind: 'user' } } },
-                { type: 'assistant/message', time: 2, data: { content: '旧回答' } },
-              ],
-            },
-          }
-        }
-        if (id === 'yzj-topic-1') {
-          return {
-            session: {
-              events: [
-                { type: 'user/message', time: 3, data: { content: '升级摘要', source: { kind: 'plugin', plugin: 'ui-yzj' } } },
-                { type: 'user/message', time: 4, data: { content: '新问', source: { kind: 'user' } } },
-              ],
-            },
-          }
-        }
-        return undefined
-      },
-    })
-    expect(bubbles.map(row => row.text)).toEqual(['旧问题', '旧回答', '新问'])
-    expect(bubbles.map(row => row.role)).toEqual(['user', 'assistant', 'user'])
-  })
-
   it('pins write/edit files onto the assistant bubble for the topic lens', () => {
     const bubbles = topicLensBubbles({
       dshSessionId: 'yzj-topic-1',

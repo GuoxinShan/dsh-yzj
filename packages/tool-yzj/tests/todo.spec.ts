@@ -69,7 +69,6 @@ describe('todo pure helpers', () => {
     expect(checkTransition('backlog', 'done')).toMatch(/yzj_todo_complete/)
     expect(checkTransition('done', 'todo')).toMatch(/状态机拒绝/)
     expect(checkTransition('todo', 'done')).toMatch(/状态机拒绝/)
-    expect(checkTransition('pending', 'in_progress')).toBeNull()
   })
 
   it('sequences ids per day and appends log lines', () => {
@@ -80,11 +79,11 @@ describe('todo pure helpers', () => {
     expect(appendLog('first', 'second')).toBe('first\nsecond')
   })
 
-  it('parses a fields bag and flags overdue; legacy pending normalizes to todo (S5)', () => {
+  it('parses a fields bag and flags overdue; an unknown status folds into todo', () => {
     const todo = parseTodoRecord({
       id: 'c',
       fields: {
-        todo_id: 'T-20260815-001', 标题: '验证', 状态: 'pending',
+        todo_id: 'T-20260815-001', 标题: '验证', 状态: 'garbage',
         负责人: '测试用户(oid-test)', DDL: '2026/01/01',
         标签: '#需求 #P0', 推进日志: 'line',
       },

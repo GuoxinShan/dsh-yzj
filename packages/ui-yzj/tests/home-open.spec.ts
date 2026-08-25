@@ -73,65 +73,26 @@ describe('openBoundHome', () => {
   it('binds once; the second open is focus (same id, created false)', async () => {
     const home = memoryHome()
     const agents = fakeAgents()
-    const first = await openBoundHome({ home, agents, yzjConversationId: 'g-a', cwd: '/tmp' })
+    const first = await openBoundHome({ home, yzjConversationId: 'g-a' })
     expect(first.created).toBe(true)
     expect(first.sessionId).toBe('yzj-home-g-a')
     expect(first.yzjKind).toBe('group')
     expect(first.agentCreated).toBe(false)
     expect(agents.created).toEqual([])
-    const second = await openBoundHome({ home, agents, yzjConversationId: 'g-a', cwd: '/tmp' })
+    const second = await openBoundHome({ home, yzjConversationId: 'g-a' })
     expect(second.created).toBe(false)
     expect(second.sessionId).toBe(first.sessionId)
     expect(second.agentCreated).toBe(false)
     expect(agents.created).toEqual([])
     expect(home.topicInputs).toEqual([])
-    expect(first.legacyTopicSessionId).toBeUndefined()
   })
 
-  it('does not mint a room agent just to bind (R27)', async () => {
+  it('binds a DM conversation as yzjKind dm without minting topics (R27)', async () => {
     const home = memoryHome()
-    const agents = fakeAgents()
-    await openBoundHome({ home, agents, yzjConversationId: 'g-a', cwd: '/tmp', title: '测试群' })
-    expect(agents.created).toEqual([])
-    expect(agents.live.get('yzj-home-g-a')).toBeUndefined()
-  })
-
-  it('mints 历史对话 when the host already has ③④; second open is focus', async () => {
-    const home = memoryHome()
-    const agents = fakeAgents()
-    await agents.create({ sessionId: 'yzj-home-g-a' })
-    agents.live.get('yzj-home-g-a')?.session.append('user/message', {
-      content: '旧问题', source: { kind: 'user' },
-    })
-    const first = await openBoundHome({ home, agents, yzjConversationId: 'g-a', cwd: '/tmp', title: '测试群' })
-    expect(first.legacyTopicSessionId).toBe('yzj-topic-g-a-legacy-host')
-    expect(home.topicInputs[0]).toMatchObject({
-      source: 'handoff',
-      rootMsgId: 'legacy-host',
-      title: '历史对话',
-      fromSessionId: 'yzj-home-g-a',
-      quiet: true,
-      lastActivity: 1,
-    })
-    expect(agents.created).toContain('yzj-topic-g-a-legacy-host')
-    expect(agents.injected).toHaveLength(1)
-    const second = await openBoundHome({ home, agents, yzjConversationId: 'g-a', cwd: '/tmp', title: '测试群' })
-    expect(second.legacyTopicSessionId).toBe(first.legacyTopicSessionId)
-    expect(home.topicInputs.filter(row => row.rootMsgId === 'legacy-host')).toHaveLength(2)
-    expect(agents.created.filter(id => id === 'yzj-topic-g-a-legacy-host')).toEqual(['yzj-topic-g-a-legacy-host'])
-    expect(agents.injected).toHaveLength(1)
-  })
-
-  it('does not mint 历史对话 for a DM host with ③④', async () => {
-    const home = memoryHome()
-    const agents = fakeAgents()
-    await agents.create({ sessionId: 'yzj-home-BOT-a' })
-    agents.live.get('yzj-home-BOT-a')?.session.append('user/message', {
-      content: '私聊旧话', source: { kind: 'user' },
-    })
-    const opened = await openBoundHome({ home, agents, yzjConversationId: 'BOT-a', cwd: '/tmp' })
+    await openBoundHome({ home, yzjConversationId: 'BOT-a' })
+    const opened = await openBoundHome({ home, yzjConversationId: 'BOT-a' })
     expect(opened.yzjKind).toBe('dm')
-    expect(opened.legacyTopicSessionId).toBeUndefined()
+    expect(opened.created).toBe(false)
     expect(home.topicInputs).toEqual([])
   })
 })

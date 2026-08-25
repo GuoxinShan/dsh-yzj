@@ -59,13 +59,11 @@ function asString(value: unknown): string {
   return typeof value === 'string' ? value : ''
 }
 
-/** Nested topic label: drop the group-name affix (legacy 「群名 · 」prefix or current 「 · 群名」suffix). */
+/** Nested topic label: drop the group-name suffix from 「话题 · 群名」 titles. */
 export function topicNavLabel(groupName: string, title: string): string {
   const group = groupName.trim()
-  const prefix = `${group} · `
   const suffix = ` · ${group}`
   const body = title.trim()
-  if (group !== '' && body.startsWith(prefix)) return body.slice(prefix.length) || '话题'
   if (group !== '' && body.endsWith(suffix)) return body.slice(0, body.length - suffix.length) || '话题'
   return body || '话题'
 }

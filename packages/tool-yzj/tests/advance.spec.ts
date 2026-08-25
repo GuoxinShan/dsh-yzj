@@ -72,8 +72,6 @@ class FakeStore {
     this.provisioned = provisioned
   }
 
-  /** Simulates a pre-v1.6 推进库 whose 阶段 SingleSelect lacks the cancelled option. */
-  legacyStageOptions = false
   /** Directory-thread fixture: parentId → listed docs(决策 32 scan dir: mock)。 */
   dirDocs: Record<string, { id: string; title: string; updateTime: string }[]> = {}
 
@@ -83,11 +81,8 @@ class FakeStore {
   }
 
   sheets(): unknown[] {
-    // 阶段 SingleSelect 选项:data.items(与真实 CLI 同形,2026-08-19 实测);
-    // legacyStageOptions 模拟 v1.6 前的存量库(缺 cancelled)。
-    const stageValues = this.legacyStageOptions
-      ? ['draft', 'running', 'decision-needed', 'updated', 'ready-for-review', 'completed']
-      : [...ADVANCE_STAGES]
+    // 阶段 SingleSelect 选项:data.items(与真实 CLI 同形,2026-08-19 实测)。
+    const stageValues = [...ADVANCE_STAGES]
     const tables: unknown[] = [
       { id: 4, name: '任务', fields: [{ name: 'todo_id' }, { name: '标题' }] },
     ]
@@ -682,7 +677,6 @@ describe('core judge path (panel direct write)', () => {
 
   it('judge cancel 直写 cancelled（决策 54：SQLite 无 SingleSelect 预注册约束，dbt 时代守卫已删）', async () => {
     const store = new FakeStore(true)
-    store.legacyStageOptions = true
     seedItem({ id: 'r1', fields: { advance_id: 'A-1', 名称: '试运行', 阶段: 'running' } })
     const ctx = coreCtx(store)
     const verb = judgeVerb('cancel')

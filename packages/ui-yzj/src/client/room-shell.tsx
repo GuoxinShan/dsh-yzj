@@ -82,7 +82,7 @@ export function YzjRoomShell(props: YzjRoomShellInjected) {
   }, [isRoom, props.sessionId])
 
   // Advance-board jumps (requestImGroupFocus) retarget the overlay timeline;
-  // the legacy sidebar panel consumes the same bus for its own open path.
+  // the top-bar panel consumes the same bus for its own open path.
   // 决策 39: an anchored jump also carries the source message id so the
   // timeline highlights that exact row (事件级定位).
   const [focusAnchor, setFocusAnchor] = useState('')

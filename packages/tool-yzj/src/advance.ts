@@ -94,11 +94,10 @@ export function isOpenStage(stage: string): boolean {
 }
 
 /**
- * Read-time normalization (决策 52): legacy draft/updated values fold into
+ * Read-time stage guard: an unknown free-string value folds into
  * running — local SQLite fields are free strings, so no migration script.
  */
 export function normalizeStage(stage: string): AdvanceStage {
-  if (stage === 'draft' || stage === 'updated') return 'running'
   return (ADVANCE_STAGES.includes(stage as AdvanceStage) ? stage : 'running') as AdvanceStage
 }
 

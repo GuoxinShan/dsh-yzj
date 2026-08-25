@@ -75,15 +75,6 @@ export const yzjAdvanceSourcesDomainSpec = defineDomain({
   },
 })
 
-/** Legacy domain (pre-v1.8 name `yzj_advance_threads`); read once for migration. */
-const legacyThreadsDomainSpec = defineDomain({
-  name: 'yzj_advance_threads',
-  version: 0,
-  tables: {
-    threads: domainTable<string, ContextSource[]>(sourceListSchema),
-  },
-})
-
 /** Read/write face used by the advance core, the service, and the scan tool. */
 export interface ContextSourceStoreFace {
   sourcesOf(advanceId: string): ContextSource[]
@@ -112,20 +103,6 @@ export class ContextSourceStore implements ContextSourceStoreFace {
     this.table = domain.table('sources')
     for (const [key, value] of this.memory) await this.table.put(key, value)
     this.memory.clear()
-    // v1.8 legacy migration: pre-rename data lives in `yzj_advance_threads`;
-    // copy once when the new domain is still empty. Best-effort (legacy may not exist).
-    try {
-      const legacy = await facility.open(legacyThreadsDomainSpec as never)
-      const oldTable = (legacy as { table(name: string): KvTable<string, ContextSource[]> }).table('threads')
-      const hasNew = [...this.table.entries()].some(([, rows]) => rows.length > 0)
-      if (!hasNew) {
-        for (const [key, rows] of oldTable.entries()) {
-          if (rows.length > 0) await this.table.put(key, rows)
-        }
-      }
-    } catch {
-      // legacy domain absent — nothing to migrate
-    }
   }
 
   /** One item's subscribed context sources (insertion order), [] when none. */

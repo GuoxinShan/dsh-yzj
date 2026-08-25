@@ -1219,3 +1219,28 @@ Dream 路（跨事项推荐）纪律入 dreamAskPrompt（顺手落推荐事元�
 | 验收脚本 | verify-todo-team.mjs 删除（团队库开通面已不存在） | — |
 
 附带修正：panel-controller todo 分支传播链简化；todo-pane ensure 文案改「待办库已就绪」。
+
+## 24.39 legacy 迁移路径全量拆除（2026-08-25，已落地）
+
+用户拍板「legacy的东西全部干掉」。动手前先核真机存量，确认每条 legacy 路径保护的数据为零，死代码才删：
+
+| 存量核查 | 结果 |
+|---|---|
+| todo 状态 `pending`（S5 折叠） | 0 行 |
+| advance 阶段 `draft`/`updated`（决策 52 折叠） | 0 行 |
+| `yzj_advance_threads.json`（v1.8 迁移源） | 0 行，磁盘文件一并删除 |
+| 话题表 `fromSessionId` 非空 / `rootMsgId=legacy-host`（H9） | 0/0 行 |
+| 群房间 host 会话真实 ③④（H9 触发条件） | 0 事件 |
+
+| 面 | 交付 | 证据 |
+|---|---|---|
+| advance-sources.ts | `legacyThreadsDomainSpec` 声明 + `open()` 内 v1.8 迁移块删除；磁盘 `~/.dsh/storages/yzj_advance_threads.json` 删除 | tool-yzj typecheck 0 错 |
+| home-open.ts H9 链 | `maybeMigrateLegacyHost`/`hostHasLegacyTurns`/`legacyTopicSessionId` 全删；`openBoundHome` 瘦身为 `home + yzjConversationId`（title/agents/cwd/route/composition 参数不再需要，index.ts 与 bound-io handoffToGroup 调用点同步） | home-open.spec 铸币用例删、DM 绑定用例改写 |
+| topics.ts | `TopicRecord.fromSessionId` + `TopicEnsureInput` 的 `fromSessionId`/`quiet`/`lastActivity` 输入面、schema、ensureTopic quiet 分支与透传删除（`lastActivity` 字段本体与 touch bump 是活语义，保留） | topics.spec legacy-host slug/quiet 用例删 |
+| bound-io.ts | `topicLensBubbles` 的 fromHost ③④ 合并删除（fromSessionId 恒空）；plugin inject 隐藏的覆盖由 fusedSnapshot 用例承接 | bound-io.spec 合并用例删 |
+| 读时归一化 | todo `normalizeTodoStatus` 的 pending 折叠、advance `normalizeStage` 的 draft/updated 折叠删除；**非法值兜底保留**（SQLite 自由字符串，未知值仍 fold 回 todo/running）；todo-pane `laneStatusOf` 客户端镜像删除 | todo.spec pending 断言删、用例改 garbage 测兜底 |
+| 客户端残留 | conv-list `topicNavLabel` 的 legacy「群名 · 」前缀剥离删除（存量 title 0 条带前缀，后缀剥离保留）；room-shell「legacy sidebar panel」陈旧注释改「top-bar panel」 | group-space.spec 前缀断言删 |
+
+**保留边界（明示）**：① advance refs 的裸 msgId 回退（index.ts advance-ref-lookup + advance-pane jumpToMsg 降级）——真机 72 条事元中 38 条裸 msgId refs，bound log 命中率仅 11/38（其余指向的消息已不在捞取范围），**无法机械迁移**，运行时回退是活存量处理而非死代码；② yzj-cwd attachYzjSession 的 mismatch 容错——防御活的 harness header 差异，非迁移路径；③ `composeHandoffDigest`（handoff-digest.ts）——「丢进群」picker 的活组合器（home-chrome.tsx 消费），仅 home-open 侧的 H9 inject 消费删除。
+
+验收：全量测试 462 绿（真实 CLI 冒烟首轮 1 条网络超时，重跑过）+ typecheck 0 错 + build/bundle 绿 + GUI 重启回归。

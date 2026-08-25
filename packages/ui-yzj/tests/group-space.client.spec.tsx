@@ -36,8 +36,7 @@ function mount(nav: Rpc, extra: {
 }
 
 describe('topicNavLabel', () => {
-  it('strips the official-list affix once (legacy prefix and current suffix)', () => {
-    expect(topicNavLabel('测试群', '测试群 · 整理接口清单')).toBe('整理接口清单')
+  it('strips the official-list group suffix once', () => {
     expect(topicNavLabel('测试群', '整理接口清单 · 测试群')).toBe('整理接口清单')
     expect(topicNavLabel('测试群', '整理接口清单')).toBe('整理接口清单')
     expect(topicNavLabel('', '整理接口清单')).toBe('整理接口清单')

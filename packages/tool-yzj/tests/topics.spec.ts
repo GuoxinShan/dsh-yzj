@@ -3,7 +3,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
-  TopicAnchorStore, topicActivity, topicSessionId, LEGACY_HOST_ROOT, type TopicRecord,
+  TopicAnchorStore, topicActivity, topicSessionId, type TopicRecord,
 } from '../src/topics.ts'
 
 function memoryFacility(): {
@@ -52,11 +52,6 @@ describe('topicSessionId', () => {
     expect(id.startsWith('yzj-topic-')).toBe(true)
     expect(id.startsWith('yzj-home-')).toBe(false)
     expect(id.startsWith('yzj-robot-')).toBe(false)
-  })
-
-  it('keeps legacy-host as a stable slug', () => {
-    expect(topicSessionId('g-a', LEGACY_HOST_ROOT)).toBe('yzj-topic-g-a-legacy-host')
-    expect(topicSessionId('g-a', LEGACY_HOST_ROOT)).toBe(topicSessionId('g-a', LEGACY_HOST_ROOT))
   })
 })
 
@@ -140,25 +135,5 @@ describe('TopicAnchorStore', () => {
     expect(store.getBySession(topic.sessionId)?.status).toBe('done')
     await store.setStatus('yzj-topic-missing', 'confirm')
     expect(store.getBySession('yzj-topic-missing')).toBeUndefined()
-  })
-
-  it('quiet ensure returns the existing root without bumping lastActivity', async () => {
-    const store = new TopicAnchorStore()
-    const first = await store.ensureTopic({
-      yzjConversationId: 'g-a',
-      source: 'handoff',
-      rootMsgId: LEGACY_HOST_ROOT,
-      lastActivity: 42,
-    })
-    expect(first.record.lastActivity).toBe(42)
-    const again = await store.ensureTopic({
-      yzjConversationId: 'g-a',
-      source: 'handoff',
-      rootMsgId: LEGACY_HOST_ROOT,
-      quiet: true,
-    })
-    expect(again.created).toBe(false)
-    expect(again.sessionId).toBe(first.sessionId)
-    expect(again.record.lastActivity).toBe(42)
   })
 })

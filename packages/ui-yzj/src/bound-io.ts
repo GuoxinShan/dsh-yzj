@@ -590,8 +590,7 @@ function lensBubblesFromEvents(
 }
 
 /**
- * Lens stream: topic session events, plus leftover host ③④ when this is
- * the H9 「历史对话」 topic (`fromSessionId`). Plugin injects stay hidden.
+ * Lens stream: topic session events. Plugin injects stay hidden.
  * Write/edit files appear on the assistant bubble (R30) as DSH-local
  * cards. Job-done (R29) still uploads and posts the same files to the
  * group; the lens does not replace that send.
@@ -600,11 +599,7 @@ export function topicLensBubbles(
   topic: TopicRecord,
   agents: { get(id: string): { session?: { events?: readonly { type: string; time?: number; timestamp?: number; data?: unknown }[] } } | undefined },
 ): TopicLensBubble[] {
-  const fromHost = topic.fromSessionId === undefined || topic.fromSessionId === ''
-    ? []
-    : lensBubblesFromEvents(sessionEventsOf(agents.get(topic.fromSessionId)), 'h')
-  const fromTopic = lensBubblesFromEvents(sessionEventsOf(agents.get(topic.dshSessionId)), 't')
-  return [...fromHost, ...fromTopic].sort((a, b) => a.time - b.time)
+  return lensBubblesFromEvents(sessionEventsOf(agents.get(topic.dshSessionId)), 't')
 }
 
 /** User-authored followup (drawer 「问助手」). Visible in the lens. Must carry `id`. */
@@ -818,9 +813,7 @@ export async function handoffToGroup(options: {
   try {
     opened = await openBoundHome({
       home: options.home,
-      agents: options.agents,
       yzjConversationId: options.groupId,
-      cwd: options.cwd,
     })
   } catch (error) {
     return { error: `home-handoff open failed: ${String(error)}` }

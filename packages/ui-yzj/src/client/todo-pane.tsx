@@ -96,15 +96,9 @@ interface Lane {
   todos: UnknownRecord[]
 }
 
-/** Client-side status normalization mirrors the host (S5: legacy pending → todo). */
-function laneStatusOf(todo: UnknownRecord): string {
-  const status = asString(todo.status)
-  return status === 'pending' ? 'todo' : status
-}
-
 /** Swimlane lanes (todo-swimlane-agent §2.4): five fixed lanes in state-machine
- *  order over NON-archived cards; cancelled folds into 已终止, archived into
- *  已归档 (S10: view-layer hide, recoverable) — neither occupies a lane. */
+ * order over NON-archived cards; cancelled folds into 已终止, archived into
+ * 已归档 (S10: view-layer hide, recoverable) — neither occupies a lane. */
 export function lanesOf(todos: UnknownRecord[]): { lanes: Lane[]; cancelled: UnknownRecord[]; archived: UnknownRecord[] } {
   const byDdl = (a: UnknownRecord, b: UnknownRecord): number => {
     const da = asString(a.ddl)
@@ -115,7 +109,7 @@ export function lanesOf(todos: UnknownRecord[]): { lanes: Lane[]; cancelled: Unk
     return da === db ? (asString(a.todoId) < asString(b.todoId) ? -1 : 1) : (da < db ? -1 : 1)
   }
   const live = todos.filter(todo => todo.archived !== true)
-  const pick = (status: string): UnknownRecord[] => live.filter(todo => laneStatusOf(todo) === status).sort(byDdl)
+  const pick = (status: string): UnknownRecord[] => live.filter(todo => asString(todo.status) === status).sort(byDdl)
   const lanes: Lane[] = [
     { key: 'backlog', label: '待我决定', tone: 'danger', hint: '批准后 agent 才能认领', todos: pick('backlog') },
     { key: 'todo', label: '可认领', tone: 'muted', hint: '对 agent 说「把能做的做了」', todos: pick('todo') },
@@ -123,7 +117,7 @@ export function lanesOf(todos: UnknownRecord[]): { lanes: Lane[]; cancelled: Unk
     { key: 'in_review', label: '待我验收', tone: 'warn', hint: '验收才算完', todos: pick('in_review') },
     { key: 'done', label: '已完成', tone: 'done', hint: '', todos: pick('done').reverse().slice(0, 10) },
   ]
-  const cancelled = live.filter(todo => laneStatusOf(todo) === 'cancelled')
+  const cancelled = live.filter(todo => asString(todo.status) === 'cancelled')
   const archived = todos.filter(todo => todo.archived === true)
   return { lanes, cancelled, archived }
 }
@@ -181,7 +175,7 @@ export function TodoPane(props: TodoPaneProps) {
     const counts = new Map<string, number>()
     for (const todo of todos) {
       if (todo.archived === true) continue
-      const status = laneStatusOf(todo)
+      const status = asString(todo.status)
       if (status === 'done' || status === 'cancelled') continue
       for (const tag of asTags(todo.tags)) {
         counts.set(tag, (counts.get(tag) ?? 0) + 1)
@@ -192,7 +186,7 @@ export function TodoPane(props: TodoPaneProps) {
 
   const visible = props.tagFilter === '' ? todos : todos.filter(todo => asTags(todo.tags).includes(props.tagFilter))
   const { lanes, cancelled, archived } = useMemo(() => lanesOf(visible), [visible])
-  const openCount = todos.filter(todo => todo.archived !== true && laneStatusOf(todo) !== 'done' && laneStatusOf(todo) !== 'cancelled').length
+  const openCount = todos.filter(todo => todo.archived !== true && asString(todo.status) !== 'done' && asString(todo.status) !== 'cancelled').length
 
   const flash = (message: string): void => {
     setNotice(message)
@@ -251,7 +245,7 @@ export function TodoPane(props: TodoPaneProps) {
     const todoId = asString(todo.todoId)
     setBusyId(todoId)
     // Optimistic flip; revert via refresh on failure.
-    props.actions.patchTodo({ ...todo, status: laneStatusOf(todo) === 'done' ? 'in_progress' : 'done' })
+    props.actions.patchTodo({ ...todo, status: asString(todo.status) === 'done' ? 'in_progress' : 'done' })
     void props.toggleTodo(todoId).then((result) => {
       setBusyId('')
       if (result.ok) {
@@ -336,7 +330,7 @@ export function TodoPane(props: TodoPaneProps) {
   /** One swimlane card: title + meta + description preview + lane verbs (卡片操作即状态动词). */
   const renderCard = (todo: UnknownRecord) => {
     const todoId = asString(todo.todoId)
-    const status = laneStatusOf(todo)
+    const status = asString(todo.status)
     const isExpanded = expanded === todoId
     const ddl = asString(todo.ddl)
     const terminal = status === 'done' || status === 'cancelled'

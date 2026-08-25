@@ -37,8 +37,7 @@ const F = {
 /**
  * Status values of the swimlane state machine (todo-swimlane-agent.md §2.1):
  * backlog（待我决定）→ todo（可认领）→ in_progress → in_review（待我验收）→ done；
- * cancelled 终局（人）。blocked 砍为 release 备注（S8）；legacy 'pending'
- * reads normalize to 'todo'（S5）。
+ * cancelled 终局（人）。blocked 砍为 release 备注（S8）。
  */
 export type TodoStatus = 'backlog' | 'todo' | 'in_progress' | 'in_review' | 'done' | 'cancelled'
 
@@ -185,9 +184,8 @@ export const TODO_NEXT: Record<TodoStatus, readonly TodoStatus[]> = {
   cancelled: ['todo'],
 }
 
-/** Read-time status normalization (S5): legacy pending folds into todo. */
+/** Read-time status guard: an unknown free-string value folds into 'todo'. */
 export function normalizeTodoStatus(status: string): TodoStatus {
-  if (status === 'pending') return 'todo'
   return (TODO_STATUSES.includes(status as TodoStatus) ? status : 'todo') as TodoStatus
 }
 

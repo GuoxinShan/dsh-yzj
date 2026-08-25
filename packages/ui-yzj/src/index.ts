@@ -1143,26 +1143,9 @@ function imCacheStore(): SqliteDb {
         if (home === undefined) return internalError('home-open: yzjHome 服务不可用（tool-yzj 未挂载）')
         const groupId = stringField(payload, 'groupId') ?? stringField(payload, 'yzjConversationId')
         if (groupId === undefined) return internalError('home-open endpoint requires a groupId payload')
-        const agents = agentsFace(ctx)
-        if (agents === undefined) return internalError('home-open: agents 服务不可用')
         try {
-          // Title fallback: resolve the real group name so a re-materialized
-          // room never pins the 群房间 placeholder (pitfall-021 cleanup path).
-          const title = stringField(payload, 'title') ?? (await recentGroupNames(ctx)).get(groupId)
-          const cwd = await ensureYzjHostWorkspace(ctx)
-          const route = topicAgentRoute(ctx)
-          const composition = await topicAgentComposition(ctx)
-          const value = await openBoundHome({
-            home,
-            agents,
-            yzjConversationId: groupId,
-            cwd,
-            ...(title === undefined ? {} : { title }),
-            ...(route === undefined ? {} : { agentOptions: route }),
-            ...composition,
-          })
+          const value = await openBoundHome({ home, yzjConversationId: groupId })
           await attachYzjSession(ctx, value.sessionId)
-          if (value.legacyTopicSessionId !== undefined) await attachYzjSession(ctx, value.legacyTopicSessionId)
           const io = homeIoFrom(home)
           if (io !== undefined) {
             void backfillBoundLog(ctx, io, groupId).catch(() => undefined)

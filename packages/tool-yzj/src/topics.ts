@@ -13,15 +13,6 @@ import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
 /** How a topic was spawned. */
 export type TopicSource = 'dsh' | 'yzj' | 'handoff'
 
-/**
- * Synthetic root for pre-v2.0 ③④ left on the group-room host
- * (docs/spec/group-room-topics.md H9). Stable `topicSessionId` slug.
- */
-export const LEGACY_HOST_ROOT = 'legacy-host'
-
-/** Sidebar / drawer title for {@link LEGACY_HOST_ROOT}. */
-export const LEGACY_HOST_TITLE = '历史对话'
-
 /** Topic lifecycle (docs/spec/group-room-topics.md P3 / L2). */
 export type TopicStatus = 'running' | 'confirm' | 'done'
 
@@ -40,7 +31,6 @@ export interface TopicRecord {
   readonly originWho?: string
   readonly originText?: string
   readonly originTime?: number
-  readonly fromSessionId?: string
 }
 
 /** Activity clock for L1 merge: `lastActivity` or, for old rows, `createdAt`. */
@@ -70,14 +60,6 @@ export interface TopicEnsureInput {
   readonly originWho?: string
   readonly originText?: string
   readonly originTime?: number
-  readonly fromSessionId?: string
-  /**
-   * When true, an existing root is returned as-is (no `lastActivity` bump).
-   * Used by H9 migrate-on-open so merely focusing a room does not steal L1.
-   */
-  readonly quiet?: boolean
-  /** Create-time activity clock; default `Date.now()`. H9 passes host ③④ time. */
-  readonly lastActivity?: number
 }
 
 const topicSchema = z.object({
@@ -92,7 +74,6 @@ const topicSchema = z.object({
   originWho: z.string().optional(),
   originText: z.string().optional(),
   originTime: z.number().optional(),
-  fromSessionId: z.string().optional(),
 }) as unknown as z.ZodType<TopicRecord>
 
 const sessionIndexSchema = z.object({
@@ -241,9 +222,6 @@ export class TopicAnchorStore {
     if (input.rootMsgId !== undefined && input.rootMsgId !== '') {
       const existing = this.getByAnchor(input.yzjConversationId, input.rootMsgId)
       if (existing !== undefined) {
-        if (input.quiet === true) {
-          return { sessionId: existing.dshSessionId, created: false, record: existing }
-        }
         const touched: TopicRecord = { ...existing, lastActivity: Date.now() }
         await this.putTopic(touched)
         return { sessionId: touched.dshSessionId, created: false, record: touched }
@@ -262,13 +240,12 @@ export class TopicAnchorStore {
       title: defaultTitle(input),
       source: input.source,
       createdAt: now,
-      lastActivity: input.lastActivity ?? now,
+      lastActivity: now,
       status: 'running',
       ...(input.rootMsgId === undefined || input.rootMsgId === '' ? {} : { rootMsgId: input.rootMsgId }),
       ...(input.originWho === undefined ? {} : { originWho: input.originWho }),
       ...(input.originText === undefined ? {} : { originText: input.originText }),
       ...(input.originTime === undefined ? {} : { originTime: input.originTime }),
-      ...(input.fromSessionId === undefined ? {} : { fromSessionId: input.fromSessionId }),
     }
     await this.putTopic(record)
     return { sessionId, created: true, record }
