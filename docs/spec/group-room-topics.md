@@ -164,7 +164,7 @@ TopicAnchorIndex                           // S1 复活
 | robot-channel §3.6 S1 锚定 | **复活** → R4（加「必须可见」不变量） |
 | robot-channel §9「打开/恢复绑定会话」 | **改写** → 锚定或新建话题（§5） |
 
-迁移（H9，2026-08-18 拍板）：既有 `yzj-home-*` 降为群房间宿主。打开群房间时，若宿主已有真实 ③④（`user/message` / `assistant/message` / `tool/call`），则幂等 `ensureTopic({ source: 'handoff', rootMsgId: 'legacy-host', title: '历史对话', fromSessionId: hostSessionId, quiet: true })`。**不**复制 Session 事件（harness 无跨 session 搬日志 API，且 `KNOWN_SESSION_EVENT_TYPES` 白名单）。`lastActivity` 取宿主 ③④ 原时间，**不**写成打开当下——否则 L1 会把该群顶到列表最上并刷成「话题·历史对话」。透镜合并 `fromSessionId` 上的宿主事件 + 话题自身新事件；新「问助手」打进话题 session。空白宿主（仅 `publishHostSession` 的 `turn/start` + `turn/end` + `session/title`）不迁。单聊不迁（R17）。打开房间落在时间线**底部（最新）**；切会话工作台列表用模块缓存，禁止空窗再刷。融合「群工作」tab、dock「发进群」、双意图 composer、面板快捷 IM 在实现刀中移除。
+迁移（H9，2026-08-18 拍板；**2026-08-25 已拆除**，gap §24.39——真机存量核查 fromSessionId/legacy-host 均零行，迁移路径按死代码删除，下述行为不再存在）：既有 `yzj-home-*` 降为群房间宿主。打开群房间时，若宿主已有真实 ③④（`user/message` / `assistant/message` / `tool/call`），则幂等 `ensureTopic({ source: 'handoff', rootMsgId: 'legacy-host', title: '历史对话', fromSessionId: hostSessionId, quiet: true })`。**不**复制 Session 事件（harness 无跨 session 搬日志 API，且 `KNOWN_SESSION_EVENT_TYPES` 白名单）。`lastActivity` 取宿主 ③④ 原时间，**不**写成打开当下——否则 L1 会把该群顶到列表最上并刷成「话题·历史对话」。透镜合并 `fromSessionId` 上的宿主事件 + 话题自身新事件；新「问助手」打进话题 session。空白宿主（仅 `publishHostSession` 的 `turn/start` + `turn/end` + `session/title`）不迁。单聊不迁（R17）。打开房间落在时间线**底部（最新）**；切会话工作台列表用模块缓存，禁止空窗再刷。融合「群工作」tab、dock「发进群」、双意图 composer、面板快捷 IM 在实现刀中移除。
 
 ---
 
@@ -279,8 +279,8 @@ TopicAnchorIndex                           // S1 复活
 | 20 | 对话/待办/日程要几个侧栏入口 | **一个。** 左边只留「云之家」；四域是工作台顶栏页签（R31） |
 | 5 | 群行点击落点 | 永远落时间线（抽屉不自动开） |
 | 6 | 话题默认投影 | 双投影并存：工作台 → 透镜，官方侧栏 → 原生（R19） |
-| 7 | 旧宿主 ③④（H9） | **迁成首条话题「历史对话」**（`rootMsgId=legacy-host`）；不搬事件；空白宿主 / 单聊不迁；二次打开幂等 |
-| 8 | 抽屉透镜体（H18） | 气泡流读话题 session（旧宿主话题合并 `fromSessionId`）；底部「问助手」`followup` 进话题、**不** focus 原生；「原生会话 ↗」仍是唯一跳官方 Chat |
+| 7 | 旧宿主 ③④（H9） | **已拆除**（2026-08-25，gap §24.39）：存量核查为零后删迁移路径；旧宿主 ③④ 不再铸「历史对话」话题 |
+| 8 | 抽屉透镜体（H18） | 气泡流读话题 session；底部「问助手」`followup` 进话题、**不** focus 原生；「原生会话 ↗」仍是唯一跳官方 Chat |
 | 9 | 官方侧栏「云之家」收谁（v1.4） | **只收群聊长出的 agent session（`yzj-topic-*`）**。群聊/私聊房间（`yzj-home-*`）不进该分组。房间导航只在工作台对话域。cwd 仍用专属目录，attach 只对话题（R20） |
 | 10 | 谁可以画 IM 壳（v1.5） | **只有 `yzj-home-*`**。话题 / 普通会话打开官方 Chat；残留 `view=yzj-home` 必须点「对话」清掉。kind 只跟 id 前缀（R22） |
 
@@ -293,7 +293,7 @@ TopicAnchorIndex                           // S1 复活
 16. 官方侧栏出现「云之家」工作区分组，**只有** `yzj-topic-*` 在其下（标题「话题 · 群名」）；打开群聊/私聊**不**把 `yzj-home-*` 挂进该分组（R20 v1.4）。
 17. 悬浮球与悬浮窗不存在（P2 后）；工作台待办勾选 = 本人意志直写，不出确认卡。
 18. 抽屉透镜内是气泡流（用户右 / 助手左），不是「只作对照」占位；底部「问助手」提交后气泡出现、官方 Chat 不被 focus。
-19. 打开仍带旧 ③④ 的群房间 → 话题列表出现「历史对话」；再开一次不新建；空白新房间不出现该条。
+19. （H9 已拆除，2026-08-25 gap §24.39）打开仍带旧 ③④ 的群房间不再铸「历史对话」话题；空白新房间同样不出现该条。
 20. （v1.2）群房间三栏有界：shell ≤ 视口高、时间线内部滚动且打开即触底、发进群 composer 在视口内；会话列无「群聊」鬼影行；`BOT-` 发送者标「机器人」、长帖折叠「展开全文」；话题抽屉有界且锚点卡 clamp 两行。回归 = `.acceptance/verify-room-layout.mjs`。
 21. （v1.4）打开群聊后，官方侧栏「云之家」分组不出现该群名行；从该群「交给助手」长出的话题出现在该分组，标题为「话题 · 群名」。
 22. （v1.5）从官方侧栏打开话题 / 普通会话：主面是官方 Chat，不是群聊三栏；header 选中「对话」。只有 `yzj-home-*` 占「群聊」view。
