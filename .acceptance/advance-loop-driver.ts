@@ -7,15 +7,14 @@
  */
 import { Context } from '@deepseek-ai/cordis'
 import YzjBridge from '../packages/bridge/src/index.ts'
-import { coreCreateAdvance, coreFeedAdvance, setAdvanceBackend } from '../packages/tool-yzj/src/advance.ts'
+import { coreCreateAdvance, coreFeedAdvance } from '../packages/tool-yzj/src/advance.ts'
 import type { AdvanceCaches } from '../packages/tool-yzj/src/advance.ts'
 import type { YzjToolBudget } from '../packages/tool-yzj/src/shared.ts'
 
 const BUDGET: YzjToolBudget = { timeoutMs: 60_000, maxRenderChars: 8_000, maxMetaChars: 8_000 }
 
 function mount(): { ctx: Context; caches: AdvanceCaches } {
-  // Match the real-device storage backend (决策 36): local SQLite, not cloud dbt.
-  setAdvanceBackend('sqlite')
+  // Storage backend: local SQLite only (决策 54 removed the backend switch).
   const ctx = new Context()
   new YzjBridge(ctx, {})
   return { ctx, caches: { lib: {}, adv: {} } }

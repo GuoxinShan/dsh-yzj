@@ -16,18 +16,16 @@ import { DatabaseSync } from 'node:sqlite'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import YzjBridge from '../packages/bridge/src/index.ts'
-import { coreFeedAdvance, setAdvanceBackend } from '../packages/tool-yzj/src/advance.ts'
+import { coreFeedAdvance } from '../packages/tool-yzj/src/advance.ts'
 import type { AdvanceCaches } from '../packages/tool-yzj/src/advance.ts'
-import { coreSetStatus, setTodoBackend } from '../packages/tool-yzj/src/todo.ts'
+import { coreSetStatus } from '../packages/tool-yzj/src/todo.ts'
 import type { YzjToolBudget } from '../packages/tool-yzj/src/shared.ts'
 
 const GROUP_ID = '6a8400d4e4b09a073e3feeaf' // dsh-2
 const BUDGET: YzjToolBudget = { timeoutMs: 60_000, maxRenderChars: 8_000, maxMetaChars: 8_000 }
 
 function mount(): { ctx: Context; caches: AdvanceCaches } {
-  // Match the real-device storage backend (决策 36): local SQLite, not cloud dbt.
-  setAdvanceBackend('sqlite')
-  setTodoBackend('sqlite')
+  // Storage backend: local SQLite only (决策 54 removed the backend switch).
   const ctx = new Context()
   new YzjBridge(ctx, {})
   return { ctx, caches: { lib: {}, adv: {} } }

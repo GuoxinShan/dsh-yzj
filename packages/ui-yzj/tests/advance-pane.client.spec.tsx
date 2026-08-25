@@ -707,7 +707,7 @@ describe('YzjAdvancePane', () => {
     act(() => { face.root.unmount() })
   })
 
-  it('事元 msg ref 裸 msgId(legacy):回退订阅渠道猜群不带锚点', async () => {
+  it('裸 msgId(legacy refs)已退役:未命中渲染不可点泛化 chip,有订阅群也不猜群(gap §24.39)', async () => {
     setWorkbenchDomain('advance')
     const focused: ImFocusTarget[] = []
     const dispose = subscribeImGroupFocus(target => { focused.push(target) })
@@ -718,12 +718,16 @@ describe('YzjAdvancePane', () => {
         entries: [entry({ entryId: 'E-1', sourceType: '对话', changeType: '备注', summary: '旧信号', refs: ['m-legacy'] })],
         contextSources: [{ token: 'im:g2', kind: 'persistent', label: 'dsh-2', addedBy: 'user', addedAt: 1 }],
       },
+      lookupMiss: ['m-legacy'],
     })
     await settle()
     await expandEntry(face, 0)
-    const jump = face.container.querySelector('[data-testid="yzj-advance-ref-m-legacy"]') as HTMLButtonElement
-    await act(async () => { jump.click(); await Promise.resolve() })
-    expect(focused).toEqual([{ groupId: 'g2' }])
+    const chip = face.container.querySelector('[data-testid="yzj-advance-ref-m-legacy"]')
+    expect(chip?.tagName).toBe('SPAN')
+    expect(chip?.textContent).toBe('聊 群消息')
+    await act(async () => { (chip as HTMLElement).click(); await Promise.resolve() })
+    expect(focused).toEqual([])
+    expect(getWorkbenchDomain()).toBe('advance')
     dispose()
     act(() => { face.root.unmount() })
   })
@@ -810,23 +814,6 @@ describe('YzjAdvancePane', () => {
     act(() => { face.root.unmount() })
   })
 
-  it('裸 msgId ref 命中后渲染事件行不露裸 id(视觉走查 08-21)', async () => {
-    const face = mountPane({
-      items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行' })],
-      detail: {
-        item: item({ advanceId: 'A-1', stage: 'running', title: '试运行' }),
-        entries: [entry({ entryId: 'E-1', sourceType: '对话', changeType: '进度更新', summary: '群信号', refs: ['msg-prd'] })],
-      },
-    })
-    await settle()
-    await expandEntry(face, 0)
-    const row = face.container.querySelector('[data-testid="yzj-advance-ref-msg-prd"]')
-    expect(row).not.toBeNull()
-    expect(row?.textContent).toContain('老黎')
-    expect(row?.textContent).not.toContain('6a842792')
-    act(() => { face.root.unmount() })
-  })
-
   it('dp-* 池 ref 渲染事件行并按 jumpToken 锚点定位(视觉走查 08-21)', async () => {
     setWorkbenchDomain('advance')
     const focused: ImFocusTarget[] = []
@@ -849,19 +836,26 @@ describe('YzjAdvancePane', () => {
     act(() => { face.root.unmount() })
   })
 
-  it('msg ref 未命中降级「聊 群消息」不露裸 id', async () => {
+  it('im: msg ref 未命中仍可按锚点直达(裸 msgId 已退役, gap §24.39)', async () => {
+    setWorkbenchDomain('advance')
+    const focused: ImFocusTarget[] = []
+    const dispose = subscribeImGroupFocus(target => { focused.push(target) })
     const face = mountPane({
       items: [item({ advanceId: 'A-1', stage: 'running', title: '试运行' })],
       detail: {
         item: item({ advanceId: 'A-1', stage: 'running', title: '试运行' }),
-        entries: [entry({ entryId: 'E-1', sourceType: '对话', changeType: '备注', summary: '旧信号', refs: ['m-gone'] })],
+        entries: [entry({ entryId: 'E-1', sourceType: '对话', changeType: '备注', summary: '旧信号', refs: ['im:g2:m-gone'] })],
       },
-      lookupMiss: ['m-gone'],
+      lookupMiss: ['im:g2:m-gone'],
     })
     await settle()
     await expandEntry(face, 0)
-    const chip = face.container.querySelector('[data-testid="yzj-advance-ref-m-gone"]')
+    const chip = face.container.querySelector('[data-testid="yzj-advance-ref-im:g2:m-gone"]')
+    expect(chip?.tagName).toBe('BUTTON')
     expect(chip?.textContent).toBe('聊 群消息')
+    await act(async () => { (chip as HTMLButtonElement).click(); await Promise.resolve() })
+    expect(focused).toEqual([{ groupId: 'g2', anchorMsgId: 'm-gone' }])
+    dispose()
     act(() => { face.root.unmount() })
   })
 

@@ -136,13 +136,14 @@ try {
   await page.waitForTimeout(4000)
   await page.screenshot({ path: join(OUT, '1-detail-source.png') })
 
-  // 决策 39 后续:原始信息挂在事元下 — 展开最新一条事元(seed)点原始信息行跳转
+  // 决策 39 后续:原始信息挂在事元下 — 展开最新一条事元(seed,时间线新在前=first)
+  // 点原始信息行跳转。last 曾是错的:指向最旧事元,事元多了后 ref row 永远找不到。
   const toggles = page.locator('[data-testid^="yzj-advance-entry-toggle-"]')
-  const lastToggle = toggles.last()
-  if (await lastToggle.count() === 0) {
+  const seedToggle = toggles.first()
+  if (await seedToggle.count() === 0) {
     ok('entry toggle rendered', false, 'no entry rows on the timeline')
   } else {
-    await lastToggle.click()
+    await seedToggle.click()
     await page.waitForTimeout(1500)
     const jump = page.locator(`[data-testid="yzj-advance-ref-im:${groupId}:${msgId}"]`)
     if (await jump.count() === 0) {

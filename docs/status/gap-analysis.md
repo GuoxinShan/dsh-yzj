@@ -1241,6 +1241,16 @@ Dream 路（跨事项推荐）纪律入 dreamAskPrompt（顺手落推荐事元�
 | 读时归一化 | todo `normalizeTodoStatus` 的 pending 折叠、advance `normalizeStage` 的 draft/updated 折叠删除；**非法值兜底保留**（SQLite 自由字符串，未知值仍 fold 回 todo/running）；todo-pane `laneStatusOf` 客户端镜像删除 | todo.spec pending 断言删、用例改 garbage 测兜底 |
 | 客户端残留 | conv-list `topicNavLabel` 的 legacy「群名 · 」前缀剥离删除（存量 title 0 条带前缀，后缀剥离保留）；room-shell「legacy sidebar panel」陈旧注释改「top-bar panel」 | group-space.spec 前缀断言删 |
 
-**保留边界（明示）**：① advance refs 的裸 msgId 回退（index.ts advance-ref-lookup + advance-pane jumpToMsg 降级）——真机 72 条事元中 38 条裸 msgId refs，bound log 命中率仅 11/38（其余指向的消息已不在捞取范围），**无法机械迁移**，运行时回退是活存量处理而非死代码；② yzj-cwd attachYzjSession 的 mismatch 容错——防御活的 harness header 差异，非迁移路径；③ `composeHandoffDigest`（handoff-digest.ts）——「丢进群」picker 的活组合器（home-chrome.tsx 消费），仅 home-open 侧的 H9 inject 消费删除。
+**保留边界（明示；① 已被同日再续推翻——用户拍板彻底删，见下文「再续」）**：① advance refs 的裸 msgId 回退（index.ts advance-ref-lookup + advance-pane jumpToMsg 降级）——真机 72 条事元中 38 条裸 msgId refs，bound log 命中率仅 11/38（其余指向的消息已不在捞取范围），**无法机械迁移**，运行时回退是活存量处理而非死代码；② yzj-cwd attachYzjSession 的 mismatch 容错——防御活的 harness header 差异，非迁移路径；③ `composeHandoffDigest`（handoff-digest.ts）——「丢进群」picker 的活组合器（home-chrome.tsx 消费），仅 home-open 侧的 H9 inject 消费删除。
 
 验收：全量测试 462 绿（真实 CLI 冒烟首轮 1 条网络超时，重跑过）+ typecheck 0 错 + build/bundle 绿 + GUI 重启回归。
+
+**§24.39 再续（同日，裸 msgId 回退彻底退役）**：上文保留边界 ① 被用户拍板推翻——「彻底删，接受失效」。advance refs 的裸 msgId 回退全链删除：
+
+| 面 | 交付 | 证据 |
+|---|---|---|
+| host 扫描 | index.ts `advance-ref-lookup` 删「扫全部绑定会话 bound log 补 jumpToken」块；裸 msgId token 不再产生 hit（27 条查不到归属的失效是用户接受的代价，11 条能查到的一并失效） | rpc spec 四形态改 dp→msg / dp→doc / im: 直查 / 裸 msgId+miss 双 miss，断言 3 hit |
+| client 猜群 | advance-pane `jumpToMsg`（恰一订阅群猜群跳转）删除；`jumpToSourceMsg` 只认 `im:g:m` 锚点直达，无锚点不动作；未命中 msg chip 仅 `im:` 格式可点，裸 msgId 渲染不可点泛化 chip（补 data-testid） | client spec：裸 msgId SPAN 不可点+零 focus、im: 未命中 BUTTON 仍锚点直达 |
+| 保留路径（明示） | `im:<g>:<m>` 直查、dp-* 池 id 还原、doc 文件名解析全部不变；「发消息」动作的 imGroupTokens/imGroupLabel（决策 41）不受影响 | dp-* 与 im: 命中渲染事件行用例保留绿 |
+
+验收：全量 461 绿（净 -1：裸 msgId 命中渲染用例场景已死删除）+ typecheck 0 错 + build/bundle 绿 + GUI 重启回归。

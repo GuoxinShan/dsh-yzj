@@ -859,8 +859,9 @@ function imCacheStore(): SqliteDb {
         // 消息本体）解析成 谁/何时/说了什么；doc refs 经 `doc get` 拿文件名
         // （进程内缓存）。而板渲染三层树的事件层。
         // 08-21 视觉走查扩展: dp-* 池 id → 蓄水池条目(永不删)还原原始 msg/doc;
-        // 裸 msgId(legacy refs) → 扫全部绑定会话的 bound log;命中带 jumpToken
-        // (im:<g>:<m>) 让点击直达那条消息。
+        // `im:<g>:<m>` token 直查 bound log(捞过的消息本体)还原 谁/何时/说了什么。
+        // 裸 msgId(legacy refs)已彻底退役(2026-08-25, gap §24.39):不再扫绑定 log,
+        // 存量裸 id refs 不再解析(用户拍板接受失效)。
         const io = homeIoFrom(ctx.get('yzjHome'))
         const refsRaw = typeof payload === 'object' && payload !== null
           ? (payload as Record<string, unknown>).refs
@@ -937,15 +938,6 @@ function imCacheStore(): SqliteDb {
             const entry = io.getLog(match[1]!)?.entries.find(row => row.msgId === match[2])
             if (entry === undefined) continue
             hits.push({ token: ref.token, kind: 'msg', fromName: entry.fromName, content: entry.content.slice(0, 80), sentAt: entry.sentAt, jumpToken: ref.token })
-            continue
-          }
-          // 裸 msgId(legacy refs):扫全部绑定会话的 bound log,命中补 jumpToken。
-          if (ref.kind !== 'msg') continue
-          for (const binding of io.listBindings?.() ?? []) {
-            const entry = io.getLog(binding.yzjConversationId)?.entries.find(row => row.msgId === ref.token)
-            if (entry === undefined) continue
-            hits.push({ token: ref.token, kind: 'msg', fromName: entry.fromName, content: entry.content.slice(0, 80), sentAt: entry.sentAt, jumpToken: `im:${binding.yzjConversationId}:${ref.token}` })
-            break
           }
         }
         return { ok: true, value: { hits } }

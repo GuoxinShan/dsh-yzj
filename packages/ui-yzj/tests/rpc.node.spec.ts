@@ -258,14 +258,13 @@ describe('createRpcHandler', () => {
     expect(result.ok && (result.value as { contextSources: { token: string }[] }).contextSources.map(row => row.token)).toEqual(['im:g1'])
   })
 
-  it('advance-ref-lookup resolves dp-* pool refs and bare msgIds, misses stay out (视觉走查 08-21)', async () => {
+  it('advance-ref-lookup resolves dp-* pool refs and im: tokens, misses stay out (视觉走查 08-21; 裸 msgId 已退役 gap §24.39)', async () => {
     const ctx = mountBridge({
       'doc get --id doc-9': runOf({ fileName: '产品定义卡.otl' }),
     })
     const log = {
       entries: [
         { msgId: 'm9', fromName: '老黎', content: '覆盖率到 80', sentAt: 1_755_600_000_000 },
-        { msgId: 'm-bare', fromName: '王剑', content: '裸 id 时代引用的消息', sentAt: 1_755_600_001_000 },
       ],
     }
     ctx.provide('yzjHome', {
@@ -288,6 +287,7 @@ describe('createRpcHandler', () => {
       refs: [
         { token: 'dp-1-1', kind: 'other' },
         { token: 'dp-1-2', kind: 'other' },
+        { token: 'im:g1:m9', kind: 'msg' },
         { token: 'm-bare', kind: 'msg' },
         { token: 'm-missing', kind: 'msg' },
       ],
@@ -297,7 +297,7 @@ describe('createRpcHandler', () => {
     expect(hits).toHaveLength(3)
     expect(hits[0]).toMatchObject({ token: 'dp-1-1', kind: 'msg', fromName: '老黎', content: '覆盖率到 80', jumpToken: 'im:g1:m9' })
     expect(hits[1]).toMatchObject({ token: 'dp-1-2', kind: 'doc', content: '产品定义卡.otl', docId: 'doc-9' })
-    expect(hits[2]).toMatchObject({ token: 'm-bare', kind: 'msg', fromName: '王剑', jumpToken: 'im:g1:m-bare' })
+    expect(hits[2]).toMatchObject({ token: 'im:g1:m9', kind: 'msg', fromName: '老黎', jumpToken: 'im:g1:m9' })
   })
 
   it('model-default endpoints project their services', async () => {

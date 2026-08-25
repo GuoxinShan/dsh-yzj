@@ -83,7 +83,7 @@ function entryOriginOf(sourceType: string, refs: readonly string[]): string {
   return order.filter(k => kinds.has(k)).map(k => REF_LABEL[k] ?? '来源').join('·')
 }
 
-/** 决策 39: `im:<groupId>:<msgId>` msg ref → 事件级定位锚点；裸 msgId 是 legacy（无群信息，只能降级跳群）。 */
+/** 决策 39: `im:<groupId>:<msgId>` msg ref → 事件级定位锚点。 */
 function msgAnchorOf(raw: string): { groupId: string; msgId: string } | null {
   const match = /^im:([^:\s]+):(.+)$/.exec(raw)
   if (match === null) return null
@@ -316,23 +316,16 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
   const [expandedEntries, setExpandedEntries] = useState<ReadonlySet<string>>(new Set())
   const [draft, setDraft] = useState({ title: '', goal: '', metrics: '', assignee: '', targetDate: '', background: '' })
   const [error, setError] = useState('')
-  /** msg 类事元/来源跳转：带渠道 token 直达该群并定位那条消息（决策 39）；裸 msgId 降级用订阅渠道猜群。 */
+  /** 订阅 im: 渠道 token（决策 41 发消息动作的投递目标）。 */
   const imGroupTokens = (detail?.contextSources ?? []).map(row => asString(row.token)).filter(token => token.startsWith('im:'))
   /** 第一个订阅群的显示名(发消息动作的投递目标文案)。 */
   const imGroupLabel = asString((detail?.contextSources ?? []).map(asRecord).find(row => asString(row.token).startsWith('im:'))?.label) || '订阅群'
-  const jumpToMsg = (): void => {
-    if (imGroupTokens.length === 1) requestImGroupFocus({ groupId: imGroupTokens[0]!.slice(3) })
-    setWorkbenchDomain('im')
-  }
-  /** 事元 msg ref 跳转（决策 39）：`im:g:m` 直达消息；legacy 裸 msgId 回退 jumpToMsg。 */
+  /** 事元 msg ref 跳转（决策 39）：`im:g:m` 直达群并定位那条消息；无锚点 token 不动作。 */
   const jumpToSourceMsg = (raw: string): void => {
     const anchor = msgAnchorOf(raw)
-    if (anchor !== null) {
-      requestImGroupFocus({ groupId: anchor.groupId, anchorMsgId: anchor.msgId })
-      setWorkbenchDomain('im')
-      return
-    }
-    jumpToMsg()
+    if (anchor === null) return
+    requestImGroupFocus({ groupId: anchor.groupId, anchorMsgId: anchor.msgId })
+    setWorkbenchDomain('im')
   }
   const [scanLine, setScanLine] = useState('尚未巡检')
   /** Dream 蓄水池水位行(spec §17.3)。 */
@@ -412,7 +405,8 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
         const token = stripRefPrefix(asString(raw))
         if (token === '' || seen.has(token)) continue
         const kind = refKindOf(asString(entry.sourceType), token)
-        // host 全量可解:doc → 文件名;msg → im: 直查 + 裸 msgId 扫绑定 log;dp-* 池 id 也能还原(视觉走查 08-21)。
+        // host 全量可解:doc → 文件名;msg → im: 直查;dp-* 池 id 也能还原(视觉走查 08-21)。
+        // 裸 msgId(legacy refs)已彻底退役(2026-08-25, gap §24.39):host 不再扫绑定 log,裸 id 不再产生 hit。
         if (kind !== 'msg' && kind !== 'doc' && !token.startsWith('dp-')) continue
         seen.add(token)
         wanted.push({ token, kind })
@@ -1232,20 +1226,20 @@ export function YzjAdvancePane(props: AdvancePaneProps) {
                                         </button>
                                       )
                                     }
-                                    // 未命中降级:一律泛化类型名,不露裸 id;doc 保留直跳,msg 点击仍走锚点/猜群。
+                                    // 未命中降级:一律泛化类型名,不露裸 id;doc 保留直跳,msg 仅 im: 锚点 token 可点(裸 msgId 已退役)。
                                     const href = refHref(kind, id)
                                     const label = `${REF_ICON[kind] ?? '源'} ${REF_LABEL[kind] ?? '来源'}`
                                     if (href !== null) {
                                       return <a key={raw} className={css.refChip} href={href} target="_blank" rel="noreferrer" title={raw} data-testid={`yzj-advance-ref-${id}`}>{label}</a>
                                     }
-                                    if (kind === 'msg') {
+                                    if (kind === 'msg' && msgAnchorOf(id) !== null) {
                                       return <button key={raw} type="button" className={css.refChip} title={`打开来源群消息 ${raw}`} data-testid={`yzj-advance-ref-${id}`} onClick={() => { jumpToSourceMsg(id) }}>聊 群消息</button>
                                     }
                                     const domain = kind === 'todo' ? 'todo' : kind === 'event' ? 'calendar' : null
                                     if (domain !== null) {
                                       return <button key={raw} type="button" className={css.refChip} title={raw} data-testid={`yzj-advance-ref-${id}`} onClick={() => { setWorkbenchDomain(domain) }}>{label}</button>
                                     }
-                                    return <span key={raw} className={css.refChip} title={raw}>{label}</span>
+                                    return <span key={raw} className={css.refChip} title={raw} data-testid={`yzj-advance-ref-${id}`}>{label}</span>
                                   })}
                                   </span>
                                 </>
