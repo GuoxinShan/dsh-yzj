@@ -25,11 +25,11 @@ workspace 六包对 `@deepseek-ai/*` 的 `link:../../../deepseek-harness/...` **
 ```
 packages/       @dsh-yzj/* workspace 包（均 private、ESM；开发态，发布经根聚合）
   bridge/         ctx.yzjBridge —— 有界子进程通道：argv 数组直启 yzj-cli
-  tool-yzj/       模型面工具族 + 写操作确认 guard（风险表）+ ctx.yzjTodo 服务
+  tool-yzj/       模型面工具族 + 写操作确认 guard（风险表）+ ctx.yzjTodo 服务（泳道待办）
   ui-yzj/         dsh.client 双面包：node half 为 /yzj RPC 通道 + write-gate，
                   browser half 为 toolview 富卡片 + 云之家工作台（侧栏单入口 + 顶栏页签 + 三栏；悬浮球已退役）
-  robot-yzj/      机器人通道（入站 WS + 出站 webhook，见 docs/spec/robot-channel-plan.md）
-  memory-yzj/     记忆库（vault + dream 固化 + memory_* 工具）
+  # robot-yzj / memory-yzj 已彻底退役删除（决策 53，2026-08-25）——包、RPC、
+  # 工具、话题交互面全无；历史见 git 与 docs/spec/*-plan.md 档案
   model-yzj/      插件级默认模型路由
 根 = @dsh-yzj/bundle（monobundle）：tsdown 聚合六包 host half 进 lib/*.mjs +
   scripts/copy-client.mjs 搬运 ui-yzj closure bundle 为 lib/client.js；

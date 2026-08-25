@@ -1,7 +1,7 @@
 {
   "name": "@dsh-yzj/bundle",
   "version": "0.1.0",
-  "description": "云之家 (Yunzhijia) plugin bundle for DeepSeek Harness: yzj-cli bridge, model-facing tools, robot channel, memory vault, model defaults, and a browser UI (rich tool cards + workspace panel) — monobundle aggregate of the workspace packages",
+  "description": "Yunzhijia plugin bundle for DeepSeek Harness: yzj-cli bridge, model-facing tools (six domains + swimlane todo + AI advance board), model defaults, and a browser UI (rich tool cards + workspace panel) — monobundle aggregate of the workspace packages",
   "license": "MIT",
   "type": "module",
   "packageManager": "pnpm@11.7.0",
@@ -12,8 +12,6 @@
     "./bridge": "./lib/bridge.mjs",
     "./tool-yzj": "./lib/tool-yzj.mjs",
     "./ui-yzj": "./lib/ui-yzj.mjs",
-    "./robot-yzj": "./lib/robot-yzj.mjs",
-    "./memory-yzj": "./lib/memory-yzj.mjs",
     "./model-yzj": "./lib/model-yzj.mjs",
     "./client": "./lib/client.js",
     "./ui-yzj/package.json": "./package.json",

@@ -85,11 +85,6 @@ export const YZJ_TOOL_NAMES = [  'yzj_whoami',
   'yzj_advance_scan',
   'yzj_advance_create',
   'yzj_advance_feed',
-  'memory_observe',
-  'memory_read',
-  'memory_search',
-  'memory_dream_load',
-  'memory_dream_apply',
 ] as const
 
 /** Short human titles per tool family. */
@@ -156,11 +151,6 @@ const FAMILY_TITLES: Record<string, string> = {
   yzj_advance_scan: '巡检扫描',
   yzj_advance_create: '立项推进事项',
   yzj_advance_feed: '喂入事元',
-  memory_observe: '记录观察',
-  memory_read: '读取记忆',
-  memory_search: '检索记忆',
-  memory_dream_load: '固化加载',
-  memory_dream_apply: '固化应用',
 }
 
 type UnknownRecord = Record<string, unknown>
@@ -589,59 +579,6 @@ function AdvanceBody(meta: UnknownRecord, toolName: string, jump: (target: YzjJu
   return <div className={css.rows}>{rowsOut}</div>
 }
 
-/** Memory-vault body: observe confirmation, scope counts, search hits, dream report. */
-function MemoryBody(meta: UnknownRecord, toolName: string): ReactNode {
-  const rowsOut: ReactNode[] = []
-  if (toolName === 'memory_observe') {
-    rowsOut.push(row(
-      meta.duplicate === true ? '这条已经在记忆里' : '已记入观察草稿区',
-      `open ${typeof meta.openCount === 'number' ? meta.openCount : 0}/${typeof meta.capacity === 'number' ? meta.capacity : 0}，等待 dream 固化`,
-      'obs',
-    ))
-  } else if (toolName === 'memory_read' || toolName === 'memory_dream_load') {
-    const sections = asArray(meta.sections)
-    const entities = asArray(meta.entities)
-    const observations = asArray(meta.observations)
-    rowsOut.push(row(
-      `${sections.length} 段落 · ${entities.length} 实体 · ${observations.length} 待固化`,
-      `archived ${typeof meta.archivedCount === 'number' ? meta.archivedCount : 0} · 注入上限 ${typeof meta.cap === 'number' ? meta.cap : 0} 字符`,
-      'scope',
-    ))
-    for (const [index, item] of sections.slice(0, 5).entries()) {
-      const section = asRecord(item)
-      rowsOut.push(row(`段 · ${asString(section.title) || asString(section.name)}`, asString(section.excerpt), `s${index}`))
-    }
-    if (sections.length > 5) rowsOut.push(row(`…其余 ${sections.length - 5} 段`, '', 'smore'))
-  } else if (toolName === 'memory_search') {
-    const hits = asArray(meta.hits)
-    if (hits.length === 0) rowsOut.push(row('无匹配记忆', '', 'empty'))
-    for (const [index, item] of hits.slice(0, 8).entries()) {
-      const hit = asRecord(item)
-      const kindLabel: Record<string, string> = { section: '段', entity: '实体', observation: '观察' }
-      rowsOut.push(row(
-        `${kindLabel[asString(hit.kind)] ?? asString(hit.kind)} · ${asString(hit.ref)}`,
-        asString(hit.line),
-        `h${index}`,
-      ))
-    }
-    if (hits.length > 8) rowsOut.push(row(`…其余 ${hits.length - 8} 条命中`, '', 'hmore'))
-  } else if (toolName === 'memory_dream_apply') {
-    const counts = asRecord(meta.counts)
-    const parts = ['promoted', 'dropped', 'sectionsWritten', 'entitiesWritten', 'rejected']
-      .map(key => `${{ promoted: '提升', dropped: '丢弃', sectionsWritten: '段写', entitiesWritten: '实体写', rejected: '拒绝' }[key] ?? key} ${typeof counts[key] === 'number' ? counts[key] : 0}`)
-      .join(' · ')
-    rowsOut.push(row(`固化完成 ${asString(meta.logId)}`, parts, 'dream'))
-    for (const [index, item] of asArray(meta.results).slice(0, 5).entries()) {
-      const result = asRecord(item)
-      rowsOut.push(row(
-        `${result.ok === true ? '✓' : '✗'} ${asString(result.decision)} — ${asString(result.detail)}`,
-        asString(result.reason),
-        `r${index}`,
-      ))
-    }
-  }
-  return rowsOut.length === 0 ? null : <div className={css.rows}>{rowsOut}</div>
-}
 
 /** Contact-domain body (whoami / search / details). */function ContactBody(meta: UnknownRecord): ReactNode {  const list = asArray(meta.list)
   const record = asRecord(meta.record)
@@ -755,7 +692,6 @@ export function YzjToolCard({ toolName, block, openPanel }: ToolCallViewProps & 
   else if (toolName.startsWith('yzj_advance_')) body = AdvanceBody(meta, toolName, jump)
   else if (toolName.startsWith('yzj_im_')) body = ImBody(meta, jump)
   else if (toolName.startsWith('yzj_contact_') || toolName === 'yzj_whoami') body = ContactBody(meta)
-  else if (toolName.startsWith('memory_')) body = MemoryBody(meta, toolName)
   if (body === null) body = ActionBody(meta, toolName)
 
   return (

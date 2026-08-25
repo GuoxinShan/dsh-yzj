@@ -73,30 +73,3 @@ export function subscribeImGroupFocus(listener: (target: ImFocusTarget) => void)
   return () => { imFocusListeners.delete(listener) }
 }
 
-/**
- * Topic-drawer open latch (决策 41 讨论回环): the advance pane's 问助手/回到对话
- * 继续聊 asks the im domain to open the topic drawer straight onto an agent Q&A
- * surface — not the bare group timeline. Latched (not fire-and-forget) because
- * the target group transcript may mount after the request (domain switch first).
- */
-export interface TopicOpenRequest {
-  readonly groupId: string
-  /** Open this existing topic session; empty → the transcript mints one with `title`. */
-  readonly sessionId?: string
-  readonly title?: string
-}
-
-let pendingTopicOpen: TopicOpenRequest | null = null
-
-/** Latch a topic-drawer open request for one group room. */
-export function requestTopicOpen(request: TopicOpenRequest): void {
-  pendingTopicOpen = request
-}
-
-/** Read-and-clear the latch when the group matches; null otherwise. */
-export function consumeTopicOpen(groupId: string): TopicOpenRequest | null {
-  if (pendingTopicOpen === null || pendingTopicOpen.groupId !== groupId) return null
-  const request = pendingTopicOpen
-  pendingTopicOpen = null
-  return request
-}

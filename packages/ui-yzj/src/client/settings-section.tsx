@@ -1,8 +1,7 @@
 /**
  * The 云之家 settings section (设置 → 云之家): login banner only.
- * 机器人管理卡已撤下（决策 50，2026-08-23）：产品面未想清；robot-yzj 插件与
- * memory-yzj 仍挂载（通道/工具后台在跑），robot-pane.tsx / memory-pane.tsx
- * 保留待恢复或删除。Memory vault UI 本来就 deferred（R21 v1.6）。
+ * 机器人/记忆管理卡已随决策 53（2026-08-25）彻底退役删除——包、RPC、卡片
+ * 全无；此 section 只剩登录态。
  */
 import type { YzjPanelInject } from './rpc.ts'
 import { YzjLoginBanner } from './login-banner.tsx'
@@ -11,7 +10,7 @@ import css from './settings-section.module.css'
 /** Props: the settings-section owner shares plus the injected RPC face. */
 export interface YzjSettingsSectionProps extends Partial<YzjPanelInject> {}
 
-/** The 云之家 settings section: login only (robot/memory cards removed, 决策 50). */
+/** The 云之家 settings section: login only（robot/memory 退役，决策 53）。 */
 export function YzjSettingsSection(props: YzjSettingsSectionProps): React.ReactNode {
   const face = props as YzjPanelInject
   return (

@@ -21,7 +21,6 @@ import {
 } from './home-open.ts'
 import type { YzjWriteRecord } from './write-gate.ts'
 import type { TopicEnsureInput, TopicEnsureResult, TopicRecord } from '@dsh-yzj/tool-yzj/src/topics.ts'
-import { sessionHasSummonWindow } from '@dsh-yzj/tool-yzj/src/index.ts'
 
 /** CLI `--limit` cap for `im message list` (measured). */
 export const CLI_LIST_PAGE = 20
@@ -732,70 +731,6 @@ export async function runTodoSession(options: {
   live.followup(userTurn(todoDispatchPrompt(options.todo)))
   publishHostSession(live, `待办 · ${options.todo.title}`, true, true)
   return { sessionId }
-}
-
-/**
- * Ask the topic agent without focusing native Chat. Resume-or-create the
- * topic session, plant the summon window once as a plugin inject, then
- * `followup` a user turn (H18 / pitfall-031). Opening the topic does not
- * start a turn.
- */
-export async function askTopicAssistant(options: {
-  readonly home: HomeIoFace
-  readonly agents: HomeOpenAgents & {
-    get(sessionId: string): { followup?: (message: unknown) => void } | undefined
-  }
-  readonly cwd: string
-  readonly topicSessionId: string
-  readonly text: string
-  readonly agentOptions?: TopicAgentRoute
-  readonly agentPreset?: string
-  readonly setup?: TopicAgentSetup
-}): Promise<{ ok: true } | { error: string }> {
-  const text = options.text.trim()
-  if (text === '') return { error: 'home-topic-ask: text is empty' }
-  const topic = options.home.getTopicBySession?.(options.topicSessionId)
-  if (topic === undefined) return { error: 'home-topic-ask: not a topic session' }
-  if (options.agents.get(options.topicSessionId) === undefined) {
-    try {
-      await options.agents.resume({
-        resumeSessionId: options.topicSessionId,
-        ...(options.agentOptions === undefined ? {} : { agentOptions: options.agentOptions }),
-        ...(options.setup === undefined ? {} : { setup: options.setup }),
-      })
-    } catch {
-      await options.agents.create({
-        sessionId: options.topicSessionId,
-        meta: {
-          cwd: options.cwd,
-          ...(options.agentPreset === undefined ? {} : { agentPreset: options.agentPreset }),
-        },
-        ...(options.agentOptions === undefined ? {} : { agentOptions: options.agentOptions }),
-        ...(options.setup === undefined ? {} : { setup: options.setup }),
-      })
-    }
-  }
-  const live = options.agents.get(options.topicSessionId) as
-    | {
-      followup?: (message: unknown) => void
-      inject?: (message: unknown) => void
-      session?: { events?: readonly { type: string; data: unknown }[] }
-    }
-    | undefined
-  if (live?.followup === undefined) return { error: 'home-topic-ask: agent followup unavailable' }
-  const window = options.home.formatSummonWindow(topic.yzjConversationId, undefined, options.topicSessionId)
-  if (window !== '' && !sessionHasSummonWindow(live.session?.events ?? [])) {
-    live.inject?.(pluginTurn(window))
-  }
-  live.followup(userTurn(text))
-  if (topic.rootMsgId !== undefined && topic.rootMsgId !== '' && options.home.ensureTopic !== undefined) {
-    await options.home.ensureTopic({
-      yzjConversationId: topic.yzjConversationId,
-      source: topic.source,
-      rootMsgId: topic.rootMsgId,
-    })
-  }
-  return { ok: true }
 }
 
 /** One topic row in the workbench session list / topic drawer. */

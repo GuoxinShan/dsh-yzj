@@ -166,18 +166,6 @@ describe('applyWriteGate', () => {
     expect(h.gate.list('s1')).toEqual([])
   })
 
-  it('skips inbound-owned bound homes so the group suggestion card answers', async () => {
-    const ctx = new Context()
-    ctx.provide('yzjRobot', { ownsConfirm: (id: string) => id === 'yzj-home-inbound' })
-    applyWriteGate(ctx)
-    const outcome = await ctx.waterfall('approval/request', {
-      agent: { session: { id: 'yzj-home-inbound', events: [{ type: 'approval/asked', data: { id: 'w1', callId: 'c1' } }] } },
-      toolName: 'yzj_im_message_send',
-      callId: 'c1',
-    }, () => Promise.resolve<YzjApprovalOutcome>('unavailable'))
-    expect(outcome).toBe('unavailable')
-  })
-
   it('still claims a pick-group yzj-home-* that ConfirmBroker does not own', async () => {
     const ctx = new Context()
     ctx.provide('yzjRobot', { ownsConfirm: () => false })
@@ -227,25 +215,8 @@ describe('applyWriteGate', () => {
     await expect(pending).resolves.toBe('allowed-once')
   })
 
-  it('skips an inbound plugin turn even on a yzj-home-* session', async () => {
-    const ctx = new Context()
-    ctx.provide('yzjRobot', { ownsConfirm: () => true })
-    applyWriteGate(ctx)
-    const outcome = await ctx.waterfall('approval/request', {
-      agent: {
-        session: {
-          id: 'yzj-home-inbound',
-          events: [
-            { type: 'user/message', data: { source: { kind: 'plugin', plugin: 'robot-yzj' } } },
-            { type: 'approval/asked', data: { id: 'w1', callId: 'c1' } },
-          ],
-        },
-      },
-      toolName: 'yzj_im_message_send',
-      callId: 'c1',
-    }, () => Promise.resolve<YzjApprovalOutcome>('unavailable'))
-    expect(outcome).toBe('unavailable')
-  })
+  // 决策 53：robot-yzj 已退役删除——ownsConfirm 代理路径与 inbound-plugin 跳过
+  // 分支随之移除（yzj-robot-* 残留前缀跳过保留）。
 
 
 

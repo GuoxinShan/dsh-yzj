@@ -70,8 +70,9 @@ const WRITE_SPECS: Record<string, DangerousSpec> = {
     level: 'standard',
     when: rewritesAdvanceBaseline,
   },
-  // robot-yzj 已摘挂载（决策 51）：robot_notify/robot_continue/robot_share_write 条目随之移除——
-  // 工具不注册，条目永不命中，留着是死重。包保留，恢复挂载时连条目一起加回。
+  // robot-yzj 已彻底退役（决策 53，2026-08-25；决策 50 撤 UI / 51 摘挂载的同族终局）：
+  // 包与 robot_* 工具不复存在——历史机器人会话（yzj-robot-*）的写请求由
+  // write-gate 按残留前缀跳过 GUI 卡。恢复只能从 git 历史重建。
 }
 
 /** Projection fields whose rewrite replaces the baseline every later comparison rests on. */

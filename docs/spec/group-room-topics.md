@@ -1,6 +1,6 @@
 # 群房间 + 话题会话：v2.0 产品法
 
-> 版本：v1.20（已拍板；**v1.20 = 话题功能 UI 撤下**（决策 50，2026-08-23）：话题抽屉/「交给助手」/话题 chip 从群房间撤下，讨论回环落点改为群房间+banner；机制层（topic-drawer.tsx / 话题 latch / R29 投递）保留待恢复或删除——产品面未想清。v1.19 = 群房间/话题「喂给推进」：用户直写事元，见 [`ai-advance-design.md`](ai-advance-design.md) §11。v1.18 = 第五页签「推进」。v1.17 = R31 侧栏单入口：左边只留「云之家」，域用顶栏页签切。v1.16 = 工作台顶栏页签 + 日程日/周/月/年；v1.13 = 话题挂 standard preset；v1.11 = R27 盖层）
+> 版本：v1.21（决策 53：话题功能面退役删除，见 §11；v1.20 = 话题功能 UI 撤下——决策 50）
 > 日期：2026-08-19（v1.19 / v1.18 / v1.17 / v1.16）；2026-08-18（v1.6 / v1.5 / v1.4 / v1.3 / v1.2）；v1.1 2026-08-17 下午；v1.0 2026-08-17 上午
 > 决策人：Guoxin Shan
 > 定位：**v2.0 产品法**，覆盖 [`dsh-home-session.md`](dsh-home-session.md) v1.x 的会话基数与视图模型（D2/D3/D5/D6），以及 [`dsh-home-transcript.md`](dsh-home-transcript.md) 的融合视图与 composer 双意图条款（T2/T10/T11）。存储事实（T1：①② 不进 `Session.append`）与写路径（D9）继续有效。机器人协议仍见 [`robot-channel-plan.md`](robot-channel-plan.md)；其 §3.6 S1 的 per-thread 锚定在本法复活（见 §5）。
@@ -322,3 +322,13 @@ TopicAnchorIndex                           // S1 复活
 | 周 / 日 | 7:00–21:00 时间轴，事件按 `startDate`/`endDate` 绝对定位 |
 
 不做：创建日程表单、会议页、AI 速记页、左侧「我的日历」勾选（无多日历 CLI）。
+
+## 11. 决策 53 增补：话题功能面退役（2026-08-25）
+
+决策 50（撤 UI 入口）→ 51（机器人/记忆摘挂载）→ **53（彻底退役删除）** 的终局。用户拍板「机器人话题记忆那些那种都干掉吧」：
+
+- **删除**：话题抽屉（topic-drawer）、话题 latch（requestTopicOpen/consumeTopicOpen）、`home-topic-open/lens/ask` RPC、R29 话题产物投递（topic-deliver）、机器人/记忆两包及其全部外围。
+- **保留（存储，非功能）**：`topics.ts` 的 TopicRecord 与 home.ts 绑定表——群房间视图（roomSnapshot/groupSpaceSnapshot）与 conv-list L1 聚合仍消费它；历史会话（yzj-topic-*）仍在侧栏可见。这是「1 群 = 1 群房间 + N 话题」存储模型的延续，不是功能面。
+- **恢复路径**：无软恢复，git 历史重建。
+
+本 spec 其余章节为 v2.0 产品法历史记录（群房间模型仍有效；话题交互面以本节退役状态为准）。

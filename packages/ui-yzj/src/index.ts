@@ -12,17 +12,19 @@ import { homedir } from 'node:os'
 import { join as joinPath } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ConnectionRpcHandler } from '@deepseek-ai/dsh-client-connection'
-import type {} from '@dsh-yzj/bridge'
-import type {} from '@dsh-yzj/tool-yzj'
+// 深路径 type-only import：tool-yzj 源码入口带出全部 cordis augmentation（yzjBridge/yzjHome/
+// yzjTodo/yzjAdvance 的 Context 声明散在各域文件）——包入口 d.ts 不 re-export 它们，浅 import
+// 拿不到。此链原先由 bound-io 的 sessionHasSummonWindow 深路径隐式携带，决策 53 拆除时断链，
+// 工具面类型静默 any（pitfall 级教训：删除深路径 import 前先查它附带加载的 augmentation）。
+import type {} from '@dsh-yzj/tool-yzj/src/index.ts'
 import { applyWriteGate, type YzjWriteRecord } from './write-gate.ts'
-import { openBoundHome, openTopicHome, isPlaceholderRoomTitle, topicAgentRoute, topicAgentComposition, type HomeOpenFace } from './home-open.ts'
+import { openBoundHome, isPlaceholderRoomTitle, topicAgentRoute, topicAgentComposition, type HomeOpenFace } from './home-open.ts'
 import {
   backfillBoundLog, fusedSnapshot, groupSpaceSnapshot, handoffToGroup, homeIoFrom, parseImSend, roomSnapshot, roomSnapshotForGroup, sendImAndLog,
-  sessionEventsOf, topicLensBubbles, askTopicAssistant, runDreamSession, runTodoSession,
+  sessionEventsOf, runDreamSession, runTodoSession,
 } from './bound-io.ts'
 import { digestCandidates } from './handoff-digest.ts'
 import { attachYzjSession, ensureYzjHostWorkspace } from './yzj-cwd.ts'
-import { applyTopicDeliver } from './topic-deliver.ts'
 import { runAdvanceAction } from './advance-action.ts'
 import { parseContactUser } from './contact-parse.ts'
 import { collectCalendarEvents } from '@dsh-yzj/tool-yzj/src/calendar-range.ts'
@@ -1124,256 +1126,26 @@ function imCacheStore(): SqliteDb {
         const settled = writeGate.decide(writeId, outcome)
         return { ok: true, value: { settled } }
       }
-      case 'robot-status': {
-        const robot = ctx.get('yzjRobot')
-        if (robot === undefined) return internalError('robot-status: yzjRobot 服务不可用（robot-yzj 未挂载）')
-        return { ok: true, value: { channels: robot.statuses() } }
-      }
-      case 'robot-overrides': {
-        const robot = ctx.get('yzjRobot')
-        if (robot === undefined) return internalError('robot-overrides: yzjRobot 服务不可用（robot-yzj 未挂载）')
-        return { ok: true, value: { overrides: robot.listOverrides() } }
-      }
-      case 'robot-override-set': {
-        const robot = ctx.get('yzjRobot')
-        if (robot === undefined) return internalError('robot-override-set: yzjRobot 服务不可用（robot-yzj 未挂载）')
-        const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
-        const key = stringField(record, 'key')
-        if (key === undefined) return internalError('robot-override-set endpoint requires a key payload')
-        const provider = stringField(record, 'provider')
-        const model = stringField(record, 'model')
-        if (provider === undefined && model === undefined) {
-          return internalError('robot-override-set endpoint requires provider and/or model payloads')
-        }
-        try {
-          await robot.setOverride(key, {
-            ...(provider === undefined ? {} : { provider }),
-            ...(model === undefined ? {} : { model }),
-          })
-          return { ok: true, value: { saved: true } }
-        } catch (error) {
-          return internalError(`robot-override-set failed: ${String(error)}`)
-        }
-      }
-      case 'robot-override-delete': {
-        const robot = ctx.get('yzjRobot')
-        if (robot === undefined) return internalError('robot-override-delete: yzjRobot 服务不可用（robot-yzj 未挂载）')
-        const key = stringField(payload, 'key')
-        if (key === undefined) return internalError('robot-override-delete endpoint requires a key payload')
-        try {
-          return { ok: true, value: { deleted: await robot.deleteOverride(key) } }
-        } catch (error) {
-          return internalError(`robot-override-delete failed: ${String(error)}`)
-        }
-      }
-      case 'robot-models': {
-        const robot = ctx.get('yzjRobot')
-        if (robot === undefined) return internalError('robot-models: yzjRobot 服务不可用（robot-yzj 未挂载）')
-        try {
-          return { ok: true, value: { catalog: await robot.modelCatalog() } }
-        } catch (error) {
-          return internalError(`robot-models failed: ${String(error)}`)
-        }
-      }
-      case 'robot-share-list': {
-        const robot = ctx.get('yzjRobot')
-        if (robot === undefined) return internalError('robot-share-list: yzjRobot 服务不可用（robot-yzj 未挂载）')
-        const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
-        const result = robot.shareList(numberField(record, 'robotIndex') ?? 0, stringField(record, 'groupId'))
-        return { ok: true, value: result }
-      }
-      case 'robot-share-read': {
-        const robot = ctx.get('yzjRobot')
-        if (robot === undefined) return internalError('robot-share-read: yzjRobot 服务不可用（robot-yzj 未挂载）')
-        const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
-        const groupId = stringField(record, 'groupId')
-        const filename = stringField(record, 'filename')
-        if (groupId === undefined || filename === undefined) {
-          return internalError('robot-share-read endpoint requires groupId and filename payloads')
-        }
-        const result = robot.shareRead(numberField(record, 'robotIndex') ?? 0, groupId, filename)
-        return { ok: true, value: result }
-      }
-      case 'robot-open-folder': {
-        const robot = ctx.get('yzjRobot')
-        if (robot === undefined) return internalError('robot-open-folder: yzjRobot 服务不可用（robot-yzj 未挂载）')
-        const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
-        const result = robot.openFolder(numberField(record, 'robotIndex') ?? 0, stringField(record, 'groupId'))
-        return { ok: true, value: result }
-      }
-      case 'robot-share-write': {
-        const robot = ctx.get('yzjRobot')
-        if (robot === undefined) return internalError('robot-share-write: yzjRobot 服务不可用（robot-yzj 未挂载）')
-        const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
-        const groupId = stringField(record, 'groupId')
-        const filename = stringField(record, 'filename')
-        const content = stringField(record, 'content')
-        if (groupId === undefined || filename === undefined || content === undefined) {
-          return internalError('robot-share-write endpoint requires groupId, filename and content payloads')
-        }
-        try {
-          const result = await robot.shareWrite(
-            numberField(record, 'robotIndex') ?? 0,
-            groupId,
-            filename,
-            content,
-            record.overwrite === true,
-          )
-          return { ok: true, value: result }
-        } catch (error) {
-          return internalError(`robot-share-write failed: ${String(error)}`)
-        }
-      }
-      case 'robot-channels-save': {
-        const robot = ctx.get('yzjRobot')
-        if (robot === undefined) return internalError('robot-channels-save: yzjRobot 服务不可用（robot-yzj 未挂载）')
-        const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
-        const robotsRaw = Array.isArray(record.robots) ? record.robots : []
-        const robots = robotsRaw.flatMap(item => {
-          const entry = typeof item === 'object' && item !== null ? item as Record<string, unknown> : {}
-          const sendMsgUrl = stringField(entry, 'sendMsgUrl')
-          if (sendMsgUrl === undefined || sendMsgUrl === '') return []
-          return [{
-            sendMsgUrl,
-            ...(typeof entry.enabled === 'boolean' ? { enabled: entry.enabled } : {}),
-            ...(Array.isArray(entry.allowFrom) ? { allowFrom: entry.allowFrom.filter((value): value is string => typeof value === 'string') } : {}),
-            ...(stringField(entry, 'provider') === undefined ? {} : { provider: stringField(entry, 'provider') }),
-            ...(stringField(entry, 'model') === undefined ? {} : { model: stringField(entry, 'model') }),
-            ...(stringField(entry, 'cwd') === undefined ? {} : { cwd: stringField(entry, 'cwd') }),
-          }]
-        })
-        try {
-          const result = await robot.saveChannels({
-            ...(stringField(record, 'defaultProvider') === undefined ? {} : { defaultProvider: stringField(record, 'defaultProvider') }),
-            ...(stringField(record, 'defaultModel') === undefined ? {} : { defaultModel: stringField(record, 'defaultModel') }),
-            robots,
-          })
-          return { ok: true, value: result }
-        } catch (error) {
-          return internalError(`robot-channels-save failed: ${String(error)}`)
-        }
-      }
-      case 'robot-diagnostics': {
-        const robot = ctx.get('yzjRobot')
-        if (robot === undefined) return internalError('robot-diagnostics: yzjRobot 服务不可用（robot-yzj 未挂载）')
-        return { ok: true, value: { push: robot.pushDiagnostics(), confirm: robot.confirmDiagnostics() } }
-      }
-      case 'robot-notify': {
-        const robot = ctx.get('yzjRobot')
-        if (robot === undefined) return internalError('robot-notify: yzjRobot 服务不可用（robot-yzj 未挂载）')
-        const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
-        const text = stringField(record, 'text')
-        if (text === undefined || text === '') return internalError('robot-notify endpoint requires a text payload')
-        try {
-          return { ok: true, value: { sent: await robot.notify(text, numberField(record, 'robotIndex') ?? 0) } }
-        } catch (error) {
-          return internalError(`robot-notify failed: ${String(error)}`)
-        }
-      }
-      case 'robot-continue': {
-        const robot = ctx.get('yzjRobot')
-        if (robot === undefined) return internalError('robot-continue: yzjRobot 服务不可用（robot-yzj 未挂载）')
-        const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
-        const text = stringField(record, 'text')
-        if (text === undefined || text === '') return internalError('robot-continue endpoint requires a text payload')
-        const groupId = stringField(record, 'groupId')
-        try {
-          return { ok: true, value: { continued: await robot.continueConversation(text, {
-            ...(numberField(record, 'robotIndex') === undefined ? {} : { robotIndex: numberField(record, 'robotIndex') }),
-            ...(groupId === undefined ? {} : { groupId }),
-          }) } }
-        } catch (error) {
-          return internalError(`robot-continue failed: ${String(error)}`)
-        }
-      }
-      case 'robot-fork': {
-        const robot = ctx.get('yzjRobot')
-        if (robot === undefined) return internalError('robot-fork: yzjRobot 服务不可用（robot-yzj 未挂载）')
-        const sessionId = stringField(payload, 'sessionId')
-        if (sessionId === undefined || sessionId === '') return internalError('robot-fork endpoint requires a sessionId payload')
-        try {
-          return { ok: true, value: { forked: await robot.forkSession(sessionId) } }
-        } catch (error) {
-          return internalError(`robot-fork failed: ${String(error)}`)
-        }
-      }
-      case 'memory-scope': {
-        const memory = ctx.get('yzjMemory')
-        if (memory === undefined) return internalError('memory-scope: yzjMemory 服务不可用（memory-yzj 未挂载）')
-        const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
-        const scope = stringField(record, 'scope') ?? 'user'
-        try {
-          return { ok: true, value: { view: memory.readScope(scope) } }
-        } catch (error) {
-          return internalError(`memory-scope failed: ${String(error)}`)
-        }
-      }
-      case 'memory-log': {
-        const memory = ctx.get('yzjMemory')
-        if (memory === undefined) return internalError('memory-log: yzjMemory 服务不可用（memory-yzj 未挂载）')
-        const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
-        const scope = stringField(record, 'scope') ?? 'user'
-        try {
-          return { ok: true, value: { log: memory.dreamLogTail(scope, 4000) } }
-        } catch (error) {
-          return internalError(`memory-log failed: ${String(error)}`)
-        }
-      }
-      case 'memory-observe': {
-        // Panel-direct write = the user's own will (im-send/todo-create
-        // semantics): no confirmation card; source marks the provenance.
-        const memory = ctx.get('yzjMemory')
-        if (memory === undefined) return internalError('memory-observe: yzjMemory 服务不可用（memory-yzj 未挂载）')
-        const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
-        const content = stringField(record, 'content')
-        if (content === undefined || content.trim() === '') return internalError('memory-observe endpoint requires a non-empty content payload')
-        const scope = stringField(record, 'scope') ?? 'user'
-        const tags = Array.isArray(record.tags) ? record.tags.filter((value): value is string => typeof value === 'string') : []
-        try {
-          return { ok: true, value: memory.observe(scope, content, {
-            tags,
-            source: 'panel',
-            ...(typeof record.durable === 'boolean' ? { durable: record.durable } : {}),
-          }) }
-        } catch (error) {
-          return internalError(`memory-observe failed: ${String(error)}`)
-        }
-      }
-      case 'dream-state': {
-        const memory = ctx.get('yzjMemory')
-        if (memory === undefined) return internalError('dream-state: yzjMemory 服务不可用（memory-yzj 未挂载）')
-        return { ok: true, value: { state: memory.dreamSettings() } }
-      }
-      case 'dream-set': {
-        const memory = ctx.get('yzjMemory')
-        if (memory === undefined) return internalError('dream-set: yzjMemory 服务不可用（memory-yzj 未挂载）')
-        const record = typeof payload === 'object' && payload !== null ? payload as Record<string, unknown> : {}
-        if (record.enabled !== undefined && typeof record.enabled !== 'boolean') return internalError('dream-set: enabled must be a boolean')
-        const str = (key: string): string | undefined => {
-          const value = record[key]
-          return typeof value === 'string' ? value : undefined
-        }
-        try {
-          const state = memory.setDreamSettings({
-            ...(record.enabled === undefined ? {} : { enabled: record.enabled === true }),
-            ...(str('provider') === undefined ? {} : { provider: str('provider') }),
-            ...(str('model') === undefined ? {} : { model: str('model') }),
-            ...(str('dailyAt') === undefined ? {} : { dailyAt: str('dailyAt') }),
-          })
-          return { ok: true, value: { state } }
-        } catch (error) {
-          return internalError(`dream-set failed: ${String(error)}`)
-        }
-      }
-      case 'dream-run': {
-        const memory = ctx.get('yzjMemory')
-        if (memory === undefined) return internalError('dream-run: yzjMemory 服务不可用（memory-yzj 未挂载）')
-        try {
-          return { ok: true, value: await memory.dreamRun('panel') }
-        } catch (error) {
-          return internalError(`dream-run failed: ${String(error)}`)
-        }
-      }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
       case 'model-default': {
         const models = ctx.get('yzjModels')
         if (models === undefined) return internalError('model-default: yzjModels 服务不可用（model-yzj 未挂载）')
@@ -1492,79 +1264,9 @@ function imCacheStore(): SqliteDb {
         })
         return { ok: true, value: { rooms } }
       }
-      case 'home-topic-open': {
-        const home = ctx.get('yzjHome') as HomeOpenFace | undefined
-        if (home === undefined) return internalError('home-topic-open: yzjHome 服务不可用（tool-yzj 未挂载）')
-        const groupId = stringField(payload, 'groupId') ?? stringField(payload, 'yzjConversationId')
-        if (groupId === undefined) return internalError('home-topic-open endpoint requires a groupId payload')
-        const agents = agentsFace(ctx)
-        if (agents === undefined) return internalError('home-topic-open: agents 服务不可用')
-        try {
-          const rootMsgId = stringField(payload, 'rootMsgId')
-          const originWho = stringField(payload, 'originWho')
-          const originText = stringField(payload, 'originText')
-          const title = stringField(payload, 'title')
-          const groupName = stringField(payload, 'groupName')
-          const cwd = await ensureYzjHostWorkspace(ctx)
-          const route = topicAgentRoute(ctx)
-          const composition = await topicAgentComposition(ctx)
-          const value = await openTopicHome({
-            home,
-            agents,
-            yzjConversationId: groupId,
-            cwd,
-            source: 'dsh',
-            ...(rootMsgId === undefined ? {} : { rootMsgId }),
-            ...(originWho === undefined ? {} : { originWho }),
-            ...(originText === undefined ? {} : { originText }),
-            ...(title === undefined ? {} : { title }),
-            ...(groupName === undefined ? {} : { groupName }),
-            ...(route === undefined ? {} : { agentOptions: route }),
-            ...composition,
-          })
-          await attachYzjSession(ctx, value.sessionId)
-          const io = homeIoFrom(home)
-          if (io !== undefined) void backfillBoundLog(ctx, io, groupId).catch(() => undefined)
-          return { ok: true, value }
-        } catch (error) {
-          return internalError(`home-topic-open failed: ${String(error)}`)
-        }
-      }
-      case 'home-topic-lens': {
-        const io = homeIoFrom(ctx.get('yzjHome'))
-        if (io === undefined) return internalError('home-topic-lens: yzjHome 服务不可用（tool-yzj 未挂载）')
-        const sessionId = stringField(payload, 'sessionId')
-        if (sessionId === undefined) return internalError('home-topic-lens endpoint requires a sessionId payload')
-        const topic = io.getTopicBySession?.(sessionId)
-        if (topic === undefined) return internalError('home-topic-lens: not a topic session')
-        const bubbles = topicLensBubbles(topic, agentsFace(ctx) ?? { get: () => undefined })
-        return { ok: true, value: { bubbles, topicSessionId: sessionId } }
-      }
-      case 'home-topic-ask': {
-        const io = homeIoFrom(ctx.get('yzjHome'))
-        if (io === undefined) return internalError('home-topic-ask: yzjHome 服务不可用（tool-yzj 未挂载）')
-        const sessionId = stringField(payload, 'sessionId')
-        const text = stringField(payload, 'text')
-        if (sessionId === undefined) return internalError('home-topic-ask endpoint requires a sessionId payload')
-        if (text === undefined) return internalError('home-topic-ask endpoint requires a text payload')
-        const agents = agentsFace(ctx)
-        if (agents === undefined) return internalError('home-topic-ask: agents 服务不可用')
-        const cwd = await ensureYzjHostWorkspace(ctx)
-        const route = topicAgentRoute(ctx)
-        const composition = await topicAgentComposition(ctx)
-        const result = await askTopicAssistant({
-          home: io,
-          agents,
-          cwd,
-          topicSessionId: sessionId,
-          text,
-          ...(route === undefined ? {} : { agentOptions: route }),
-          ...composition,
-        })
-        if ('error' in result) return internalError(result.error)
-        await attachYzjSession(ctx, sessionId)
-        return { ok: true, value: result }
-      }
+
+
+
       case 'home-backfill': {
         const io = homeIoFrom(ctx.get('yzjHome'))
         if (io === undefined) return internalError('home-backfill: yzjHome 服务不可用（tool-yzj 未挂载）')
@@ -1641,5 +1343,4 @@ export function apply(ctx: Context): void {
   const handler = createRpcHandler(ctx, writeGate)
   ctx.connection.rpc.handle('/yzj', handler, { authority: 'loopback' })
   void ensureYzjHostWorkspace(ctx).catch(() => undefined)
-  applyTopicDeliver(ctx, writeGate)
 }

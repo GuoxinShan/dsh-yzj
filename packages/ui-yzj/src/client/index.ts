@@ -161,7 +161,6 @@ export function apply(ctx: ClientContext): void {
     homeNav: () => panelInject.homeNav?.() ?? Promise.resolve({ ok: false as const, error: { message: 'homeNav unavailable' } }),
     focusBoundSession: panelInject.focusBoundSession,
     fetchGroups: (limit, page) => panelInject.fetchGroups(limit, page),
-    robotStatus: () => panelInject.robotStatus(),
     ...(panelInject.homeOpen === undefined ? {} : { homeOpen: panelInject.homeOpen }),
   }
   ctx.effect(() => {

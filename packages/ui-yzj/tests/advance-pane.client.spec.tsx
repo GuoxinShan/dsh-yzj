@@ -12,7 +12,7 @@ import { YzjAdvancePane, queuesOf, STAGE_LABEL, formatScanStatus, parseDecisionO
 import type { AdvancePaneProps } from '../src/client/advance-pane.tsx'
 import { getAdvanceFeedback, setAdvanceFeedback } from '../src/client/advance-feedback.ts'
 import { getAdvanceAskDraft, setAdvanceAskDraft } from '../src/client/advance-ask.ts'
-import { consumeTopicOpen, getWorkbenchDomain, setWorkbenchDomain, subscribeImGroupFocus, type ImFocusTarget } from '../src/client/workbench-domain.ts'
+import { getWorkbenchDomain, setWorkbenchDomain, subscribeImGroupFocus, type ImFocusTarget } from '../src/client/workbench-domain.ts'
 
 type Rpc = { ok: true; value: unknown } | { ok: false; error: { message: string } }
 
@@ -1019,7 +1019,6 @@ describe('YzjAdvancePane', () => {
     expect(chatDraft?.text).toContain('补/更新决策请求')
     expect(getWorkbenchDomain()).toBe('im')
     // 讨论回环：话题抽屉已撤（决策 50）——预填草稿 + 切对话域 + 聚焦群，不再发话题 latch
-    expect(consumeTopicOpen('g1')).toBeNull()
     act(() => { face.root.unmount() })
   })
 
@@ -1152,7 +1151,6 @@ describe('YzjAdvancePane', () => {
     expect(draftNow?.text).toContain('A-1')
     expect(getWorkbenchDomain()).toBe('im')
     // 话题抽屉已撤（决策 50）：不发 latch，落点=群房间 + banner 草稿提示
-    expect(consumeTopicOpen('g1')).toBeNull()
     act(() => { face.root.unmount() })
   })
 
@@ -1173,7 +1171,6 @@ describe('YzjAdvancePane', () => {
     await settle()
     // 聚焦产出会话,不切域、不开话题 latch
     expect(face.focused).toEqual(['yzj-dream-20260821-101500'])
-    expect(consumeTopicOpen('g1')).toBeNull()
     expect(getWorkbenchDomain()).toBe('advance')
     act(() => { face.root.unmount() })
   })

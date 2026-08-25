@@ -1190,3 +1190,18 @@ Dream 路（跨事项推荐）纪律入 dreamAskPrompt（顺手落推荐事元�
 | 真机 | `verify-todo-swimlane.mjs` ALL PASS 21 检查点（含新增归档 4 点：完成快路径→归档不占列→折叠区→恢复回已完成）；08-24 验收探针 7 条全部归档，板面/标签轨干净 | 截图 `shots-todo-swimlane/swimlane-board.png` |
 
 全量测试绿 + typecheck 0 错。本仓归档口径与 todo-design v1.1「不做删除」一致：历史事实保留，只是视图收起。
+
+## 24.37 决策 53：机器人/记忆/话题彻底退役（2026-08-25，已落地）
+
+用户拍板「机器人话题记忆那些那种都干掉吧」——决策 50（撤 UI）/51（摘挂载）的渐进路线走到终局：**删除而非保留**。
+
+| 面 | 交付 | 证据 |
+|---|---|---|
+| 两包删除 | `packages/robot-yzj`、`packages/memory-yzj` 整包 + spike/robot + scripts/ops-wrapper、setup-ops（robot autostart 配套）+ lib/robot-yzj.mjs、memory-yzj.mjs 出口（tsdown/package.json） | workspace 5 包；build 4 files 459KB（原 6 files 688KB） |
+| RPC 面 | /yzj 删 20 个 case（robot-* 13 + memory-*/dream-* 7）+ home-topic-open/lens/ask 3 个（话题机制）；client rpc.ts 对应函数全删 | rpc.node.spec「端点已删」断言 ×11 |
+| 工具卡 | cards.tsx 删 memory_* 五工具卡（MemoryBody）；write-gate 删 ownsConfirm 代理分支（yzj-robot-* 残留前缀跳过保留） | write-gate.spec robot 用例清 2、改写注释 |
+| 话题机制 | topic-deliver.ts（R29 投递）/topic-drawer.tsx/memory-pane/robot-pane 删除；workbench-domain 话题 latch 删除；bound-io 删 askTopicAssistant；settings 只剩登录卡 | 4 spec 文件删除；advance-pane.spec latch 断言移除 |
+| 保留边界（明示） | 话题**数据层**（topics.ts TopicRecord/home.ts 绑定表）保留——群房间视图与 conv-list L1 聚合仍消费；bound-io 的 groupSpaceSnapshot/topics 透镜数据保留。这不是功能，是群房间产品法的存储 | verify-no-topics.mjs 真机走查（群房间无话题入口） |
+| 踩坑 | pitfall-046：删 sessionHasSummonWindow 深路径 import 断掉 cordis augmentation 链，ctx.get 类型静默 any——修复 = 显式 `import type {} from '@dsh-yzj/tool-yzj/src/index.ts'` | 全量 typecheck 0 错 |
+
+验收：全量测试绿 + typecheck 0 错 + build/bundle 绿 + GUI 重启后 verify-no-topics / verify-todo-swimlane 回归。恢复路径：**无软恢复**——只能从 git 历史重建（决策 53 的明确取舍）。

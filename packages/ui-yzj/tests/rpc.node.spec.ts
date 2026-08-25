@@ -114,38 +114,14 @@ describe('createRpcHandler', () => {
     expect(result).toEqual({ ok: false, error: { code: 'internal', message: 'write-decide endpoint rejects outcome "maybe"', details: {} } })
   })
 
-  it('memory endpoints project the vault service and stay unavailable without it', async () => {
+  it('memory endpoints are gone with the package（决策 53）', async () => {
     const gate: YzjWriteGateFace = { list: () => [], decide: () => false }
-    // Without the service: every memory endpoint fails closed with guidance.
-    const bare = createRpcHandler(mountBridge({}), gate)
-    expect(await bare('memory-scope', {}, undefined as never)).toEqual({
-      ok: false,
-      error: { code: 'internal', message: 'memory-scope: yzjMemory 服务不可用（memory-yzj 未挂载）', details: {} },
-    })
-    // With a scripted service: scope view, log tail, and the panel-direct
-    // observe write (user's own will — no gate involvement).
-    const ctx = new Context()
-    const observed: { scope: string; content: string; source: string; durable?: boolean }[] = []
-    ctx.provide('yzjMemory', {
-      readScope: (scope: string) => ({ scope, cap: 6000, sections: [], entities: [], observations: [], archivedCount: 0 }),
-      dreamLogTail: (scope: string, max: number) => `log ${scope} ${max}`,
-      observe: (scope: string, content: string, opts: { source: string; durable?: boolean }) => {
-        observed.push({ scope, content, source: opts.source, ...(opts.durable === undefined ? {} : { durable: opts.durable }) })
-        return { id: 'obs-1', duplicate: false, openCount: 1, capacity: 200 }
-      },
-    })
-    const handler = createRpcHandler(ctx, gate)
-    const scope = await handler('memory-scope', {}, undefined as never)
-    expect(scope.ok && (scope.value as { view: { scope: string } }).view.scope).toBe('user')
-    const log = await handler('memory-log', {}, undefined as never)
-    expect(log.ok && (log.value as { log: string }).log).toBe('log user 4000')
-    expect((await handler('memory-observe', {}, undefined as never)).ok).toBe(false)
-    const write = await handler('memory-observe', { content: '偏好表格周报', tags: ['work', 7] }, undefined as never)
-    expect(write.ok).toBe(true)
-    expect(observed).toEqual([{ scope: 'user', content: '偏好表格周报', source: 'panel' }])
-    const durableWrite = await handler('memory-observe', { content: '长期偏好', durable: true }, undefined as never)
-    expect(durableWrite.ok).toBe(true)
-    expect(observed[1]).toEqual({ scope: 'user', content: '长期偏好', source: 'panel', durable: true })
+    const handler = createRpcHandler(mountBridge({}), gate)
+    for (const endpoint of ['memory-scope', 'memory-log', 'memory-observe', 'dream-state', 'dream-set', 'dream-run', 'robot-status', 'robot-notify']) {
+      const result = await handler(endpoint, {}, undefined as never)
+      expect(result.ok).toBe(false)
+      expect((result as { ok: false; error: { message: string } }).error.message).toContain('unknown /yzj endpoint')
+    }
   })
 
   it('advance-feed is a user-direct write: actor=user, no stageTo, default sourceType', async () => {
@@ -324,15 +300,8 @@ describe('createRpcHandler', () => {
     expect(hits[2]).toMatchObject({ token: 'm-bare', kind: 'msg', fromName: '王剑', jumpToken: 'im:g1:m-bare' })
   })
 
-  it('dream and model-default endpoints project their services', async () => {
+  it('model-default endpoints project their services', async () => {
     const ctx = new Context()
-    const dreamSets: Record<string, unknown>[] = []
-    const dreamRuns: string[] = []
-    ctx.provide('yzjMemory', {
-      dreamSettings: () => ({ enabled: false }),
-      setDreamSettings: (partial: Record<string, unknown>) => { dreamSets.push(partial); return { enabled: partial.enabled === true } },
-      dreamRun: async (trigger: string) => { dreamRuns.push(trigger); return { ok: true as const, sessionId: 'dream-1', note: '固化完成' } },
-    })
     const modelSets: { provider: string; model: string }[] = []
     ctx.provide('yzjModels', {
       get: () => undefined,
@@ -342,14 +311,6 @@ describe('createRpcHandler', () => {
       catalog: async () => [{ provider: 'deepseek', models: ['glm-4.7'] }],
     })
     const handler = createRpcHandler(ctx, { list: () => [], decide: () => false })
-    const state = await handler('dream-state', {}, undefined as never)
-    expect(state.ok && (state.value as { state: { enabled: boolean } }).state.enabled).toBe(false)
-    const set = await handler('dream-set', { enabled: true, provider: '', model: '', dailyAt: '03:30' }, undefined as never)
-    expect(set.ok && (set.value as { state: { enabled: boolean } }).state.enabled).toBe(true)
-    expect(dreamSets).toEqual([{ enabled: true, provider: '', model: '', dailyAt: '03:30' }])
-    const run = await handler('dream-run', {}, undefined as never)
-    expect(run.ok && (run.value as { note: string }).note).toBe('固化完成')
-    expect(dreamRuns).toEqual(['panel'])
     const def = await handler('model-default', {}, undefined as never)
     expect(def.ok && (def.value as { path: string }).path).toBe('yzj-model.json')
     const setDef = await handler('model-default-set', { provider: 'deepseek', model: 'glm-4.7' }, undefined as never)
@@ -464,18 +425,14 @@ describe('createRpcHandler', () => {
     expect(attached).toEqual([])
   })
 
-  it('home-topic-open attaches only the topic session', async () => {
+  it('home-topic endpoints are gone with the mechanism（决策 53）', async () => {
     const ctx = mountBridge({})
-    const { attached, registry } = recordingRegistry()
-    ctx.provide('workspaceRegistry', registry)
-    ctx.provide('yzjHome', topicHome())
-    ctx.provide('agents', liveAgents())
     const handler = createRpcHandler(ctx, { list: () => [], decide: () => false })
-    const opened = await handler('home-topic-open', {
-      groupId: 'g-a', rootMsgId: 'm1', originText: '帮我整理',
-    }, undefined as never)
-    expect(opened.ok && opened.value).toMatchObject({ sessionId: 'yzj-topic-g-a-m1' })
-    expect(attached).toEqual(['yzj-topic-g-a-m1'])
+    for (const endpoint of ['home-topic-open', 'home-topic-lens', 'home-topic-ask']) {
+      const result = await handler(endpoint, {}, undefined as never)
+      expect(result.ok).toBe(false)
+      expect((result as { ok: false; error: { message: string } }).error.message).toContain('unknown /yzj endpoint')
+    }
   })
 
   it('home-open with leftover ③④ attaches only the 历史对话 topic', async () => {
@@ -557,16 +514,10 @@ describe('createRpcHandler', () => {
     expect(result.ok).toBe(false)
   })
 
-  it('home-topic-lens and home-topic-ask fail closed without a topic session', async () => {
+  it('home-topic endpoints removed（决策 53，断言见前用例）', async () => {
     const ctx = mountBridge({})
     const handler = createRpcHandler(ctx, { list: () => [], decide: () => false })
-    expect((await handler('home-topic-lens', {}, undefined as never)).ok).toBe(false)
-    expect((await handler('home-topic-ask', {}, undefined as never)).ok).toBe(false)
-    const noHome = await handler('home-topic-lens', { sessionId: 'yzj-topic-1' }, undefined as never)
-    expect(noHome).toEqual({
-      ok: false,
-      error: { code: 'internal', message: 'home-topic-lens: yzjHome 服务不可用（tool-yzj 未挂载）', details: {} },
-    })
+    expect((await handler('home-topic-lens', { sessionId: 'yzj-topic-1' }, undefined as never)).ok).toBe(false)
   })
 
   it('home-send writes ② into the bound log without a user-turn', async () => {

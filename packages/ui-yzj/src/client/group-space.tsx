@@ -18,7 +18,6 @@ export interface YzjGroupSpaceInjected {
   focusBoundSession?: (sessionId: string) => void
   fetchGroups?: (limit?: number, page?: number) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
   homeOpen?: (groupId: string, title?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
-  robotStatus?: () => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
 }
 
 /**

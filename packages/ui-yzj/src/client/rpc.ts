@@ -117,46 +117,6 @@ export interface YzjPanelInject {
   fetchWrite: (sessionId: string, callId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Settle one pending write-confirmation decision. */
   decideWrite: (writeId: string, outcome: 'allowed-once' | 'rejected') => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Robot channel statuses (one entry per configured robot). */
-  robotStatus: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Every persisted per-conversation model override. */
-  robotOverrides: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Persist one conversation's model override (provider and/or model). */
-  setRobotOverride: (key: string, provider: string | undefined, model: string | undefined) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Remove one conversation's model override. */
-  deleteRobotOverride: (key: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Provider/model catalog for the robot settings picker. */
-  robotModels: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Live diagnostics: push-hub stashes and open confirmation cards. */
-  robotDiagnostics: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** DSH-side proactive notification via one robot channel. */
-  robotNotify: (text: string, robotIndex?: number) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** DSH-side conversation continuation (operator turn through the full pipeline). */
-  robotContinue: (text: string, options?: { robotIndex?: number; groupId?: string }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Fork one robot conversation into a new operator-side session. */
-  robotFork: (sessionId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** List one group's shared workspace files (name/size/mtime). */
-  robotShareList: (groupId: string, robotIndex?: number) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Read one shared file's text content (bounded preview). */
-  robotShareRead: (groupId: string, filename: string, robotIndex?: number) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Open a robot workspace folder in the OS file manager (user's own click). */
-  robotOpenFolder: (groupId: string | undefined, robotIndex?: number) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Panel-direct write into a group's shared workspace (user's own will; auto-unique names unless overwrite). */
-  robotShareWrite: (input: { groupId: string; filename: string; content: string; overwrite?: boolean; robotIndex?: number }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Persist the FULL channel configuration to the channels file (§8.5); takes effect after a GUI restart. */
-  robotChannelsSave: (input: { defaultProvider?: string; defaultModel?: string; robots: { sendMsgUrl: string; provider?: string; model?: string; cwd?: string; enabled?: boolean; allowFrom?: string[] }[] }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Memory vault: one scope's read view (sections/entities/observations). */
-  memoryScope: (scope?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Memory vault: tail of the dream log (audit transparency). */
-  memoryLog: (scope?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Memory vault: panel-direct observation write (user's own will; no confirm card). */
-  memoryObserve: (content: string, tags?: string[], scope?: string, durable?: boolean) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Memory vault: dream runtime state (switch / model / schedule). */
-  dreamState: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Memory vault: merge a partial dream-state update (empty strings clear). */
-  dreamSet: (partial: { enabled?: boolean; provider?: string; model?: string; dailyAt?: string }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Memory vault: run one dream consolidation now (in-process executor). */
-  dreamRun: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Plugin-wide default model route (model-yzj). */
   modelDefault: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Set the plugin-wide default model route. */
@@ -327,67 +287,6 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
     advanceSourceRemove: (advanceId, token) => call('advance-source-remove', { advanceId, token }),
     fetchWrite: (sessionId, callId) => call('write-list', { sessionId, callId }),
     decideWrite: (writeId, outcome) => call('write-decide', { writeId, outcome }),
-    robotStatus: () => call('robot-status', {}),
-    robotOverrides: () => call('robot-overrides', {}),
-    setRobotOverride: (key, provider, model) => call('robot-override-set', {
-      key,
-      ...(provider === undefined ? {} : { provider }),
-      ...(model === undefined ? {} : { model }),
-    }),
-    deleteRobotOverride: (key) => call('robot-override-delete', { key }),
-    robotModels: () => call('robot-models', {}),
-    robotDiagnostics: () => call('robot-diagnostics', {}),
-    robotNotify: (text: string, robotIndex?: number) => call('robot-notify', {
-      text,
-      ...(robotIndex === undefined ? {} : { robotIndex }),
-    }),
-    robotContinue: (text: string, options: { robotIndex?: number; groupId?: string } = {}) => call('robot-continue', {
-      text,
-      ...(options.robotIndex === undefined ? {} : { robotIndex: options.robotIndex }),
-      ...(options.groupId === undefined ? {} : { groupId: options.groupId }),
-    }),
-    robotFork: (sessionId: string) => call('robot-fork', { sessionId }),
-    robotShareList: (groupId: string, robotIndex?: number) => call('robot-share-list', {
-      groupId,
-      ...(robotIndex === undefined ? {} : { robotIndex }),
-    }),
-    robotShareRead: (groupId: string, filename: string, robotIndex?: number) => call('robot-share-read', {
-      groupId,
-      filename,
-      ...(robotIndex === undefined ? {} : { robotIndex }),
-    }),
-    robotOpenFolder: (groupId: string | undefined, robotIndex?: number) => call('robot-open-folder', {
-      ...(groupId === undefined || groupId === '' ? {} : { groupId }),
-      ...(robotIndex === undefined ? {} : { robotIndex }),
-    }),
-    robotShareWrite: (input: { groupId: string; filename: string; content: string; overwrite?: boolean; robotIndex?: number }) => call('robot-share-write', {
-      groupId: input.groupId,
-      filename: input.filename,
-      content: input.content,
-      ...(input.overwrite === undefined ? {} : { overwrite: input.overwrite }),
-      ...(input.robotIndex === undefined ? {} : { robotIndex: input.robotIndex }),
-    }),
-    robotChannelsSave: (input: { defaultProvider?: string; defaultModel?: string; robots: { sendMsgUrl: string; provider?: string; model?: string; cwd?: string; enabled?: boolean; allowFrom?: string[] }[] }) => call('robot-channels-save', {
-      ...(input.defaultProvider === undefined ? {} : { defaultProvider: input.defaultProvider }),
-      ...(input.defaultModel === undefined ? {} : { defaultModel: input.defaultModel }),
-      robots: input.robots,
-    }),
-    memoryScope: (scope?: string) => call('memory-scope', scope === undefined ? {} : { scope }),
-    memoryLog: (scope?: string) => call('memory-log', scope === undefined ? {} : { scope }),
-    memoryObserve: (content: string, tags?: string[], scope?: string, durable?: boolean) => call('memory-observe', {
-      content,
-      ...(tags === undefined || tags.length === 0 ? {} : { tags }),
-      ...(scope === undefined ? {} : { scope }),
-      ...(durable === undefined ? {} : { durable }),
-    }),
-    dreamState: () => call('dream-state', {}),
-    dreamSet: (partial) => call('dream-set', {
-      ...(partial.enabled === undefined ? {} : { enabled: partial.enabled }),
-      ...(partial.provider === undefined ? {} : { provider: partial.provider }),
-      ...(partial.model === undefined ? {} : { model: partial.model }),
-      ...(partial.dailyAt === undefined ? {} : { dailyAt: partial.dailyAt }),
-    }),
-    dreamRun: () => call('dream-run', {}),
     modelDefault: () => call('model-default', {}),
     modelSetDefault: (provider, model) => call('model-default-set', { provider, model }),
     modelClearDefault: () => call('model-default-clear', {}),

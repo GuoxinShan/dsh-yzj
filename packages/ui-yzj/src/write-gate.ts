@@ -231,19 +231,9 @@ export function applyWriteGate(ctx: Context): {
 
   ctx.on('approval/request', (req, next) => {
     if (!isWriteGateTool(req.toolName)) return next()
-    // Robot sessions route their confirmations through the IM suggestion-card
-    // protocol (robot-yzj's ConfirmBroker owns those requests) — the GUI card
-    // would wait for a click nobody makes on an unattended channel.
-    // Leftover yzj-robot-* ids stay skipped (residuals); bound homes do not.
-    // Leftover yzj-robot-* ids stay skipped (residuals); group-room hosts
-    // and topic sessions do not.
+    // 决策 53：robot-yzj 已退役删除——yzj-robot-* 残留会话的确认请求跳过
+    // GUI 卡（无人值守通道本就没人点卡）。
     if (req.agent.session.id.startsWith('yzj-robot-')) return next()
-    // Inbound topic sessions (yzj-topic-*) and residual yzj-home-* register
-    // with ConfirmBroker. Keep the group suggestion card for plugin followups.
-    const robot = ctx.get('yzjRobot') as { ownsConfirm?: (sessionId: string) => boolean } | undefined
-    if (robot?.ownsConfirm?.(req.agent.session.id) === true && !latestUserIsGui(req.agent.session.events)) {
-      return next()
-    }
     if (req.signal?.aborted === true) return Promise.resolve<YzjApprovalOutcome>('cancelled')
     const claimed = new Set(records.keys())
     const id = findApprovalId(req.agent.session.events, req.callId, claimed)

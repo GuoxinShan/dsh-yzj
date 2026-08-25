@@ -14,8 +14,6 @@ export default defineConfig({
     bridge: 'packages/bridge/lib/index.js',
     'tool-yzj': 'packages/tool-yzj/lib/index.js',
     'ui-yzj': 'packages/ui-yzj/lib/index.js',
-    'robot-yzj': 'packages/robot-yzj/lib/index.js',
-    'memory-yzj': 'packages/memory-yzj/lib/index.js',
     'model-yzj': 'packages/model-yzj/lib/index.js',
   },
   outDir: 'lib',
