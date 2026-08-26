@@ -20,7 +20,8 @@ docs/
     advance-review-template.md         复盘文档五段模板（§16.2：目标演化/关键决策/偏差与证据链/下一步/事元索引）
     meeting-minutes-template.md        金蝶标准四段式纪要模板（§16.1 ④-b：目标/内容/共识/下一步）
     robot-channel-plan.md              机器人通道调研与双向打通方案（v0.2：会话落点改打绑定对象）
-    openapi-dependency.md              OpenAPI 依赖清单（终态开放 API 直连口径：逐域端点对照 + 鉴权档 + 缺口分级；任务复用 = worktask 终版答案）
+    yzj-openapi-requirements.md        云之家开放能力需求（对外：感知/行动/人审三类 17 项 × CLI/OpenAPI 现状 × 缺口；任务复用 = worktask；P0-P2 汇总）
+    lingee-platform-requirements.md    灵基平台能力需求（对外：agent 定时任务 / agent SDK / 工具拦截 hook / 富交互卡片 / @ 候选源）
     routines-delivery.md               定时任务引擎选型（dsh-routines 参考调研）+ yzj chatnode 投递契约
     memory-vault-design.md             记忆库组件设计（v0.2：vault 模型 + dream 开关/进程内固化/模型链 + 插件默认模型 + 群组留缝）
     memory-dream-routine.yaml          dream 固化 routine 模板（dsh-routines，备选路径）
@@ -29,6 +30,17 @@ docs/
   migration/                          ← 架构演进方案
     todo-backend-migration.md          待办 demo 后端 → 原生后端（四层架构 + §3 实测格式事实）
     advance-lingee-migration.md        AI推进 dsh MVP → 灵基终态（合同/机制/脚手架三层拆分 + 断层清单 + 验证清单；「存钱 vs 镀金」取舍原则）
+  target-lingee/                      ← 灵基终态目标架构套件（v1.0：面向灵基侧开发的实施依据）
+    README.md                          套件索引 + 开放问题登记（OQ-1–5）+ 目标态 vs 当前挂载态注记
+    01-domain-model.md                 推进域领域模型（单域：三概念/OODA 闭环/三公理；配图 F2）
+    02-er-model.md                     ER 数据模型（实体/字段/不变量/关系基数；配图 F1）
+    03-runtime-architecture.md         运行时组件架构（平台层/域服务/Brain/事件总线/IM 打通层；配图 F3）
+    04-state-machines.md               状态机汇总（统一六态机：所有事都是推进；派生浮标；配图 F4）
+    05-sequences.md                    关键时序三条（OODA 主环/派发接力/知识出口；配图 F5/F6）
+    06-api-event-contracts.md          API 与事件契约（域服务 API 草案/事件信封/平台需求消费索引）
+    07-product-story.md                产品定位问答（统一实体·所有事都是推进/品类定位/采纳引擎；对外沟通弹药）
+    figures/                           高品质图集（HTML 源 + SVG + PNG 2x，diagram-design 产出；index.html 为图集浏览页）
+    prototype/                         高保真页面原型（单文件四视图：统一看板/推进详情×2/对话喂入口）
   status/                             ← 实现与设计的对照与验收证据
     gap-analysis.md                    设计×实现 gap 对照（每功能提交留痕，含验收证据；§24.1–24.10 为 AI推进 ①–④期 + 门控 + 主动发现 + 真机实验 + Dream 蓄水池）
   pitfalls/                           ← 实现级坑库（一坑一文件 + 索引）
