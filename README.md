@@ -83,3 +83,7 @@ pnpm --filter @dsh-yzj/ui-yzj bundle   # 仅重建客户端 bundle（改 UI 后�
 - **`file download` 只回传摘要**：CLI 的 `downloaded N bytes to <path>` 文本输出不携带结构化路径，卡片回退文本模式。
 - **待办为 demo 阶段**：数据存于多维表格「待办任务库」（个人知识库，首用自动开通）；负责人/标签因 CLI 字段写入限制降级为文本形态；原生后端迁移方案见 `docs/migration/todo-backend-migration.md`。
 - **无独立文件夹概念**：归类用父文档挂载，与云之家产品语义一致。
+
+## 许可
+
+[MIT](LICENSE)。`package.json` 的 `license` 字段与之一致。
