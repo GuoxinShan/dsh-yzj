@@ -4,6 +4,21 @@
 > 落点默认：「我的知识/推进复盘/<事项名>」父目录下（决策 30）。
 
 ```markdown
+---
+schema: advance-review/v1
+advance_id: "<由域服务从事元流填写，模型不得编造>"
+name: "<推进名>"
+stage_end: done | cancelled
+assignee_id: "<openId>"
+initiator_id: "<openId>"
+parent_id: "<item id 或空>"
+time_span: ["YYYY-MM-DD", "YYYY-MM-DD"]
+entry_count: N
+deviation_keys: []   # 域服务从 deviation 事元抄 fact/impact/resolved，模型不写本段
+goal_versions: []
+channels: []
+---
+
 # <事项名>复盘(<advanceId>,YYYY-MM-DD)
 
 > 阶段历程:draft→…→completed|cancelled | 时间跨度:YYYY-MM-DD ~ YYYY-MM-DD | 事元数 N
@@ -27,6 +42,7 @@ decision-needed 事元 + 用户 judge 选择(选项全文)——谁拍的板、�
 ```
 
 写作纪律:
+- **frontmatter 由域服务生成**（target-lingee 10 §4.2）：模型只写五段正文；缺 `schema` / `advance_id` 拒入库。这是未来记忆召回的挂钩，不是装饰。
 - 事实只来自事元流(`yzj_advance_get` 翻页读全量),不虚构;refs 原样抄事元的值。
 - 「目标演化」必须呈现 diff 链(原值→新值),不是只写终态。
 - cancelled 事项的复盘要如实写「为什么黄了」——失败教训是复盘价值最高的部分(决策 27)。
