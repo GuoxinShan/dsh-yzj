@@ -1,5 +1,5 @@
 /**
- * Seed 830's first real 决策请求 card (2026-08-21): the two scope-extension
+ * Seed the item's first real 决策请求 card (2026-08-21): the two scope-extension
  * questions from the 8/19 评审 are the genuinely pending decision; feeding them
  * as a proper 决策请求 (options + action lines) makes the board's decision card
  * real. Drives an agent session in the native chat so the feed carries the
@@ -47,7 +47,7 @@ const ask = [
   '选项1: 两个都纳入，最小回路扩大',
   '选项2: 只纳入会议模板，工作现场下期再评',
   '选项3: 都不纳入，维持现回路',
-  '动作: 建待办 | 内容: 确认会议模板排期 | 截止: 2026-08-26 | 负责人: 王剑',
+  '动作: 建待办 | 内容: 确认会议模板排期 | 截止: 2026-08-26 | 负责人: 同事丙',
   '动作: 发消息 | 内容: 评审两个范围补充（会议模板排期 / 单人Agent工作现场）想跟你对齐下是否纳入最小回路',
   '影响: 纳入与否决定 8/31 目标日期下的最小回路范围',
   '直接连续调用工具完成，不要询问我。',
@@ -70,7 +70,7 @@ await page.getByTestId('yzj-dock-home').click().catch(() => {})
 await page.waitForTimeout(2000)
 await page.getByTestId('yzj-workbench-tabs').getByRole('tab', { name: '推进' }).click()
 await page.waitForTimeout(4000)
-await page.getByTestId('yzj-advance-pane').getByText(/830.{0,4}从参谋部到/).first().click()
+await page.getByTestId('yzj-advance-pane').getByText(/测试事项/).first().click()
 await page.waitForTimeout(3500)
 const area = await page.getByTestId('yzj-advance-decision').innerText()
 ok('card shows the question', area.includes('评审两个范围补充是否纳入最小回路'))

@@ -41,5 +41,5 @@ if (!(await permPicker.innerText()).includes('Workspace Write')) {
 
 ## 回归覆盖(Regression coverage)
 
-`.acceptance/advance-830-wave1.mjs` / `advance-830-wave2.mjs` 内置档位检查与切换;
+`.acceptance/acceptance-wave.mjs` / `acceptance-wave.mjs` 内置档位检查与切换;
 后续任何依赖确认卡的 `.acceptance` 脚本应复用这段,不要假设档位默认值。

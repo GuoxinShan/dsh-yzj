@@ -81,10 +81,10 @@ describe('yzj-cli v0.1.4 doc tools', () => {
 
 describe('yzj-cli v0.1.4 im group tools', () => {
   it('yzj_im_group_search assembles keyword + paging', async () => {
-    const { commands, byName } = mount({ list: [{ groupId: 'g1', groupName: '登顶' }] })
-    const result = await byName.get('yzj_im_group_search')!.execute({ keyword: '登顶', limit: 5, page: 2 })
-    expect(commands[0]).toEqual(['im', 'group', 'search', '--keyword', '登顶', '--limit', '5', '--page', '2'])
-    expect(result.content).toContain('登顶')
+    const { commands, byName } = mount({ list: [{ groupId: 'g1', groupName: '测试群' }] })
+    const result = await byName.get('yzj_im_group_search')!.execute({ keyword: '测试群', limit: 5, page: 2 })
+    expect(commands[0]).toEqual(['im', 'group', 'search', '--keyword', '测试群', '--limit', '5', '--page', '2'])
+    expect(result.content).toContain('测试群')
   })
 
   it('yzj_im_group_create repeats --member-open-id and validates the 2-10 window', async () => {

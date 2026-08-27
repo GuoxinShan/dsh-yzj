@@ -11,7 +11,7 @@ import type { AdvanceCaches } from '../packages/tool-yzj/src/advance.ts'
 import type { YzjToolBudget } from '../packages/tool-yzj/src/shared.ts'
 
 const BUDGET: YzjToolBudget = { timeoutMs: 60_000, maxRenderChars: 8_000, maxMetaChars: 8_000 }
-const GROUP = process.env.YZJ_E2E_GROUP ?? 'dsh-2'
+const GROUP = process.env.YZJ_E2E_GROUP ?? '测试群'
 
 function emit(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value)}\n`)

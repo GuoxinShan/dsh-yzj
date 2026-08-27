@@ -23,7 +23,7 @@ while (Date.now() - t0 < 6 * 60 * 1000) {
   const cur = await page.evaluate(() => document.body.innerText)
   if (cur === last) { stable += 1; if (stable >= 4) break } else { stable = 0; last = cur }
 }
-const hit = last.includes('830实验·共识') || last.includes('基线已立')
+const hit = last.includes('实验目录') || last.includes('基线已立')
 console.log(hit ? 'PASS 目录线程进 scan digest' : 'FAIL')
 console.log('tail:', last.slice(-400).replace(/\n/g, ' '))
 await page.screenshot({ path: '/Users/guoxinshan/dev/dsh-yzj/.acceptance/shots-advance-ux/audit-7-dir-scan.png' })

@@ -39,7 +39,7 @@ docs/
 2. **`spec/integration-master-plan.md`**——系统全貌：目标、用户旅程、人在闭环验收基准（会话模型见下一份）。
 3. **`spec/group-room-topics.md`**——**当前产品法（v2.0 / v1.19 工作台）**：1 群 = 1 群房间 + N 话题会话；两视图各一个发送动词；导航 = 侧栏脚一个「云之家」入口 + 工作台顶栏页签（对话 / 待办 / 日程 / 知识库 / 推进）+ 会话列表 + 右侧话题抽屉。对照 `status/gap-analysis.md` §23。v1.19 群房间 hover「喂给推进」见 [`ai-advance-design.md`](spec/ai-advance-design.md) §11。
 4. **`spec/dsh-home-session.md`** / **`spec/dsh-home-transcript.md`**——v1.x 历史快照：会话对象、写路径 D9、消息日志存储/去重/回填/召唤窗口（机制沿用）；1:1 绑定与融合一条流已被 v2.0 覆盖（保留/作废对照见 group-room-topics §6）。
-5. **`status/gap-analysis.md`**——当前实现状态与已验收证据（§15–§21 为既有面；§22 为 v1.8 实现快照；**§23 为 v2.0 目标 vs 现状**；**§24–§24.10 为 AI推进 ①–④期 + 门控线 + 主动发现 + 830 真数据实验 + Dream 蓄水池**）。
+5. **`status/gap-analysis.md`**——当前实现状态与已验收证据（§15–§21 为既有面；§22 为 v1.8 实现快照；**§23 为 v2.0 目标 vs 现状**；**§24–§24.10 为 AI推进 ①–④期 + 门控线 + 主动发现 + 真机实验 + Dream 蓄水池**）。
 6. **`pitfalls/README.md` 索引**——动手前必查；命中相关条目先读再写代码。话题「发给助手」没近窗先读 pitfall-027；工作台盖中间栏先读 pitfall-028；每轮重贴 / 跨日倒序 / 文件没 fileId 先读 pitfall-029；日程永远停在某天第一次先读 pitfall-032；想把文件挂进回复链先读 pitfall-033（CLI `file` 不支持 `--reply-msg-id`）。对齐 harness rc.7 / 注册 `tool.call.toolview` / branded `SessionId` 先读 pitfall-034。空 web profile 真机点 dock 被内测声明挡住先读 pitfall-035。Full access 档位确认卡不弹先读 pitfall-036；验收脚本话题数据态先读 pitfall-037；CLI 输出形状/record list 信封先读 pitfall-003。
 7. 任务相关的设计文档（todo 域 → `spec/todo-design.md`；**AI推进 → `spec/ai-advance-design.md`（v1.9：①双表/七态/第五页签，②用户直写 feed，③ inspect，§13 门控线，§14 主动发现，§15 上下文来源，§16 沉淀出口，§17 蓄水池；决策 1–45）+ `spec/advance-domain-model.md`（领域模型：事元驱动闭环与行动建模）**；机器人协议 → `spec/robot-channel-plan.md`（会话落点已被 dsh-home-session 覆盖）；定时任务 → `spec/routines-delivery.md`；记忆库 → `spec/memory-vault-design.md`）。
 8. **插件开发 skill**（`.agents/skills/`）——`cordis-plugin-development` 按 cookbook 座位提炼成本仓契约；`editing-cordis-compositions` 仍是创造模式原文。本仓规矩在 `AGENTS.md`。索引见 [`.agents/skills/README.md`](../.agents/skills/README.md)。
@@ -49,4 +49,4 @@ docs/
 - 目录与文件名**英文 kebab-case**；正文中文（与全仓语言分工一致）。
 - spec 文档带版本号与日期头；演进用「vN 变更」段落追加，不重写历史。
 - `docs/` 根不再散放文档：新文档进对应子目录；新子目录须在本文件登记。
-- **实验设计文档**：执行版实验设计放 `.acceptance/`（与验收脚本同目录，如 `advance-830-experiment.md`，已完工）；实验**证据**归档进 `status/gap-analysis.md`，不留散件。
+- **实验设计文档**：执行版实验设计放 `.acceptance/`（与验收脚本同目录，如 `advance-field-experiment.md`，已完工）；实验**证据**归档进 `status/gap-analysis.md`，不留散件。

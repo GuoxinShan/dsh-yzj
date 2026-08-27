@@ -21,7 +21,7 @@ import type { AdvanceCaches } from '../packages/tool-yzj/src/advance.ts'
 import { coreSetStatus } from '../packages/tool-yzj/src/todo.ts'
 import type { YzjToolBudget } from '../packages/tool-yzj/src/shared.ts'
 
-const GROUP_ID = '6a8400d4e4b09a073e3feeaf' // dsh-2
+const GROUP_ID = 'gid-dsh2' // dsh-2
 const BUDGET: YzjToolBudget = { timeoutMs: 60_000, maxRenderChars: 8_000, maxMetaChars: 8_000 }
 
 function mount(): { ctx: Context; caches: AdvanceCaches } {

@@ -61,7 +61,10 @@ await page.screenshot({ path: shot('3-chat.png') })
 
 // --- 4. open a group: real messages load in the right pane ---
 if (groupCount > 0) {
-  const groupRow = dialog.locator('button[class*="item"]').filter({ hasText: '灵基Chat' }).first()
+  const wanted = process.env.YZJ_E2E_GROUP
+  const groupRow = wanted
+    ? dialog.locator('button[class*="item"]').filter({ hasText: wanted }).first()
+    : dialog.locator('button[class*="item"]').first()
   if (await groupRow.count().catch(() => 0) > 0) {
     await groupRow.click()
   } else {

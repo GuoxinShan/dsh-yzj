@@ -6,7 +6,11 @@
 import { chromium } from 'playwright'
 import { existsSync } from 'node:fs'
 
-const DOC_WS = 'kb-meetings' // 会议Agent知识库 (otl meeting notes)
+const DOC_WS = process.env.YZJ_E2E_DOC_WS
+if (!DOC_WS) {
+  console.log('SKIP  set YZJ_E2E_DOC_WS to run this live check')
+  process.exit(0)
+}
 const CHROME = [
   'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
   'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',

@@ -56,7 +56,7 @@ await tabs.getByRole('tab', { name: '推进' }).click()
 await page.waitForTimeout(4000)
 const paneText = await page.getByTestId('yzj-advance-pane').innerText()
 ok('推进看板渲染', paneText.includes('我的推进'))
-ok('测试事项仍在', paneText.includes('830'))
+ok('测试事项仍在', paneText.includes('测试'))
 await page.screenshot({ path: join(OUT, '2-advance-intact.png') })
 
 // ---------- 3. 设置页：只剩登录卡 ----------

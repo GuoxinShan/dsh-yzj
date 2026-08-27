@@ -11,13 +11,14 @@ import { join } from 'node:path'
 
 const BASE = process.env.DSH_GUI ?? 'http://127.0.0.1:3080/'
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-const ADVANCE_ID = 'A-20260819-002'
-const DOCS = [
-  { id: 'doc-minutes-1', name: 'AI推进业务设计启动会纪要-总结' },
-  { id: 'doc-minutes-2', name: 'AI推进系统产品讨论会-总结' },
-  { id: 'doc-minutes-3', name: 'AI推进工具产品设计研讨会-总结' },
-]
-const PROMPT = `请把三份会议纪要吃进推进事项 ${ADVANCE_ID}（830:从参谋部到 AI推进）：逐个用 yzj_doc_get 读这三篇文档——${DOCS.map(d => `${d.id}（${d.name}）`).join('、')}；每篇提炼一条事元，用 yzj_advance_feed 落到该事项：advanceId=${ADVANCE_ID}、sourceType=文档、changeType=进度更新、summary=一句话要点（含会议名）、detail=关键共识/决策摘要（3-5 句）、refs=[对应文档 docId]。不要带 goal/metrics/targetDate/stageTo。直接连续调用工具完成，不要询问我。最后给我一句「已落 N 条事元」的总结。`
+const ADVANCE_ID = process.env.YZJ_E2E_ADVANCE_ID ?? 'A-20260819-002'
+const rawDocs = process.env.YZJ_MINUTES_DOC_IDS
+if (!rawDocs) {
+  console.log('SKIP  set YZJ_MINUTES_DOC_IDS=id1,id2,id3 to run this live check')
+  process.exit(0)
+}
+const DOCS = rawDocs.split(',').map((id, i) => ({ id: id.trim(), name: `纪要-${i + 1}` })).filter(d => d.id !== '')
+const PROMPT = `请把三份会议纪要吃进推进事项 ${ADVANCE_ID}（测试事项）：逐个用 yzj_doc_get 读这三篇文档——${DOCS.map(d => `${d.id}（${d.name}）`).join('、')}；每篇提炼一条事元，用 yzj_advance_feed 落到该事项：advanceId=${ADVANCE_ID}、sourceType=文档、changeType=进度更新、summary=一句话要点（含会议名）、detail=关键共识/决策摘要（3-5 句）、refs=[对应文档 docId]。不要带 goal/metrics/targetDate/stageTo。直接连续调用工具完成，不要询问我。最后给我一句「已落 N 条事元」的总结。`
 
 const db = () => new DatabaseSync(join(homedir(), '.dsh', 'storages', 'yzj_advance.db'))
 const foundDocIds = () => {

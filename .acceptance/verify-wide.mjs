@@ -8,6 +8,8 @@
 import { chromium } from 'playwright'
 import { existsSync } from 'node:fs'
 
+const GROUP_NAME = process.env.YZJ_E2E_GROUP
+
 const CHROME = [
   'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
   'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
@@ -40,7 +42,12 @@ await dialog.locator('nav button').filter({ hasText: '会话' }).first().click()
 await page.waitForTimeout(3000)
 const leftGroups = await dialog.locator('[class*="paneLeft"] button[class*="item"]').count()
 ok('left pane lists groups', leftGroups > 0, `${leftGroups} groups`)
-await dialog.locator('[class*="paneLeft"] button[class*="item"]').filter({ hasText: '灵基Chat' }).first().click()
+{
+  const wanted = GROUP_NAME
+    ? dialog.locator('[class*="paneLeft"] button[class*="item"]').filter({ hasText: GROUP_NAME }).first()
+    : dialog.locator('[class*="paneLeft"] button[class*="item"]').first()
+  await wanted.click()
+}
 await page.waitForTimeout(3500)
 const rightMessages = await dialog.locator('[class*="paneRight"] [class*="msgRow"]').count()
 ok('right pane shows messages', rightMessages > 0, `${rightMessages} messages`)

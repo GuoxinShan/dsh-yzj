@@ -10,8 +10,12 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 const BASE = process.env.DSH_GUI ?? 'http://127.0.0.1:3080/'
-const ADVANCE_ID = 'A-20260819-002'
-const LIB_ID = 'dir-kb'
+const ADVANCE_ID = process.env.YZJ_E2E_ADVANCE_ID
+const LIB_ID = process.env.YZJ_E2E_KB_ID
+if (!ADVANCE_ID || !LIB_ID) {
+  console.log('SKIP  set YZJ_E2E_ADVANCE_ID and YZJ_E2E_KB_ID to run this live check')
+  process.exit(0)
+}
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 
 const browser = await chromium.launch({ executablePath: CHROME, headless: true })
@@ -52,6 +56,6 @@ const rows = sources.tables?.sources?.[ADVANCE_ID] ?? []
 const hit = rows.find(r => r.token === `dir:${LIB_ID}`)
 console.log(hit
   ? `PASS    sources.json 已落盘 ${hit.token} (${hit.label})`
-  : 'FAIL    sources.json 未找到 dir:6a744266…')
+  : 'FAIL    sources.json 未找到 dir:<kbId>')
 await browser.close()
 process.exit(hit ? 0 : 1)

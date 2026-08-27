@@ -217,7 +217,7 @@ export function refsOverlap(incoming: readonly string[], existing: readonly stri
  * AND the changeType matches — a genuine replay of the same signal (决策 25,
  * 修订决策 19 的交集语义). Partial overlap is NOT a replay: distinct entries
  * may legitimately cite the same document (e.g. one 纪要 ref feeding both a
- * progress note and a later goal update — the 830 experiment hit this).
+ * progress note and a later goal update — the field experiment hit this).
  */
 export function isRefReplay(
   incoming: readonly string[],
@@ -543,7 +543,7 @@ export const MAX_SCAN_MESSAGES = 200
 
 /**
  * Read the full incremental window after `msgId` (type=new), paging until a
- * short page or the cap. Fixes the 830-experiment gap: one page of 20 silently
+ * short page or the cap. Fixes the field-experiment gap: one page of 20 silently
  * dropped later signals when a group moved >20 messages between patrols.
  */
 async function listImMessagesAll(
@@ -1347,7 +1347,7 @@ export async function coreFeedAdvance(
       throw new Error(`advance: 终局(${USER_ONLY_STAGES.join('/')})只由用户在看板拍板;agent 请 stageTo=ready-for-review 或用决策请求说明理由`)
     }
     // 决策卡合同(决策 41):推 decision-needed 必须配「决策请求」事元——决策区只渲染
-    // 决策请求的问题/动作行;偏差+stageTo 会让看板出现没有问题文的空决策区(830 实测)。
+    // 决策请求的问题/动作行;偏差+stageTo 会让看板出现没有问题文的空决策区(真机实测)。
     if (input.stageTo === 'decision-needed' && input.changeType !== '决策请求') {
       throw new Error('advance: stageTo=decision-needed 必须配 changeType=决策请求（summary=要用户决定的问题，detail=分析+动作行 动作: 建待办|发消息|定会议 …）；偏差只记录事实，不推阶段')
     }

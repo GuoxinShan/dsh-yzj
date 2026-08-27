@@ -32,9 +32,9 @@ async function drive(...args) {
   return parsed
 }
 
-const GROUP_830 = 'gid-test'
+const GROUP_TEST = 'gid-test'
 const KB_MINUTES = 'dir-kb' // AI速记知识库（整库）
-const ITEM_830_TITLE = '830:从参谋部到 AI推进'
+const ITEM_TEST_TITLE = '测试事项'
 const PROBE_TITLE = '回流探针·数据包'
 
 const browser = await chromium.launch({
@@ -55,16 +55,16 @@ await page.waitForTimeout(4500)
 const pane = page.getByTestId('yzj-advance-pane')
 
 // ---------- 1. 测试事项接上两源 ----------
-await pane.getByText(ITEM_830_TITLE, { exact: false }).first().click()
+await pane.getByText(ITEM_TEST_TITLE, { exact: false }).first().click()
 await page.waitForTimeout(3500)
 const beforeSources = await pane.innerText()
-const need830 = !beforeSources.includes('830 项目')
+const needGroup = !beforeSources.includes('测试群')
 const needKb = !beforeSources.includes('AI速记知识库')
-if (need830 || needKb) {
+if (needGroup || needKb) {
   await page.getByTestId('yzj-advance-source-add-open').click()
   await page.waitForTimeout(4000)
-  if (need830) {
-    await page.getByTestId(`yzj-advance-source-group-${GROUP_830}`).click()
+  if (needGroup) {
+    await page.getByTestId(`yzj-advance-source-group-${GROUP_TEST}`).click()
     await page.waitForTimeout(5000)
   }
   if (needKb) {
@@ -77,7 +77,7 @@ if (need830 || needKb) {
   await page.waitForTimeout(1500)
 }
 const afterSources = await pane.innerText()
-ok('测试事项挂上 测试群', afterSources.includes('830 项目'))
+ok('测试事项挂上 测试群', afterSources.includes('测试群'))
 ok('测试事项挂上纪要库', afterSources.includes('AI速记知识库'))
 await page.screenshot({ path: join(OUT, '1-sources.png') })
 
@@ -98,7 +98,7 @@ ok('探针事项已建', probeId !== '', probeId)
 // sidecar 推 running + 决策卡（动作行：建待办）
 await drive('send', '回流探针信号：渠道验证用，可忽略')  // dsh-2 留痕（约束不变）
 await drive('probe', probeId)  // draft→running + 决策卡（动作行：建待办）
-await page.getByTestId('yzj-advance-queue').locator('button').filter({ hasText: '830' }).first().click().catch(() => {})
+await page.getByTestId('yzj-advance-queue').locator('button').filter({ hasText: '测试' }).first().click().catch(() => {})
 await page.waitForTimeout(1500)
 await pane.getByText(PROBE_TITLE, { exact: true }).last().click()
 await page.waitForTimeout(3500)

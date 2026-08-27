@@ -31,5 +31,5 @@ merge 完成后应及时删 worktree 并归位 link;`git worktree list` 里的 `
 ## 回归覆盖(Regression coverage)
 
 无自动化(环境态);本条目即检查单。真机实验 self-filter 验证脚本
-(`.acceptance/advance-830-self-filter.mjs`)是先验反例:它首轮 FAIL 的直接原因就是
+(`.acceptance/acceptance-wave.mjs`)是先验反例:它首轮 FAIL 的直接原因就是
 link 指错,归位后同脚本 ALL PASS。

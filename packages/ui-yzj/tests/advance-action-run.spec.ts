@@ -57,7 +57,7 @@ function inputOf(over?: Partial<ActionRunInput>): ActionRunInput {
     actionKey: 'E-9:0',
     kind: 'todo',
     text: '确认会议模板排期',
-    fields: { 截止: '2026-08-25', 负责人: '王剑' },
+    fields: { 截止: '2026-08-25', 负责人: '同事丙' },
     ...over,
   }
 }
@@ -73,7 +73,7 @@ describe('runAdvanceAction', () => {
     const result = await runAdvanceAction(deps, inputOf())
     expect(result.idempotent).toBe(false)
     expect(result.effectRef).toBe('T-20260821-007')
-    expect(calls.todos).toEqual([{ title: '确认会议模板排期', ddl: '2026-08-25', tags: ['王剑'] }])
+    expect(calls.todos).toEqual([{ title: '确认会议模板排期', ddl: '2026-08-25', tags: ['同事丙'] }])
     expect(calls.feeds).toHaveLength(1)
     expect(calls.feeds[0]).toMatchObject({
       advanceId: 'A-1',
@@ -90,7 +90,7 @@ describe('runAdvanceAction', () => {
 
   it('im 路径：发消息 → refs=im:<groupId>:<msgId> 留痕', async () => {
     const { deps, calls } = fakeDeps()
-    const result = await runAdvanceAction(deps, inputOf({ kind: 'im', text: '范围补充想跟你对齐一下', fields: {}, imGroupId: 'g1', imGroupLabel: '830 项目' }))
+    const result = await runAdvanceAction(deps, inputOf({ kind: 'im', text: '范围补充想跟你对齐一下', fields: {}, imGroupId: 'g1', imGroupLabel: '测试群' }))
     expect(result.effectRef).toBe('im:g1:m-42')
     expect(calls.sent).toEqual([{ groupId: 'g1', content: '范围补充想跟你对齐一下' }])
     expect(calls.feeds[0]).toMatchObject({ sourceType: '对话', refs: ['im:g1:m-42'] })

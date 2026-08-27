@@ -91,7 +91,7 @@ ok('docs tab still loads', kbCount > 0, `${kbCount} workspaces`)
 await dialog.getByText('日程', { exact: true }).first().click()
 await page.waitForTimeout(2500)
 const calText = await dialog.innerText()
-ok('calendar tab still loads', calText.includes('攀登计划'), '830（AI参谋部）攀登计划')
+ok('calendar tab still loads', calText.includes('攀登计划'), '测试日程')
 
 await dialog.getByText('我的', { exact: true }).first().click()
 await page.waitForTimeout(2500)

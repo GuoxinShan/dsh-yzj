@@ -130,7 +130,7 @@ function mountPane(config: {
       advanceRefLookup: async (refs: { token: string; kind: string }[]) => {
         const miss = new Set(config.lookupMiss ?? [])
         const hits = refs.filter(ref => !miss.has(ref.token)).map(ref => ref.kind === 'doc'
-          ? { token: ref.token, kind: 'doc', fromName: '', content: '830纪要·0806 AI参谋产品方案讨论.otl', sentAt: 0 }
+          ? { token: ref.token, kind: 'doc', fromName: '', content: '纪要·示例讨论.otl', sentAt: 0 }
           : { token: ref.token, kind: 'msg', fromName: '老黎', content: '覆盖率到 80，还差最后一步', sentAt: 1_755_600_000_000, ...(ref.token.startsWith('dp-') ? { jumpToken: 'im:g1:m-dp' } : {}) })
         return { ok: true, value: { hits } } as Rpc
       },
@@ -152,7 +152,7 @@ function mountPane(config: {
           const label = input.kind === 'todo'
             ? `执行建议动作：建待办「${input.text}」`
             : input.kind === 'im'
-              ? '执行建议动作：发消息到「830 项目」对齐'
+              ? '执行建议动作：发消息到「测试群」对齐'
               : `执行建议动作：定会议「${input.fields?.['主题'] ?? input.text}」（已跳日程域，建成后经订阅回流）`
           detail.entries.push(entry({
             entryId: `E-run-${actionRuns.length}`, changeType: '进度更新', summary: label, actor: 'user',
@@ -165,7 +165,7 @@ function mountPane(config: {
         ok: true,
         value: {
           rooms: [{
-            groupId: 'g1', sessionId: 'yzj-home-g1', groupName: '830 项目', yzjKind: 'group',
+            groupId: 'g1', sessionId: 'yzj-home-g1', groupName: '测试群', yzjKind: 'group',
             topics: [{ sessionId: 't-old', title: '旧话题', lastActivity: 1 }, { sessionId: 't-latest', title: '最新话题', lastActivity: 2 }],
           }],
         },
@@ -198,7 +198,7 @@ function mountPane(config: {
         ok: true,
         value: workspace === 'kb1'
           ? [
-            { id: 'dirA', title: '830实验·共识', hasChildren: true, type: 2, fileSuffix: 'otl' },
+            { id: 'dirA', title: '实验目录', hasChildren: true, type: 2, fileSuffix: 'otl' },
             { id: 'docB', title: '散文档', hasChildren: false, type: 2, fileSuffix: 'otl' },
           ]
           : [
@@ -291,9 +291,9 @@ describe('parseDecisionOptions', () => {
   })
 
   it('parses 动作 lines into executable actions (决策 41); unrecognized types stay plain', () => {
-    const parsed = parseDecisionOptions('两个范围补充要定\n动作: 建待办 | 内容: 确认会议模板排期 | 截止: 2026-08-25 | 负责人: 王剑\n动作: 发消息 | 内容: 范围补充想跟你对齐一下\n动作: 定会议 | 主题: 原型评审二次会 | 时间: 2026-08-22 14:00\n动作: 喝咖啡 | 内容: 不认识\n影响: 最小回路要扩')
+    const parsed = parseDecisionOptions('两个范围补充要定\n动作: 建待办 | 内容: 确认会议模板排期 | 截止: 2026-08-25 | 负责人: 同事丙\n动作: 发消息 | 内容: 范围补充想跟你对齐一下\n动作: 定会议 | 主题: 原型评审二次会 | 时间: 2026-08-22 14:00\n动作: 喝咖啡 | 内容: 不认识\n影响: 最小回路要扩')
     expect(parsed.actions).toEqual([
-      { kind: 'todo', text: '确认会议模板排期', fields: { '内容': '确认会议模板排期', '截止': '2026-08-25', '负责人': '王剑' } },
+      { kind: 'todo', text: '确认会议模板排期', fields: { '内容': '确认会议模板排期', '截止': '2026-08-25', '负责人': '同事丙' } },
       { kind: 'im', text: '范围补充想跟你对齐一下', fields: { '内容': '范围补充想跟你对齐一下' } },
       { kind: 'event', text: '原型评审二次会', fields: { '主题': '原型评审二次会', '时间': '2026-08-22 14:00' } },
     ])
@@ -559,7 +559,7 @@ describe('YzjAdvancePane', () => {
       detail: {
         item: item({ advanceId: 'A-1', stage: 'running', title: '试运行' }),
         entries: [
-          { entryId: 'E-1', at: '2026/08/19 18:11', sourceType: '文档', changeType: '进度更新', summary: '纪要入库', detail: '', refs: ['yzj:6a85774aecd3fb103b859f8a'], actor: 'agent' },
+          { entryId: 'E-1', at: '2026/08/19 18:11', sourceType: '文档', changeType: '进度更新', summary: '纪要入库', detail: '', refs: ['yzj:doc-a'], actor: 'agent' },
           { entryId: 'E-2', at: '2026/08/19 18:28', sourceType: '对话', changeType: '进度更新', summary: '群信号', detail: '', refs: ['msg-prd'], actor: 'agent' },
         ],
       },
@@ -569,9 +569,9 @@ describe('YzjAdvancePane', () => {
     // 收敛默认:展开两条事元才见 refs(倒序后 index 0=E-2 msg、1=E-1 doc)
     await expandEntry(face, 0)
     await expandEntry(face, 1)
-    const docChip = face.container.querySelector('[data-testid="yzj-advance-ref-6a85774aecd3fb103b859f8a"]') as HTMLAnchorElement
+    const docChip = face.container.querySelector('[data-testid="yzj-advance-ref-doc-a"]') as HTMLAnchorElement
     expect(docChip.tagName).toBe('A')
-    expect(docChip.href).toContain('/store/doc/6a85774aecd3fb103b859f8a')
+    expect(docChip.href).toContain('/store/doc/doc-a')
     const msgChip = face.container.querySelector('[data-testid="yzj-advance-ref-msg-prd"]') as HTMLButtonElement
     expect(msgChip.tagName).toBe('BUTTON')
     await act(async () => { msgChip.click(); await Promise.resolve() })
@@ -777,7 +777,7 @@ describe('YzjAdvancePane', () => {
     await expandEntry(face, 0)
     const row = face.container.querySelector('[data-testid="yzj-advance-ref-im:g1:m9"]')
     expect(row).not.toBeNull()
-    // kind=msg:命中渲染事件行,不再是「文 im:6a605…」式的截断 id 文档链接
+    // kind=msg:命中渲染事件行,不再是「文 im:<msgId>」式的截断 id 文档链接
     expect(row?.textContent).toContain('老黎')
     expect(row?.textContent).not.toContain('im:6a')
     await act(async () => { (row as HTMLButtonElement).click(); await Promise.resolve() })
@@ -800,17 +800,17 @@ describe('YzjAdvancePane', () => {
           sourceType: '文档',
           changeType: '进度更新',
           summary: '阶段共识',
-          refs: ['6a85774aecd3fb103b859f8a'],
+          refs: ['doc-a'],
         })],
       },
     })
     await settle()
     await expandEntry(face, 0)
-    const docRow = face.container.querySelector('[data-testid="yzj-advance-ref-6a85774aecd3fb103b859f8a"]') as HTMLAnchorElement
+    const docRow = face.container.querySelector('[data-testid="yzj-advance-ref-doc-a"]') as HTMLAnchorElement
     expect(docRow).not.toBeNull()
     expect(docRow.tagName).toBe('A')
-    expect(docRow.textContent).toContain('830纪要·0806 AI参谋产品方案讨论.otl')
-    expect(docRow.getAttribute('href')).toContain('/store/doc/6a85774aecd3fb103b859f8a')
+    expect(docRow.textContent).toContain('纪要·示例讨论.otl')
+    expect(docRow.getAttribute('href')).toContain('/store/doc/doc-a')
     act(() => { face.root.unmount() })
   })
 
@@ -923,7 +923,7 @@ describe('YzjAdvancePane', () => {
     const dirs = face.container.querySelector('[data-testid="yzj-advance-source-dirs"]')
     expect(dirs?.textContent).toContain('我的知识（整库）')
     expect(dirs?.textContent).toContain('AI速记知识库（整库）')
-    expect(dirs?.textContent).not.toContain('830实验·共识')
+    expect(dirs?.textContent).not.toContain('实验目录')
     expect(dirs?.textContent).not.toContain('散文档')
     const dirBtn = face.container.querySelector('[data-testid="yzj-advance-source-dir-kb1"]') as HTMLButtonElement
     await act(async () => { dirBtn.click(); await Promise.resolve() })
@@ -962,14 +962,14 @@ describe('YzjAdvancePane', () => {
     setWorkbenchDomain('advance')
     const decision = entry({
       entryId: 'E-9', changeType: '决策请求', summary: '两个范围补充是否纳入最小回路', tone: 'red',
-      detail: '评审浮现两个范围补充\n动作: 建待办 | 内容: 确认会议模板排期 | 截止: 2026-08-25 | 负责人: 王剑\n动作: 发消息 | 内容: 范围补充想跟你对齐一下\n动作: 定会议 | 主题: 原型评审二次会 | 时间: 2026-08-22 14:00',
+      detail: '评审浮现两个范围补充\n动作: 建待办 | 内容: 确认会议模板排期 | 截止: 2026-08-25 | 负责人: 同事丙\n动作: 发消息 | 内容: 范围补充想跟你对齐一下\n动作: 定会议 | 主题: 原型评审二次会 | 时间: 2026-08-22 14:00',
     })
     const face = mountPane({
       items: [item({ advanceId: 'A-1', stage: 'decision-needed', title: '要决定' })],
       detail: {
         item: item({ advanceId: 'A-1', stage: 'decision-needed', title: '要决定' }),
         entries: [decision],
-        contextSources: [{ token: 'im:g1', kind: 'persistent', label: '830 项目', addedBy: 'user', addedAt: 1 }],
+        contextSources: [{ token: 'im:g1', kind: 'persistent', label: '测试群', addedBy: 'user', addedAt: 1 }],
       },
     })
     await settle()
@@ -983,7 +983,7 @@ describe('YzjAdvancePane', () => {
     await settle()
     expect(face.actionRuns[0]).toMatchObject({
       advanceId: 'A-1', actionKey: 'E-9:0', kind: 'todo', text: '确认会议模板排期',
-      fields: { 截止: '2026-08-25', 负责人: '王剑' },
+      fields: { 截止: '2026-08-25', 负责人: '同事丙' },
     })
     expect((face.container.querySelector('[data-testid="yzj-advance-action-0"]') as HTMLButtonElement).textContent).toContain('已建待办')
     // 发消息:就地草稿框预填,点发送投到恰一订阅群(host 落 refs=im:g:m 留痕)
@@ -992,10 +992,10 @@ describe('YzjAdvancePane', () => {
     const draft = face.container.querySelector('[data-testid="yzj-advance-action-draft"]') as HTMLTextAreaElement
     expect(draft.value).toBe('范围补充想跟你对齐一下')
     const send = face.container.querySelector('[data-testid="yzj-advance-action-send"]') as HTMLButtonElement
-    expect(send.textContent).toContain('830 项目')
+    expect(send.textContent).toContain('测试群')
     await act(async () => { send.click(); await Promise.resolve() })
     await settle()
-    expect(face.actionRuns[1]).toMatchObject({ kind: 'im', text: '范围补充想跟你对齐一下', imGroupId: 'g1', imGroupLabel: '830 项目' })
+    expect(face.actionRuns[1]).toMatchObject({ kind: 'im', text: '范围补充想跟你对齐一下', imGroupId: 'g1', imGroupLabel: '测试群' })
     // 定会议:留痕 + 跳日程域
     const eventBtn = face.container.querySelector('[data-testid="yzj-advance-action-2"]') as HTMLButtonElement
     await act(async () => { eventBtn.click(); await Promise.resolve() })
@@ -1055,7 +1055,7 @@ describe('YzjAdvancePane', () => {
       detail: {
         item: item({ advanceId: 'A-1', stage: 'running' }),
         entries: [entry({}), recEntry],
-        contextSources: [{ token: 'im:g1', kind: 'persistent', label: '830 项目', addedBy: 'user', addedAt: 1 }],
+        contextSources: [{ token: 'im:g1', kind: 'persistent', label: '测试群', addedBy: 'user', addedAt: 1 }],
       },
     })
     await settle()
@@ -1085,7 +1085,7 @@ describe('YzjAdvancePane', () => {
         item: item({ advanceId: 'A-1', stage: 'running' }),
         entries: [entry({}), recEntry, feedEntry],
         contextSources: [
-          { token: 'im:g1', kind: 'persistent', label: '830 项目', addedBy: 'user', addedAt: 1 },
+          { token: 'im:g1', kind: 'persistent', label: '测试群', addedBy: 'user', addedAt: 1 },
           { token: 'im:g-new', kind: 'persistent', label: '新群', addedBy: 'user', addedAt: 2 },
         ],
       },
@@ -1129,7 +1129,7 @@ describe('YzjAdvancePane', () => {
       detail: {
         item: item({ advanceId: 'A-1', stage: 'running', title: '试运行' }),
         entries: [entry({ entryId: 'E-1', at: '2026/08/20 15:58', summary: '产品需求细化', changeType: '进度更新' })],
-        contextSources: [{ token: 'im:g1', kind: 'persistent', label: '830 项目', addedBy: 'user', addedAt: 1 }],
+        contextSources: [{ token: 'im:g1', kind: 'persistent', label: '测试群', addedBy: 'user', addedAt: 1 }],
       },
     })
     await settle()
@@ -1155,7 +1155,7 @@ describe('YzjAdvancePane', () => {
       detail: {
         item: item({ advanceId: 'A-1', stage: 'running', title: '试运行' }),
         entries: [entry({ entryId: 'E-1', at: '2026/08/21 15:12', summary: '产品需求细化', changeType: '进度更新', producer: 'yzj-dream-20260821-101500' })],
-        contextSources: [{ token: 'im:g1', kind: 'persistent', label: '830 项目', addedBy: 'user', addedAt: 1 }],
+        contextSources: [{ token: 'im:g1', kind: 'persistent', label: '测试群', addedBy: 'user', addedAt: 1 }],
       },
     })
     await settle()

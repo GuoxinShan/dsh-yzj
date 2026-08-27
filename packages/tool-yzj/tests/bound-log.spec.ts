@@ -123,7 +123,7 @@ describe('cli projection', () => {
   it('parses a CLI list row; self in the Yunzhijia client is ① isSelf, not ②', () => {
     const row = cliMessageToEntry({
       msgId: 'm9', content: '我在客户端发的', msgType: 'text',
-      sendTime: '2026-08-16 20:00:00.000', fromOpenId: 'me', fromName: '国鑫',
+      sendTime: '2026-08-16 20:00:00.000', fromOpenId: 'me', fromName: '测试用户',
     }, 'inbound', 'me')
     expect(row?.origin).toBe('inbound')
     expect(row?.isSelf).toBe(true)
@@ -229,7 +229,7 @@ describe('formatSummonWindow', () => {
   it('marks isSelf as 我 and attaches a reply digest', () => {
     const entries = [
       entry({ msgId: 'm1', content: '原帖很长的内容会被截断', sentAt: 1 }),
-      entry({ msgId: 'm2', content: '回你', isSelf: true, fromName: '国鑫', replyMsgId: 'm1', sentAt: 2 }),
+      entry({ msgId: 'm2', content: '回你', isSelf: true, fromName: '测试用户', replyMsgId: 'm1', sentAt: 2 }),
     ]
     const text = formatSummonWindow(logOf(entries), { maxMessages: 20, maxChars: 4000 })
     expect(text).toContain('我 msgId=m2: 回你')

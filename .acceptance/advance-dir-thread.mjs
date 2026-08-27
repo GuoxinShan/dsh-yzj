@@ -1,4 +1,4 @@
-/** 决策 32 真机:关联渠道弹层(无手输+目录 picker)→ 测试事项关联「830实验·共识」目录 → scan 首扫基线 → 二扫静默。 */
+/** 决策 32 真机:关联渠道弹层(无手输+目录 picker)→ 测试事项关联「实验目录」目录 → scan 首扫基线 → 二扫静默。 */
 import { chromium } from 'playwright'
 import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -17,7 +17,7 @@ await page.waitForTimeout(2000)
 await page.getByTestId('yzj-workbench-tabs').getByRole('tab', { name: '推进' }).click()
 await page.waitForTimeout(4500)
 const pane = page.getByTestId('yzj-advance-pane')
-await pane.getByText(/830.{0,4}从参谋部到/).first().click()
+await pane.getByText(/测试事项/).first().click()
 await page.waitForTimeout(4000)
 await page.getByTestId('yzj-advance-thread-add-open').click()
 await page.waitForTimeout(2500)
@@ -25,14 +25,14 @@ const modal = page.getByTestId('yzj-advance-thread-modal')
 const modalText = await modal.innerText()
 ok('弹层无手输 token 输入框', await page.getByTestId('yzj-advance-thread-token').count() === 0)
 ok('目录 picker 列「我的知识(整库)」', modalText.includes('我的知识'), modalText.slice(0, 120).replace(/\n/g, ' '))
-ok('目录 picker 列「830实验·共识」', modalText.includes('830实验·共识'))
+ok('目录 picker 列「实验目录」', modalText.includes('实验目录'))
 await page.screenshot({ path: shot('audit-5-thread-modal.png') })
 // 关联目录
-const dirBtn = page.locator('[data-testid^="yzj-advance-thread-dir-"]').filter({ hasText: '830实验·共识' }).first()
+const dirBtn = page.locator('[data-testid^="yzj-advance-thread-dir-"]').filter({ hasText: '实验目录' }).first()
 await dirBtn.click()
 await page.waitForTimeout(3000)
 const chips = await page.getByTestId('yzj-advance-threads').innerText().catch(() => '')
-ok('目录 chip 出现', chips.includes('830'), chips.replace(/\n/g, ' '))
+ok('目录 chip 出现', chips.includes('测试'), chips.replace(/\n/g, ' '))
 await page.screenshot({ path: shot('audit-6-dir-linked.png') })
 console.log(failures === 0 ? 'ALL PASS' : `${failures} FAILURES`)
 await browser.close()

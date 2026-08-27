@@ -825,7 +825,7 @@ describe('yzj_advance_scan', () => {
       { id: 'd1', title: '纪要 0806', updateTime: '2026-08-19 10:00' },
     ]
     const sources = new ContextSourceStore()
-    await sources.add('A-1', { token: 'dir:dir-test', kind: 'persistent', label: '830实验·共识', addedBy: 'user', addedAt: 1 })
+    await sources.add('A-1', { token: 'dir:dir-test', kind: 'persistent', label: '实验目录', addedBy: 'user', addedAt: 1 })
     const { tools } = mountWithThreads(store, sources)
     const scan = tools.find(tool => tool.name === 'yzj_advance_scan')!
     // 首扫:基线不回灌
@@ -837,7 +837,7 @@ describe('yzj_advance_scan', () => {
     const second = await scan.execute({})
     expect(second.content).toContain('新增文档《纪要 0812》')
     expect(second.content).toContain('<d2>')
-    expect(second.content).toContain('830实验·共识')
+    expect(second.content).toContain('实验目录')
     // 更新文档(updateTime 变) → 信号
     store.dirDocs['dir-test'] = [
       { id: 'd1', title: '纪要 0806', updateTime: '2026-08-19 13:00' },

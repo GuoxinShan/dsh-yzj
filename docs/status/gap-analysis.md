@@ -589,7 +589,7 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 | 服务/RPC | `ctx.yzjAdvance`（state/get/ensure/create/feed/judge）与 todo 共享 active-library holder（库切换双板跟随）；`/yzj` +5 端点（advance-state/get/create/judge/ensure，25→30） | judge 五动词（确认新条件/确认推进→updated/验收→completed/打回→running/忽略→running）全部落 `操作者=user` 事元——D9 直写无卡 |
 | 独立看板 | **第五页签「推进」**（`WorkbenchDomain` 扩 `advance`，R21/R31 v1.18 修订——推进有真实数据源，与空壳「会议/AI速记」页不同）；`advance-pane.tsx` 按 lgap17 信息架构复刻：左队列三组带徽标（待我决定/待我验收/我关注的推进，空态文案沿原型语气）、主详情（kicker+阶段 pill、成功指标卡行、当前有效目标、阶段化决策区、三色时间旅程+来源跳转+查看全部翻页）、右侧信息来源（状态标：已确认/已读取/未达标/等待中）+已有产物+PRD 底注；发起推进弹窗=面板直写立项。**待办页签与 todo-pane 零改动** | `advance-pane.client.spec.tsx` 8 项 + room-shell 五页签断言；全量 551 绿；**真机看板 13/13 PASS**（`verify-advance-board.mjs`，探针 `A-20260819-001`）；**六态闭环 10/10 PASS**（2026-08-19 09:48，`.acceptance/verify-advance-loop.mjs`：`A-20260819-003`「闭环探针 105555」draft→running→待我决定→面板确认推进→updated→待我验收→面板确认达到目标→已完成；时间旅程保留立项/确认推进/验收通过，无确认卡、零页面错误；截图 `shots-advance/6–9-loop-*.png`） |
 
-**同日旁路真机（发群指定 dsh-2 `6a8400d4e4b09a073e3feeaf`）**：`topic-deliver` live job-done 绿（锚点「【验收】话题 job-done 锚点（R29）」+ 总结回帖 + `r29-summary.md` 跟发时间线）。群房间 e2e `YZJ_E2E_GROUP=dsh-2`：**发进群直写成功**（`【群房间e2e】01:38:12 5zpd`、无确认卡、交给助手开抽屉）；旧断言「composer 文案含发进群」FAIL——现行 placeholder 是 `发到 {群名}…`、发送钮是 aria「发进群」图标（`room-composer.tsx`）；回复 chip / 幂等「N 条回复」8s 内未出现。`verify-room-layout.mjs` 对 dsh-2：有界三栏 / 触底 / composer 可见 PASS；机器人折叠与抽屉 chip 依赖「测试群」的 BOT 历史，dsh-2 上 0 行属预期。
+**同日旁路真机（发群指定 dsh-2 `gid-dsh2`）**：`topic-deliver` live job-done 绿（锚点「【验收】话题 job-done 锚点（R29）」+ 总结回帖 + `r29-summary.md` 跟发时间线）。群房间 e2e `YZJ_E2E_GROUP=dsh-2`：**发进群直写成功**（`【群房间e2e】01:38:12 5zpd`、无确认卡、交给助手开抽屉）；旧断言「composer 文案含发进群」FAIL——现行 placeholder 是 `发到 {群名}…`、发送钮是 aria「发进群」图标（`room-composer.tsx`）；回复 chip / 幂等「N 条回复」8s 内未出现。`verify-room-layout.mjs` 对 dsh-2：有界三栏 / 触底 / composer 可见 PASS；机器人折叠与抽屉 chip 依赖「测试群」的 BOT 历史，dsh-2 上 0 行属预期。
 
 **分期状态**：①地基已交付；② 事元接入便捷化已交付（§24.1）；**③ AI 主动回路本次交付 host/面板切片（§24.2）**；④ 知识沉淀出口、⑤ 归集分析——见设计 §8。
 
@@ -672,9 +672,9 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 
 **已知偏差**：频率上限未做（决策 19 观察项）。sidecar 扫描走独立 `ScanCursorStore`（内存），不会写 GUI 进程的 cursor domain——看板「上次巡检」只在 GUI 内 `yzj_advance_scan` 之后更新。schedule 仅对新创建的 live root 生效（已有 root 需重开或新会话）。
 
-**真机闭环（2026-08-19 13:22，群 dsh-2 `6a8400d4e4b09a073e3feeaf`）**：sidecar `tsx .acceptance/advance-patrol-driver.ts` 把 cursor 回拨到最新非机器人消息之前 → `yzj_advance_scan` 扫到 1 条真信号 `6a850dc2e4b0b5c46221e6f6`（`[文件]:r29-summary.md`，09:58）→ inspect digest 含该 `<msgId>` → 立项 `A-20260819-008`「巡检闭环 945125」并 feed 进度更新（refs=该 msgId）→ 第二次同 ref feed `idempotent:true`、事元仍 3 条。`E2E_HEADED=1 node .acceptance/verify-advance-patrol.mjs` → **ALL PASS**：看板「我关注的推进」出现该事项，时间旅程第三行「巡检发现：群「dsh-2」[文件]:r29-summary.md」，信息来源「已读取」。截图 `.acceptance/shots-advance-patrol/1-patrol-board.png`。队列头仍「尚未巡检」——scan 跑在 sidecar 进程，不写 GUI 的 cursor domain；要让状态行跳「上次巡检」需在 root 会话里让模型调用 `yzj_advance_scan`。
+**真机闭环（2026-08-19 13:22，群 dsh-2 `gid-dsh2`）**：sidecar `tsx .acceptance/advance-patrol-driver.ts` 把 cursor 回拨到最新非机器人消息之前 → `yzj_advance_scan` 扫到 1 条真信号 `msg-scan`（`[文件]:r29-summary.md`，09:58）→ inspect digest 含该 `<msgId>` → 立项 `A-20260819-008`「巡检闭环 945125」并 feed 进度更新（refs=该 msgId）→ 第二次同 ref feed `idempotent:true`、事元仍 3 条。`E2E_HEADED=1 node .acceptance/verify-advance-patrol.mjs` → **ALL PASS**：看板「我关注的推进」出现该事项，时间旅程第三行「巡检发现：群「dsh-2」[文件]:r29-summary.md」，信息来源「已读取」。截图 `.acceptance/shots-advance-patrol/1-patrol-board.png`。队列头仍「尚未巡检」——scan 跑在 sidecar 进程，不写 GUI 的 cursor domain；要让状态行跳「上次巡检」需在 root 会话里让模型调用 `yzj_advance_scan`。
 
-## 24.5 AI推进｜v1.5 意图线程订阅模型 + MVP→灵基迁移合同（2026-08-19，纯文档，无代码）
+## 24.5 AI推进｜v1.5 意图线程订阅模型（2026-08-19，纯文档，无代码）
 
 出处：0819 14:00 产品方案讨论会（转录 `转录：AI推进产品方案讨论 20260819 1400.txt`，会上确认三概念定型、命名口径、两个待补交付物）+ 用户旅程口述定稿。
 
@@ -686,46 +686,7 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 
 **实现缺口（③.2，已于 §24.7 落地）**：`yzj_advance_threads`、面板「关联渠道」入口、scan 按订阅取流分发、决策区 `选项N` 渲染均已实现；feed 带 `subscribe` 与单文档源内容更新监测仍后置（见 §24.7 已知偏差）。
 
-**正式开发交付面（同日晚补，已发 测试群；汇报产物不留仓库——用户拍板）**：接口数据契约 v1.0（自 spec v1.5 提炼的三对象字段级 + 状态机 + 门控 + 判据 + 接口面 + 平台需求八条快照）、示例故事线文字版（10 项任务分摊 / AI 自动 7 / 人 4 次判断 / 干预入口 / 节奏边界）、系统架构蓝图 / 产品模块关系图 / 故事线图三张。五件已发群「测试群」（`gid-test`）：文本消息 `msg-out-a`（含外部协助三件事：灵基平台八项排期 / 约同事丙对齐 / AI 速记结构化访问），文件消息 `file-out-a`（架构蓝图 png）/ `file-out-b`（模块关系 png）/ `file-out-c`（故事线 png）/ `file-out-d`（契约 md）/ `file-out-e`（故事线文字版 md），2026-08-19 16:51。**这些文件只存在于群消息，仓库不保留副本**；合同唯一事实源 = spec v1.5。
-## 24.6 AI推进｜830 真数据闭环实验（2026-08-19，执行人：agent）
-
-实验脚本：[`.acceptance/advance-830-experiment.md`](../../.acceptance/advance-830-experiment.md)；driver：`advance-830-wave1.mjs` / `advance-830-wave1-fix.mjs` / `advance-830-wave2.mjs`；截图：`.acceptance/shots-advance-830/`。
-
-**环境**：GUI 3080 于 18:22 重启（cursor 回拨需新进程加载）；cursor 回拨至 `msg-anchor`（同事乙需求前一条，8/18 14:47）。**模型为 MiMo V2.5**（实验文档写 DeepSeek-V4-Pro；执行时经发起人拍板沿用当前档位 MiMo V2.5）。**会话权限档位必须 Workspace Write**——Full access = approval never，ask 自动转 deny（新坑 [pitfall-036](../pitfalls/pitfall-036-full-access-disables-approval.md)，首轮四连发全灭后定位）。
-
-**第 0 波（知识底座）**：4 篇四段式纪要入「我的知识/830实验·共识」（父 `6a8572c1fcb8644499540553`）——0806 `6a85774aecd3fb103b859f8a`、0812 日例会 `6a85774bfcb86444995406ed`、0813 方案会 `6a85774dfcb86444995406ee`、0819 产品会 `6a85774eecd3fb103b859f8b`。原料=群文件转录 3 份（file download）+ docx 智能纪要 1 份（textutil 解析）+ 本地 0819 转录；人工读转录写纪要，全程 yzj-cli 只写个人知识库。
-
-**第 1 波（立项+回放）**：root Chat 新会话四连发。立项 `A-20260819-002`「830：从参谋部到 AI推进」弹卡①确认；② 回放（refs=0806+0812 docId）静默落；③ 目标更新**首次 feed 被 host refs 去重误吞**（refs 与 ② 的 0812 docId 交集 → 幂等返回不加行，模型追问，弹卡②确认的写未生效）→ 补救换 refs=8/12 定义卡 msgId `6a7c1274e4b09a073bec3d4d` 重 feed，弹卡③确认，goal 更新为「按 AI推进产品定义：六态看板+最小推进回路，跑通纪要→共识入库→下一步编排」；④ 0813 回放（refs=0813 docId）静默落。终态时间旅程 4 行 + 目标区新 goal + 指标卡三行（截图 `10-detail-after-fix.png`）。
-
-**第 2 波（真巡检）**：cursor 回拨 + 重启后新会话发 §5 原文 prompt（MiMo V2.5，加「不要询问」行为指令，无结果暗示）。一轮 scan 覆盖（limit=20，过滤本人/`BOT-` 后 16 条候选）：队列头「上次巡检 18:26 · 本轮发现 20 条」（截图 `w2-3`）；模型 inspect 比对后**静默 feed 一条进度更新**（「PRD v2.1 已产出并分享；0819 评审会已开」），refs 7 个含同事乙需求 `msg-signal` 与 PRD `msg-prd`；竞争力报告线（同事丁等 4 条）被明确抑制（模型汇报原文：「竞争力报告、npm cli 安装、图片/文件等 13 条信号与 AI推进目标无关，已抑制」）；本人 16:51 六条交付不在 refs。**巡检波 0 张确认卡**（静默纪律成立）。幂等测试：同 refs 二次 feed → host 幂等返回，`yzj_advance_get` 事元总数 5 不变（截图 `w2-5`）。
-
-**判定总表**：
-
-| # | 判定项 | 结果 | 证据 |
-|---|---|---|---|
-| 1 | 知识底座 ≥3 篇四段式纪要 | **PASS** | 4 篇 docId 如上；父目录「830实验·共识」 |
-| 2 | 立项经一张确认卡 | **PASS** | `1-create-card-1.png`；A-20260819-002 |
-| 3 | 时间旅程 ≥4 行且 8/12 目标更新弹卡 | **PASS（含补救）** | 4 行旅程 + 目标更新卡（首试被 refs 去重误吞，补救换 msgId ref 后成功；详见判定 9） |
-| 4 | 队列头「上次巡检 · 发现 N≥1 条」 | **PASS** | 「上次巡检 18:26 · 本轮发现 20 条」`w2-3-board-after-scan.png` |
-| 5 | 同事乙需求/PRD 入 refs | **PASS** | 两个 msgId 均在详情 refs；`w2-4-detail-after-scan.png` |
-| 6 | 竞争力报告噪音拒绝 | **PASS** | 详情零「竞争力」事元；模型抑制汇报见会话 |
-| 7 | 本人 16:51 六条过滤 | **PASS** | 六个 msgId 均不在 refs |
-| 8 | 幂等 | **PASS** | 二次 feed 同 refs → 事元 5 条不变；`w2-5-idem-done.png` |
-| 9 | 确认卡恰好 2 张 | **FAIL（实际 3 张）** | 立项① + 目标更新首试②（确认的写被 refs 去重吞掉、未生效）+ 目标更新补救③。门控线本身全部正确（纯追加/巡检静默、基准变更弹卡）；多出的卡是**机制误伤**的补救成本 |
-
-**结论（打扰判据精度首份真机证据）**：静默/打扰边界在真数据上成立——巡检波 16 条候选信号里模型只喂 1 条合并进度更新（零打扰），噪音全拒、自身全滤；判据文本与 `INSPECT_DISCIPLINE` 教学在 MiMo V2.5 上有效。**唯一机制缺陷：host refs 去重粒度**——「refs 有交集 → 整体幂等」误伤「不同事元合法引用同一文档」（②③ 都引 0812 纪要是合理的）。建议（待拍板，未改代码）：(a) 去重仅对 msgId 类信号 ref 生效，docId 引用不参与；或 (b) 幂等返回显式区分「完全重复」与「部分 refs 重叠」（后者应追加并提示重叠 refs），让模型当场可继续而不是追问中断。此项建议同步影响 §13 判据文本/`INSPECT_DISCIPLINE` 的 refs 选用指引。
-
-**修复闭环（同日晚，决策 25）**：去重口径收窄为「refs 集合完全相等 + 同一 changeType 才算重放」（`isRefReplay`），部分重叠正常追加并返回 `overlappedRefs` 提示（`overlappedRefsOf`）；feed description 与 spec 决策 19/25、§13.3/§15.3、tool-yzj README 同步。单测 +3（830 回归用例：子集重叠追加带提示 / 同 refs 异 changeType 追加 / 超集追加 / 完全重放仍幂等；纯函数 `isRefReplay`/`overlappedRefsOf` 断言），全量 578 绿。真机回归（`advance-830-regression.mjs`）：巡检会话重放同一组 7 refs + 同 changeType → 幂等返回、事元仍 5 条（E-20260819-018 唯一承载），全程无确认卡（截图 `regression-idem.png`）。判定 9 的「3 张卡」维持历史事实不改写；若重跑第 1 波，③ 场景下应为恰好 2 张。
-
-**同一晚的连环修正（诚实记录）**：
-
-1. **回归证据当时无效**：上述真机回归实际跑在 worktree 旧 bundle 上——web profile 的 `@dsh-yzj/bundle` link 被③.2 开发切到 `~/.qoder/worktree/…` 未归位（新坑 [pitfall-038](../pitfalls/pitfall-038-profile-bundle-link-stale.md)）。完全重放在新旧语义下都幂等，故结论巧合成立；决策 25 的有效真机证据 = 单测 3 用例 + 下文过滤修复验证。link 已归位主 checkout。
-2. **判定 7 的 digest 层真相**：scan 的本人过滤（`whoamiOpenId`）因 `contact user get` 返回顶层裸数组而解析失配，selfOpenId 恒空——**digest 一直含本人消息**，判定 7 的 PASS 只证明了 refs 层（模型抑制纪律兜底），③.2 走查时模型把本人 19:22 报告当信号分析而暴露（pitfall-003 增补实例：mock 形状照错误假设写，单测绿真机挂）。已修：解析层裸数组优先兼容 `{list}`，fake store 改实测形状形成回归保护；真机验证（`advance-830-self-filter.mjs`，cursor 回拨 18:11 重扫）：本人 19:22/19:23 两条不再出现在 digest，19:42 非本人图片正常进入，ALL PASS。
-3. **遗留观察（limit 截断）**：第 2 波 scan limit=20 一轮覆盖 27 条候选时，17:18–18:11 的 5 条晚到信号（同事乙「工作现场」补充等）疑似未被任何一轮 feed/显式抑制——模型未触发第二轮 scan（§5 允许的「再扫一轮」依赖模型自报增量）。此为主动回路的覆盖度边界，记入③.2 后续观察。
-
-**遗留观察**：实验期间看板出现非本实验的探针事项（「线程探针 910289」18:05、「喂入探针 532538/928101/187603」18:16–18:27，为并行走查产物），不影响判定；实验现场（A-20260819-002 与「830实验·共识」目录）按 §9.1.4 保留，清理由 Guoxin Shan 决定。
-
-**结果同步（§9.2.1，19:22–19:23）**：实验报告 + 看板最终态图已发 测试群（文本 `6a8591fee4b0f812dd4eda8c` / 图 `6a85921ae4b098e1531d3d4a`），兑现 16:51 预告的「跑通后出实验报告」。
+汇报产物不留仓库。合同唯一事实源 = spec v1.5。
 
 ## 24.7 AI推进｜③.2 意图线程订阅（2026-08-19，设计随提交）
 
@@ -776,7 +737,7 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 
 **事元来源区窗口化（同日续）**：「当前判断来自哪里」默认只显示最近 3 条 +「展开全部 N 条 / 收起」（与时间旅程「查看全部」同型）；意图线程的加（关联渠道弹层）/去（chip ×）为既有能力，真机确认在位。607 绿。
 
-**目录级订阅（同日续，决策 32，用户拍板「知识库一整个才能自动获取增量」）**：token 词汇加 **`dir:<docId>`**（知识库目录节点；整库=库根目录 `dir:<kbId>`），kind=persistent 进持续渠道——scan 聚合时按 `doc list --parent-id` 取增量（首扫快照 docId→updateTime 建基线不回灌；增量=新增/更新文档，信号 refs=<docId>、sourceType=文档）；cursor 存 scan domain 新 `dirs` 表。关联弹层**去掉手输 token**（开发者界面不是用户界面）：只留 IM 群 picker + 知识库目录 picker（「我的知识（整库）」+ 一层 hasChildren 目录）；chip 图标加「库」。单测 +3（dir 扫描全生命周期：基线/新增/更新/静默；弹层无手输+目录 picker+dir 关联；threadKindOf dir=persistent）；真机：弹层关联「830实验·共识」ALL PASS（`audit-5/6`），scan digest 含目录基线行（`audit-7`）。608 绿。存量 doc:/todo:/event:/file: 单文档源保留（关联即事元，静态引用）。
+**目录级订阅（同日续，决策 32，用户拍板「知识库一整个才能自动获取增量」）**：token 词汇加 **`dir:<docId>`**（知识库目录节点；整库=库根目录 `dir:<kbId>`），kind=persistent 进持续渠道——scan 聚合时按 `doc list --parent-id` 取增量（首扫快照 docId→updateTime 建基线不回灌；增量=新增/更新文档，信号 refs=<docId>、sourceType=文档）；cursor 存 scan domain 新 `dirs` 表。关联弹层**去掉手输 token**（开发者界面不是用户界面）：只留 IM 群 picker + 知识库目录 picker（「我的知识（整库）」+ 一层 hasChildren 目录）；chip 图标加「库」。单测 +3（dir 扫描全生命周期：基线/新增/更新/静默；弹层无手输+目录 picker+dir 关联；threadKindOf dir=persistent）；真机：弹层关联「实验目录」ALL PASS（`audit-5/6`），scan digest 含目录基线行（`audit-7`）。608 绿。存量 doc:/todo:/event:/file: 单文档源保留（关联即事元，静态引用）。
 ## 24.10 AI推进｜Dream 蓄水池落地 + scan 截断修复（2026-08-20，决策 33/34）
 
 **Dream 蓄水池（spec §17）**：`yzj_advance_dreampool` storage-domain（pool + meta 两表）；Work scan 的每个 accepted 信号（IM + dir）copy 入池 pending，Work 即时处理不受影响。工具面：`yzj_advance_dream_status`（pending 清单+水位+lastDreamAt，description 内嵌抽取流程教学）+ `yzj_advance_dream_mark`（标记 done，host 内部状态不进 WRITE_SPECS）。服务面 `dreamState()` + RPC `advance-dream-state`。面板队列头水位行「池中 N 条待抽取 · 上次抽取 HH:mm」+「Dream 抽取」按钮（ask bus kind='dream'，banner「Dream 抽取已预备」）。触发三径：手动（演示主路径）+ 水位提示 + 定时 schedule（沿用既有机制）；host 自动唤起 agent 会话后置（迁移文档）。
@@ -784,22 +745,7 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 **scan 截断修复**：真机实验观察项 3 落地——单页 20 条截断丢晚到信号；改 `listImMessagesAll` 自动翻页取完增量（`MAX_SCAN_MESSAGES=200` 防爆上限）。回归用例：基线后涌入 25 条 → 一次 scan 全收（25 条新信号）。
 
 **验证**：单测 610 绿（+dream 水位行用例 +dir 全生命周期 +翻页回归）；真机 `advance-dream-demo.mjs` ALL PASS：cursor 回拨→巡检入池→看板「池中 1 条待抽取」+「Dream 抽取」→banner 预备（`audit-8/9`）。明天演示路径=看板「巡检」→ 回看板看水位 → 「Dream 抽取」。
-## 24.11 AI推进｜真机实验聚焦复验（2026-08-20，修复决策 25 + scan 截断后）
 
-复验动机：决策 25（refs 去重收窄）与 scan 截断修复直接影响判定 3/4/5/8/9，原实验证据需在新代码下重取。方法：新探针事项「830 复验探针 0820」（A-20260820-001，不碰演示现场）重跑第 1 波四步；cursor 回拨 ANCHOR 重跑第 2 波。driver：`advance-830-reverify.mjs` / `advance-830-reverify2.mjs`。
-
-| 判定 | 复验结果 | 证据 |
-|---|---|---|
-| 3 回放+目标更新弹卡 | **PASS（③ 一次成功）** | 部分重叠 refs（③ refs=[0812] ⊂ ② refs）不再被误吞，目标更新首试即落；`rv-replay3-card1.png` |
-| 4 队列头发现 N≥1 | **PASS（截断修复生效）** | 单轮 scan 取全 25 条（旧版单页 20 截断）；17:18 工作现场、18:11 需求一等旧版丢失信号本轮可见 |
-| 5 信号命中 | **PASS** | 模型静默 feed 8 条真实 msgId refs（PRD/原型/评审/工作现场/需求一） |
-| 8 幂等 | **PASS** | 同 refs+changeType 重放 → 同源去重，事元不加行 |
-| 9 恰好 2 卡 | **PASS** | 立项卡 + 目标更新卡，全程 2 卡（原实验 3 卡的偏差消除） |
-| 6 噪音拒绝 | **漂移** | 原实验模型拒了竞争力报告；复验 run 模型把竞争力报告讨论聚合进 refs（作为「实质信号」之一）。同一信号集两次 run 判断不一致——判据教学面不够稳，见下 |
-
-**判据教学面修订提议（待拍板，§9.3 流程）**：`INSPECT_DISCIPLINE` 增补显式噪音例——「与事项目标/指标无显式引用的平行议题讨论（如战略竞争力报告评测线），即使高频出现也不作实质信号；只有显式引用本事项目标/指标/产物的消息才算信号」。理由：模型自由裁量下噪音边界漂移，需把 真机实验观察到的噪音类型固化进教学。拍板后改 spec §13.3 + `advance.ts` 教学字符串。
-
-**复验暴露的非 bug 事实**：复验探针立项时未自动带线程①（driver 立项 prompt 未传 threads），首跑 scan 因「无订阅」全拒——订阅分发纪律（信号 ∈ 事项线程才 feed）按设计工作；手工关联 测试群后复跑即通。演示/真机立项走面板/话题路径时线程①自动挂（create threads 参数），不受影响。
 ## 24.12 AI推进｜概念修正：意图线程 → 上下文来源（2026-08-20，v1.8，全量改名含代码）
 
 用户拍板：「意图」属于事项（意图体），渠道只是事项的**上下文来源**——旧命名把意图倒挂到了渠道上。改名深度：文档 + UI 文案 + 代码标识 + storage domain 全量改，含 legacy 存储迁移。
@@ -812,10 +758,10 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 | 文档 | spec §15 重写（持续源/静态源二分）+ 术语表/分期/决策 20 同步；migration 三概念加 v1.8 修订注记；README 索引同步；diagrams advance-1/6 重渲染 |
 | 历史节 | §24.5/§24.7 等历史留痕不重写（演进用追加段落，AGENTS.md 规矩） |
 
-**真机验证**：重启 GUI 后 测试事项「上下文来源」区显示迁移过来的两个订阅 chip（测试群 + 830实验·共识 目录）——legacy 迁移成功；下区「事元」正常。610 绿。截图 `shots-advance-ux/ux-redesign.png`。
+**真机验证**：重启 GUI 后 测试事项「上下文来源」区显示迁移过来的两个订阅 chip（测试群 + 实验目录 目录）——legacy 迁移成功；下区「事元」正常。610 绿。截图 `shots-advance-ux/ux-redesign.png`。
 ## 24.13 AI推进｜巡检收敛：host 机械 routine，AI 只在抽取时出场（2026-08-20，v1.8，决策 35）
 
-用户拍板：「巡检应该是不需要 AI 的，抽取事元才需要」。原混合双节奏（Work 模型实时判断 + Dream 再抽取）冗余且漂移（830 复验判定 6 观察到同一信号集模型两次判断不一致）。
+用户拍板：「巡检应该是不需要 AI 的，抽取事元才需要」。原混合双节奏（Work 模型实时判断 + Dream 再抽取）冗余且漂移（复验判定 6 观察到同一信号集模型两次判断不一致）。
 
 | 层 | 改动 |
 |---|---|
@@ -893,31 +839,31 @@ host 端 `stringField` 空=缺失校验保持原样（校验正确，错在 clie
 
 **§24.18 三续（同日，纯三层树）**：用户再纠「右边是事元、事元下面是原始信息；多条信息→一个事元，多个事元→演进状态」——上一轮把聚合列改名为「原始信息」方向错了：扁平聚合列本身就破坏三层树（N:1 归属关系在 UI 上不可见）。本轮收掉扁平列：详情主体 = 推进演进（事元时间线，副标「多个事元折叠出演进」），事元展开见「原始信息 N」区（事件行可读化+点击定位），侧栏只留「上下文来源」订阅管理；sideNote 改写为三层结构自述。aggregateSources 升级 citing（引用事元列表）保留在 API 面（agent 仍可用）；showAllSources 窗口化随列删除。测试：窗口化用例改为「聚合不再呈现」，msg 跳转用例改走事元展开路径；618 绿；真机 verify-advance-anchor.mjs（已改为事元展开→点原始信息行→跳转定位）全 PASS。
 
-**§24.18 四续（同日，原始信息默认挂载）**：用户再纠「事元的列表怎么没了、原始信息放中间、这是 2 层」——上轮把原始信息藏进「展开详情」里，用户视角事元列表与原始信息的从属关系不可见（看着像两层）。改为默认挂载：每条事元行下直接渲染「原始信息 N」区（事件行/chip 默认可见，>2 条显示最新 2 条 + 「展开全部 N 条原始信息」；≤2 条且无 detail 时不再渲染 toggle）。三层一眼可见：事项→事元行→原始信息行。测试去掉展开前置步骤（默认可见）；618 绿；真机 verify-advance-anchor.mjs 全 PASS；830 详情实测 11 个原始信息区默认可见（截图 4-tree.png）。
+**§24.18 四续（同日，原始信息默认挂载）**：用户再纠「事元的列表怎么没了、原始信息放中间、这是 2 层」——上轮把原始信息藏进「展开详情」里，用户视角事元列表与原始信息的从属关系不可见（看着像两层）。改为默认挂载：每条事元行下直接渲染「原始信息 N」区（事件行/chip 默认可见，>2 条显示最新 2 条 + 「展开全部 N 条原始信息」；≤2 条且无 detail 时不再渲染 toggle）。三层一眼可见：事项→事元行→原始信息行。测试去掉展开前置步骤（默认可见）；618 绿；真机 verify-advance-anchor.mjs 全 PASS；演示详情实测 11 个原始信息区默认可见（截图 4-tree.png）。
 
-**§24.18 五续（同日，doc 叶子可读化）**：用户「你看看！我感觉不对」——界面结构渲染正常（11 个原始信息块、零错误），真正不对的是叶子：doc 类原始信息是截断 ID chip（文 6a85774a…），用户读不出文档是什么，三层看着像两层。advance-ref-lookup 升级为按 kind 解析（payload `{ refs: [{token,kind}] }`）：msg → bound log 事件行（既有）；doc → `doc get --id` 取 fileName（进程内缓存，miss 不缓存），面板命中渲染「文档 + 文件名」链接卡。真机 830 实测：4 个真实文档名全部显示（830纪要·0806/0812/0813…），截断 ID chip 清零；legacy 裸 msgId（Dream 抽取旧 digest 产物）仍降级 ID chip。619 绿。
+**§24.18 五续（同日，doc 叶子可读化）**：用户「你看看！我感觉不对」——界面结构渲染正常（11 个原始信息块、零错误），真正不对的是叶子：doc 类原始信息是截断 ID chip（文 doc-id…），用户读不出文档是什么，三层看着像两层。advance-ref-lookup 升级为按 kind 解析（payload `{ refs: [{token,kind}] }`）：msg → bound log 事件行（既有）；doc → `doc get --id` 取 fileName（进程内缓存，miss 不缓存），面板命中渲染「文档 + 文件名」链接卡。真机 实测：4 个真实文档名全部显示（纪要·示例讨论等），截断 ID chip 清零；legacy 裸 msgId（Dream 抽取旧 digest 产物）仍降级 ID chip。619 绿。
 
-**§24.18 六续（同日，事元描述默认展示）**：用户最终澄清「一个进度下面挂事元，事元本身也是一段描述，事元下面才是原始信息」——「事元」= 变化内容那段描述文字（此前折叠在「查看详情」里，视觉上进度行直接跳原始信息，描述层缺失）。改为 detail 默认渲染（entryDetail 样式，pre-wrap）；toggle 收窄为仅 refList>2（「展开全部 N 条原始信息」）。四层呈现齐备：进度行（changeType·summary）→ 事元描述（detail）→ 原始信息（文档名/消息事件行）→ 点击直达现场。619 绿；真机 830 详情 3 段描述默认可见（截图 look-final）。
+**§24.18 六续（同日，事元描述默认展示）**：用户最终澄清「一个进度下面挂事元，事元本身也是一段描述，事元下面才是原始信息」——「事元」= 变化内容那段描述文字（此前折叠在「查看详情」里，视觉上进度行直接跳原始信息，描述层缺失）。改为 detail 默认渲染（entryDetail 样式，pre-wrap）；toggle 收窄为仅 refList>2（「展开全部 N 条原始信息」）。四层呈现齐备：进度行（changeType·summary）→ 事元描述（detail）→ 原始信息（文档名/消息事件行）→ 点击直达现场。619 绿；真机 演示详情 3 段描述默认可见（截图 look-final）。
 
-**§24.18 七续（同日，进度节点分组）**：用户「那进度更新不是从多个事元来的吗🤔」——此前时间线每行=一条事元，「进度更新」只是类型前缀，用户模型里的聚合层（进度节点=多个事元）缺失。呈现层改为两级树：连续同 changeType 的事元聚为一个「进度节点」（组头=类型+事元数+时间范围，如「进度更新 8 个事元 · 18:28 → 15:58」），节点内每条事元=summary+detail（描述）+原始信息，事元行不再带类型前缀。数据模型不动（纯呈现分组）；真机 830 呈 6 个进度节点（备注1/进度更新2/目标更新1/进度更新8/偏差1…），完整四层：演进→进度节点→事元（描述）→原始信息。619 绿。
+**§24.18 七续（同日，进度节点分组）**：用户「那进度更新不是从多个事元来的吗🤔」——此前时间线每行=一条事元，「进度更新」只是类型前缀，用户模型里的聚合层（进度节点=多个事元）缺失。呈现层改为两级树：连续同 changeType 的事元聚为一个「进度节点」（组头=类型+事元数+时间范围，如「进度更新 8 个事元 · 18:28 → 15:58」），节点内每条事元=summary+detail（描述）+原始信息，事元行不再带类型前缀。数据模型不动（纯呈现分组）；真机 呈 6 个进度节点（备注1/进度更新2/目标更新1/进度更新8/偏差1…），完整四层：演进→进度节点→事元（描述）→原始信息。619 绿。
 
 **§24.18 八续（08-21，三层定稿）**：用户最终拍板主骨架为三层「演进 → 事元 → 原始信息」——上一轮的「进度节点」分组层是过度解读（进度更新只是事元的类型标签，不是独立层），已删 groupEntriesByChangeType/entryGroup，回扁平事元时间线（事元行 = changeType·summary 进度行 + detail 描述 + refs 原始信息）。存量 10 条空 detail 事元补描述正文（sqlite 直改）；feed 工具 detail description 与 dreamAskPrompt 加纪律「事元必须带描述正文」。todo.spec 日期炸弹修复（DDL 硬编码 2026-08-20 随真实日期过期，改相对日期）。图 advance-1/5 措辞四层→三层并重渲。619 绿；真机 13 条事元全带描述、分组头清零。
 
 ## 24.19 AI推进｜dir: 订阅与速记归档库错位：新会议纪要不进池（2026-08-21，pitfall-041）
 
-用户「关联了知识库却没有进抽取池，有几个新的会议纪要」——排查链：storages 三 JSON（sources/cursors/dreampool）+ `doc recent` 定位文档实际库。结论：机制全部健康（im: 增量正常、dir: 基线按时建立），扫不到的根因是**金蝶云 AI 速记把纪要归档到独立库（AI速记知识库 6a744266… / 会议生成的共享库 6a87bea5…），不归档到用户订阅的「我的知识」**；叠加两道既有口径闸：doc list 只列一层子节点（整库订阅不看子目录）、dir: 首扫基线不回灌（决策 32）。
+用户「关联了知识库却没有进抽取池，有几个新的会议纪要」——排查链：storages 三 JSON（sources/cursors/dreampool）+ `doc recent` 定位文档实际库。结论：机制全部健康（im: 增量正常、dir: 基线按时建立），扫不到的根因是**金蝶云 AI 速记把纪要归档到独立库（AI速记知识库 <kbId-minutes> / 会议生成的共享库 <kbId-shared>），不归档到用户订阅的「我的知识」**；叠加两道既有口径闸：doc list 只列一层子节点（整库订阅不看子目录）、dir: 首扫基线不回灌（决策 32）。
 
 | 面 | 事实 |
 |---|---|
-| 订阅 | A-20260819-002 挂 dir:830实验·共识（4 文档）+ dir:我的知识整库（根层级 12 文档），基线 08-21 11:28 已立 |
-| 新纪要实际位置 | 08-20 业务设计启动会纪要 → AI速记知识库；08-21 上午两场沟通会纪要 → 会议共享库 6a87bea5（不在用户 workspace list） |
+| 订阅 | A-20260819-002 挂 dir:实验目录（4 文档）+ dir:我的知识整库（根层级 12 文档），基线 08-21 11:28 已立 |
+| 新纪要实际位置 | 08-20 业务设计启动会纪要 → AI速记知识库；08-21 上午两场沟通会纪要 → 会议共享库 kb-shared（不在用户 workspace list） |
 | 池 | 90 条 pending 全 im: 渠道，无 dir: 条目 |
 
 补救口径：增量挂「AI速记知识库」dir: 订阅（基线后新纪要自动入池；临时共享库需 agent source_add 直传 token）；存量纪要不经池，Dream/话题里 agent 读 docId 直接 feed（refs=[docId]）。**产品缺口留⑤期**：速记归档库随会议增生、dir: 订阅追不上——需要速记库聚合订阅或归档目标可配进「我的知识」。无代码改动（机制符合 spec），spec §15.3 已补缺口注记，诊断路径固化在 pitfall-041。
 
 ## 24.20 ui-yzj｜关联来源 picker 只列「我的知识」漏掉 AI速记知识库（2026-08-21，决策 40）
 
-用户「你好些关联的不是知识库而是文档？我的知识库是这两个感觉不对」——两个观察都属实：(a) picker 的「830实验·共识」实为 .otl 文档（hasChildren 才被当目录列出，dir: 扫描对它工作正常，otl 可有子节点）；(b) **picker 只 `find(name.includes('我的知识'))`，AI速记知识库（速记纪要自动归档地，pitfall-041 的根因库）永远不在选项里**。修复：picker 改列全部个人库（`doc workspace list --type personal`，实测返回 AI速记知识库 + 我的知识 2 库），每库一个整库选项 + 一层 hasChildren 目录，多库时目录 label 带库名前缀（`AI速记知识库 / xxx`）；个人库有界 6（MAX_PICKER_WORKSPACES）。另实测 `doc get --id <kbId>` 返回 DOC_NOT_FOUND——整库订阅 dir:<kbId> 走 listDirDocs 的「非 docId」分支直接按 workspace 列根层级，工作正常。测试：mock 改双库分返 + 断言两整库与库名前缀；619 绿。真机截图 picker-dirs.png：picker 列出 AI速记知识库（整库）+ 3 个速记纪要目录 + 我的知识（整库）+ 830实验·共识。用户挂上「AI速记知识库（整库）」后，基线后每场新会纪要自动入池；存量 3 份（08-20 三场会）不回灌，Dream 里读 docId 直接 feed 即可。
+用户「你好些关联的不是知识库而是文档？我的知识库是这两个感觉不对」——两个观察都属实：(a) picker 的「实验目录」实为 .otl 文档（hasChildren 才被当目录列出，dir: 扫描对它工作正常，otl 可有子节点）；(b) **picker 只 `find(name.includes('我的知识'))`，AI速记知识库（速记纪要自动归档地，pitfall-041 的根因库）永远不在选项里**。修复：picker 改列全部个人库（`doc workspace list --type personal`，实测返回 AI速记知识库 + 我的知识 2 库），每库一个整库选项 + 一层 hasChildren 目录，多库时目录 label 带库名前缀（`AI速记知识库 / xxx`）；个人库有界 6（MAX_PICKER_WORKSPACES）。另实测 `doc get --id <kbId>` 返回 DOC_NOT_FOUND——整库订阅 dir:<kbId> 走 listDirDocs 的「非 docId」分支直接按 workspace 列根层级，工作正常。测试：mock 改双库分返 + 断言两整库与库名前缀；619 绿。真机截图 picker-dirs.png：picker 列出 AI速记知识库（整库）+ 3 个速记纪要目录 + 我的知识（整库）+ 实验目录。用户挂上「AI速记知识库（整库）」后，基线后每场新会纪要自动入池；存量 3 份（08-20 三场会）不回灌，Dream 里读 docId 直接 feed 即可。
 
 ## 24.21 ui-yzj｜推进看板视觉走查：--dsh- 变量笔误 + 孤儿标签 + 时间线无轨道（2026-08-21，pitfall-042）
 
@@ -941,35 +887,35 @@ host 端 `stringField` 空=缺失校验保持原样（校验正确，错在 clie
 | ref 形态 | 旧链路 | 新链路 |
 |---|---|---|
 | `im:<g>:<m>` | bound log 直查（已有） | 同左 + hit 带 jumpToken |
-| 裸 msgId（08-20 Dream 旧 digest 产物） | client 直接不上送（只送 im:），渲染「聊 6a8427…」裸 id | host 经 `listBindings` 扫全部绑定会话 log，命中渲染事件行 + jumpToken 锚点直达；真 miss 才降级「聊 群消息」chip（不露 id） |
+| 裸 msgId（08-20 Dream 旧 digest 产物） | client 直接不上送（只送 im:），渲染「聊 <msgId>」裸 id | host 经 `listBindings` 扫全部绑定会话 log，命中渲染事件行 + jumpToken 锚点直达；真 miss 才降级「聊 群消息」chip（不露 id） |
 | `dp-*` 池 id（抽取 agent 违反 prompt 抄的池内键） | kind=other 不上送，渲染「源 dp-1787…」 | yzjAdvance 新增 `dreamPoolLookup(ids)`（含 done；池永不删）→ channel+refId 还原：`im:` → log 取 fromName/本体（miss 用池副本）+ jumpToken；`dir:` → doc get 文件名卡 |
 | doc | `doc get` 文件名（已有） | 同左 + hit 带 docId |
 
 client 渲染改为 **hit 优先**：命中一律按 hit.kind 渲染（文档卡/消息事件行），entry.sourceType 推断的 kind 只作未命中降级——agent 乱写 ref 形态时 host 按 token 形状兜底。写侧纪律同步加固：dreamAskPrompt 明确「禁止把池条目 id(dp-*)抄进 refs」。面板「聊 群消息」降级 chip 保留点击（裸 id 走锚点/恰一渠道猜群，决策 39 语义不变）。
 
-测试：tool-yzj `DreamPoolStore.lookup`（含 done）；rpc.node spec 四 ref 形态（dp→msg/dp→doc/裸 msgId/miss）；client spec 三例（裸 msgId 事件行不露 id、dp-* jumpToken 锚点、miss 降级「聊 群消息」）。624 绿 + typecheck 绿。真机（GUI 重启后）：830 时间线 14 条事元 refs 全部可读（同事乙/同事甲事件行 + 文档名卡），dp-/裸 hex 清零，截图 ux-align-fix-refs.png（ux-shot-align.mjs 增两条断言全 PASS）。
+测试：tool-yzj `DreamPoolStore.lookup`（含 done）；rpc.node spec 四 ref 形态（dp→msg/dp→doc/裸 msgId/miss）；client spec 三例（裸 msgId 事件行不露 id、dp-* jumpToken 锚点、miss 降级「聊 群消息」）。624 绿 + typecheck 绿。真机（GUI 重启后）：演示时间线 14 条事元 refs 全部可读（同事乙/同事甲事件行 + 文档名卡），dp-/裸 hex 清零，截图 ux-align-fix-refs.png（ux-shot-align.mjs 增两条断言全 PASS）。
 
 ## 24.21 落地｜AI速记知识库订阅 + 存量 3 份纪要事元化（2026-08-21，决策 40 后续动作）
 
-用户「你帮我搞定这两件事」：(a) 挂「AI速记知识库（整库）」dir: 订阅——`.acceptance/verify-subscribe-lingee-lib.mjs` 走面板直写点击完成并验证 sources.json 落盘（dir:6a744266…，之后每场新会纪要自动入池；首扫基线不回灌存量）。(b) 存量 3 份纪要（08-20 三场会）进事元——`.acceptance/verify-minutes-to-entries.mjs` 在**全新 harness 会话**发定向指令（读 3 docId → yzj_advance_feed refs=[docId]，无基准字段无确认卡），agent 落 E-20260821-002/003/004 三条事元（摘要+共识描述+refs 齐全）。
+用户「你帮我搞定这两件事」：(a) 挂「AI速记知识库（整库）」dir: 订阅——`.acceptance/verify-subscribe-lingee-lib.mjs` 走面板直写点击完成并验证 sources.json 落盘（dir:<kbId>，之后每场新会纪要自动入池；首扫基线不回灌存量）。(b) 存量 3 份纪要（08-20 三场会）进事元——`.acceptance/verify-minutes-to-entries.mjs` 在**全新 harness 会话**发定向指令（读 3 docId → yzj_advance_feed refs=[docId]，无基准字段无确认卡），agent 落 E-20260821-002/003/004 三条事元（摘要+共识描述+refs 齐全）。
 
-**执行中暴露的 harness 侧故障（待查，非本仓代码）**：首选路径「测试群话题问助手」的既有话题会话（yzj-topic-…-6a842792…，08-18 建）在 turn 3 直接以 `invalid pi-ai replay state: unknown state kind`（INVALID_REPLAY_STATE）错误结束，零工具调用——replay state 损坏与历史事件相关，全新会话无此问题。该话题里残留一条无回应的指令气泡（无害）。自动化启示：Playwright 操作 GUI 时长任务会撞真机同后端操作（第一次 0/3 超时部分因此）；`fill()` 后必须读回 inputValue 验证 React 受控 state（第一次空发由此）；.mjs 里写 TS 类型注解这种低级错不该过手。
+**执行中暴露的 harness 侧故障（待查，非本仓代码）**：首选路径「测试群话题问助手」的既有话题会话（yzj-topic-…-<topicId>，08-18 建）在 turn 3 直接以 `invalid pi-ai replay state: unknown state kind`（INVALID_REPLAY_STATE）错误结束，零工具调用——replay state 损坏与历史事件相关，全新会话无此问题。该话题里残留一条无回应的指令气泡（无害）。自动化启示：Playwright 操作 GUI 时长任务会撞真机同后端操作（第一次 0/3 超时部分因此）；`fill()` 后必须读回 inputValue 验证 React 受控 state（第一次空发由此）；.mjs 里写 TS 类型注解这种低级错不该过手。
 
 **§24.21 续（同日，时间线倒序）**：用户「时间线是不是反了新的在前面」——此前渲染按 host oldest-first 窗口直出（最新事元沉底，刚落的 E-002/003/004 要滚到底才见）。改为渲染层 `[...entries].reverse()` 新→旧置顶（host 窗口契约不动）；「查看全部 N 条」在底部语义自然成立（往下=更早）。真机 timeline-reversed.png：顶部 13:21 三条纪要事元，下接 10:38 偏差（原始信息已是消息事件行+文档名——refHits 可读化同轮生效）。35 测试绿。
 
 **§24.21 再续（同日，时间线收敛 + 竖线贯穿）**：用户「时间线填的东西太多了应该少一点点开再展示具体的，然后线都没有连起来了」——两个诉求同根：(a) 事元默认全展开（描述+原始信息+出处全露，一屏只看 3-4 条）改回**默认收敛只露进度行**（changeType 标签+summary 两行截断+「详情」），整行可点展开看描述/原始信息/出处，二级「展开全部 N 条」取消（展开即全量 refs）；(b) 竖线断的根因是 `.mark::after` 固定 26px 长而展开的 timeItem 高几百 px——改为 **timeItem 级贯穿轨道**（`::before` 从圆点中心贯穿整条高度并延伸进 gap，x=76+10+4-0.75px），展开态也不断线。测试统一加 expandEntry 辅助（8 个 ref 用例先点展开）；倒序后 index 0=mock 末条注意点。真机：收敛态一屏 18 条、竖线全程贯通（timeline-collapsed.png）、展开完整（timeline-expanded.png）。执行插曲：并行会话同文件推进决策 41（latestDriver 决策区/事元「问助手」discuss 按钮/advance-ask kind+discussAskText），叠加编译断点两处（advance.ts `changeType`→`input.changeType`、advance-ask 导出）由双方各自补齐，最终 build/bundle 全绿、36 测试绿；决策 41 的 spec/文档留痕由该线补。
 
-**§24.21 四续（同日，原始信息不露 ID）**：用户「你这个原始信息不要显示 id 呀」——「会议」来源的事元引用 `im:<g>:<m>` 消息 token，但 `refKindOf` 只按事元 sourceType 判（会议→doc），token 被误当文档渲染成「文 im:6a605…」截断 id 链接。修复：kind 改为 **token 前缀优先**（`im:` 必是 msg，sourceType 只兜底），refHits 收集段同步逐 ref 判；未命中降级一律泛化类型名（文 文档/聊 群消息/待 待办/程 日程/源 来源，新增 REF_LABEL），任何分支不再拼截断 id。回归用例：会议来源 + im: ref 渲染事件行。630 绿；真机 refs-no-id.png：两条 13:54 事元的原始信息均为消息事件行（[08-21 11:47] 同事乙 … / [08-21 10:38] 同事甲 [文件]:转录：访谈.txt）。并行会话的决策 41 discuss 用例与收敛默认冲突（discuss 按钮在展开区）已补 expandEntry。
+**§24.21 四续（同日，原始信息不露 ID）**：用户「你这个原始信息不要显示 id 呀」——「会议」来源的事元引用 `im:<g>:<m>` 消息 token，但 `refKindOf` 只按事元 sourceType 判（会议→doc），token 被误当文档渲染成「文 im:<msgId>」截断 id 链接。修复：kind 改为 **token 前缀优先**（`im:` 必是 msg，sourceType 只兜底），refHits 收集段同步逐 ref 判；未命中降级一律泛化类型名（文 文档/聊 群消息/待 待办/程 日程/源 来源，新增 REF_LABEL），任何分支不再拼截断 id。回归用例：会议来源 + im: ref 渲染事件行。630 绿；真机 refs-no-id.png：两条 13:54 事元的原始信息均为消息事件行（[08-21 11:47] 同事乙 … / [08-21 10:38] 同事甲 [文件]:转录：访谈.txt）。并行会话的决策 41 discuss 用例与收敛默认冲突（discuss 按钮在展开区）已补 expandEntry。
 
 ## 24.23 tool-yzj+ui-yzj｜动作型建议卡 + 空决策区兜底 + 事元「问助手」（2026-08-21，决策 41）
 
-用户「产生的决定啥的这里也没有变化呀…应该 dream 要用 agent 产生一些东西呀例如代办？发消息对齐？定会议？」——两个事实层：(a) 830 处于 decision-needed 但全库无一条「决策请求」事元（旧纪律喂「偏差+stageTo」），决策区只剩三个裸动词，要决定什么完全不可见；(b) Dream 只会记事元，不产出可执行动作。拍板：动作型建议卡（要简单、可多个动作、看板随时能就某条进展问 agent）。
+用户「产生的决定啥的这里也没有变化呀…应该 dream 要用 agent 产生一些东西呀例如代办？发消息对齐？定会议？」——两个事实层：(a) 该事项处于 decision-needed 但全库无一条「决策请求」事元（旧纪律喂「偏差+stageTo」），决策区只剩三个裸动词，要决定什么完全不可见；(b) Dream 只会记事元，不产出可执行动作。拍板：动作型建议卡（要简单、可多个动作、看板随时能就某条进展问 agent）。
 
 | 面 | 交付 | 证据 |
 |---|---|---|
 | 合同（host 强制） | feed 校验 `stageTo=decision-needed` 必须 `changeType=决策请求`（错误信息即正确姿势指导）；INSPECT_DISCIPLINE / feed 工具 description / dreamAskPrompt 全部改产「问题 + 动作行」（`动作: 建待办\|发消息\|定会议 \| 键: 值 \| …`，决策 23 文本约定的行动化扩展） | advance.spec +1（偏差推阶段被拒、阶段不动、零事元写入） |
 | 动作执行（面板） | `parseDecisionOptions` 升级解析动作行（未知类型留原文）；动作按钮组各自独立：建待办 → `createTodo` 直落（截止→ddl、负责人→tags），发消息 → 就地草稿框预填投到恰一订阅群（`sendMessage`，人过目再发），定会议 → 跳日程域；执行后置灰「✓ 已建/已发」并 `advanceFeed` 落 user 留痕事元 | client spec 三例全链路（todos/sent/feeds 断言 + 置灰 + 跳域） |
-| 空决策区兜底 | decision-needed 但无决策请求事元 → 摆最新驱动事元（summary+detail）+「没有带上建议动作…点问助手补齐」提示，经典动词保留 | client spec +1；真机 830（13:54 偏差事元驱动）h3 非空 + 提示 + 动词全在 |
+| 空决策区兜底 | decision-needed 但无决策请求事元 → 摆最新驱动事元（summary+detail）+「没有带上建议动作…点问助手补齐」提示，经典动词保留 | client spec +1；真机（13:54 偏差事元驱动）h3 非空 + 提示 + 动词全在 |
 | 事元「问助手」 | 每条事元展开后出处行尾「问助手」→ askDraft kind=discuss 预填「关于…这条进展：…先 yzj_advance_get 看上下文」→ 切对话域；banner 文案分流加「进展讨论已预备」。落点=绑定家园会话问助手栏（与请 AI 验收同径）；精确回到「产出它的 Dream 会话」需事元表加 producer 列（dbt 重建），本轮不做（记为取舍） | client spec +1（draft kind/text + 切域） |
 
 并行会话同日把时间线改为「倒序 + 默认收敛」（commit 77f4f90/25b00f6，问助手按钮随出处行入展开区，测试经 expandEntry 先展开）；两边工作已在工作树合流：630 绿 + typecheck 绿。真机（GUI 14:27 重启）verify-advance-actions.mjs 全 PASS，截图 ux-actions-decision.png。注：成功指标卡 0/0/0 是指标 current 从未被 feed 更新（动作卡里「建待办」类执行回写不涉及指标）——指标更新纪律留待下轮（Dream 比对后应回写 current）。
@@ -990,9 +936,9 @@ client 渲染改为 **hit 优先**：命中一律按 hit.kind 渲染（文档卡
 
 **教训回写**：决策 35（巡检去模型化）落地时只改了巡检机制、没收挂载行的尾——机制级决策变更应同轮清点其带进来的 composition 行。pitfall 库未新增条目（无「现象与预期不符」的调试过程，属决策债务收尾）。
 
-**§24.20 续（同日，picker 文档标签）**：用户「为啥这里又有知识库又有文档」——实测 `doc list` 节点：灵基知识库**没有独立文件夹对象**，「目录」= 含子页的 .otl 文档（`type=2`/`fileSuffix=otl` + hasChildren；830实验·共识 childrenCount=4、纪要-总结 childrenCount=1 都是文档）。picker 给这类节点加「（文档）」标签 + 弹窗说明「订阅它=看它的子页变化」，整库条目不变；不移除（830实验·共识这类文档订阅是真实在用的能力）。client spec fixture 带 type/fileSuffix、断言标签与关联 label；630 绿；真机 picker 4 个文档节点全部带标签（截图 ux-picker-doctag.png）。
+**§24.20 续（同日，picker 文档标签）**：用户「为啥这里又有知识库又有文档」——实测 `doc list` 节点：灵基知识库**没有独立文件夹对象**，「目录」= 含子页的 .otl 文档（`type=2`/`fileSuffix=otl` + hasChildren；实验目录 childrenCount=4、纪要-总结 childrenCount=1 都是文档）。picker 给这类节点加「（文档）」标签 + 弹窗说明「订阅它=看它的子页变化」，整库条目不变；不移除（实验目录这类文档订阅是真实在用的能力）。client spec fixture 带 type/fileSuffix、断言标签与关联 label；630 绿；真机 picker 4 个文档节点全部带标签（截图 ux-picker-doctag.png）。
 
-**§24.20 再续（同日，picker 收窄整库）**：用户「就整库就好了别搞太复杂」——picker 不再列一层目录/含子页文档（上一续的「（文档）」标签方案被更彻底的收窄取代），只列个人库「整库」；弹窗文案与分区标题（知识库（整库订阅））同步。存量 dir: 订阅（830实验·共识等文档级）在 registry 与巡检面不受影响。client spec 改断言（只列两整库、关联 label=「我的知识（整库）」）；638 绿；真机 picker 仅剩「AI速记知识库（整库）/ 我的知识（整库）」（截图 ux-picker-libonly.png）。
+**§24.20 再续（同日，picker 收窄整库）**：用户「就整库就好了别搞太复杂」——picker 不再列一层目录/含子页文档（上一续的「（文档）」标签方案被更彻底的收窄取代），只列个人库「整库」；弹窗文案与分区标题（知识库（整库订阅））同步。存量 dir: 订阅（实验目录等文档级）在 registry 与巡检面不受影响。client spec 改断言（只列两整库、关联 label=「我的知识（整库）」）；638 绿；真机 picker 仅剩「AI速记知识库（整库）/ 我的知识（整库）」（截图 ux-picker-libonly.png）。
 
 ## 24.22 tool-yzj｜yzj-cli v0.1.4 对齐：8 个新工具 + 删除族 --yes 兼容必修（2026-08-21）
 
@@ -1004,7 +950,7 @@ client 渲染改为 **hit 优先**：命中一律按 hit.kind 渲染（文档卡
 | im.ts | 新增 `yzj_im_group_search`（只读）、`yzj_im_group_create`（standard，成员 2-10 校验）、`yzj_im_group_members_add`（standard）、`yzj_im_group_members_remove`（strong + --yes） |
 | **兼容必修** | v0.1.4 给删除族全加强制 `--yes`（doc delete / block delete / sheet table·record delete / calendar event delete）——既有封装全缺，0.1.4 下这些工具会失败；统一透传（产品确认卡已确认，--yes 不再二次挡） |
 | guard/cards | WRITE_SPECS +6（remove strong、write/block_replace/create/add standard、download when overwrite）；cards 工具名 +8 与中文名 |
-| 测试 | v014-tools.spec.ts 8 例 fake 组装断言（含 --yes 透传×5、成员窗口校验）；tools.spec.ts +2 真实冒烟（doc search 命中 830纪要×4、group search 命中 测试群）——640 绿 |
+| 测试 | v014-tools.spec.ts 8 例 fake 组装断言（含 --yes 透传×5、成员窗口校验）；tools.spec.ts +2 真实冒烟（doc search 命中 纪要×4、group search 命中 测试群）——640 绿 |
 
 未对齐（留观）：workspace 企业级权限参数（demo 个人库够用）；block replace 与 block update/delete/insert 能力重叠（便捷封装，低优先但已顺手补齐）。工具总数 51→59、写工具 27→33（根 README 同步）。
 
@@ -1020,7 +966,7 @@ client 渲染改为 **hit 优先**：命中一律按 hit.kind 渲染（文档卡
 
 **UI 适配取舍**：知识库页加搜索框（高性价比：47 个库翻目录找文档是高频痛点）——host `doc-search` RPC + `fetchDocSearch` + 左栏顶部搜索框（选中库时限库搜），结果行点击 openDoc 预览。不做：建群/选人 UI（低频、contact 选择器成本高，agent 面已能）、文档编辑器（write/block replace 属 agent 面，面板不做编辑器）。下载按钮留后续（预览区顺手位）。
 
-测试：panel-switch 补搜索框用例（Enter→fetchDocSearch→命中行→点击开预览）；真机 doc-search.png：搜「830纪要」命中 4 行、点击打开全文预览。644 绿。
+测试：panel-switch 补搜索框用例（Enter→fetchDocSearch→命中行→点击开预览）；真机 doc-search.png：搜「纪要」命中 4 行、点击打开全文预览。644 绿。
 
 **§24.23 续（同日，知识库类型分组）**：用户「能不能区分个人和其他类型啊还是有什么类型那看看先」——先查数据：51 库中 visibility=2（个人）仅 2 个（AI速记知识库、我的知识），visibility=1（企业）49 个，无更多类型（allMember 全 None，无企业全员库）。左栏按 visibility 分组渲染：「个人」组置顶 +「企业 / 团队」组随后，组标头小字（paneGroupLabel）。panel-switch 补分组用例（标头存在 + 个人组整体在企业组前，与数据源顺序无关）；真机 ws-groups.png。645 绿。
 
@@ -1035,7 +981,7 @@ client 渲染改为 **hit 优先**：命中一律按 hit.kind 渲染（文档卡
 
 648 绿 + typecheck 绿；真机 18:33 重启 verify-advance-actions.mjs 全 PASS。配套说明：抑制判据（同判据补进现有决策请求不新起）仍是第一道闸，队列是兜底防踩；agent 侧无需新纪律。
 
-**§24.24 续（同日，队列→单卡综合修正）**：用户「应该只有一条决策 但是后续要根据这个综合起来产生新的才对 因为会有实效性」——队列方案（最旧先出+排队列表）被修正为**单卡综合**：① 面板卡面=最近 judge 事元之后的最新决策请求（永远只有一条）；② host 强制「综合自」合同：已有未处理决策请求时，新决策请求 detail 必须带「综合自: <旧卡 entryId>」并写明旧问题并入/失效，缺一即拒（错误信息教写法）；③ 卡面渲染「此卡综合了 E-x 的未决内容」链，旧卡留时间线。INSPECT_DISCIPLINE（抑制与综合）/ feed 工具 description / dreamAskPrompt 同步。撤销排队列表 UI（queueList 只活了一轮）。测试：host 综合自强制（无标记被拒/带标记放行）、client 单卡+综合链渲染、parse mergedFrom；650 绿。真机活卡：830 首张真决策请求上线（评审两个范围补充：问题+分析+建待办/发消息动作+三选项+影响行，截图 ux-decision-card-live.png，seed-decision-card.mjs 全 PASS，出处=session-ace209e5）。
+**§24.24 续（同日，队列→单卡综合修正）**：用户「应该只有一条决策 但是后续要根据这个综合起来产生新的才对 因为会有实效性」——队列方案（最旧先出+排队列表）被修正为**单卡综合**：① 面板卡面=最近 judge 事元之后的最新决策请求（永远只有一条）；② host 强制「综合自」合同：已有未处理决策请求时，新决策请求 detail 必须带「综合自: <旧卡 entryId>」并写明旧问题并入/失效，缺一即拒（错误信息教写法）；③ 卡面渲染「此卡综合了 E-x 的未决内容」链，旧卡留时间线。INSPECT_DISCIPLINE（抑制与综合）/ feed 工具 description / dreamAskPrompt 同步。撤销排队列表 UI（queueList 只活了一轮）。测试：host 综合自强制（无标记被拒/带标记放行）、client 单卡+综合链渲染、parse mergedFrom；650 绿。真机活卡：首张真决策请求上线（评审两个范围补充：问题+分析+建待办/发消息动作+三选项+影响行，截图 ux-decision-card-live.png，seed-decision-card.mjs 全 PASS，出处=session-ace209e5）。
 
 ## 24.25 领域模型收敛：事元驱动闭环 + 行动建模（2026-08-21，决策 44/45，设计留痕）
 
@@ -1271,4 +1217,8 @@ Dream 路（跨事项推荐）纪律入 dreamAskPrompt（顺手落推荐事元�
 ## 24.41 灵基终态文档迁出本仓（2026-08-27，纯文档）
 
 `docs/target-lingee/`、`docs/migration/advance-lingee-migration.md`、`docs/spec/lingee-platform-requirements.md` 已从本仓删除。本仓只维护 dsh MVP。
+
+## 24.42 清除 830 真实现场与迁灵基残留（2026-08-27）
+
+`.acceptance/advance-830-*` 实验脚本/记录删除。文档、夹具、验收脚本中的真群 ID / 人名 / openId / fileId / 现场群名改为假名或 `YZJ_E2E_*` 环境变量（缺则 skip）。插件代码与 AI 推进 spec 保留，只去现场痕迹。`feat/advance-intent-threads` 从远程删除。历史改写后旧 SHA 在 GitHub GC 前仍可能打开。
 

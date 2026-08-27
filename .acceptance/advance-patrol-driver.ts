@@ -1,5 +1,5 @@
 /**
- * Closed-loop sidecar: real yzj-cli scan → inspect → feed on dsh-2.
+ * Closed-loop sidecar: real yzj-cli scan → inspect → feed on a test group.
  * Rewinds the host cursor to just before the latest non-self message so the
  * scan actually returns a live signal (a first visit would only set a
  * baseline). Then creates a probe item, inspects, feeds that msgId, and
@@ -17,7 +17,7 @@ import { ScanCursorStore } from '../packages/tool-yzj/src/scan-cursors.ts'
 import type { YzjToolBudget } from '../packages/tool-yzj/src/shared.ts'
 
 const BUDGET: YzjToolBudget = { timeoutMs: 60_000, maxRenderChars: 12_000, maxMetaChars: 8_000 }
-const GROUP = process.env.YZJ_E2E_GROUP ?? 'dsh-2'
+const GROUP = process.env.YZJ_E2E_GROUP ?? '测试群'
 
 function emit(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value)}\n`)

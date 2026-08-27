@@ -10,6 +10,12 @@
 import { chromium } from 'playwright'
 import { existsSync } from 'node:fs'
 
+const GROUP_NAME = process.env.YZJ_E2E_GROUP
+if (!GROUP_NAME) {
+  console.log('SKIP  set YZJ_E2E_GROUP to run this live check')
+  process.exit(0)
+}
+
 const CHROME = [
   'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
   'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
@@ -43,8 +49,8 @@ const groupButtons = dialog.locator('button[class*="item"]')
 const firstGroupText = await groupButtons.first().innerText().catch(() => '')
 ok('group rows show relative time', /(今天|昨天|\d{2}-\d{2}|\d{4}-\d{2}-\d{2}|\d{2}:\d{2})/.test(firstGroupText), firstGroupText.replace(/\n/g, ' ').slice(0, 60))
 
-// ---- 2. open 灵基Chat (has richText images + file + reply messages) ----
-await groupButtons.filter({ hasText: '灵基Chat' }).first().click()
+// ---- 2. open the user-provided test group (richText / file / reply) ----
+await groupButtons.filter({ hasText: GROUP_NAME }).first().click()
 await page.waitForTimeout(4000)
 
 const senderText = await dialog.locator('[class*="msgSender"]').allInnerTexts().catch(() => [])
@@ -109,7 +115,7 @@ const otherMessages = await dialog.locator('[class*="msgRow"]').count()
 ok('second group loads messages', otherMessages > 0, `${otherMessages} messages`)
 const activeRows = await dialog.locator('button[class*="itemActive"]').count()
 ok('left pane highlights the active group', activeRows >= 1, `${activeRows} active`)
-await groupButtons.filter({ hasText: '灵基Chat' }).first().click()
+await groupButtons.filter({ hasText: GROUP_NAME }).first().click()
 await page.waitForTimeout(800)
 const cachedMessages = await dialog.locator('[class*="msgRow"]').count()
 ok('revisit reuses the cached window (instant render)', cachedMessages > 0, `${cachedMessages} messages`)

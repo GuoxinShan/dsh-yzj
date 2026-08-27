@@ -15,7 +15,7 @@ await page.waitForTimeout(2000)
 await page.getByTestId('yzj-workbench-tabs').getByRole('tab', { name: '推进' }).click()
 await page.waitForTimeout(4500)
 const pane = page.getByTestId('yzj-advance-pane')
-await pane.getByText(/830.{0,4}从参谋部到/).first().click()
+await pane.getByText(/测试事项/).first().click()
 await page.waitForTimeout(4000)
 await page.screenshot({ path: join(OUT, 'audit-1-top.png') })
 // 滚动时间旅程到底部

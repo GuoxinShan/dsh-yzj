@@ -14,9 +14,13 @@ const OUT = join(dirname(fileURLToPath(import.meta.url)), 'shots-e2e')
 mkdirSync(OUT, { recursive: true })
 const shot = (name) => join(OUT, name)
 
-const GROUP_ID = 'gid-test'
-const GROUP_NAME = '测试群'
+const GROUP_ID = process.env.YZJ_E2E_GROUP_ID
+const GROUP_NAME = process.env.YZJ_E2E_GROUP ?? '测试群'
 const MESSAGE = '【确认卡端到端测试】这条消息由 dsh + yzj 插件在真实确认卡流程中发出 ✓'
+if (!GROUP_ID) {
+  console.log('SKIP  set YZJ_E2E_GROUP_ID to run this live check')
+  process.exit(0)
+}
 
 const CHROME = [
   'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',

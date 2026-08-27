@@ -126,9 +126,9 @@ describe('YzjPanel docs search (v0.1.4)', () => {
     const inject = stubInject({
       fetchDocSearch: async (keyword: string) => {
         searches.push(keyword)
-        return ok([{ id: 'd1', title: '830纪要·0806 AI参谋产品方案讨论', updateTime: '2026-08-19T10:00:00' }])
+        return ok([{ id: 'd1', title: '纪要·示例讨论', updateTime: '2026-08-19T10:00:00' }])
       },
-      fetchDoc: async () => ok({ title: '830纪要·0806 AI参谋产品方案讨论', fileSuffix: 'otl', updateTime: '2026-08-19' }),
+      fetchDoc: async () => ok({ title: '纪要·示例讨论', fileSuffix: 'otl', updateTime: '2026-08-19' }),
     })
     instance.actions.setOpen(true)
     instance.actions.setTab('docs')
@@ -142,17 +142,17 @@ describe('YzjPanel docs search (v0.1.4)', () => {
     // React 受控 input:native setter + input 事件才能更新 state
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
     act(() => {
-      setter.call(input, '830纪要')
+      setter.call(input, '纪要')
       input.dispatchEvent(new Event('input', { bubbles: true }))
     })
     act(() => {
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     })
     await flush()
-    expect(searches).toEqual(['830纪要'])
+    expect(searches).toEqual(['纪要'])
     const hit = container.querySelector('[data-testid="yzj-panel-doc-hit-d1"]') as HTMLButtonElement
     expect(hit).not.toBeNull()
-    expect(hit.textContent).toContain('830纪要·0806')
+    expect(hit.textContent).toContain('纪要·示例讨论')
     act(() => { hit.click() })
     await flush()
     expect(container.textContent).toContain('返回文档')

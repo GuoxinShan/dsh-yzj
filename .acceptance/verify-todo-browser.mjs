@@ -95,20 +95,25 @@ try {
   const { execFile } = await import('node:child_process')
   const { promisify } = await import('node:util')
   const runCli = promisify(execFile)
-  const schema = JSON.parse((await runCli('yzj-cli', ['sheet', 'get', '--id', 'sheet-todo'])).stdout)
+  const sheetId = process.env.YZJ_TODO_SHEET_ID
+  if (!sheetId) {
+    console.log('cleanup skipped: set YZJ_TODO_SHEET_ID to delete probe records')
+  } else {
+  const schema = JSON.parse((await runCli('yzj-cli', ['sheet', 'get', '--id', sheetId])).stdout)
   const table = (schema.sheets ?? []).find(t => (t.fields ?? []).some(f => f.name === 'todo_id'))
   if (table !== undefined) {
     const listJson = JSON.parse((await runCli('yzj-cli', [
-      'sheet', 'record', 'list', '--id', 'sheet-todo', '--table-id', String(table.id), '--limit', '100',
+      'sheet', 'record', 'list', '--id', sheetId, '--table-id', String(table.id), '--limit', '100',
     ])).stdout)
     const ids = (listJson.records ?? [])
       .filter(rec => { try { return JSON.parse(rec.fields).标题?.includes('浏览器验收待办') } catch { return false } })
       .map(rec => rec.id)
       .filter(id => id !== undefined)
     if (ids.length > 0) {
-      await runCli('yzj-cli', ['sheet', 'record', 'delete', '--id', 'sheet-todo', '--table-id', String(table.id), '--record-ids', ids.join(',')])
+      await runCli('yzj-cli', ['sheet', 'record', 'delete', '--id', sheetId, '--table-id', String(table.id), '--record-ids', ids.join(',')])
       console.log(`cleanup: deleted ${ids.length} probe record(s)`)
     }
+  }
   }
 } catch (error) {
   console.log(`cleanup skipped: ${String(error).slice(0, 120)}`)

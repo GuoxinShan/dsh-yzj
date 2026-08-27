@@ -1,10 +1,10 @@
 /**
- * Verify the real-IM composer on the dsh测试 group:
+ * Verify the real-IM composer on a user-provided test group:
  *  1. text send (button + Enter)
  *  2. image send (upload → richText [图片]) — shown inline + server-confirmed
  *  3. file send (upload → file chip)
  *  4. reply flow (hover 回复 → reply bar → send → quote shown)
- * All messages land in dsh测试 (the user's designated test group).
+ * All messages land in the group from YZJ_E2E_GROUP_ID / YZJ_E2E_GROUP.
  */
 import { chromium } from 'playwright'
 import { execFile } from 'node:child_process'
@@ -13,8 +13,12 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
-const GROUP_ID = 'gid-test' // dsh测试
-const GROUP_NAME = 'dsh测试'
+const GROUP_ID = process.env.YZJ_E2E_GROUP_ID
+const GROUP_NAME = process.env.YZJ_E2E_GROUP ?? '测试群'
+if (!GROUP_ID) {
+  console.log('SKIP  set YZJ_E2E_GROUP_ID to run this live check')
+  process.exit(0)
+}
 const FIXTURE = join(HERE, 'fixture.png')
 const FIXTURE_TXT = join(HERE, 'fixture.txt')
 // 1x1 red PNG

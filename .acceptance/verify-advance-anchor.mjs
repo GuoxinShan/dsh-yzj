@@ -4,7 +4,7 @@
  * advance detail's source jump must open THAT group AND render the anchor
  * message row (highlighted). Screenshots land in shots-advance-anchor/.
  * Requires running dsh web (:3080) + logged-in yzj-cli + local sqlite advance
- * store with the 830 item. Cleans the seeded entry afterwards.
+ * store with the test item. Cleans the seeded entry afterwards.
  */
 import { chromium } from 'playwright'
 import { DatabaseSync } from 'node:sqlite'
@@ -36,7 +36,7 @@ let groupName = ''
 let msgId = ''
 try {
   const groups = runCli(['im', 'group', 'recent', '--limit', '20']).list ?? []
-  const target = groups.find(g => (g.groupName ?? '').includes('830')) ?? groups[0]
+  const target = groups.find(g => (g.groupName ?? '').includes('测试')) ?? groups[0]
   if (target === undefined) throw new Error('no recent groups')
   groupId = String(target.groupId)
   groupName = String(target.groupName ?? '')

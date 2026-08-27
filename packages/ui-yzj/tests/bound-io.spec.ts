@@ -15,7 +15,7 @@ function entry(over: Partial<YzjLogEntry> & Pick<YzjLogEntry, 'msgId'>): YzjLogE
   return {
     sentAt: 1_000,
     fromOpenId: 'me',
-    fromName: '国鑫',
+    fromName: '测试用户',
     content: 'hi',
     msgType: 'text',
     origin: 'inbound',
@@ -115,8 +115,8 @@ describe('parseImSend / whoami / skip', () => {
   })
 
   it('parses whoami envelopes (pitfall-003)', () => {
-    expect(parseWhoami([{ openId: 'me', name: '国鑫' }])).toEqual({ openId: 'me', name: '国鑫' })
-    expect(parseWhoami({ oId: 'me', name: '国鑫' })).toEqual({ openId: 'me', name: '国鑫' })
+    expect(parseWhoami([{ openId: 'me', name: '测试用户' }])).toEqual({ openId: 'me', name: '测试用户' })
+    expect(parseWhoami({ oId: 'me', name: '测试用户' })).toEqual({ openId: 'me', name: '测试用户' })
   })
 
   it('collects robotIds from channel surfaces', () => {
@@ -134,7 +134,7 @@ describe('sendImAndLog', () => {
     ;(ctx as unknown as { yzjBridge: { run: (command: readonly string[]) => Promise<ReturnType<typeof runOf>> } }).yzjBridge = {
       run: async (command) => {
         commands.push([...command])
-        if (command[0] === 'contact') return runOf([{ openId: 'me', name: '国鑫' }])
+        if (command[0] === 'contact') return runOf([{ openId: 'me', name: '测试用户' }])
         return runOf({ msgId: 'm-real' })
       },
     }
@@ -156,7 +156,7 @@ describe('sendImAndLog', () => {
     const ctx = new Context()
     ;(ctx as unknown as { yzjBridge: { run: (command: readonly string[]) => Promise<{ ok: boolean; exitCode: number; stdout: string; stderr: string; json?: unknown }> } }).yzjBridge = {
       run: async (command) => {
-        if (command[0] === 'contact') return runOf([{ openId: 'me', name: '国鑫' }])
+        if (command[0] === 'contact') return runOf([{ openId: 'me', name: '测试用户' }])
         return { ok: false, exitCode: 1, stdout: '', stderr: 'denied' }
       },
     }
@@ -179,11 +179,11 @@ describe('backfillBoundLog', () => {
     ;(ctx as unknown as { yzjBridge: { run: (command: readonly string[]) => Promise<ReturnType<typeof runOf>> } }).yzjBridge = {
       run: async (command) => {
         commands.push([...command])
-        if (command[0] === 'contact') return runOf([{ openId: 'me', name: '国鑫' }])
+        if (command[0] === 'contact') return runOf([{ openId: 'me', name: '测试用户' }])
         if (command.includes('newest')) {
           return runOf({ list: [
             { msgId: 'm1', content: '旧', fromOpenId: 'u2', fromName: '同事', sendTime: '2026-08-16 20:00:00.000' },
-            { msgId: 'm2', content: 'already', fromOpenId: 'me', fromName: '国鑫', sendTime: '2026-08-16 20:01:00.000' },
+            { msgId: 'm2', content: 'already', fromOpenId: 'me', fromName: '测试用户', sendTime: '2026-08-16 20:01:00.000' },
           ] })
         }
         return runOf({ list: [] })
@@ -224,7 +224,7 @@ describe('backfillBoundLog', () => {
         if (command[0] === 'contact') {
           contactCalls.push([...command])
           if (command.includes('--open-id')) return runOf([{ openId: 'u2', name: '老黎' }])
-          return runOf([{ openId: 'me', name: '国鑫' }])
+          return runOf([{ openId: 'me', name: '测试用户' }])
         }
         return runOf({ list: [
           { msgId: 'm1', content: '一', fromUser: { openId: 'u2' }, sendTime: '2026-08-16 20:00:00.000' },

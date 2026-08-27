@@ -495,7 +495,7 @@ describe('createRpcHandler', () => {
       create: async () => ({}),
     })
     ;(ctx as unknown as { yzjBridge: { run: (command: readonly string[]) => Promise<RunResult> } }).yzjBridge = {
-      run: async (command) => command[0] === 'contact' ? runOf([{ openId: 'me', name: '国鑫' }]) : runOf({ msgId: 'm-real' }),
+      run: async (command) => command[0] === 'contact' ? runOf([{ openId: 'me', name: '测试用户' }]) : runOf({ msgId: 'm-real' }),
     }
     const handler = createRpcHandler(ctx, { list: () => [], decide: () => false })
     const opened = await handler('home-open', { groupId: 'g-a' }, undefined as never)

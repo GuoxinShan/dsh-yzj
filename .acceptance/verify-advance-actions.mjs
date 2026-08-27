@@ -1,6 +1,6 @@
 /**
  * Browser acceptance for 决策 41 (2026-08-21): the decision area must never be
- * an empty button row — 830 is decision-needed from a legacy 偏差+stageTo entry
+ * an empty button row — the item is decision-needed from a legacy 偏差+stageTo entry
  * (no 决策请求 事元), so the fallback shows the driving 事元 + hint. Also pins
  * the collapsed timeline (详情 caret) and the per-entry 「问助手」 entry.
  * Read-only walk (no writes): screenshots land in shots-advance-ux/.
@@ -30,7 +30,7 @@ await page.getByTestId('yzj-dock-home').click().catch(() => {})
 await page.waitForTimeout(2000)
 await page.getByTestId('yzj-workbench-tabs').getByRole('tab', { name: '推进' }).click()
 await page.waitForTimeout(4500)
-await page.getByTestId('yzj-advance-pane').getByText(/830.{0,4}从参谋部到/).first().click()
+await page.getByTestId('yzj-advance-pane').getByText(/测试事项/).first().click()
 await page.waitForTimeout(4000)
 
 // --- 1. decision area fallback: legacy 偏差+stageTo item shows the driver, not bare verbs

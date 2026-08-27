@@ -1,7 +1,7 @@
 /**
  * Live proof for the 决策 41 producer chain (2026-08-21): drive the LATEST
  * yzj-dream-* session in the native chat — ask it to feed one clearly-marked
- * 备注 into 830 — then poll sqlite for the entry whose 出处会话 equals that
+ * 备注 into the test item — then poll sqlite for the entry whose 出处会话 equals that
  * session id (exec.agent.session.id recorded by the new host), and finally
  * assert the board's 「问助手」 on that entry focuses the dream session back.
  */
@@ -46,7 +46,7 @@ await page.waitForTimeout(4000)
 const body0 = await page.locator('body').innerText()
 ok('dream session opened in native chat', body0.includes('蓄水池') || body0.includes('pending'))
 
-// 2. Ask it to feed one marked 备注 into 830 (proves exec.agent.session.id on the live host).
+// 2. Ask it to feed one marked 备注 into the test item (proves exec.agent.session.id on the live host).
 const composer = page.locator('textarea:visible').last()
 await composer.fill('调用 yzj_advance_feed：advanceId=A-20260819-002，summary=「讨论回环产出会话验证（可忽略）」，sourceType=人工，changeType=备注。直接连续调用工具完成，不要询问我。')
 await page.keyboard.press('Enter')
@@ -64,7 +64,7 @@ await page.getByTestId('yzj-dock-home').click().catch(() => {})
 await page.waitForTimeout(2000)
 await page.getByTestId('yzj-workbench-tabs').getByRole('tab', { name: '推进' }).click()
 await page.waitForTimeout(4000)
-await page.getByTestId('yzj-advance-pane').getByText(/830.{0,4}从参谋部到/).first().click()
+await page.getByTestId('yzj-advance-pane').getByText(/测试事项/).first().click()
 await page.waitForTimeout(3500)
 await page.locator('[data-testid="yzj-advance-entry-toggle-0"]').click()
 await page.waitForTimeout(1000)
