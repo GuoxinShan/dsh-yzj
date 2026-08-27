@@ -1267,3 +1267,8 @@ Dream 路（跨事项推荐）纪律入 dreamAskPrompt（顺手落推荐事元�
 | 文档 | group-room-topics v1.22 §12；dsh-home-session 头注 D8 UI 退役；根 README / 包 README 同步 | — |
 
 恢复路径：无软恢复，git 历史重建。
+
+## 24.41 终态套件迁出本仓（2026-08-27，纯文档）
+
+`docs/target-lingee/` 已迁至内部仓 [laver/ai-advance](http://code.yzjop.com/laver/ai-advance)，本仓不再承载灵基终态合同。OQ-43 六条写在那边 `docs/06` §1.5。本仓只留 MVP spec 与 [`advance-lingee-migration.md`](../migration/advance-lingee-migration.md) 三层判别。
+

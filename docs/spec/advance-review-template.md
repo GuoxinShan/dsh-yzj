@@ -42,7 +42,7 @@ decision-needed 事元 + 用户 judge 选择(选项全文)——谁拍的板、�
 ```
 
 写作纪律:
-- **frontmatter 由域服务生成**（target-lingee 10 §4.2）：模型只写五段正文；缺 `schema` / `advance_id` 拒入库。这是未来记忆召回的挂钩，不是装饰。
+- **frontmatter 由域服务生成**（终态合同见内部仓 [ai-advance](http://code.yzjop.com/laver/ai-advance) `docs/10` §4.2）：模型只写五段正文；缺 `schema` / `advance_id` 拒入库。这是未来记忆召回的挂钩，不是装饰。
 - 事实只来自事元流(`yzj_advance_get` 翻页读全量),不虚构;refs 原样抄事元的值。
 - 「目标演化」必须呈现 diff 链(原值→新值),不是只写终态。
 - cancelled 事项的复盘要如实写「为什么黄了」——失败教训是复盘价值最高的部分(决策 27)。
