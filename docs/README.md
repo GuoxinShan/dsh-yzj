@@ -30,8 +30,8 @@ docs/
   migration/                          ← 架构演进方案
     todo-backend-migration.md          待办 demo 后端 → 原生后端（四层架构 + §3 实测格式事实）
     advance-lingee-migration.md        AI推进 dsh MVP → 灵基终态（合同/机制/脚手架三层拆分 + 断层清单 + 验证清单；「存钱 vs 镀金」取舍原则）
-  target-lingee/                      ← 灵基终态目标架构套件（v2.1：面向灵基侧开发的实施依据）
-    README.md                          套件索引 + 开放问题登记（OQ-1–20 演进史）+ 目标态 vs 当前挂载态注记
+    target-lingee/                      ← 灵基终态目标架构套件（v3.6：面向灵基侧开发的实施依据）
+    README.md                          套件索引 + 开放问题登记（OQ-1–38 演进史）+ 目标态 vs 当前挂载态注记
     01-domain-model.md                 推进域领域模型（单域：三概念/OODA 闭环/三公理；配图 F2）
     02-er-model.md                     ER 数据模型（实体/字段/不变量/关系基数；配图 F1）
     03-runtime-architecture.md         运行时组件架构（平台层/域服务/判断层/事件总线/IM 打通层；配图 F3）
@@ -41,6 +41,8 @@ docs/
     07-product-story.md                产品定位问答（统一实体·所有事都是推进/品类定位/采纳引擎；配图 F7 用户旅程）
     08-dream-judgment-contract.md      判断面合同（Dream/对话形态的会话装配、抽取纪律、比对材料形状、提示词版本化）
     09-agent-tool-design.md            Agent 形态与工具面（两种 agent、确认通道两分、逐工具合同、skill 取舍）
+    10-memory-datacloud.md             沉淀记忆（OQ-6）：DataCloud 库+图谱；个人档/空间档；本期只写不召回
+    11-session-working-memory.md       工作记忆：人设/最近事项/续摊/提示词装配；续摊绑推进
     figures/                           高品质图集（HTML 源 + SVG + PNG 2x，diagram-design 产出；index.html 为图集浏览页）
     prototype/                         高保真页面原型（单文件四视图：统一看板/推进详情×2/对话喂入口）
   status/                             ← 实现与设计的对照与验收证据
