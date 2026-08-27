@@ -6,17 +6,14 @@
 
 import { useEffect, useState } from 'react'
 
-/** Five 云之家 workbench domains. `im` is the group-room timeline;
- * `advance` is the AI推进 board (docs/spec/ai-advance-design.md §7). */
-export type WorkbenchDomain = 'im' | 'todo' | 'calendar' | 'docs' | 'advance'
+/** Three 云之家 workbench domains. `im` is the group-room timeline. */
+export type WorkbenchDomain = 'im' | 'calendar' | 'docs'
 
-/** Top-bar tabs that switch {@link WorkbenchDomain} (v1.16 / R31; v1.18 +推进). */
+/** Top-bar tabs that switch {@link WorkbenchDomain}. */
 export const WORKBENCH_TABS = [
   { domain: 'im', id: 'chat', label: '对话' },
-  { domain: 'todo', id: 'todo', label: '待办' },
   { domain: 'calendar', id: 'calendar', label: '日程' },
   { domain: 'docs', id: 'docs', label: '知识库' },
-  { domain: 'advance', id: 'advance', label: '推进' },
 ] as const
 
 let current: WorkbenchDomain = 'im'
@@ -50,10 +47,9 @@ export function useWorkbenchDomain(): WorkbenchDomain {
   return domain
 }
 
-/** Cross-component IM group focus bus: the advance board's 事元/source jumps
- * request a group open; the im panel consumes it and switches the timeline.
- * 决策 39: the request may carry an anchor message — the timeline scrolls to
- * and highlights that exact row (事件级定位, not just the group). */
+/** Cross-component IM group focus bus: a pane or card may request a group
+ * open; the im panel consumes it and switches the timeline. The request may
+ * carry an anchor message — the timeline scrolls to and highlights that row. */
 export interface ImFocusTarget {
   readonly groupId: string
   readonly anchorMsgId?: string

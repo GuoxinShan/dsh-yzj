@@ -10,8 +10,6 @@ import { ImLightbox, MessageBody, SenderAvatar, typeLabelOf } from './im-render.
 import { emitRoomReplyRequest } from './reply-bus.ts'
 import type { YzjPanelInject } from './rpc.ts'
 // 话题功能已撤下（决策 50）：topic-drawer / 话题 latch 保留在库中待恢复或删除。
-import { AdvanceFeedPicker } from './advance-feed-picker.tsx'
-import { setAdvanceFeedback, useAdvanceFeedback } from './advance-feedback.ts'
 import { registerRoomComposerHost, ROOM_COMPOSER_HOST_ID } from './composer-host.ts'
 import {
   artifactOf, layoutRoomItems,
@@ -71,8 +69,6 @@ export interface YzjFusedInjected {
   focusBoundSession?: (sessionId: string) => void
   fetchFileData?: YzjPanelInject['fetchFileData']
   fetchContact?: YzjPanelInject['fetchContact']
-  advanceState?: YzjPanelInject['advanceState']
-  advanceFeed?: YzjPanelInject['advanceFeed']
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -258,8 +254,6 @@ export function YzjFusedView(props: YzjFusedInjected) {
   const [lightbox, setLightbox] = useState<{ src: string; kind: 'image' | 'pdf' } | null>(null)
   const [highlightMsgId, setHighlightMsgId] = useState('')
   const [unclamped, setUnclamped] = useState<ReadonlySet<string>>(() => new Set())
-  const [feedTarget, setFeedTarget] = useState<{ summary: string; refs: string[] } | null>(null)
-  const feedback = useAdvanceFeedback()
   const highlightRef = useRef<HTMLDivElement | null>(null)
   const streamRef = useRef<HTMLDivElement | null>(null)
   const followBottomRef = useRef(true)
@@ -302,9 +296,6 @@ export function YzjFusedView(props: YzjFusedInjected) {
 
   // 决策 41 讨论回环：产出会话优先；无产出会话则切对话域到订阅群。
   // 话题抽屉已撤（决策 50），「打开话题」banner 已撤（决策 55）。
-  /** 喂给推进 refs 的渠道 token（决策 49）：群 id 优先 props（R24 跟随），回退绑定群。 */
-  const boundGroupId = value.binding?.yzjConversationId
-  const feedGroupId = props.groupId ?? (typeof boundGroupId === 'string' ? boundGroupId : '')
 
   // 决策 39 后续:捞过的消息本体都在 bound log(每群 500 条)且 fused 全量读,
   // 但从未开过的群只 backfill 最近 50 条 — 锚点被新消息顶出窗口时自动翻页
@@ -466,17 +457,6 @@ export function YzjFusedView(props: YzjFusedInjected) {
       </div>
       <div className={css.roomStage}>
         <div className={css.roomTimeline}>
-        {feedback !== null && props.advanceFeed !== undefined && (
-          <div className={css.chrome} data-testid="yzj-advance-feedback-card">
-            <span>正在反馈 · {feedback.title}（{feedback.advanceId}）</span>
-            <FeedbackLine
-              advanceId={feedback.advanceId}
-              advanceFeed={props.advanceFeed}
-              onDone={() => setAdvanceFeedback(null)}
-            />
-            <button type="button" className={css.chromeLink} onClick={() => setAdvanceFeedback(null)}>取消</button>
-          </div>
-        )}
         {emptyPhase ? (
         <div className={css.stream} data-testid="yzj-fused-stream">
           <div className={css.unbound}>
@@ -626,21 +606,6 @@ export function YzjFusedView(props: YzjFusedInjected) {
                     >
                       回复
                     </button>
-
-                    {props.advanceState !== undefined && props.advanceFeed !== undefined && !assistant && (
-                      <button
-                        type="button"
-                        className={css.roomAction}
-                        data-testid={`yzj-advance-feed-${entry.msgId}`}
-                        onClick={() => setFeedTarget({
-                          summary: entry.content.slice(0, 80),
-                          // refs 带渠道 token（决策 39/49）：面板可定位到群消息，推荐可反推渠道。
-                          refs: [feedGroupId === '' ? entry.msgId : `im:${feedGroupId}:${entry.msgId}`],
-                        })}
-                      >
-                        喂给推进
-                      </button>
-                    )}
                   </span>
                 </span>
               </div>
@@ -658,79 +623,9 @@ export function YzjFusedView(props: YzjFusedInjected) {
         />
         </div>
       </div>
-      {feedTarget !== null && props.advanceState !== undefined && props.advanceFeed !== undefined && (
-        <AdvanceFeedPicker
-          advanceState={props.advanceState}
-          {...(feedback === null ? {} : { presetId: feedback.advanceId })}
-          defaultSummary={feedTarget.summary}
-          onClose={() => setFeedTarget(null)}
-          onSubmit={async (advanceId, summary) => {
-            const result = await props.advanceFeed?.({
-              advanceId,
-              summary,
-              sourceType: '对话',
-              refs: feedTarget.refs,
-            })
-            if (result === undefined || !result.ok) {
-              return { ok: false, error: { message: result === undefined ? 'advanceFeed unavailable' : result.error.message } }
-            }
-            return { ok: true }
-          }}
-        />
-      )}
       {lightbox !== null && (
         <ImLightbox src={lightbox.src} kind={lightbox.kind} onClose={() => setLightbox(null)} />
       )}
     </div>
-  )
-}
-
-/** One-line feed on the 「现在反馈」 card (sourceType 人工, no msg ref). */
-function FeedbackLine(props: {
-  advanceId: string
-  advanceFeed: NonNullable<YzjFusedInjected['advanceFeed']>
-  onDone: () => void
-}) {
-  const [text, setText] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const send = async (): Promise<void> => {
-    const summary = text.trim()
-    if (summary === '') {
-      setError('写一句反馈')
-      return
-    }
-    setBusy(true)
-    setError('')
-    const result = await props.advanceFeed({ advanceId: props.advanceId, summary, sourceType: '人工' })
-    setBusy(false)
-    if (!result.ok) {
-      setError(result.error.message)
-      return
-    }
-    setText('')
-    props.onDone()
-  }
-  return (
-    <>
-      <input
-        className={css.topicDrawerInput}
-        data-testid="yzj-advance-feedback-summary"
-        placeholder="一句话反馈…"
-        value={text}
-        onChange={event => setText(event.target.value)}
-        disabled={busy}
-      />
-      <button
-        type="button"
-        className={`${css.chromeBtn} ${css.chromePrimary}`}
-        data-testid="yzj-advance-feedback-send"
-        disabled={busy}
-        onClick={() => { void send() }}
-      >
-        {busy ? '写入中…' : '喂进去'}
-      </button>
-      {error !== '' && <span role="alert">{error}</span>}
-    </>
   )
 }

@@ -30,8 +30,6 @@ export const YZJ_WRITE_TOOL_NAMES = [
   'yzj_doc_block_update', 'yzj_sheet_create', 'yzj_sheet_table_create',
   'yzj_sheet_table_rename', 'yzj_sheet_record_create', 'yzj_sheet_record_update',
   'yzj_calendar_event_create', 'yzj_calendar_event_update',
-  'yzj_todo_create', 'yzj_todo_update', 'yzj_todo_complete',
-  'yzj_advance_create', 'yzj_advance_feed',
 ] as const
 
 /** The injected decision face the confirmation card receives. */
@@ -91,16 +89,11 @@ const WRITE_TITLES: Record<string, string> = {
   yzj_sheet_record_update: '更新记录',
   yzj_calendar_event_create: '新建日程',
   yzj_calendar_event_update: '更新日程',
-  yzj_todo_create: '新建待办',
-  yzj_todo_update: '更新待办',
-  yzj_todo_complete: '完成待办',
-  yzj_advance_create: '立项推进事项',
-  yzj_advance_feed: '喂入事元',
 }
 
 /** Domain labels for the card header. */
 const DOMAIN_LABELS: Record<string, string> = {
-  im: '消息', doc: '文档', kb: '知识库', sheet: '多维表格', calendar: '日程', file: '文件', todo: '待办', advance: '推进', other: '云之家',
+  im: '消息', doc: '文档', kb: '知识库', sheet: '多维表格', calendar: '日程', file: '文件', other: '云之家',
 }
 
 function row(title: string, sub: string, key: string): ReactNode {
@@ -238,40 +231,6 @@ function ArgBody({ record, names }: { record: YzjWriteRecord; names: Record<stri
         const orgNames = orgs.map(id => names[asString(id)] ?? '').filter(name => name !== '')
         push('组织者', orgNames.length > 0 ? orgNames.join('、') : `${orgs.length} 人`, 'o')
       }
-      break
-    }
-    case 'todo': {
-      if (str('title') !== '') push('标题', str('title'), 't')
-      if (str('todoId') !== '') push('待办', str('todoId'), 'id')
-      if (record.toolName === 'yzj_todo_update' || record.toolName === 'yzj_todo_complete') {
-        push('操作', record.toolName === 'yzj_todo_complete' ? '标记完成（快路径）' : '更新字段', 'op')
-      }
-      if (record.toolName === 'yzj_todo_create') push('落点', '待我决定（批准后 agent 可认领）', 'ld')
-      if (str('description') !== '') push('描述', str('description').slice(0, 200), 'ds')
-      if (str('status') !== '') push('状态', str('status'), 'st')
-      if (str('assignee') !== '') push('负责人', str('assignee'), 'as')
-      if (str('ddl') !== '') push('DDL', str('ddl'), 'dl')
-      if (str('priority') !== '') push('优先级', str('priority'), 'pr')
-      const tags = list('tags').filter((tag): tag is string => typeof tag === 'string')
-      if (tags.length > 0) push('标签', tags.map(tag => `#${tag}`).join(' '), 'tg')
-      if (str('appendLog') !== '') push('备注', str('appendLog').slice(0, 200), 'al')
-      if (str('note') !== '') push('备注', str('note').slice(0, 200), 'nt')
-      break
-    }
-    case 'advance': {
-      if (str('title') !== '') push('事项', str('title'), 't')
-      if (str('advanceId') !== '') push('事项', str('advanceId'), 'id')
-      if (str('changeType') !== '') push('变化类型', str('changeType'), 'ct')
-      if (str('summary') !== '') push('摘要', str('summary').slice(0, 200), 'sm')
-      if (str('stageTo') !== '') push('阶段', `→ ${str('stageTo')}`, 'sg')
-      if (str('goal') !== '') push('目标', str('goal').slice(0, 200), 'g')
-      if (str('metrics') !== '') push('成功指标', str('metrics').split('\n').join('；').slice(0, 200), 'mt')
-      if (str('background') !== '') push('背景', str('background').slice(0, 200), 'bg')
-      if (str('assignee') !== '') push('负责人', str('assignee'), 'as')
-      if (str('targetDate') !== '') push('目标日期', str('targetDate'), 'td')
-      if (str('detail') !== '') push('变化', str('detail').split('\n').join('；').slice(0, 200), 'dt')
-      const advanceTags = list('tags').filter((tag): tag is string => typeof tag === 'string')
-      if (advanceTags.length > 0) push('标签', advanceTags.map(tag => `#${tag}`).join(' '), 'tg')
       break
     }
     case 'file':

@@ -117,187 +117,25 @@ describe('createRpcHandler', () => {
   it('memory endpoints are gone with the package（决策 53）', async () => {
     const gate: YzjWriteGateFace = { list: () => [], decide: () => false }
     const handler = createRpcHandler(mountBridge({}), gate)
-    for (const endpoint of ['memory-scope', 'memory-log', 'memory-observe', 'dream-state', 'dream-set', 'dream-run', 'robot-status', 'robot-notify']) {
+    for (const endpoint of [
+      'memory-scope', 'memory-log', 'memory-observe', 'dream-state', 'dream-set', 'dream-run',
+      'robot-status', 'robot-notify',
+      'todo-state', 'todo-create', 'advance-state', 'advance-feed', 'advance-scan-state',
+    ]) {
       const result = await handler(endpoint, {}, undefined as never)
       expect(result.ok).toBe(false)
       expect((result as { ok: false; error: { message: string } }).error.message).toContain('unknown /yzj endpoint')
     }
   })
 
-  it('advance-feed is a user-direct write: actor=user, no stageTo, default sourceType', async () => {
+  it('retired todo/advance endpoints are unknown', async () => {
     const gate: YzjWriteGateFace = { list: () => [], decide: () => false }
-    const bare = createRpcHandler(mountBridge({}), gate)
-    expect(await bare('advance-feed', { advanceId: 'A-1', summary: '进度' }, undefined as never)).toEqual({
-      ok: false,
-      error: { code: 'internal', message: 'advance-feed: yzjAdvance 服务不可用（tool-yzj 未挂载）', details: {} },
-    })
-    const ctx = new Context()
-    const fed: Record<string, unknown>[] = []
-    ctx.provide('yzjAdvance', {
-      feed: async (input: Record<string, unknown>) => {
-        fed.push(input)
-        return { advanceId: input.advanceId, stage: 'running' }
-      },
-    })
-    const handler = createRpcHandler(ctx, gate)
-    const blocked = await handler('advance-feed', {
-      advanceId: 'A-1', summary: '偷偷改阶段', stageTo: 'completed',
-    }, undefined as never)
-    expect(blocked.ok).toBe(false)
-    expect(blocked.ok === false && blocked.error.message).toContain('用户直写不能改阶段或目标字段')
-    expect(fed).toEqual([])
-    const goalBlocked = await handler('advance-feed', {
-      advanceId: 'A-1', summary: '改目标', goal: '新目标',
-    }, undefined as never)
-    expect(goalBlocked.ok).toBe(false)
-    expect(fed).toEqual([])
-    const withRefs = await handler('advance-feed', {
-      advanceId: 'A-1', summary: '群里一句', refs: ['m1', ''],
-    }, undefined as never)
-    expect(withRefs.ok).toBe(true)
-    expect(fed[0]).toEqual({
-      advanceId: 'A-1',
-      summary: '群里一句',
-      sourceType: '对话',
-      changeType: '进度更新',
-      refs: ['m1'],
-      actor: 'user',
-    })
-    const noRefs = await handler('advance-feed', {
-      advanceId: 'A-1', summary: '口头反馈', sourceType: '人工',
-    }, undefined as never)
-    expect(noRefs.ok).toBe(true)
-    expect(fed[1]).toEqual({
-      advanceId: 'A-1',
-      summary: '口头反馈',
-      sourceType: '人工',
-      changeType: '进度更新',
-      actor: 'user',
-    })
-  })
-
-  it('advance-scan-state reads the last patrol snapshot', async () => {
-    const gate: YzjWriteGateFace = { list: () => [], decide: () => false }
-    const bare = createRpcHandler(mountBridge({}), gate)
-    expect(await bare('advance-scan-state', {}, undefined as never)).toEqual({
-      ok: false,
-      error: { code: 'internal', message: 'advance-scan-state: yzjAdvance 服务不可用（tool-yzj 未挂载）', details: {} },
-    })
-    const ctx = new Context()
-    ctx.provide('yzjAdvance', {
-      scanState: () => ({ scannedAt: 1, found: 2, groups: [] }),
-    })
-    const handler = createRpcHandler(ctx, gate)
-    expect(await handler('advance-scan-state', {}, undefined as never)).toEqual({
-      ok: true,
-      value: { scannedAt: 1, found: 2, groups: [] },
-    })
-  })
-
-  it('advance-source-add / advance-source-remove are user-direct subscription writes (spec §15.2)', async () => {
-    const gate: YzjWriteGateFace = { list: () => [], decide: () => false }
-    const bare = createRpcHandler(mountBridge({}), gate)
-    expect(await bare('advance-source-add', { advanceId: 'A-1', token: 'doc:d1' }, undefined as never)).toEqual({
-      ok: false,
-      error: { code: 'internal', message: 'advance-source-add: yzjAdvance 服务不可用（tool-yzj 未挂载）', details: {} },
-    })
-    expect(await bare('advance-source-remove', { advanceId: 'A-1', token: 'doc:d1' }, undefined as never)).toEqual({
-      ok: false,
-      error: { code: 'internal', message: 'advance-source-remove: yzjAdvance 服务不可用（tool-yzj 未挂载）', details: {} },
-    })
-    const ctx = new Context()
-    const adds: { advanceId: string; token: string; label?: string }[] = []
-    const removes: { advanceId: string; token: string }[] = []
-    ctx.provide('yzjAdvance', {
-      sourceAdd: async (advanceId: string, token: string, label?: string) => {
-        if (!/^(im|doc|todo|event|file):/.test(token)) throw new Error(`advance: 非法线程 token「${token}」`)
-        adds.push({ advanceId, token, ...(label === undefined ? {} : { label }) })
-        return { sources: [{ token, kind: 'document', label: label ?? '', addedBy: 'user', addedAt: 1 }], entryAppended: true }
-      },
-      sourceRemove: async (advanceId: string, token: string) => {
-        removes.push({ advanceId, token })
-        return []
-      },
-    })
-    const handler = createRpcHandler(ctx, gate)
-    expect(await handler('advance-source-add', { advanceId: 'A-1' }, undefined as never)).toEqual({
-      ok: false,
-      error: { code: 'internal', message: 'advance-source-add endpoint requires advanceId and token payloads', details: {} },
-    })
-    const added = await handler('advance-source-add', { advanceId: 'A-1', token: 'doc:d1', label: '范围说明' }, undefined as never)
-    expect(added.ok).toBe(true)
-    expect(added.ok && (added.value as { entryAppended: boolean }).entryAppended).toBe(true)
-    expect(adds).toEqual([{ advanceId: 'A-1', token: 'doc:d1', label: '范围说明' }])
-    const serviceError = await handler('advance-source-add', { advanceId: 'A-1', token: 'msg:bad' }, undefined as never)
-    expect(serviceError.ok).toBe(false)
-    expect(serviceError.ok === false && serviceError.error.message).toContain('advance-source-add failed')
-    expect(await handler('advance-source-remove', { token: 'doc:d1' }, undefined as never)).toEqual({
-      ok: false,
-      error: { code: 'internal', message: 'advance-source-remove endpoint requires advanceId and token payloads', details: {} },
-    })
-    const removed = await handler('advance-source-remove', { advanceId: 'A-1', token: 'doc:d1' }, undefined as never)
-    expect(removed).toEqual({ ok: true, value: { sources: [] } })
-    expect(removes).toEqual([{ advanceId: 'A-1', token: 'doc:d1' }])
-  })
-
-  it('advance-get folds the subscribed threads into the detail (no extra read endpoint)', async () => {
-    const ctx = new Context()
-    ctx.provide('yzjAdvance', {
-      get: async (advanceId: string) => ({
-        item: { advanceId, title: '试运行' },
-        entries: [],
-        entryOffset: 0,
-        entryTotal: 0,
-        sources: [],
-        contextSources: [{ token: 'im:g1', kind: 'persistent', label: 'dsh-2', addedBy: 'agent', addedAt: 1 }],
-      }),
-    })
-    const handler = createRpcHandler(ctx, { list: () => [], decide: () => false })
-    const result = await handler('advance-get', { advanceId: 'A-1' }, undefined as never)
-    expect(result.ok).toBe(true)
-    expect(result.ok && (result.value as { contextSources: { token: string }[] }).contextSources.map(row => row.token)).toEqual(['im:g1'])
-  })
-
-  it('advance-ref-lookup resolves dp-* pool refs and im: tokens, misses stay out (视觉走查 08-21; 裸 msgId 已退役 gap §24.39)', async () => {
-    const ctx = mountBridge({
-      'doc get --id doc-9': runOf({ fileName: '产品定义卡.otl' }),
-    })
-    const log = {
-      entries: [
-        { msgId: 'm9', fromName: '老黎', content: '覆盖率到 80', sentAt: 1_755_600_000_000 },
-      ],
+    const handler = createRpcHandler(mountBridge({}), gate)
+    for (const endpoint of ['todo-dispatch', 'advance-get', 'advance-create', 'advance-source-add', 'advance-ref-lookup']) {
+      const result = await handler(endpoint, { advanceId: 'A-1', todoId: 'T-1' }, undefined as never)
+      expect(result.ok).toBe(false)
+      expect((result as { ok: false; error: { message: string } }).error.message).toContain('unknown /yzj endpoint')
     }
-    ctx.provide('yzjHome', {
-      ensureBound: async () => ({ sessionId: 'yzj-home-g1', created: false, yzjKind: 'group' }),
-      appendLog: async () => ({ accepted: true, reason: '' }),
-      getBySession: () => undefined,
-      getLog: (id: string) => (id === 'g1' ? log : undefined),
-      listBindings: () => [{ dshSessionId: 'yzj-home-g1', yzjConversationId: 'g1', yzjKind: 'group' }],
-      logs: {},
-    })
-    const poolRows = [
-      { id: 'dp-1-1', channel: 'im:g1', refId: 'm9', content: '池内副本(应被 log 本体覆盖)', sendTime: '2026-08-20 10:00:00.000', enqueuedAt: 1, done: true },
-      { id: 'dp-1-2', channel: 'dir:kb1', refId: 'doc-9', content: '池内文档', sendTime: '2026-08-20 10:01:00.000', enqueuedAt: 2, done: true },
-    ]
-    ctx.provide('yzjAdvance', {
-      dreamPoolLookup: (ids: readonly string[]) => poolRows.filter(row => ids.includes(row.id)),
-    })
-    const handler = createRpcHandler(ctx, { list: () => [], decide: () => false })
-    const result = await handler('advance-ref-lookup', {
-      refs: [
-        { token: 'dp-1-1', kind: 'other' },
-        { token: 'dp-1-2', kind: 'other' },
-        { token: 'im:g1:m9', kind: 'msg' },
-        { token: 'm-bare', kind: 'msg' },
-        { token: 'm-missing', kind: 'msg' },
-      ],
-    }, undefined as never)
-    expect(result.ok).toBe(true)
-    const hits = result.ok ? (result.value as { hits: Record<string, unknown>[] }).hits : []
-    expect(hits).toHaveLength(3)
-    expect(hits[0]).toMatchObject({ token: 'dp-1-1', kind: 'msg', fromName: '老黎', content: '覆盖率到 80', jumpToken: 'im:g1:m9' })
-    expect(hits[1]).toMatchObject({ token: 'dp-1-2', kind: 'doc', content: '产品定义卡.otl', docId: 'doc-9' })
-    expect(hits[2]).toMatchObject({ token: 'im:g1:m9', kind: 'msg', fromName: '老黎', jumpToken: 'im:g1:m9' })
   })
 
   it('model-default endpoints project their services', async () => {

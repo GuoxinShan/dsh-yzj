@@ -35,13 +35,8 @@ function mountPanel(): { container: HTMLDivElement } {
     fetchFileData: async () => ok({}),
     sendMessage: async () => ok({ msgId: 'm1' }),
     uploadFile: async () => ok({ fileId: 'f1' }),
-    todoState: async () => ok({ ready: true, library: { link: '' }, todos: [], activeDocId: '' }),
-    ensureTodo: async () => ok({ ready: true, library: { link: '' }, todos: [] }),
-    createTodo: async () => ok({}),
-    toggleTodo: async () => ok({}),
-    todoLibraries: async () => ok({ libraries: [], activeDocId: '', teamWorkspaces: [] }),
-    selectTodoLibrary: async () => ok({ ready: true, library: {}, todos: [] }),
-    ensureTeamTodo: async () => ok({ ready: true, library: {}, todos: [] }),
+    imCacheGet: async () => ok(null),
+    imCachePut: async () => ok(true),
     fetchWrite: async () => ok({ list: [] }),
     decideWrite: async () => ok({ settled: true }),
   } as unknown as YzjPanelInject
@@ -50,7 +45,7 @@ function mountPanel(): { container: HTMLDivElement } {
   // sequence that crashed in the browser.
   act(() => { root.render(<YzjPanel {...props} />) })
   act(() => { instance.actions.setOpen(true) })
-  for (const tab of ['chat', 'todo', 'calendar', 'docs'] as const) {
+  for (const tab of ['chat', 'calendar', 'docs'] as const) {
     act(() => { instance.actions.setTab(tab) })
   }
   act(() => { instance.actions.setOpen(false) })
@@ -94,13 +89,8 @@ describe('YzjPanel hooks-order regression (#310)', () => {
       fetchFileData: async () => ok({}),
       sendMessage: async () => ok({ msgId: 'm2' }),
       uploadFile: async () => ok({ fileId: 'f1' }),
-      todoState: async () => ok({ ready: true, library: { link: '' }, todos: [], activeDocId: '' }),
-      ensureTodo: async () => ok({ ready: true, library: { link: '' }, todos: [] }),
-      createTodo: async () => ok({}),
-      toggleTodo: async () => ok({}),
-      todoLibraries: async () => ok({ libraries: [], activeDocId: '', teamWorkspaces: [] }),
-      selectTodoLibrary: async () => ok({ ready: true, library: {}, todos: [] }),
-      ensureTeamTodo: async () => ok({ ready: true, library: {}, todos: [] }),
+      imCacheGet: async () => ok(null),
+      imCachePut: async () => ok(true),
       fetchWrite: async () => ok({ list: [] }),
       decideWrite: async () => ok({ settled: true }),
     } as unknown as YzjPanelInject

@@ -9,7 +9,6 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointer
 import {
   IconChecklistOutline14,
   IconFolderOpenOutline16,
-  IconListPenOutline16,
   IconNewChatOutline16,
   Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -23,7 +22,6 @@ import {
 } from './im-cache.ts'
 
 import { registerPanelController } from './panel-controller.ts'
-import { TodoPane } from './todo-pane.tsx'
 import { rememberImSeat } from './im-seat.ts'
 import { bindImCachePersistence } from './im-cache.ts'
 import { setWorkbenchDomain, subscribeImGroupFocus } from './workbench-domain.ts'
@@ -60,7 +58,7 @@ function asArray(value: unknown): unknown[] {
 
 /** Pointer payload for @-mention / codec refs (drag-to-chip is retired). */
 export interface YzjDragRef {
-  kind: 'workspace' | 'doc' | 'group' | 'event' | 'contact' | 'message' | 'todo'
+  kind: 'workspace' | 'doc' | 'group' | 'event' | 'contact' | 'message'
   id: string
   title: string
   url?: string
@@ -145,7 +143,6 @@ const TABS: { key: YzjTab; label: string; icon: () => ReactNode }[] = [
   { key: 'docs', label: '知识库', icon: () => <IconFolderOpenOutline16 /> },
   { key: 'calendar', label: '日程', icon: () => <IconChecklistOutline14 /> },
   { key: 'chat', label: '会话', icon: () => <IconNewChatOutline16 /> },
-  { key: 'todo', label: '待办', icon: () => <IconListPenOutline16 /> },
 ]
 
 // 机器人/记忆管理页已迁移至 设置 → 云之家（settings-section.tsx）；工作台页签
@@ -250,7 +247,6 @@ export function YzjPanelButton(props: YzjPanelButtonProps) {  const open = props
 /** Shortcut order for the floating ball's hover quick-dock. */
 const DOCK_ITEMS: { key: YzjTab; label: string; icon: () => ReactNode }[] = [
   { key: 'chat', label: '会话', icon: () => <IconNewChatOutline16 /> },
-  { key: 'todo', label: '待办', icon: () => <IconListPenOutline16 /> },
   { key: 'calendar', label: '日程', icon: () => <IconChecklistOutline14 /> },
   { key: 'docs', label: '知识库', icon: () => <IconFolderOpenOutline16 /> },
 ]
@@ -401,17 +397,6 @@ function loadTab(
         props.actions.setLoading(false)
       } else fail(result.error.message)
     })
-  } else if (tab === 'todo') {
-    void props.todoState().then((result) => {
-      if (result.ok) {
-        const value = asRecord(result.value)
-        props.actions.setTodoState(asArray(value.todos), value.ready === true)
-        props.actions.setLoading(false)
-        if (typeof value.error === 'string' && value.error !== '') {
-          props.actions.setError(`待办读取失败：${value.error}`)
-        }
-      } else fail(result.error.message)
-    })
   }
 }
 
@@ -432,9 +417,9 @@ export function YzjPanel(props: YzjPanelProps) {
   const tab = props.useStore(state => state.tab)
   const embedded = props.embedded === true
   // Persisted tabs may hold removed keys (me/robot/memory); fall back to docs.
-  const storedTab: YzjTab = tab === 'docs' || tab === 'calendar' || tab === 'chat' || tab === 'todo' ? tab : 'docs'
+  const storedTab: YzjTab = tab === 'docs' || tab === 'calendar' || tab === 'chat' ? tab : 'docs'
   const activeTab: YzjTab = embedded
-    ? (props.forceTab ?? (storedTab === 'chat' ? 'todo' : storedTab))
+    ? (props.forceTab ?? (storedTab === 'chat' ? 'docs' : storedTab))
     : storedTab
   const anchorActive = props.useStore(state => state.anchorMsgId !== '')
   const state = props.useStore(s => s)
@@ -1623,29 +1608,6 @@ export function YzjPanel(props: YzjPanelProps) {
             </div>
           </div>
         </div>
-      )}
-
-      {activeTab === 'todo' && (
-        <TodoPane
-          todos={state.todos}
-          ready={state.todoReady}
-          tagFilter={state.todoTag}
-          loading={state.loading}
-          actions={props.actions}
-          todoState={props.todoState}
-          ensureTodo={props.ensureTodo}
-          createTodo={props.createTodo}
-          toggleTodo={props.toggleTodo}
-          approveTodo={props.approveTodo}
-          acceptTodo={props.acceptTodo}
-          returnTodo={props.returnTodo}
-          cancelTodo={props.cancelTodo}
-          reopenTodo={props.reopenTodo}
-          archiveTodo={props.archiveTodo}
-          editTodo={props.editTodo}
-          dispatchTodo={props.dispatchTodo}
-          {...(props.focusBoundSession === undefined ? {} : { focusBoundSession: props.focusBoundSession })}
-        />
       )}
 
       {lightbox !== null && (

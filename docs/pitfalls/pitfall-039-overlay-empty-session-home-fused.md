@@ -1,5 +1,6 @@
 # pitfall-039：工作台 overlay 空 sessionId 撞 home-fused 空 payload 校验
 
+> **已失效（2026-08-27）**：推进板已从公开仓撤出。
 > 记录日期：2026-08-20
 > 影响区域：ui-yzj browser half（`room-shell.tsx` / `transcript.tsx` / `room-composer.tsx`）/ 推进板「跳到消息」与 Dream 抽取等切 im 域入口
 

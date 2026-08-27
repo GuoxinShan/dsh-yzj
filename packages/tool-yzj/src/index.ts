@@ -17,13 +17,6 @@ import { applySheetTools } from './sheet.ts'
 import { applyCalendarTools } from './calendar.ts'
 import { applyImTools } from './im.ts'
 import { applyFileTools } from './file.ts'
-import { applyTodoTools } from './todo.ts'
-import { YzjTodoService } from './todo.ts'
-import type { TodoConfig } from './todo.ts'
-import { applyAdvanceTools, YzjAdvanceService } from './advance.ts'
-import { ScanCursorStore } from './scan-cursors.ts'
-import { ContextSourceStore } from './advance-sources.ts'
-import { DreamPoolStore } from './advance-dreampool.ts'
 import { YzjHomeService } from './home.ts'
 import { applyApprovalGuard } from './guard.ts'
 import type { YzjToolBudget } from './shared.ts'
@@ -41,12 +34,6 @@ export interface Config {
   maxRenderChars?: number
   /** Cap on UI presentation payloads in characters. Defaults to 50000. */
   maxMetaChars?: number
-  /**
-   * Todo library binding (demo-stage sheet backend). Omitted fields are
-   * auto-discovered; the first write auto-provisions the 待办任务库 in the
-   * personal workspace (or the configured one).
-   */
-  todo?: TodoConfig
   /** Open a bound session: pull this many recent Yunzhijia messages into the log. */
   backfillLimit?: number
   /** Summon window: max log rows injected for one agent turn. */
@@ -61,11 +48,6 @@ export const Config: z<Config> = z.object({
   timeoutMs: z.number().step(1).min(1).default(60_000),
   maxRenderChars: z.number().step(1).min(1).default(30_000),
   maxMetaChars: z.number().step(1).min(1).default(50_000),
-  todo: z.object({
-    workspace: z.string(),
-    docId: z.string(),
-    tableId: z.number(),
-  }),
   backfillLimit: z.number().step(1).min(1).default(50),
   summonWindowMessages: z.number().step(1).min(1).default(20),
   summonWindowChars: z.number().step(1).min(200).default(4_000),
@@ -85,30 +67,8 @@ export function apply(ctx: Context, config: Config): void {
   applyCalendarTools(ctx, budget)
   applyImTools(ctx, budget)
   applyFileTools(ctx, budget)
-  // The yzjTodo service shares the todo core AND the active-library holder
-  // with the tools (panel switcher writes it; agent writes follow it), and
-  // backs the ui-yzj RPC channel. Needs a real Cordis context.
-  const todoService = new YzjTodoService(ctx, budget, config.todo ?? {})
-  applyTodoTools(ctx, budget, config.todo ?? {}, todoService.holder)
-  // The advance (AI推进) board shares the active-library holder: the panel
-  // switcher moves both the todo tab and the advance board to the same doc.
-  // Scan cursors are a host-owned storage-domain (决策 18) shared by the
-  // scan tool and the board status RPC; intent-thread subscriptions are a
-  // second host-owned storage-domain (决策 20, spec §15.2) shared by the
-  // create/scan tools and the panel thread RPC.
-  // v1.8 storage switch (decision 36): advance two-table on local SQLite;
-  // todo family stays on the cloud dbt. Tests stay on dbt (never call this).
-  const scanCursors = new ScanCursorStore()
-  const advanceSources = new ContextSourceStore()
-  // Dream 蓄水池(spec §17,决策 33):scan 信号 copy 入池,Dream 抽取统一提炼。
-  const dreamPool = new DreamPoolStore()
-  const advanceService = new YzjAdvanceService(ctx, budget, config.todo ?? {}, todoService.holder, scanCursors, advanceSources, dreamPool)
-  applyAdvanceTools(ctx, budget, config.todo ?? {}, todoService.holder, scanCursors, advanceSources, dreamPool)
-  // v1.8 收敛（决策 35）：巡检 = host 机械 routine（≥300s 增量入池，无模型）；
-  // 模型只在 Dream 抽取时出场。注册即效应，卸载无残留。
-  ctx.effect(() => advanceService.startPatrolTimer())
   // Product-home binding table (dsh-home-session): one Yunzhijia
-  // conversation ↔ one DSH session. Shared by robot inbound and UI pick-group.
+  // conversation ↔ one DSH session. Shared by UI pick-group.
   const home = new YzjHomeService(ctx, {
     backfillLimit: config.backfillLimit ?? 50,
     summonWindowMessages: config.summonWindowMessages ?? 20,
@@ -117,7 +77,6 @@ export function apply(ctx: Context, config: Config): void {
   })
   ctx.inject(['storageDomain'], () => {
     void home.openNow()
-    void advanceService.openNow()
   })
   // Window is a one-shot plugin inject (not a snapshot section). Register
   // on the host so official Chat and drawer turns both see it (events bubble).
@@ -309,10 +268,6 @@ export {
 export {
   TopicAnchorStore, topicSessionId, topicAnchorKey, yzjTopicDomainSpec,
 } from './topics.ts'
-export {
-  ContextSourceStore, parseSourceToken, sourceKindOf, sourceTypeOfToken, yzjAdvanceSourcesDomainSpec,
-} from './advance-sources.ts'
-export type { ContextSource, ContextSourceKind, ContextSourceStoreFace } from './advance-sources.ts'
 export {
   BoundLogStore, applyAppend, ackLocalEntry, failLocalEntry, formatSummonWindow, threadEntries,
   mergeFused, cliMessageToEntry, cliMessageList, extractSendMsgId, localMsgId,

@@ -1,5 +1,6 @@
 # pitfall-040：外部 seed sqlite 事元缺 `entry_id` fields 键，被 parse 静默过滤出时间线
 
+> **已失效（2026-08-27）**：推进表与直插验收脚本已从公开仓撤出。
 > 记录日期：2026-08-20
 > 影响区域：`.acceptance/verify-advance-anchor.mjs` 等直接写 `~/.dsh/storages/yzj_advance.db` 的验收脚本 / 任何绕过 `appendEntry` 的 sqlite 直插
 

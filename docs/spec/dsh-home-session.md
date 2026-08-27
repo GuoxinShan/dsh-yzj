@@ -192,7 +192,7 @@ DshHomeSession
 |---|---|
 | [`integration-master-plan.md`](integration-master-plan.md) v1.7 及更早 | 人在闭环、确认卡、面板、拖拽仍成立。v1.8 **追加指针**，不改写 v1.1「机器人=下期」原文；该判断已被通道落地 + 本法取代 |
 | [`robot-channel-plan.md`](robot-channel-plan.md) §3.6 S1/S3/`robot_fork` | 协议与 Claude Tag 对齐调研保留（仅对照，不是产品名）。v0.2 **追加**：隐藏平行 session 与 fork 开新根在本法下作废，入站改打绑定对象 |
-| [`todo-design.md`](todo-design.md) §11.2 决策 5 | 用户直写原则与 D9 一致；面板待办直写仍是用户意志 |
+| 待办设计（已归档） | 用户直写原则与 D9 一致；待办页签已从公开仓撤出（2026-08-27） |
 | 根 README / AGENTS.md | 写路径两分改为已拍板；并指向本文为会话对象事实源 |
 
 ---

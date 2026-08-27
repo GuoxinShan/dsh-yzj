@@ -15,8 +15,8 @@ import { parseContactUser } from './contact-parse.ts'
 import { digestCandidates, textOfSessionEvent, type DigestCandidate } from './handoff-digest.ts'
 import { artifactBadgeOf, writeFileNameOf, type ArtifactBadge } from './artifact-badge.ts'
 import {
-  lastSessionTitle, isPlaceholderRoomTitle, identifiedUserMessage, publishHostSession,
-  type HomeOpenAgents, type HomeOpenFace, type TopicAgentRoute, type TopicAgentSetup,
+  lastSessionTitle, isPlaceholderRoomTitle,
+  type HomeOpenFace,
 } from './home-open.ts'
 import type { YzjWriteRecord } from './write-gate.ts'
 import type { TopicEnsureInput, TopicEnsureResult, TopicRecord } from '@dsh-yzj/tool-yzj/src/topics.ts'
@@ -599,132 +599,6 @@ export function topicLensBubbles(
   agents: { get(id: string): { session?: { events?: readonly { type: string; time?: number; timestamp?: number; data?: unknown }[] } } | undefined },
 ): TopicLensBubble[] {
   return lensBubblesFromEvents(sessionEventsOf(agents.get(topic.dshSessionId)), 't')
-}
-
-/** User-authored followup (drawer 「问助手」). Visible in the lens. Must carry `id`. */
-function userTurn(text: string): ReturnType<typeof identifiedUserMessage> {
-  return identifiedUserMessage(text, { kind: 'user' })
-}
-
-/**
- * Dream 抽取指令（spec §17.2 手动径，决策 38）。单一事实源在 host：
- * `advance-dream-run` RPC 直建 `yzj-dream-*` 会话并以首条 user turn 注入，
- * 不再经 client askDraft / 话题问助手栏。
- */
-export function dreamAskPrompt(): string {
-  return '请做一轮 Dream 抽取。流程与纪律:\n1) yzj_advance_dream_status 读蓄水池 pending 清单。\n2) 取材(关键——别凭一行摘要瞎猜):dir: 文档类条目(新增/更新文档《…》)必先 yzj_doc_get + yzj_doc_block_list 读正文再判;im: 消息条目拿不准语境就 yzj_im_message_list 以该消息为锚读前后各 10 条还原讨论;判断与哪个事项相关时 yzj_advance_get 翻候选事项最近事元找对照,或 yzj_doc_search 找背景。\n3) 逐条与 open 事项比对(yzj_advance_inspect):有价值的按纪律 feed(refs 用池条目的 channel+refId 组装成 im:<groupId>:<msgId> token 抄进去（todo: 渠道条目例外：refs 直接抄 refId 即待办 id）,面板才能定位到具体群消息;sourceType 按渠道标:im:→对话 / dir:→文档 / todo:→待办;禁止把池条目 id(dp-*)抄进 refs——那只是池内键,不是原始出处;detail 必须写出你读到的原文要点,不是复述标题;进度正常静默挂但仍落进度事元;偏差事元 detail 必须写推论链:事实→影响了什么→为什么;若某条信号与事项强相关但该事项未订阅其渠道,顺手落一条推荐事元(detail 一行 `推荐订阅: <渠道token>`)),命中打扰判据才 feed changeType=决策请求 stageTo=decision-needed 形成建议卡:summary=要我决定的问题,detail=问题分析+动作行(每行一个,可多个:`动作: 建待办 | 内容: <标题> | 截止: <yyyy-MM-dd> | 负责人: <名字>` / `动作: 发消息 | 内容: <草稿>` / `动作: 定会议 | 主题: <主题> | 时间: <yyyy-MM-dd HH:mm>`)——建议必须落到可执行动作,我在看板一键执行;若该事项已有未处理的决策请求,不要并列起新卡——feed 一张综合卡(detail 带一行「综合自: <旧卡 entryId>」写明旧问题的并入/失效,host 会校验),卡面永远只有一条当前决策且必须带最新上下文;无关的跳过。\n4) 最后 yzj_advance_dream_mark(ids=[已处理条目 id]) 并给我一句「抽取 N 条/产出 M 条建议」的总结。直接连续调用工具完成,不要询问我。'
-}
-
-/** `yzj-dream-<yyyymmdd-hhmmss>` stamp, newest-last sortable. */
-function dreamStamp(): string {
-  const now = new Date()
-  const pad = (value: number): string => String(value).padStart(2, '0')
-  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
-}
-
-/**
- * One-shot Dream session (决策 38): mint `yzj-dream-<stamp>`, start the
- * distillation as turn 1, then pin the board title so the sidebar lists it
- * immediately. The caller focuses the GUI on the returned sessionId.
- */
-export async function runDreamSession(options: {
-  readonly agents: HomeOpenAgents & {
-    get(sessionId: string): { followup?: (message: unknown) => void } | undefined
-  }
-  readonly cwd: string
-  readonly agentOptions?: TopicAgentRoute
-  readonly agentPreset?: string
-  readonly setup?: TopicAgentSetup
-  readonly pending: number
-}): Promise<{ sessionId: string }> {
-  const sessionId = `yzj-dream-${dreamStamp()}`
-  await options.agents.create({
-    sessionId,
-    meta: {
-      cwd: options.cwd,
-      ...(options.agentPreset === undefined ? {} : { agentPreset: options.agentPreset }),
-    },
-    ...(options.agentOptions === undefined ? {} : { agentOptions: options.agentOptions }),
-    ...(options.setup === undefined ? {} : { setup: options.setup }),
-  })
-  const live = options.agents.get(sessionId) as
-    | { followup?: (message: unknown) => void }
-    | undefined
-  if (live?.followup === undefined) throw new Error('advance-dream-run: agent followup unavailable')
-  live.followup(userTurn(dreamAskPrompt()))
-  publishHostSession(live, `Dream 抽取 · 池中 ${options.pending} 条`, true, true)
-  return { sessionId }
-}
-
-/** Structural todo card for the dispatch prompt (lossless JSON leaves only). */
-export interface TodoDispatchCard {
-  readonly todoId: string
-  readonly title: string
-  /** 描述 = the prompt body the claimed agent executes (S7). */
-  readonly description: string
-  readonly ddl: string
-  readonly tags: readonly string[]
-  readonly version: number
-}
-
-/**
- * 派发指令（泳道期②，todo-swimlane-agent §2.3）：单一事实源在 host——
- * `todo-dispatch` RPC 直建 `yzj-todo-*` 会话并以首条 user turn 注入任务卡，
- * 与 Dream 手动径（决策 38）同构。claim/交卷纪律写进提示词，状态机与
- * 人验收闸（S2）由 host 强制，不靠模型自觉。
- */
-export function todoDispatchPrompt(todo: TodoDispatchCard): string {
-  return [
-    '你认领了一条泳道待办，现在开工。',
-    '',
-    `任务卡（版本 v${todo.version}）：`,
-    `- ID：${todo.todoId}`,
-    `- 标题：${todo.title}`,
-    `- 描述（你要执行的提示词本体）：${todo.description === '' ? '（空——先按标题与常识界定范围，拿不准在交卷说明里写清你的理解）' : todo.description}`,
-    ...(todo.ddl === '' ? [] : [`- DDL：${todo.ddl}`]),
-    ...(todo.tags.length === 0 ? [] : [`- 标签：${todo.tags.join(' / ')}`]),
-    '',
-    '纪律：',
-    `1) 先 yzj_todo_claim（todoId=${todo.todoId}）认领——认领不上（已被抢或状态变了）就停下来如实报告，不要硬做。`,
-    '2) 按描述干活；写云之家的动作（发消息/写文档/建日程等）会弹确认卡，我来批。',
-    '3) 干完用 yzj_todo_submit_review 交卷：note=结果说明（做了什么/结果是什么/还剩什么），refs 带证据链接（docId、im:<groupId>:<msgId> 等）。done 永远由我在面板验收，你不要自己标完成。',
-    '4) 卡住或发现做不了：yzj_todo_release_claim 备注「阻塞：<原因>」，把卡放回可认领列——别占着不说话。',
-    '直接连续调用工具完成，不要询问我。',
-  ].join('\n')
-}
-
-/**
- * One-shot todo dispatch session (泳道期② MVP 手动径): mint `yzj-todo-<stamp>`,
- * inject the task card as turn 1, then pin the board title. Same shape as the
- * Dream manual path (决策 38). The caller focuses the GUI on the sessionId.
- */
-export async function runTodoSession(options: {
-  readonly agents: HomeOpenAgents & {
-    get(sessionId: string): { followup?: (message: unknown) => void } | undefined
-  }
-  readonly cwd: string
-  readonly todo: TodoDispatchCard
-  readonly agentOptions?: TopicAgentRoute
-  readonly agentPreset?: string
-  readonly setup?: TopicAgentSetup
-}): Promise<{ sessionId: string }> {
-  const sessionId = `yzj-todo-${dreamStamp()}`
-  await options.agents.create({
-    sessionId,
-    meta: {
-      cwd: options.cwd,
-      ...(options.agentPreset === undefined ? {} : { agentPreset: options.agentPreset }),
-    },
-    ...(options.agentOptions === undefined ? {} : { agentOptions: options.agentOptions }),
-    ...(options.setup === undefined ? {} : { setup: options.setup }),
-  })
-  const live = options.agents.get(sessionId) as
-    | { followup?: (message: unknown) => void }
-    | undefined
-  if (live?.followup === undefined) throw new Error('todo-dispatch: agent followup unavailable')
-  live.followup(userTurn(todoDispatchPrompt(options.todo)))
-  publishHostSession(live, `待办 · ${options.todo.title}`, true, true)
-  return { sessionId }
 }
 
 /** One topic row in the workbench session list / topic drawer. */

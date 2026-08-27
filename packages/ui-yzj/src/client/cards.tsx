@@ -12,7 +12,6 @@ import {
   IconCloseFill14,
   IconDataOutline16,
   IconFolderOpenOutline16,
-  IconListPenOutline16,
   IconNewChatOutline16,
   IconRefreshOutline14,
   IconSendOutline14,
@@ -72,19 +71,6 @@ export const YZJ_TOOL_NAMES = [  'yzj_whoami',
   'yzj_im_group_members_remove',
   'yzj_file_upload',
   'yzj_file_download',
-  'yzj_todo_list',
-  'yzj_todo_create',
-  'yzj_todo_update',
-  'yzj_todo_complete',
-  'yzj_todo_claim',
-  'yzj_todo_submit_review',
-  'yzj_todo_release_claim',
-  'yzj_advance_list',
-  'yzj_advance_get',
-  'yzj_advance_inspect',
-  'yzj_advance_scan',
-  'yzj_advance_create',
-  'yzj_advance_feed',
 ] as const
 
 /** Short human titles per tool family. */
@@ -138,19 +124,6 @@ const FAMILY_TITLES: Record<string, string> = {
   yzj_im_group_members_remove: '移出群成员',
   yzj_file_upload: '上传文件',
   yzj_file_download: '下载文件',
-  yzj_todo_list: '待办列表',
-  yzj_todo_create: '新建待办',
-  yzj_todo_update: '更新待办',
-  yzj_todo_complete: '完成待办',
-  yzj_todo_claim: '认领待办',
-  yzj_todo_submit_review: '交卷待验收',
-  yzj_todo_release_claim: '释放认领',
-  yzj_advance_list: '推进队列',
-  yzj_advance_get: '推进详情',
-  yzj_advance_inspect: '比对材料',
-  yzj_advance_scan: '巡检扫描',
-  yzj_advance_create: '立项推进事项',
-  yzj_advance_feed: '喂入事元',
 }
 
 type UnknownRecord = Record<string, unknown>
@@ -160,8 +133,6 @@ export type YzjJumpTarget =
   | { kind: 'group'; groupId: string }
   | { kind: 'doc'; docId: string }
   | { kind: 'workspace'; workspaceId: string }
-  | { kind: 'todo' }
-  | { kind: 'advance' }
   | { kind: 'event'; event: { id: string; startDate: number; title: string } }
 
 /** Injected by the registration: jump to a panel view. */
@@ -417,169 +388,6 @@ function ImBody(meta: UnknownRecord, openPanel: YzjCardInjected['openPanel']): R
   return null
 }
 
-/** Todo-domain body: list rows or one action summary, ids never shown. */
-function TodoBody(meta: UnknownRecord, toolName: string): ReactNode {
-  // 泳道六态（todo-swimlane-agent §2.1；pending 是归一化前的存量值）
-  const statusLabel: Record<string, string> = { backlog: '待我决定', todo: '可认领', pending: '可认领', in_progress: '进行中', in_review: '待我验收', done: '已完成', cancelled: '已中止' }
-  if (toolName === 'yzj_todo_list') {
-    if (meta.ready === false) {
-      return <div className={css.rows}>{row('任务库未开通', '创建第一条待办时会自动开通', 'np')}</div>
-    }
-    const list = asArray(meta.list)
-    if (list.length === 0) return <div className={css.rows}>{row('无匹配待办', '', 'empty')}</div>
-    return (
-      <div className={css.rows}>
-        {list.map((item, index) => {
-          const todo = asRecord(item)
-          const tags = asArray(todo.tags).filter((tag): tag is string => typeof tag === 'string')
-          const overdue = todo.overdue === true
-          const status = statusLabel[asString(todo.status)] ?? asString(todo.status)
-          const sub = [
-            asString(todo.ddl) === '' ? '' : `${overdue ? '逾期 ' : ''}DDL ${asString(todo.ddl)}`,
-            asString(todo.assignee) === '' ? '' : `@${asString(todo.assignee)}`,
-            tags.length === 0 ? '' : tags.map(tag => `#${tag}`).join(' '),
-          ].filter(part => part !== '').join(' · ')
-          return row(asString(todo.title) === '' ? '(无标题)' : asString(todo.title), [status, sub].filter(part => part !== '').join(' · '), `t${index}`)
-        })}
-      </div>
-    )
-  }
-  // create / update / complete: friendly single-row summary + library link.
-  const rowsOut: ReactNode[] = []
-  const title = asString(meta.title)
-  const tags = asArray(meta.tags).filter((tag): tag is string => typeof tag === 'string')
-  const sub = [
-    asString(meta.ddl) === '' ? '' : `DDL ${asString(meta.ddl)}`,
-    tags.length === 0 ? '' : tags.map(tag => `#${tag}`).join(' '),
-  ].filter(part => part !== '').join(' · ')
-  if (toolName === 'yzj_todo_create') {
-    rowsOut.push(row(meta.idempotentHit === true ? `已存在：${title}` : `已创建：${title}（待人批准）`, sub, 'c'))
-  } else if (toolName === 'yzj_todo_complete') {
-    rowsOut.push(row(`已完成：${title}`, sub, 'd'))
-  } else if (toolName === 'yzj_todo_claim') {
-    rowsOut.push(row(`已认领：${title}`, '版本 v' + asString(meta.version) + ' · 干完用 yzj_todo_submit_review 交卷', 'c'))
-  } else if (toolName === 'yzj_todo_submit_review') {
-    rowsOut.push(row(`已交卷：${title}`, asString(meta.reviewNote), 'u'))
-  } else if (toolName === 'yzj_todo_release_claim') {
-    rowsOut.push(row(`已释放认领：${title}`, asString(meta.note), 'u'))
-  } else {
-    const changes = asArray(meta.changes).filter((change): change is string => typeof change === 'string')
-    rowsOut.push(row(`已更新：${title}`, changes.join('；'), 'u'))
-  }
-  const library = asRecord(meta.library)
-  const link = asString(library.link)
-  if (link !== '') rowsOut.push(linkRow(link, '打开任务库', 'l'))
-  return <div className={css.rows}>{rowsOut}</div>
-}
-
-/** Stage label for advance cards (five-stage machine, ai-advance-design §2 / 决策 52). */
-const ADVANCE_STAGE_LABEL: Record<string, string> = {
-  'running': '推进中', 'decision-needed': '待决定',
-  'ready-for-review': '待验收', 'completed': '已完成', 'cancelled': '已中止',
-}
-
-/** Advance-domain body: queue rows, one item detail, or one feed summary. */
-function AdvanceBody(meta: UnknownRecord, toolName: string, jump: (target: YzjJumpTarget) => void): ReactNode {
-  const stageOf = (value: unknown): string => ADVANCE_STAGE_LABEL[asString(value)] ?? asString(value)
-  if (toolName === 'yzj_advance_list') {
-    if (meta.ready === false) {
-      return <div className={css.rows}>{row('推进看板未开通', '立项第一个推进事项时会自动开通', 'np')}</div>
-    }
-    const list = asArray(meta.list)
-    if (list.length === 0) return <div className={css.rows}>{row('无匹配事项', '', 'empty')}</div>
-    return (
-      <div className={css.rows}>
-        {list.map((entry, index) => {
-          const item = asRecord(entry)
-          const sub = [
-            stageOf(item.stage),
-            asString(item.targetDate) === '' ? '' : `目标 ${asString(item.targetDate)}`,
-            asString(item.assignee) === '' ? '' : `@${asString(item.assignee)}`,
-            asString(item.latest),
-          ].filter(part => part !== '').join(' · ')
-          return row(asString(item.title) === '' ? '(无标题)' : asString(item.title), sub, `a${index}`)
-        })}
-        {jumpRow('打开推进看板', () => { jump({ kind: 'advance' }) }, 'jump')}
-      </div>
-    )
-  }
-  if (toolName === 'yzj_advance_get') {
-    const item = asRecord(meta.item)
-    const rowsOut: ReactNode[] = [
-      row(asString(item.title), [stageOf(item.stage), asString(item.goal)].filter(part => part !== '').join(' · '), 'head'),
-    ]
-    const entries = asArray(meta.entries)
-    for (let index = 0; index < Math.min(entries.length, 5); index += 1) {
-      const entry = asRecord(entries[index])
-      rowsOut.push(row(`${asString(entry.at)} ${asString(entry.changeType)}`, asString(entry.summary), `e${index}`))
-    }
-    const total = asNumber(meta.entryTotal) ?? entries.length
-    rowsOut.push(row(`事元 ${total} 条`, '', 'total'))
-    rowsOut.push(jumpRow('打开推进看板', () => { jump({ kind: 'advance' }) }, 'jump'))
-    return <div className={css.rows}>{rowsOut}</div>
-  }
-  if (toolName === 'yzj_advance_inspect') {
-    const rowsOut: ReactNode[] = [row(asString(meta.mode) === 'review' ? '验收辅助材料' : '比对材料', asString(meta.signals), 'head')]
-    const list = asArray(meta.list)
-    for (let index = 0; index < Math.min(list.length, 8); index += 1) {
-      const item = asRecord(list[index])
-      const next = asArray(item.next).map(part => asString(part)).filter(part => part !== '').join(' / ')
-      rowsOut.push(row(
-        asString(item.title) === '' ? asString(item.advanceId) : asString(item.title),
-        [stageOf(item.stage), next === '' ? '' : `下一阶段 ${next}`].filter(part => part !== '').join(' · '),
-        `i${index}`,
-      ))
-    }
-    rowsOut.push(jumpRow('打开推进看板', () => { jump({ kind: 'advance' }) }, 'jump'))
-    return <div className={css.rows}>{rowsOut}</div>
-  }
-  if (toolName === 'yzj_advance_scan') {
-    const groups = asArray(meta.groups)
-    const signals = asArray(meta.signals)
-    const rowsOut: ReactNode[] = [
-      row(
-        signals.length === 0 ? '无新信号，静默' : `${signals.length} 条新信号`,
-        groups.map(row => {
-          const group = asRecord(row)
-          if (asString(group.error) !== '') return `${asString(group.groupName)}：${asString(group.error)}`
-          if (group.baseline === true) return `${asString(group.groupName)}：基线`
-          return `${asString(group.groupName)}：${typeof group.newCount === 'number' ? group.newCount : 0} 条`
-        }).join(' · '),
-        'head',
-      ),
-    ]
-    for (let index = 0; index < Math.min(signals.length, 5); index += 1) {
-      const signal = asRecord(signals[index])
-      rowsOut.push(row(asString(signal.groupName), asString(signal.content), `s${index}`))
-    }
-    rowsOut.push(jumpRow('打开推进看板', () => { jump({ kind: 'advance' }) }, 'jump'))
-    return <div className={css.rows}>{rowsOut}</div>
-  }
-  // create / feed: friendly single-row summary + board link.
-  const rowsOut: ReactNode[] = []
-  if (toolName === 'yzj_advance_create') {
-    const item = asRecord(meta.item)
-    rowsOut.push(row(
-      meta.idempotentHit === true ? `已存在：${asString(item.title)}` : `已立项：${asString(item.title)}`,
-      [stageOf(item.stage), asString(item.goal)].filter(part => part !== '').join(' · '),
-      'c',
-    ))
-  } else if (meta.idempotentHit === true) {
-    rowsOut.push(row(`同源去重：${asString(meta.summary)}`, '未追加事元', 'f'))
-  } else {
-    const flow = asString(meta.stageFrom) !== '' && asString(meta.stageFrom) !== asString(meta.stageTo)
-      ? `${stageOf(meta.stageFrom)} → ${stageOf(meta.stageTo)}`
-      : ''
-    rowsOut.push(row(`${asString(meta.changeType)}：${asString(meta.summary)}`, [flow, asString(meta.detail).split('\n').join('；')].filter(part => part !== '').join(' · '), 'f'))
-  }
-  const library = asRecord(meta.library)
-  const link = asString(library.link)
-  if (link !== '') rowsOut.push(linkRow(link, '打开推进库', 'l'))
-  rowsOut.push(jumpRow('打开推进看板', () => { jump({ kind: 'advance' }) }, 'jump'))
-  return <div className={css.rows}>{rowsOut}</div>
-}
-
-
 /** Contact-domain body (whoami / search / details). */function ContactBody(meta: UnknownRecord): ReactNode {  const list = asArray(meta.list)
   const record = asRecord(meta.record)
   const users = list.length > 0 ? list : [record]
@@ -639,8 +447,6 @@ function familyIcon(toolName: string): ReactNode {
   if (toolName.startsWith('yzj_im_')) return toolName === 'yzj_im_message_send' ? <IconSendOutline14 /> : <IconNewChatOutline16 />
   if (toolName.startsWith('yzj_contact_') || toolName === 'yzj_whoami') return <IconUserOutline16 />
   if (toolName.startsWith('yzj_sheet_')) return <IconDataOutline16 />
-  if (toolName.startsWith('yzj_todo_')) return <IconListPenOutline16 />
-  if (toolName.startsWith('yzj_advance_')) return <IconChecklistOutline14 />
   if (toolName.startsWith('yzj_calendar_')) return <IconChecklistOutline14 />
   if (toolName.startsWith('yzj_file_')) return <IconRefreshOutline14 />
   return <IconFolderOpenOutline16 />
@@ -688,8 +494,6 @@ export function YzjToolCard({ toolName, block, openPanel }: ToolCallViewProps & 
   else if (toolName.startsWith('yzj_doc_')) body = DocBody(meta, jump, toolName === 'yzj_doc_workspace_list' || toolName === 'yzj_doc_workspace_get' ? 'workspace' : 'doc')
   else if (toolName.startsWith('yzj_sheet_')) body = SheetBody(meta)
   else if (toolName.startsWith('yzj_calendar_')) body = CalendarBody(meta, jump)
-  else if (toolName.startsWith('yzj_todo_')) body = TodoBody(meta, toolName)
-  else if (toolName.startsWith('yzj_advance_')) body = AdvanceBody(meta, toolName, jump)
   else if (toolName.startsWith('yzj_im_')) body = ImBody(meta, jump)
   else if (toolName.startsWith('yzj_contact_') || toolName === 'yzj_whoami') body = ContactBody(meta)
   if (body === null) body = ActionBody(meta, toolName)

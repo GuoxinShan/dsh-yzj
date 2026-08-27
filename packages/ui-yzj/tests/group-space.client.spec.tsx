@@ -93,7 +93,7 @@ describe('YzjYunzhijiaDock', () => {
   })
 
   it('云之家 opens the cover without focusing a hanger or switching domain', async () => {
-    setWorkbenchDomain('todo')
+    setWorkbenchDomain('calendar')
     const { container, focused } = mount({
       ok: true,
       value: {
@@ -111,7 +111,7 @@ describe('YzjYunzhijiaDock', () => {
     await act(async () => { home.click(); await Promise.resolve() })
     expect(focused).toEqual([])
     expect(isWorkbenchOpen()).toBe(true)
-    expect(getWorkbenchDomain()).toBe('todo')
+    expect(getWorkbenchDomain()).toBe('calendar')
   })
 
   it('does not expose a 记忆 dock entry', async () => {

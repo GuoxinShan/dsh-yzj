@@ -102,16 +102,16 @@ ok(
   convBox !== null && sendBox !== null && sendBox.x >= convBox.x + convBox.width - 12,
   convBox && sendBox ? `listRight=${Math.round(convBox.x + convBox.width)} sendX=${Math.round(sendBox.x)}` : 'missing box',
 )
-await page.getByTestId('yzj-workbench-tab-todo').click()
+await page.getByTestId('yzj-workbench-tab-calendar').click()
 await page.waitForTimeout(800)
 const hostGone = await page.getByTestId('yzj-room-composer-host').count().then(n => n === 0).catch(() => true)
-ok('timeline host unmounts on 待办', hostGone)
+ok('timeline host unmounts on 日程', hostGone)
 await page.getByTestId('yzj-workbench-tab-chat').click()
 await stream.waitFor({ state: 'visible', timeout: 8000 }).catch(() => {})
 await page.waitForTimeout(600)
 const hostBack = page.getByTestId('yzj-room-composer-host')
 ok('timeline host remounts on 对话', await hostBack.count().then(n => n > 0).catch(() => false))
-ok('发进群 is visible after 待办→对话', await page.getByTestId('yzj-send-to-group').isVisible().catch(() => false))
+ok('发进群 is visible after 日程→对话', await page.getByTestId('yzj-send-to-group').isVisible().catch(() => false))
 const sendInNewHost = await page.evaluate(() => {
   const host = document.querySelector('[data-testid="yzj-room-composer-host"]')
   const send = document.querySelector('[data-testid="yzj-send-to-group"]')

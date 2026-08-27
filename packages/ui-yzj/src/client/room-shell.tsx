@@ -11,7 +11,6 @@ import { cachedRoomGroupId, YzjFusedView, type YzjFusedInjected } from './transc
 import type { YzjPanelInject } from './rpc.ts'
 import type { YzjPanelActions, YzjPanelState } from './stores.ts'
 import { YzjDomainWorkbench } from './workbench-pane.tsx'
-import { YzjAdvancePane } from './advance-pane.tsx'
 import { registerPanelController } from './panel-controller.ts'
 import {
   getWorkbenchDomain, setWorkbenchDomain, subscribeImGroupFocus, subscribeWorkbenchDomain,
@@ -81,10 +80,8 @@ export function YzjRoomShell(props: YzjRoomShellInjected) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRoom, props.sessionId])
 
-  // Advance-board jumps (requestImGroupFocus) retarget the overlay timeline;
+  // Anchored group-focus jumps retarget the overlay timeline;
   // the top-bar panel consumes the same bus for its own open path.
-  // 决策 39: an anchored jump also carries the source message id so the
-  // timeline highlights that exact row (事件级定位).
   const [focusAnchor, setFocusAnchor] = useState('')
   useEffect(() => subscribeImGroupFocus((target) => {
     setActiveGroupId(target.groupId)
@@ -104,23 +101,19 @@ export function YzjRoomShell(props: YzjRoomShellInjected) {
 
   if (!isRoom) return null
 
-  // The advance board owns its own data loop (no panel store); other non-IM
-  // domains embed the panel with a forced tab.
-  const domainPane = domain === 'advance' && props.panel !== undefined
-    ? <YzjAdvancePane inject={props.panel} />
-    : domain !== 'im' && domain !== 'advance'
-      && props.panel !== undefined
-      && props.useStore !== undefined
-      && props.actions !== undefined
-      ? (
-        <YzjDomainWorkbench
-          domain={domain}
-          panel={props.panel}
-          useStore={props.useStore}
-          actions={props.actions}
-        />
-      )
-      : null
+  const domainPane = domain !== 'im'
+    && props.panel !== undefined
+    && props.useStore !== undefined
+    && props.actions !== undefined
+    ? (
+      <YzjDomainWorkbench
+        domain={domain}
+        panel={props.panel}
+        useStore={props.useStore}
+        actions={props.actions}
+      />
+    )
+    : null
 
   return (
     // data-conversation-composer-overlay: opt into the harness bounded-view
@@ -178,10 +171,6 @@ export function YzjRoomShell(props: YzjRoomShellInjected) {
             {...(props.focusBoundSession === undefined ? {} : { focusBoundSession: props.focusBoundSession })}
             {...(props.fetchFileData === undefined ? {} : { fetchFileData: props.fetchFileData })}
             {...(props.fetchContact === undefined ? {} : { fetchContact: props.fetchContact })}
-            {...(props.panel === undefined ? {} : {
-              advanceState: props.panel.advanceState,
-              advanceFeed: props.panel.advanceFeed,
-            })}
           />
         </div>
       )}

@@ -1,5 +1,6 @@
 # pitfall-041：dir: 订阅扫不到会议速记纪要（归档库错位 + 一层列取 + 基线不回灌三重叠加）
 
+> **已失效（2026-08-27）**：推进 scan / Dream 池已从公开仓撤出。
 > 记录日期：2026-08-21
 > 影响区域：tool-yzj advance scan 的 `dir:` 线程（scanDirThread/listDirDocs）/ 产品认知：金蝶云 AI 速记的归档行为
 

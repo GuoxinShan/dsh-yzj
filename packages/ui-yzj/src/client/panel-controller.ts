@@ -54,10 +54,6 @@ export function openPanelTarget(target: YzjJumpTarget, anchorMsgId?: string): vo
   if (target.kind === 'group') {
     setWorkbenchDomain('im')
     rememberImSeat({ groupId: target.groupId, sessionId: '' })
-  } else if (target.kind === 'todo') {
-    setWorkbenchDomain('todo')
-  } else if (target.kind === 'advance') {
-    setWorkbenchDomain('advance')
   } else if (target.kind === 'doc' || target.kind === 'workspace') {
     setWorkbenchDomain('docs')
   } else {
@@ -88,15 +84,6 @@ export function openPanelTarget(target: YzjJumpTarget, anchorMsgId?: string): vo
     actions.setWorkspaceId(target.workspaceId)
     void c.inject.fetchDocs(target.workspaceId).then((result) => {
       if (result.ok) actions.setDocs(asArray(result.value))
-    })
-  } else if (target.kind === 'advance') {
-    // Domain switch is enough — the advance pane owns its own data loop.
-  } else if (target.kind === 'todo') {
-    actions.setTab('todo')
-    void c.inject.todoState().then((result) => {
-      if (!result.ok) return
-      const value = asRecord(result.value)
-      actions.setTodoState(asArray(value.todos), value.ready === true)
     })
   } else {
     actions.setTab('calendar')

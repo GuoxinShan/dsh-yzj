@@ -243,12 +243,6 @@ function openWriteContext(record: YzjWriteRecord): void {
   } else if (record.domain === 'doc' || record.domain === 'kb' || record.domain === 'sheet') {
     const workspace = asString(args.workspace)
     if (workspace !== '') openPanelTarget({ kind: 'workspace', workspaceId: workspace })
-  } else if (record.domain === 'todo') {
-    // Todo writes: open the panel on the 待办 tab (live library state).
-    openPanelTarget({ kind: 'todo' })
-  } else if (record.domain === 'advance') {
-    // Advance writes: open the workbench on the 推进 board.
-    openPanelTarget({ kind: 'advance' })
   } else {
     // Calendar writes: open the panel on the calendar tab as-is.
     openPanelTarget({ kind: 'event', event: { id: '', startDate: 0, title: '' } })

@@ -1,6 +1,6 @@
 /**
  * R23 / H26: drag-to-composer ☁ chips are retired.
- * Walks the live GUI workbench (对话 / 待办 / 日程 / 知识库) and asserts
+ * Walks the live GUI workbench (对话 / 日程 / 知识库) and asserts
  * no `draggable` sources and no 「松开以插入云之家引用」 overlay.
  * @ mention sources remain (not asserted here — official InputBar).
  * GUI down → skip exit 0 so leftover CI / habit scripts stay green.
@@ -80,7 +80,6 @@ try {
 
   const domains = [
     { id: 'yzj-workbench-tab-chat', label: '对话' },
-    { id: 'yzj-workbench-tab-todo', label: '待办' },
     { id: 'yzj-workbench-tab-calendar', label: '日程' },
     { id: 'yzj-workbench-tab-docs', label: '知识库' },
   ]

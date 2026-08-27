@@ -1,6 +1,6 @@
 # dsh-yzj — 云之家 × DeepSeek Harness 插件
 
-将云之家（Yunzhijia）的全部 CLI 能力搬进 DeepSeek Harness：`yzj-cli` 桥接、六域模型面工具（含写入确认流）、以及一套为云之家设计的浏览器 UI（工具结果富卡片 + 云之家工作台面板）。
+将云之家（Yunzhijia）的全部 CLI 能力搬进 DeepSeek Harness：`yzj-cli` 桥接、六域模型面工具（含写入确认流）、以及一套为云之家设计的浏览器 UI（工具结果富卡片 + 云之家工作台面板）。待办与 AI推进已从本公开仓撤出（完整实现在私有归档 GuoxinShan/dsh-yzj-archive）。
 
 独立仓库的 bundle 包，通过 `dsh plugin --profile <name> add <package>` 安装，不修改 harness 本体。
 
@@ -11,8 +11,8 @@
 | 包 | 角色 | 说明 |
 |---|---|---|
 | [`packages/bridge`](packages/bridge/README.md) | `@dsh-yzj/bridge` → `ctx.yzjBridge` | 有界子进程通道：argv 数组直启 `yzj-cli`，无 shell 插值；复用机器上 `yzj-cli auth login` 的登录态与 keychain 凭据，harness 全程不接触 appSecret/accessToken |
-| [`packages/tool-yzj`](packages/tool-yzj/README.md) | `@dsh-yzj/tool-yzj`（ 注册到 `ctx.tools`） | 59 个模型面工具：doc（20）/ sheet（10）/ calendar（7）/ contact（3）/ im（7）/ file（2）/ **todo（4）** / **advance（6）**；每个工具输出 有界 digest，并把裁剪后的结构化载荷经 `output.presentationMeta` 投影给 UI；todo / advance 核心同时以 `ctx.yzjTodo` / `ctx.yzjAdvance` 服务暴露给浏览器面；**`ctx.yzjHome`** 绑定表 + **绑定消息日志**（`yzj_home_logs`，①② 不是 Session.append） |
-| [`packages/ui-yzj`](packages/ui-yzj/README.md) | `@dsh-yzj/ui-yzj`（`dsh.client` 双面包） | node half：`/yzj` Connection RPC 通道（含 `home-open` / `home-send` / `home-fused` / `advance-*`）；browser half：「新建会话」下一个「云之家」入口 + 中间栏工作台盖层（顶栏页签切对话 / 待办 / 日程 / 知识库 / **推进**；对话域 = 会话列表 \| 群房间时间线；推进域 = AI推进看板）+ 群房间「发进群」+ **设置 → 云之家**（仅登录卡；话题 / 机器人 / 记忆 / 丢进群已退役） |
+| [`packages/tool-yzj`](packages/tool-yzj/README.md) | `@dsh-yzj/tool-yzj`（ 注册到 `ctx.tools`） | 49 个模型面工具：doc（20）/ sheet（10）/ calendar（7）/ contact（3）/ im（7）/ file（2）；每个工具输出 有界 digest，并把裁剪后的结构化载荷经 `output.presentationMeta` 投影给 UI；**`ctx.yzjHome`** 绑定表 + **绑定消息日志**（`yzj_home_logs`，①② 不是 Session.append） |
+| [`packages/ui-yzj`](packages/ui-yzj/README.md) | `@dsh-yzj/ui-yzj`（`dsh.client` 双面包） | node half：`/yzj` Connection RPC 通道（含 `home-open` / `home-send` / `home-fused` / `im-cache-*`）；browser half：「新建会话」下一个「云之家」入口 + 中间栏工作台盖层（顶栏页签切对话 / 日程 / 知识库；对话域 = 会话列表 \| 群房间时间线）+ 群房间「发进群」+ **设置 → 云之家**（仅登录卡；话题 / 机器人 / 记忆 / 丢进群 / 待办 / 推进已退役） |
 | [`packages/model-yzj`](packages/model-yzj/README.md) | `@dsh-yzj/model-yzj` → `ctx.yzjModels` | 插件级默认模型（`~/.dsh/yzj-model.json`，明文热生效）：robot 模型解析链尾部（会话覆盖 > 机器人配置 > 通道默认 > **插件默认** > harness 默认）与 dream 执行器共用；`catalog()` 提供活跃路由的 provider/model 目录（面板选择器数据源） |
 | **根 = `@dsh-yzj/bundle`**（monobundle） | 可安装的 profile patch 层（`cordis.patch.yml` 在根，行名 `@dsh-yzj/bundle/<row>`） | tsdown 聚合六包 host half 进 `lib/*.mjs`（互依内嵌、`@deepseek-ai/*` 外部化）+ `scripts/copy-client.mjs` 搬运 ui-yzj closure bundle 为 `lib/client.js`；`dsh.bundle` + `dsh.client` 声明；发布 = 构建 + tag（见 [docs/release.md](docs/release.md)） |
 
@@ -26,7 +26,7 @@ pnpm dsh plugin --profile web add -w link:<本仓库路径>
 dsh plugin --profile web add github:GuoxinShan/dsh-yzj#v0.1.0
 ```
 
-安装后重启 GUI（源码启动时重启 `node --import tsx/esm apps/cli/src/bin.ts web`），侧栏脚出现一个「云之家」入口；点开工作台后用顶栏页签切对话 / 待办 / 日程 / 知识库 / 推进（记忆入口搁置）。
+安装后重启 GUI（源码启动时重启 `node --import tsx/esm apps/cli/src/bin.ts web`），侧栏脚出现一个「云之家」入口；点开工作台后用顶栏页签切对话 / 日程 / 知识库（记忆入口搁置）。
 
 > 本地开发用 `link:` 依赖指向 harness checkout；对外安装走 monobundle + git tag
 > （根包依赖已全部指向 registry 的 `@deepseek-ai` rc.7 系列，见 docs/release.md）。
@@ -39,14 +39,12 @@ dsh plugin --profile web add github:GuoxinShan/dsh-yzj#v0.1.0
 - **contact**：whoami、通讯录搜索、用户详情
 - **im**：发消息（text/file/richText、@、回复、多图）、聊天记录、最近会话
 - **file**：上传（≤30MB、最多 5 并发）、下载（自动重命名 / 覆盖）
-- **todo**：泳道待办（docs/spec/todo-swimlane-agent.md）——六态状态机 `backlog→todo→in_progress→in_review→done`（cancelled 终局，blocked 砍为 release 备注 S8）；agent 工具族 `yzj_todo_list/create/update/complete/claim/submit_review/release_claim`（claim 族静默无卡 S3；create 落 backlog 待人批准 S6；描述字段 = agent 认领后执行的提示词本体，面板可编辑 S7）；人动词走面板直写（批准/验收/打回/中止/重开/编辑/归档，D9 无卡）；面板待办页签为五列泳道（已终止、已归档各收折叠区；归档=视图层隐藏标记非第七态，S10；任务库切换器已退役，S9）；**期②执行回路**：可认领列卡片「让 agent 做」→ `/yzj todo-dispatch` 直建 `yzj-todo-*` 会话注入任务卡（决策 38 手动径同构），agent 认领干活交卷、人验收收口；真机后端本地 SQLite **唯一后端**（决策 54，2026-08-25 起双后端分支/库发现切换面全删，`yzj_sheet_*` 工具族保留）；历史迁移档案见 `docs/migration/todo-backend-migration.md`
-- **advance（AI推进）**：事元流驱动的「推进事项」（设计见 `docs/spec/ai-advance-design.md`）——`yzj_advance_list/get/inspect/scan/create/feed`；一个事项是可溯源事元（对话/待办/文档/会议/日程/数据）的 event-sourced 聚合体，**feed 是唯一变更通道**（目标更新/进度/偏差/决策请求/阶段变化全部为追加事元，host 生成 `原值→新值` diff；同源 refs **host 强制去重**），五态状态机 `running / decision-needed / ready-for-review / completed / cancelled`（决策 52：立项即 running，draft/updated 已砍），`running` 稳态不打扰；事元流存储层永不裁剪（未来知识沉淀来源）；真机后端本地 SQLite（v1.8 决策 36，与待办同库文件 `~/.dsh/storages/yzj_advance.db`），待办是事元的一种。**②期用户直写**：群房间/话题「喂给推进」、看板「现在反馈」走 `/yzj advance-feed`（`操作者=user`，不经确认卡，**不能改阶段**）。**③期**：`yzj_advance_inspect` 只读比对材料（host 不做语义结论）；看板「请 AI 验收」写入问助手草稿、不自动发送。**打扰判据与门控线**（设计 §13）：AI 判断「重不重要」并表达为阶段（进不进待我决定/待我验收），确认卡只在 agent **改基准**（`goal`/`metrics`/`targetDate`/`assignee`）时出现——进度正常与阶段变化静默落，人在看板队列被找到。**v1.4 主动发现**（§14）：`yzj_advance_scan` 增量拉群消息（host 管 cursor）；巡检为 host 机械 timer（≥300s 增量入池，无模型——v1.8 决策 35 收敛，v1.9 决策 42 移除 schedule 挂载行）；看板队列头「上次巡检」；无人值守见 `docs/spec/advance-patrol-routine.yaml`
 
 ### 确认流（确认卡）
 
-全部 33 个写工具按风险分级在 `tools/pre-execute` 返回 `ask`（标准确认 / 强确 认；其中 `yzj_advance_feed` 是**条件确认**——只在改推进基准时问，见 [ai-advance-design.md](docs/spec/ai-advance-design.md) §13.5），由 host 侧 `write-gate` 应答 `approval/request` waterfall 后，在浏览器渲染**按 domain 分发的确认卡**：参数全 文（消息目标/文档落位/记录内容/日程时间/待办字段等，不折叠截断；目标以解析后的名称展示，ID 不再裸露）、风险徽标（删除类强确认红色卡片）、四动词（确认 / 取消 /  查看上下文 / 编辑）。`查看上下文` 打开面板并锚定对应 tab/消息（卡片↔面板双向跳转）；终态由官方工具事件承载（回放安全）。覆盖：`doc`（含 workspace/rename/move/import/write/download/block）、`sheet`（含 table/record）、`calendar`、`im`（message send / group create / members）、`file upload/download`、`todo` 与 `advance` 全部写操作。
+全部 28 个写工具按风险分级在 `tools/pre-execute` 返回 `ask`（标准确认 / 强确认），由 host 侧 `write-gate` 应答 `approval/request` waterfall 后，在浏览器渲染**按 domain 分发的确认卡**：参数全文（消息目标/文档落位/记录内容/日程时间等，不折叠截断；目标以解析后的名称展示，ID 不再裸露）、风险徽标（删除类强确认红色卡片）、四动词（确认 / 取消 / 查看上下文 / 编辑）。`查看上下文` 打开面板并锚定对应 tab/消息（卡片↔面板双向跳转）；终态由官方工具事件承载（回放安全）。覆盖：`doc`（含 workspace/rename/move/import/write/download/block）、`sheet`（含 table/record）、`calendar`、`im`（message send / group create / members）、`file upload/download`。
 
-**写路径两分（已拍板，见 [dsh-home-session.md](docs/spec/dsh-home-session.md) §8 / group-room-topics R6）**：确认卡门控的是 **agent 发起的写**；**用户从 DSH 发出**（群房间「发进群」、待办勾选/新建、推进「喂给推进 / 现在反馈 / judge」）即用户本人意志，不经确认卡。删除类强确认。面板不再提供第二套 IM 发送。
+**写路径两分（已拍板，见 [dsh-home-session.md](docs/spec/dsh-home-session.md) §8 / group-room-topics R6）**：确认卡门控的是 **agent 发起的写**；**用户从 DSH 发出**（群房间「发进群」）即用户本人意志，不经确认卡。删除类强确认。面板不再提供第二套 IM 发送。
 
 ## 与 yzj-cli skill 的关系
 
@@ -58,8 +56,8 @@ bundle 交付**改造版 skill**（`packages/bundle/skills/yzj-cli/SKILL.md`）�
 
 ### UI 设计
 
-- **工具结果富卡片**：`tool.call.toolview` keyed 注册全部 51 个工具名。pending 态从参数渲染标题；settled 态优先渲染结构化 `meta`（文档详情/列表、数据表 schema、记录表、日程时间线、消息气泡、联系人卡片、待办列表/动作摘要、推进队列/时间旅程摘要），无结构时回退到 digest 文本。失败态显示错误摘要。
-- **云之家工作台**：侧栏脚一个「云之家」入口 → 工作台。五域用顶栏页签切（对话 / 待办 / 日程 / 知识库 / 推进）。对话页签 = 会话列表 + 群房间时间线 + 话题抽屉；待办 / 日程 / 知识库 embed 原面板（记忆入口搁置，vault 仍是本地不出本机）；**推进页签 = AI推进看板**（推进队列三栏目 + 详情：成功指标卡 / 决策区 / 推进时间旅程 / 信息来源，「现在反馈」切回对话域带事项卡，见 [ai-advance-design.md](docs/spec/ai-advance-design.md)）。群房间 hover「喂给推进」把一条消息挂到事项上。悬浮球已退役。群房间与话题见 [group-room-topics.md](docs/spec/group-room-topics.md)，对照 gap §23–§24.1。
+- **工具结果富卡片**：`tool.call.toolview` keyed 注册全部 49 个工具名。pending 态从参数渲染标题；settled 态优先渲染结构化 `meta`（文档详情/列表、数据表 schema、记录表、日程时间线、消息气泡、联系人卡片），无结构时回退到 digest 文本。失败态显示错误摘要。
+- **云之家工作台**：侧栏脚一个「云之家」入口 → 工作台。三域用顶栏页签切（对话 / 日程 / 知识库）。对话页签 = 会话列表 + 群房间时间线；日程 / 知识库 embed 原面板（记忆入口搁置，vault 仍是本地不出本机）。悬浮球已退役。群房间与话题见 [group-room-topics.md](docs/spec/group-room-topics.md)，对照 gap §23。
 
 ## 开发
 
@@ -76,12 +74,11 @@ pnpm --filter @dsh-yzj/ui-yzj bundle   # 仅重建客户端 bundle（改 UI 后�
 
 - **依赖解析**：workspace 六包以 `link:` 相对路径依赖兄弟 `../deepseek-harness` checkout（开发事实源，不替换）。对外 `dsh plugin add github:…#tag` 走根 `@dsh-yzj/bundle`，其 `@deepseek-ai/*` 已是 registry 版本范围（见 `docs/release.md`）。
 - **确认卡状态不落会话日志**：harness 对外部插件的自定义 session 事件类型无注册面，确认卡 pending/approved 瞬态由 host 内存表承载（SPA 刷新存活；host 重启降级为普通工具卡），终态由官方工具事件回放。
-- **面板「我的」tab 已移除**（原设计四 tab）：身份经 `yzj_whoami`、找人经 @ 候选；第四 tab 现为**待办**（是否另恢复通讯录浏览待拍板）。
+- **面板「我的」tab 已移除**（原设计四 tab）：身份经 `yzj_whoami`、找人经 @ 候选。
 - **拖入云之家引用已退役**：悬浮窗时代的全屏 drop overlay / ☁ chip 已卸；@ 候选源保留。
 - **会话家园 v2.0**：群房间 + 话题（`yzj-home-*` / `yzj-topic-*`）；官方 Chat tab 仍并存。官方侧栏「云之家」只收话题（群聊长出的 agent session），群聊本身不进该分组。IM 工作台只服务 `yzj-home-*`：话题/普通会话打开官方 Chat（残留 `view=yzj-home` 会点「对话」拨回）。**点群只切 groupId，不建/不 focus DSH 会话**（R24）；挂钩座位最多一条，未分组不随点群增生。切房间分阶段不闪「私密会话」/上一群。旧宿主 ③④ 打开时迁成「历史对话」话题（不搬事件）。**话题问助手一轮结束后，总结回帖到云之家锚点（R29，本人身份，可带产物）**；不是每条助手气泡都回群。仍开放：确认卡 pending 不进 session 日志、无群搜索（[gap-analysis §22](docs/status/gap-analysis.md) G3/G5）。
 - **无群搜索/消息搜索**：沿用 CLI 能力面（最近会话翻页定位）。会话家园的「挑群」依赖可找到群（gap §22 G5）。
 - **`file download` 只回传摘要**：CLI 的 `downloaded N bytes to <path>` 文本输出不携带结构化路径，卡片回退文本模式。
-- **待办为 demo 阶段**：数据存于多维表格「待办任务库」（个人知识库，首用自动开通）；负责人/标签因 CLI 字段写入限制降级为文本形态；原生后端迁移方案见 `docs/migration/todo-backend-migration.md`。
 - **无独立文件夹概念**：归类用父文档挂载，与云之家产品语义一致。
 
 ## 许可

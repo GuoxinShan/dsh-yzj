@@ -1,5 +1,7 @@
 # pitfall-043: sidecar 验收脚本必须对齐双后端（setAdvanceBackend/setTodoBackend）
 
+> **已失效（2026-08-27）**：待办/推进双后端已从公开仓撤出。
+
 ## 现象
 
 sidecar 驱动脚本（advance-loop-driver 模式：裸 `Context` + `YzjBridge` + core 函数直调）feed 一条事元，报「推进看板尚未开通（依赖待办任务库）」；或更隐蔽地——feed **成功返回 ok**，但 GUI 面板上看不到任何事元变化，反复重试像是在写一个幽灵库。

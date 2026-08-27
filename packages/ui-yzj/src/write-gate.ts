@@ -114,8 +114,6 @@ export function domainOf(toolName: string): string {
   if (toolName.startsWith('yzj_doc_workspace_')) return 'kb'
   if (toolName.startsWith('yzj_doc_')) return 'doc'
   if (toolName.startsWith('yzj_sheet_')) return 'sheet'
-  if (toolName.startsWith('yzj_todo_')) return 'todo'
-  if (toolName.startsWith('yzj_advance_')) return 'advance'
   if (toolName.startsWith('yzj_calendar_')) return 'calendar'
   if (toolName.startsWith('yzj_file_')) return 'file'
   return 'other'

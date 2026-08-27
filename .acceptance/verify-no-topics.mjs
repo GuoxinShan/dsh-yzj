@@ -1,7 +1,7 @@
 /**
  * 决策 50 真机走查：话题功能 + 机器人/记忆卡撤下（UI 入口级，插件保留）。
  * 断言面：群房间无话题 toggle/交给助手/话题 chip；设置页只剩登录卡；
- * 推进看板完好（撤除不误伤）；群消息读写正常（喂给推进仍在）。
+ * 无待办/推进页签、无「喂给推进」；群消息读写正常。
  *
  * Run: node .acceptance/verify-no-topics.mjs  (GUI on :3080 + login)
  */
@@ -44,22 +44,16 @@ ok('无「交给助手」', !roomText.includes('交给助手'))
 ok('无话题抽屉', await page.getByTestId('yzj-topic-drawer').count().then(n => n === 0))
 ok('无话题回复 chip', !roomText.includes('条回复'))
 ok('群消息时间线仍在', roomText.length > 100)
-// hover 一条消息：回复/喂给推进仍在（不误伤）
+ok('无「喂给推进」', !roomText.includes('喂给推进'))
+ok('无待办页签', await page.getByTestId('yzj-workbench-tab-todo').count().then(n => n === 0))
+ok('无推进页签', await page.getByTestId('yzj-workbench-tab-advance').count().then(n => n === 0))
 const row = page.locator('[data-testid^="yzj-room-row-"]').first()
 await row.hover()
-ok('hover 仍有「喂给推进」', await page.locator('[data-testid^="yzj-advance-feed-"]').first().isVisible().catch(() => false))
+ok('hover 无「喂给推进」', await page.locator('[data-testid^="yzj-advance-feed-"]').count().then(n => n === 0))
 ok('hover 仍有「回复」', roomText.includes('回复'))
 await page.screenshot({ path: join(OUT, '1-room-no-topics.png') })
 
-// ---------- 2. 推进看板完好（讨论回环改道 banner 路径） ----------
-await tabs.getByRole('tab', { name: '推进' }).click()
-await page.waitForTimeout(4000)
-const paneText = await page.getByTestId('yzj-advance-pane').innerText()
-ok('推进看板渲染', paneText.includes('我的推进'))
-ok('测试事项仍在', paneText.includes('测试'))
-await page.screenshot({ path: join(OUT, '2-advance-intact.png') })
-
-// ---------- 3. 设置页：只剩登录卡 ----------
+// ---------- 2. 设置页：只剩登录卡 ----------
 // 设置区域入口：harness 设置 → 云之家 section（yzj settings section testid 或文本）
 // 不依赖具体导航——直接断言 robot/memory 管理面不在 DOM 中加载过 RPC
 await page.screenshot({ path: join(OUT, '3-settings.png') })

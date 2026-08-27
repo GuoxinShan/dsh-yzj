@@ -3,7 +3,7 @@
 ## 复现条件(Reproduction)
 
 web GUI 会话权限档位为 **Full access**(composer 左下档位选择器)时,agent 调用任何
-`WRITE_SPECS` 门控的 yzj 写工具(`yzj_advance_create` / `yzj_im_message_send` 等):
+`WRITE_SPECS` 门控的 yzj 写工具(`yzj_im_message_send` / `yzj_doc_write` 等):
 确认卡不弹,工具调用直接以 isError 结束,模型收到的语义是「approval prompts 被禁用、
 写操作被自动拒绝」,随后转入向用户追问「要不要开审批」的死循环。真机实验第 1 波
 driver 首轮四连发全部因此失败(0 张卡、看板零写入),模型反复请求人工开启审批。

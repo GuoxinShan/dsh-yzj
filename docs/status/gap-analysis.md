@@ -169,6 +169,8 @@ P0 消息回源、P1 门禁分级/确认卡（含真实 E2E）/通知层一三/s
 
 ## 17. v1.5 增补｜待办功能落地（2026-08-15，用户授权自主决策后开工）
 
+> **已归档（2026-08-27）**：待办从公开仓撤出，完整实现在私有归档 GuoxinShan/dsh-yzj-archive。本节是历史验收记录，不是当前产品面。
+
 §11.2 待拍板项全部拍板（结论见 `../spec/todo-design.md` §11.2），随后完成开发：
 
 | 项 | 实现 | 状态 |
@@ -579,6 +581,8 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 按 [`group-room-topics.md`](../spec/group-room-topics.md) §7 + §9.7。H2/H3/H5/H6/H7/H8/H9/H10/H11/H12/H13/H14/H15/H16/H17/H18/H19 有单测。H4 入站话题有 router 单测，`local-*`→真实 msgId 的 `retargetAnchor` 有 topics 单测；真机 `.acceptance/verify-robot-at-topic.mjs`（点 `yzj-dock-home` 开盖层后走抽屉；机器人状态在设置）。真机脚本：`.acceptance/verify-group-room-e2e.mjs`（需运行中 GUI + 已登录 yzj-cli；改 host / browser 后须重启 GUI 再跑，见 AGENTS.md「验收要新实例就重启 GUI」；改 browser TS 后 bundle 前必须先 `tsc -b`，见 pitfall-016）。**v1.1 P0**：入口块 + 会话列表 + 话题抽屉 + `lastActivity` + `~/.dsh-yzj/workspace`。**P1**：时间线精致度六条。**P2**：四域迁入工作台、`shell.overlay` 摘除、72px 留白删除。**P3**：`TopicRecord.status` + L2 徽标 + write-gate L5 回落。**视觉刀**：pitfall-018 tab ring、composer 列、dock 退役、群名占位。**宿主生命周期**：pitfall-019 总线 + view-ring 收窄到 header + e2e 盒子缺失即失败。**v1.2**：H9 历史对话话题、H18 透镜气泡/问助手、H4 skip 型 e2e、发布口径。**v1.3 布局刀**：`.acceptance/verify-room-layout.mjs`（有界三栏 / 触底 / composer 可见 / 无鬼影行 / 机器人标注 / 长帖折叠 / 抽屉有界）；pitfall-020（overlay 契约 + 跟随门控）；H10 标题改「话题 · 群名」。**v1.4**：R20/H16/H21 云之家分组只进话题；`attachYzjSession` 闸 + cwd/RPC 单测。**v1.5**：R22/H23 话题与普通会话不得挂 IM 壳；view-ring 点「对话」+ `YzjRoomShell` 前缀闸。**v1.6**：R21/H11 记忆入口搁置；R23/H26 拖入引用退役（面板/待办无 drag，`verify-drop.mjs` skip）。**H27**：他人气泡浅色主题可见（pitfall-023）。**v1.7**：R24/H28 点群只切 groupId，不建/不 focus DSH 会话（pitfall-024）。**R25/H29 空 turn**：话题不写空 turn 1（pitfall-025）。**v1.9 / H12**：话题问助手近窗（pitfall-027；`.acceptance/verify-summon-window.mjs`）。**v1.11 / H33**：工作台盖中间栏，开面板不建挂钩（R27 / pitfall-028）。**v1.14 / H36**：日程按天拆查，循环实例不再被整月折叠成第一次（pitfall-032）。**v1.15 / H36**：改成周条带 + 快慢指针，空后缀一次停。**v1.17 / H38**：话题 job-done 投递（`topic-deliver.spec.ts`；dsh-2 真机回帖自跳过若未登录）。**v1.17 / H39**：话题透镜产物卡（`topicLensBubbles` + 抽屉客户端；发群 R29 仍在）。**v1.17 / H40**：侧栏单入口 + 工作台页签（`yzj-dock-home` / `yzj-workbench-tab-*`；dock / room-shell 单测）。
 
 ## 24. AI推进第一期｜事元流驱动的推进事项（2026-08-19，设计随提交）
+
+> **已归档（2026-08-27）**：AI推进从公开仓撤出，完整实现在私有归档 GuoxinShan/dsh-yzj-archive。§24.* 是历史验收记录，不是当前产品面。被删 spec（`ai-advance-design.md` 等）只在 git 历史与私有归档里。
 
 设计基线 [`ai-advance-design.md`](../spec/ai-advance-design.md) v1.0（PRD《AI推进-产品PRD v2.1》+ 灵基原型 lgap17 版引用锚点全文收录于其 §0）。三条硬要求（用户拍板）全部落地：
 
@@ -1221,4 +1225,8 @@ Dream 路（跨事项推荐）纪律入 dreamAskPrompt（顺手落推荐事元�
 ## 24.42 清除 830 真实现场与迁灵基残留（2026-08-27）
 
 `.acceptance/advance-830-*` 实验脚本/记录删除。文档、夹具、验收脚本中的真群 ID / 人名 / openId / fileId / 现场群名改为假名或 `YZJ_E2E_*` 环境变量（缺则 skip）。插件代码与 AI 推进 spec 保留，只去现场痕迹。`feat/advance-intent-threads` 从远程删除。历史改写后旧 SHA 在 GitHub GC 前仍可能打开。
+
+## 24.43 待办 + AI推进从公开仓撤出（2026-08-27）
+
+2026-08-27 待办+推进从公开仓撤出，完整实现在私有归档 GuoxinShan/dsh-yzj-archive。不是公开安装路径。公开仓保留 yzj-cli 桥、六域工具、群房间 + 话题、确认卡、工作台三域（对话 / 日程 / 知识库）。IM L2 缓存仍用 `~/.dsh/storages/yzj_advance.db` 的 `im_cache` 表。§17 / §24–§24.42 为历史验收记录。恢复只能从 git 历史或私有归档重建。
 

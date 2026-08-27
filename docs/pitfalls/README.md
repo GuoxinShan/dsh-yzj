@@ -45,19 +45,19 @@
 | 34 | rc.7：`tool.call.toolview` 要 type-import merge；SessionId branded；禁止 `/src/` 深路径 | ui-yzj browser half / 根包 registry 对齐 | [pitfall-034-rc7-slot-merge-and-sessionid.md](pitfall-034-rc7-slot-merge-and-sessionid.md) |
 | 35 | 新鲜 web profile 的内测声明 / API Key 卡挡住云之家 dock | `.acceptance`  真机脚本 / 空 web profile 首启 | [pitfall-035-first-run-onboarding-masks-dock.md](pitfall-035-first-run-onboarding-masks-dock.md) |
 | 36 | GUI「Full access」档位 approval=never,yzj 写工具 ask 自动转 deny、确认卡 不弹 | `.acceptance` 确认卡实验 / 任何依赖弹卡的 GUI 会话 | [pitfall-036-full-access-disables-approval.md](pitfall-036-full-access-disables-approval.md) |
-| 37 | 验收脚本的话题步骤对「目标群有没有话题锚点」敏感：数据态差异被误读成代码 回归 | `.acceptance/verify-advance-feed.mjs` / 任何以话题为前置的走查 | [pitfall-037-acceptance-topic-data-precondition.md](pitfall-037-acceptance-topic-data-precondition.md) |
+| 37 | 验收脚本的话题步骤对「目标群有没有话题锚点」敏感（**已失效**：推进验收脚本已删） | 历史 `.acceptance/verify-advance-feed.mjs` | [pitfall-037-acceptance-topic-data-precondition.md](pitfall-037-acceptance-topic-data-precondition.md) |
 | 38 | web profile bundle link 被切到 worktree 不归位：主 checkout build 与 GUI 加载 脱节 | 真机验收 / 实验环境前置 | [pitfall-038-profile-bundle-link-stale.md](pitfall-038-profile-bundle-link-stale.md) |
-| 39 | 工作台 overlay 空 sessionId 撞 home-fused 空 payload 校验，推进跳转报错且轮询刷屏 | ui-yzj browser half / 推进板「跳到消息」等切 im 域入口 | [pitfall-039-overlay-empty-session-home-fused.md](pitfall-039-overlay-empty-session-home-fused.md) |
+| 39 | 工作台 overlay 空 sessionId 撞 home-fused 空 payload 校验（**已失效**：推进板已撤） | 历史推进板切 im 域 | [pitfall-039-overlay-empty-session-home-fused.md](pitfall-039-overlay-empty-session-home-fused.md) |
 
 ## 维护规则
 
 1. **一条坑一个文件**：`pitfall-NNN-<slug>.md`，NNN 递增；索引表同步更新。
 2. 记录必须包含：最小复现条件（什么环境/序列才触发）、根因（到代码行为层面，不写猜测）、解法（为什么这个解法而非别的）、回归验证方式（哪个测试/验收脚本覆盖）。
 3. 坑的解法变更时更新条目而非删掉；条目过时（对应代码已删）标注「已失效」并保留历史。
-| 40 | 外部 seed sqlite 事元缺 entry_id fields 键被 parse 静默过滤；早期验证被裸 msgId 事元的恰一群路径假阳性掩盖 | `.acceptance` 直插库脚本 / parseAdvanceEntry | [pitfall-040-seed-fields-need-id-keys.md](pitfall-040-seed-fields-need-id-keys.md) |
-| 41 | dir: 订阅扫不到会议速记纪要：速记归档独立库 + doc list 一层列取 + 首扫基 线不回灌三重叠加 | advance scan dir: 线程 / 速记归档认知 | [pitfall-041-dir-subscription-misses-lingee-minutes.md](pitfall-041-dir-subscription-misses-lingee-minutes.md) |
+| 40 | 外部 seed sqlite 事元缺 entry_id fields 键被 parse 静默过滤（**已失效**：推进表已撤） | 历史直插库脚本 | [pitfall-040-seed-fields-need-id-keys.md](pitfall-040-seed-fields-need-id-keys.md) |
+| 41 | dir: 订阅扫不到会议速记纪要（**已失效**：推进 scan 已撤） | 历史 advance scan dir: | [pitfall-041-dir-subscription-misses-lingee-minutes.md](pitfall-041-dir-subscription-misses-lingee-minutes.md) |
 | 42 | CSS 变量笔误 `--dsh-*`（应为 `--dsw-*`）静默失效：ref 卡边框/底色/文字色 全丢，单测 typecheck 全绿只有真机可见 | ui-yzj browser half 一切 module.css / 主题 token 引用 | [pitfall-042-unknown-css-var-silent-noop.md](pitfall-042-unknown-css-var-silent-noop.md) |
-| 43 | sidecar 裸 Context 跑 core 函数写进幽灵库：默认后端是 dbt，真机是 sqlite（决策 36），不对齐则报「未开通」或写成功但读不到 | 一切 sidecar/验收驱动脚本 mount 时 | [pitfall-043-sidecar-backend-alignment.md](pitfall-043-sidecar-backend-alignment.md) |
-| 44 | 推进看板验收时序：点已激活事项不重拉 detail（setActiveId 同值）；Dream 抽取后页面已被切到 dream 会话 | Playwright 验收推进面板的断言前导航 | [pitfall-044-acceptance-timing-reload.md](pitfall-044-acceptance-timing-reload.md) |
+| 43 | sidecar 裸 Context 跑 core 函数写进幽灵库（**已失效**：待办/推进双后端已撤） | 历史 sidecar mount | [pitfall-043-sidecar-backend-alignment.md](pitfall-043-sidecar-backend-alignment.md) |
+| 44 | 推进看板验收时序（**已失效**：推进板已撤） | 历史 Playwright 推进面板 | [pitfall-044-acceptance-timing-reload.md](pitfall-044-acceptance-timing-reload.md) |
 | 45 | GUI 重启撞 credentials 格式：旧 harness build 读扁平、v0.1.1-rc.2 起读 v1 嵌套（version:1+refs:）；压平旧解法对 v1 是毒药，改机器级共享文件前先确认读它的 build 版本 | 重启 web GUI 后 :3080 不起、boot 报 credentials-local | [pitfall-045-gui-restart-credentials-schema.md](pitfall-045-gui-restart-credentials-schema.md) |
 | 46 | 深路径 import 隐式携带 cordis augmentation，删除断链后 ctx.get 类型静默 any（不报新错，下游推断全塌） | 删任何 `@dsh-yzj/*/src/...` 深路径 import 前 | [pitfall-046-deep-import-carries-augmentation.md](pitfall-046-deep-import-carries-augmentation.md) |

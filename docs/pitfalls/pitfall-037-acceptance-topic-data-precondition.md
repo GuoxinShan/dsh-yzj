@@ -1,5 +1,7 @@
 # pitfall-037：验收脚本的话题步骤对「目标群有没有话题锚点」敏感
 
+> **已失效（2026-08-27）**：`verify-advance-feed.mjs` 与推进面已从公开仓撤出。
+
 ## 现象
 
 `YZJ_E2E_GROUP=dsh-2 node .acceptance/verify-advance-feed.mjs` 在 ③.2 落地后跑出 3 个 FAIL（`has a topic to open` / `timeline has 话题透镜喂入` / `问助手 filled with inspect prompt`），看起来像新 bundle 引入的话题链路回归。

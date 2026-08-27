@@ -41,7 +41,7 @@ export function decodeRef(raw: string): YzjDragRef | undefined {
 }
 
 const KIND_LABEL: Record<YzjDragRef['kind'], string> = {
-  workspace: '知识库', doc: '文档', group: '会话', event: '日程', contact: '联系人', message: '消息', todo: '待办',
+  workspace: '知识库', doc: '文档', group: '会话', event: '日程', contact: '联系人', message: '消息',
 }
 
 /** Registered source name — the serializer routing key for reference chips. */
@@ -53,7 +53,7 @@ export const SOURCE_GROUPS = '云之家 · 会话'
 export const SOURCE_DOCS = '云之家 · 文档'
 
 const KIND_ICON: Record<YzjDragRef['kind'], string> = {
-  workspace: '📚', doc: '📄', group: '💬', event: '📅', contact: '👤', message: '✉️', todo: '🗒️',
+  workspace: '📚', doc: '📄', group: '💬', event: '📅', contact: '👤', message: '✉️',
 }
 
 /** Session cache of warm catalog data + pick-time ref metadata. */

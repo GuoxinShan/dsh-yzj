@@ -8,7 +8,7 @@ import {
 } from '@dsh-yzj/tool-yzj/src/bound-log.ts'
 import {
   backfillBoundLog, fusedSnapshot, groupSpaceSnapshot, parseImSend, parseWhoami, robotSkipOpenIds,
-  sendImAndLog, topicLensBubbles, runDreamSession, runTodoSession, todoDispatchPrompt, type HomeIoFace,
+  sendImAndLog, topicLensBubbles, type HomeIoFace,
 } from '../src/bound-io.ts'
 
 function entry(over: Partial<YzjLogEntry> & Pick<YzjLogEntry, 'msgId'>): YzjLogEntry {

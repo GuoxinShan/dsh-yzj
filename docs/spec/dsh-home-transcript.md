@@ -347,7 +347,7 @@ DSH「发给助手」（抽屉问助手 / 官方 Chat）
 | [`dsh-home-session.md`](dsh-home-session.md) | 产品法。本文是 D3「四类节点一条流」的**存储与视图契约**；D1–D11 不变 |
 | [`integration-master-plan.md`](integration-master-plan.md) v1.8 | 总方案只加指针。mention/codec、确认卡、`agent/request` 限制仍以总方案 §2.2 / §5.4 为准；窗口注入不走 codec |
 | [`robot-channel-plan.md`](robot-channel-plan.md) | 协议（WS、ack-then-push、sendMsgUrl）不变。入站落点是绑定 session；inbound 正文先落本 log 再按 T4 决定是否 `followup` |
-| [`todo-design.md`](todo-design.md) / 记忆库 | 用户直写、`systemPrompt.context` 有界注入可对照；不把待办/记忆行写进本 log |
+| 待办设计（已归档） / 记忆库 | 用户直写、`systemPrompt.context` 有界注入可对照；不把待办/记忆行写进本 log |
 | 根 README / AGENTS.md | 写路径两分仍以家园 D9 为准；发进群 = 用户直写，发给助手 = 官方轮次 |
 
 ## 14. v1.3 变更（2026-08-17）

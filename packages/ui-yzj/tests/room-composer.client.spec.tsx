@@ -61,7 +61,7 @@ describe('YzjRoomComposer host portal', () => {
   })
 
   it('does not paint 发进群 when the workbench is not 对话', () => {
-    setWorkbenchDomain('todo')
+    setWorkbenchDomain('calendar')
     const seat = mountComposer()
     expect(seat.querySelector('[data-testid="yzj-room-composer"]')).toBeNull()
     const host = document.createElement('div')

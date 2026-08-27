@@ -1,6 +1,5 @@
 /**
- * Approval-guard specs: WRITE_SPECS asks for gated writes and delegates
- * yzj_advance_feed only asks when it rewrites the baseline (决策 14 / §13.5).
+ * Approval-guard specs: WRITE_SPECS asks for gated writes.
  */
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
@@ -55,36 +54,6 @@ describe('approval guard', () => {
     expect(pending[0].level).toBe('standard')
   })
 
-  it('asks for yzj_advance_feed only when it rewrites the baseline (决策 14 / §13.5)', async () => {
-    const { listener, pending } = guard()
-    const silent = [
-      { advanceId: 'A-1', summary: '进度正常，覆盖率 82' },
-      { advanceId: 'A-1', summary: '偏差：客户改口径', stageTo: 'decision-needed' },
-      { advanceId: 'A-1', summary: '产物齐', stageTo: 'ready-for-review' },
-      { advanceId: 'A-1', summary: '空基准字段不算改写', goal: '   ' },
-    ]
-    for (const [index, args] of silent.entries()) {
-      const decision = await listener({ name: 'yzj_advance_feed', callId: `c-quiet-${index}`, arguments: args }, async () => ({ kind: 'allow' }))
-      expect(decision.kind, JSON.stringify(args)).toBe('allow')
-    }
-    expect(pending).toHaveLength(0)
-    for (const field of ['goal', 'metrics', 'targetDate', 'assignee']) {
-      const decision = await listener({
-        name: 'yzj_advance_feed', callId: `c-${field}`, arguments: { advanceId: 'A-1', summary: '换基准', [field]: '新值' },
-      }, async () => ({ kind: 'allow' }))
-      expect(decision.kind, field).toBe('ask')
-    }
-    expect(pending.map(entry => entry.toolName)).toEqual(Array.from({ length: 4 }, () => 'yzj_advance_feed'))
-    expect(pending.every(entry => entry.level === 'standard')).toBe(true)
-  })
-
-  it('asks for yzj_advance_create unconditionally (立项 is a new object)', async () => {
-    const { listener, pending } = guard()
-    const decision = await listener({ name: 'yzj_advance_create', callId: 'c1', arguments: { title: '试运行' } }, async () => ({ kind: 'allow' }))
-    expect(decision.kind).toBe('ask')
-    expect(pending[0]).toMatchObject({ toolName: 'yzj_advance_create', level: 'standard' })
-  })
-
   it('asks for every design-listed standard write tool', async () => {
     const { listener, pending } = guard()
     const names = [
@@ -125,12 +94,4 @@ describe('approval guard', () => {
     expect(decision.kind).toBe('allow')
   })
 
-  it('delegates yzj_advance_scan and yzj_advance_inspect (read-only, spec §14.6)', async () => {
-    const { listener, pending } = guard()
-    for (const name of ['yzj_advance_scan', 'yzj_advance_inspect'] as const) {
-      const decision = await listener({ name, callId: `c-${name}`, arguments: {} }, async () => ({ kind: 'allow' }))
-      expect(decision.kind, name).toBe('allow')
-    }
-    expect(pending).toEqual([])
-  })
 })

@@ -57,41 +57,10 @@ const WRITE_SPECS: Record<string, DangerousSpec> = {
   yzj_sheet_record_update: { reason: '更新多维表格记录', level: 'standard' },
   yzj_calendar_event_create: { reason: '新建日程', level: 'standard' },
   yzj_calendar_event_update: { reason: '更新日程', level: 'standard' },
-  // --- todo family (demo-stage sheet backend) ---
-  yzj_todo_create: { reason: '在待办任务库创建待办（首用时会自动开通任务库；落「待我决定」待人批准，决策 S6）', level: 'standard' },
-  yzj_todo_update: { reason: '更新待办（描述/负责人/DDL/标签/日志）', level: 'standard' },
-  yzj_todo_complete: { reason: '完成待办（状态置 done，不经验收的快路径）', level: 'standard' },
-  // 泳道 claim 族（yzj_todo_claim / submit_review / release_claim）刻意不进表（S3）：
-  // 可逆、无外部写——claim 只是状态标记；done 永远只经人面板 accept（S2）。
-  // --- advance family (AI推进看板; docs/spec/ai-advance-design.md §4) ---
-  yzj_advance_create: { reason: '在AI推进看板立项推进事项（首用时自动开通事项/事元双表）', level: 'standard' },
-  yzj_advance_feed: {
-    reason: '改写推进事项的比对基准（目标/成功指标/目标日期/负责人）',
-    level: 'standard',
-    when: rewritesAdvanceBaseline,
-  },
   // robot-yzj 已彻底退役（决策 53，2026-08-25；决策 50 撤 UI / 51 摘挂载的同族终局）：
   // 包与 robot_* 工具不复存在——历史机器人会话（yzj-robot-*）的写请求由
   // write-gate 按残留前缀跳过 GUI 卡。恢复只能从 git 历史重建。
 }
-
-/** Projection fields whose rewrite replaces the baseline every later comparison rests on. */
-const ADVANCE_BASELINE_FIELDS = ['goal', 'metrics', 'targetDate', 'assignee'] as const
-
-/**
- * Advance feed asks only when it rewrites the comparison baseline
- * (ai-advance-design.md §13.5 / 决策 14). A normal-progress entry carries no
- * decision for the user, and a deviation already surfaces in the board's
- * 待我决定 queue — carding those would ask the same thing twice while the
- * first ask ("may I append this?") carries no information.
- */
-function rewritesAdvanceBaseline(args: Record<string, unknown>): boolean {
-  return ADVANCE_BASELINE_FIELDS.some((field) => {
-    const value = args[field]
-    return typeof value === 'string' && value.trim() !== ''
-  })
-}
-
 
 /** Structural session id on a tools/pre-execute exec (agent is present in harness). */
 function callingSessionId(exec: { agent?: { session?: { id?: unknown } } }): string | undefined {

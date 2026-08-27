@@ -7,7 +7,7 @@
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
 
 /** Panel tabs (运营性内容 only — 机器人/记忆管理页在 设置 → 云之家). */
-export type YzjTab = 'docs' | 'calendar' | 'chat' | 'todo'
+export type YzjTab = 'docs' | 'calendar' | 'chat'
 /** Yunzhijia panel viewing state (raw CLI payloads, rendered by components). */
 export type YzjPanelState = {
   open: boolean
@@ -39,11 +39,6 @@ export type YzjPanelState = {
   anchorMsgId: string
   /** Sum of unread counts across recent sessions (the floating-ball badge). */
   unreadTotal: number
-  /** Todo tab: swimlane snapshot (views from the yzjTodo core). */
-  todos: unknown[]
-  todoReady: boolean
-  /** Active tag filter ('' = all). */
-  todoTag: string
   loading: boolean
   error: string
 }
@@ -74,9 +69,6 @@ export type YzjPanelActions = {
   appendMessages: (draft: YzjPanelState, messages: unknown[]) => void
   setAnchorMsgId: (draft: YzjPanelState, id: string) => void
   setUnreadTotal: (draft: YzjPanelState, total: number) => void
-  setTodoState: (draft: YzjPanelState, todos: unknown[], ready: boolean) => void
-  patchTodo: (draft: YzjPanelState, todo: unknown) => void
-  setTodoTag: (draft: YzjPanelState, tag: string) => void
   setLoading: (draft: YzjPanelState, loading: boolean) => void
   setError: (draft: YzjPanelState, error: string) => void
 }
@@ -108,21 +100,10 @@ export function createYzjStore(): EngineStoreHandle<YzjPanelState, YzjPanelActio
       messagesAnchor: '',
       anchorMsgId: '',
       unreadTotal: 0,
-      todos: [],
-      todoReady: false,
-      todoTag: '',
-      // Start "loading" so the todo pane never flashes its provisioning hero
-      // for the single frame before loadTab kicks in.
       loading: true,
       error: '',
     }),
-    // v5: schema gained todo fields (todos/todoLib*/…); the engine's
-    // persistence REPLACES state wholesale with the parsed blob, so a blob
-    // written by an older build leaves every new key undefined — the pane
-    // crashed on `todos.map` (and any array consumer crashes likewise).
-    // The version bump alone doesn't harden future schema drift, so
-    // `create` below also repairs non-conforming rehydrated blobs.
-    persist: 'dsh.yzj.panel.v5',
+    persist: 'dsh.yzj.panel.v6',
     actions: {
       setOpen: (d: YzjPanelState, open: boolean) => { d.open = open },
       setTab: (d: YzjPanelState, tab: YzjTab) => { d.tab = tab },
@@ -157,15 +138,6 @@ export function createYzjStore(): EngineStoreHandle<YzjPanelState, YzjPanelActio
       },
       setAnchorMsgId: (d: YzjPanelState, id: string) => { d.anchorMsgId = id },
       setUnreadTotal: (d: YzjPanelState, total: number) => { d.unreadTotal = total },
-      setTodoState: (d: YzjPanelState, todos: unknown[], ready: boolean) => {
-        d.todos = todos
-        d.todoReady = ready
-      },
-      patchTodo: (d: YzjPanelState, todo: unknown) => {
-        const todoId = String(asRecord(todo).todoId)
-        d.todos = d.todos.map(item => String(asRecord(item).todoId) === todoId ? todo : item)
-      },
-      setTodoTag: (d: YzjPanelState, tag: string) => { d.todoTag = tag },
       setLoading: (d: YzjPanelState, loading: boolean) => { d.loading = loading },
       setError: (d: YzjPanelState, error: string) => { d.error = error },
     },
@@ -182,7 +154,6 @@ export function createYzjStore(): EngineStoreHandle<YzjPanelState, YzjPanelActio
       // older build (or a poisoned one) crashes array consumers.
       const arrays: (keyof YzjPanelState)[] = [
         'workspaces', 'docs', 'events', 'calEvents', 'groups', 'messages',
-        'todos',
       ]
       const broken = arrays.some(key => !Array.isArray(snap[key]))
         || typeof snap.loading !== 'boolean'

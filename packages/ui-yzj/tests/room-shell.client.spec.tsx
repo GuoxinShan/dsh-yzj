@@ -53,12 +53,12 @@ describe('YzjRoomShell', () => {
     expect(container.querySelector('[data-testid="yzj-room-shell"]')?.getAttribute('data-workbench-domain')).toBe('im')
     expect(container.querySelector('[data-testid="yzj-workbench-tabs"]')?.textContent).toContain('日程')
     expect(container.querySelector('[data-testid="yzj-workbench-tab-chat"]')?.getAttribute('aria-selected')).toBe('true')
-    expect(container.querySelector('[data-testid="yzj-workbench-tab-todo"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="yzj-workbench-tab-todo"]')).toBeNull()
     expect(container.querySelector('[data-testid="yzj-workbench-tab-calendar"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="yzj-workbench-tab-docs"]')).not.toBeNull()
-    // v1.18: the AI推进 board is the fifth tab (ai-advance-design §7).
-    expect(container.querySelector('[data-testid="yzj-workbench-tab-advance"]')).not.toBeNull()
-    expect(container.querySelector('[data-testid="yzj-workbench-tabs"]')?.textContent).toContain('推进')
+    expect(container.querySelector('[data-testid="yzj-workbench-tab-advance"]')).toBeNull()
+    expect(container.querySelector('[data-testid="yzj-workbench-tabs"]')?.textContent).not.toContain('推进')
+    expect(container.querySelector('[data-testid="yzj-workbench-tabs"]')?.textContent).not.toContain('待办')
     expect(container.querySelector('[data-testid="yzj-conv-list"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="yzj-fused-stream"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="yzj-room-composer-host"]')).not.toBeNull()
@@ -90,11 +90,11 @@ describe('YzjRoomShell', () => {
       )
     })
     await act(async () => { await Promise.resolve() })
-    const todo = container.querySelector('[data-testid="yzj-workbench-tab-todo"]') as HTMLButtonElement
-    await act(async () => { todo.click(); await Promise.resolve() })
-    expect(getWorkbenchDomain()).toBe('todo')
-    expect(container.querySelector('[data-testid="yzj-room-shell"]')?.getAttribute('data-workbench-domain')).toBe('todo')
-    expect(todo.getAttribute('aria-selected')).toBe('true')
+    const calendar = container.querySelector('[data-testid="yzj-workbench-tab-calendar"]') as HTMLButtonElement
+    await act(async () => { calendar.click(); await Promise.resolve() })
+    expect(getWorkbenchDomain()).toBe('calendar')
+    expect(container.querySelector('[data-testid="yzj-room-shell"]')?.getAttribute('data-workbench-domain')).toBe('calendar')
+    expect(calendar.getAttribute('aria-selected')).toBe('true')
     expect(container.querySelector('[data-testid="yzj-workbench-tab-chat"]')?.getAttribute('aria-selected')).toBe('false')
     // No panel inject in this mount → IM columns stay as the fallback canvas.
     expect(container.querySelector('[data-testid="yzj-conv-list"]')).not.toBeNull()
@@ -212,7 +212,7 @@ describe('YzjRoomShell', () => {
     act(() => { root.unmount() })
   })
 
-  it('imGroupFocus retargets the overlay timeline to the group (advance-board jump)', async () => {
+  it('imGroupFocus retargets the overlay timeline to the group', async () => {
     clearImSeat()
     const container = document.createElement('div')
     document.body.appendChild(container)

@@ -1,5 +1,4 @@
-# Headless overlay so dsh-routines can run the AI推进 patrol
-# (docs/spec/ai-advance-design.md §14.4). Host half only — ui-yzj needs the
+# Headless overlay: host half only (bridge + tool-yzj). ui-yzj needs the
 # web connection service and must not load here.
 #
 # Usage:

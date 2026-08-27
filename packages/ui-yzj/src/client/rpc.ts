@@ -48,65 +48,9 @@ export interface YzjPanelInject {
   sendMessage: (groupId: string, content: string | undefined, opts?: YzjPanelInject['sendMessageOpts']) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Upload a local file (base64) to Yunzhijia; returns the fileId. */
   uploadFile: (name: string, base64: string, size: number) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Todo library snapshot (demo-stage sheet backend via the yzjTodo core). */
-  todoState: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** One-click provision of the todo library (empty-state action). */
-  ensureTodo: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Quick-create one todo from the panel (user-direct write). */
-  createTodo: (input: { title: string; ddl?: string; priority?: string; tags?: string[] }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Toggle complete / reopen one todo (user-direct write). */
-  toggleTodo: (todoId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Swimlane human verbs (todo-swimlane-agent §3; user-direct writes, no card). */
-  approveTodo: (todoId: string, note?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  acceptTodo: (todoId: string, note?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  returnTodo: (todoId: string, note?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  cancelTodo: (todoId: string, note?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Reopen a cancelled todo back to 可认领 (user-direct write). */
-  reopenTodo: (todoId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Archive/unarchive a todo (S10: 视图层隐藏标记，非状态；user-direct write). */
-  archiveTodo: (todoId: string, archived: boolean) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Dispatch one claimable todo to a fresh agent session（期②：host 直建 yzj-todo-* 会话注入任务卡）。 */
-  dispatchTodo: (todoId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Edit task details (S7): title/description（agent 执行的提示词本体）/ddl/assignee/priority/tags. */
-  editTodo: (todoId: string, patch: { title?: string; description?: string; ddl?: string; assignee?: string; priority?: string; tags?: string[] }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** AI推进 board snapshot (items + library) over the yzjAdvance core. */
-  advanceState: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** One advancement item: projection + 事元 stream window + sources. */
-  advanceGet: (advanceId: string, entryOffset?: number, entryLimit?: number) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Start-modal direct write: create one advancement item (user's own will). */
-  advanceCreate: (input: { title: string; goal?: string; background?: string; metrics?: string; assignee?: string; targetDate?: string; tags?: string[] }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Panel judge verbs (user-direct; each lands as one user 事元; cancel = 中止终局, v1.6). */
-  advanceJudge: (advanceId: string, action: 'confirm_condition' | 'confirm_advance' | 'accept' | 'reject' | 'ignore' | 'cancel', note?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** One-click provision of the 事项/事元 tables (empty-state action). */
-  advanceEnsure: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Last patrol wave for the board status line (spec §14.5). */
-  advanceScanState: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  advancePatrolNow: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** IM 缓存 L2（host SQLite，决策 37）。 */
   imCacheGet: (key: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   imCachePut: (key: string, payload: unknown, fetchedAt: number) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Dream-pool watermark for the board queue head (spec §17.3). */
-  advanceDreamState: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Dream 手动径（决策 38）: host 直建 yzj-dream-* 会话并注入抽取指令。 */
-  advanceDreamRun: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** 原始信息叶子可读化（决策 39 后续）: msg → bound log 事件行；doc → `doc get` 文件名。 */
-  advanceRefLookup: (refs: { token: string; kind: string }[]) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** User-direct 事元 feed (D9, no confirm card; no stageTo). detail 透传（推荐忽略标记等）。 */
-  advanceFeed: (input: { advanceId: string; summary: string; sourceType?: string; detail?: string; refs?: string[] }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** 决策卡动作执行（决策 45）: host 编排 执行→执行事元留痕(refs+动作序)→效应对象自动订阅；幂等。 */
-  advanceActionRun: (input: {
-    advanceId: string
-    actionKey: string
-    kind: 'todo' | 'im' | 'event'
-    text: string
-    fields?: Record<string, string>
-    imGroupId?: string
-    imGroupLabel?: string
-  }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Subscribe one context source (关联来源; user-direct, spec §15.2). */
-  advanceSourceAdd: (advanceId: string, token: string, label?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Unsubscribe one context source (registry only; entries untouched). */
-  advanceSourceRemove: (advanceId: string, token: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** One write-confirmation record for a tool call (undefined when not gated). */
   fetchWrite: (sessionId: string, callId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** Settle one pending write-confirmation decision. */
@@ -197,81 +141,8 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
       ...(opts?.atAll !== true ? {} : { atAll: true }),
     }),
     uploadFile: (name, base64, size) => call('file-upload', { name, base64, size }),
-    todoState: () => call('todo-state', {}),
-    ensureTodo: () => call('todo-ensure', {}),
-    createTodo: (input) => call('todo-create', {
-      title: input.title,
-      ...(input.ddl === undefined ? {} : { ddl: input.ddl }),
-      ...(input.priority === undefined ? {} : { priority: input.priority }),
-      ...(input.tags === undefined || input.tags.length === 0 ? {} : { tags: input.tags }),
-    }),
-    toggleTodo: (todoId) => call('todo-toggle', { todoId }),
-    approveTodo: (todoId, note) => call('todo-approve', { todoId, ...(note === undefined || note === '' ? {} : { note }) }),
-    acceptTodo: (todoId, note) => call('todo-accept', { todoId, ...(note === undefined || note === '' ? {} : { note }) }),
-    returnTodo: (todoId, note) => call('todo-return', { todoId, ...(note === undefined || note === '' ? {} : { note }) }),
-    cancelTodo: (todoId, note) => call('todo-cancel', { todoId, ...(note === undefined || note === '' ? {} : { note }) }),
-    reopenTodo: (todoId) => call('todo-reopen', { todoId }),
-    archiveTodo: (todoId, archived) => call('todo-archive', { todoId, archived }),
-    dispatchTodo: (todoId) => call('todo-dispatch', { todoId }),
-    editTodo: (todoId, patch) => call('todo-edit', {
-          todoId,
-          ...(patch.title === undefined ? {} : { title: patch.title }),
-          ...(patch.description === undefined ? {} : { description: patch.description }),
-          ...(patch.ddl === undefined ? {} : { ddl: patch.ddl }),
-          ...(patch.assignee === undefined ? {} : { assignee: patch.assignee }),
-          ...(patch.priority === undefined ? {} : { priority: patch.priority }),
-          ...(patch.tags === undefined ? {} : { tags: patch.tags }),
-        }),
-    advanceState: () => call('advance-state', {}),
-    advanceGet: (advanceId, entryOffset, entryLimit) => call('advance-get', {
-      advanceId,
-      ...(entryOffset === undefined ? {} : { entryOffset }),
-      ...(entryLimit === undefined ? {} : { entryLimit }),
-    }),
-    advanceCreate: (input) => call('advance-create', {
-      title: input.title,
-      ...(input.goal === undefined || input.goal === '' ? {} : { goal: input.goal }),
-      ...(input.background === undefined || input.background === '' ? {} : { background: input.background }),
-      ...(input.metrics === undefined || input.metrics === '' ? {} : { metrics: input.metrics }),
-      ...(input.assignee === undefined || input.assignee === '' ? {} : { assignee: input.assignee }),
-      ...(input.targetDate === undefined || input.targetDate === '' ? {} : { targetDate: input.targetDate }),
-      ...(input.tags === undefined || input.tags.length === 0 ? {} : { tags: input.tags }),
-    }),
-    advanceJudge: (advanceId, action, note) => call('advance-judge', {
-      advanceId,
-      action,
-      ...(note === undefined || note === '' ? {} : { note }),
-    }),
-    advanceEnsure: () => call('advance-ensure', {}),
-    advanceScanState: () => call('advance-scan-state', {}),
-    advancePatrolNow: () => call('advance-patrol-now', {}),
     imCacheGet: (key) => call('im-cache-get', { key }),
     imCachePut: (key, payload, fetchedAt) => call('im-cache-put', { key, payload, fetchedAt }),
-    advanceDreamState: () => call('advance-dream-state', {}),
-    advanceDreamRun: () => call('advance-dream-run', {}),
-    advanceRefLookup: (refs) => call('advance-ref-lookup', { refs }),
-    advanceFeed: (input) => call('advance-feed', {
-      advanceId: input.advanceId,
-      summary: input.summary,
-      ...(input.sourceType === undefined || input.sourceType === '' ? {} : { sourceType: input.sourceType }),
-      ...(input.detail === undefined || input.detail === '' ? {} : { detail: input.detail }),
-      ...(input.refs === undefined || input.refs.length === 0 ? {} : { refs: input.refs }),
-    }),
-    advanceActionRun: (input) => call('advance-action-run', {
-      advanceId: input.advanceId,
-      actionKey: input.actionKey,
-      kind: input.kind,
-      text: input.text,
-      ...(input.fields === undefined ? {} : { fields: input.fields }),
-      ...(input.imGroupId === undefined ? {} : { imGroupId: input.imGroupId }),
-      ...(input.imGroupLabel === undefined ? {} : { imGroupLabel: input.imGroupLabel }),
-    }),
-    advanceSourceAdd: (advanceId, token, label) => call('advance-source-add', {
-      advanceId,
-      token,
-      ...(label === undefined || label === '' ? {} : { label }),
-    }),
-    advanceSourceRemove: (advanceId, token) => call('advance-source-remove', { advanceId, token }),
     fetchWrite: (sessionId, callId) => call('write-list', { sessionId, callId }),
     decideWrite: (writeId, outcome) => call('write-decide', { writeId, outcome }),
     modelDefault: () => call('model-default', {}),
