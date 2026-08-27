@@ -681,12 +681,12 @@ web profile 已装 `@dsh-yzj/robot-yzj`（link），`~/.dsh/profiles/web/cordis.
 | 面 | 交付 |
 |---|---|
 | 设计 | [`ai-advance-design.md`](../spec/ai-advance-design.md) 升 **v1.5**：§15 意图线程订阅模型（两类线程 / `yzj_advance_threads` demo 落位 / 渠道级 cursor 一次取流多事项分发 / Work+Dream 双节奏 / 策略选择文本约定）；决策 20–24 入表；分期表加 ③.2（待排） |
-| 迁移合同 | 新增 [`../migration/advance-lingee-migration.md`](../migration/advance-lingee-migration.md)：MVP↔灵基 = 「合同+证据→重建」；三层拆分（合同/机制形状/脚手架）、五断层、验证清单、「存钱 vs 镀金」取舍原则、灵基需求清单 |
+| 迁移合同 | 已从本仓删除（灵基终态文档迁出） |
 | 图 | `docs/diagrams/advance-6-journey`（用户旅程按口述重画：意图线程×N 订阅、手动喂/关联两条路径、待我决定/待我验收双出口）。**图集清理**：删 `advance-2-lifecycle`（被 6-journey + 3-gate 覆盖）与 `advance-4-dream`（「巡检唤醒 Dream」触发关系被决策 21 双节奏取代）；`advance-1` 输入改「意图线程订阅」；`advance-7` 补第六块「策略选择结构化」。编号留空号不重排；图集已登记 docs/README.md |
 
 **实现缺口（③.2，已于 §24.7 落地）**：`yzj_advance_threads`、面板「关联渠道」入口、scan 按订阅取流分发、决策区 `选项N` 渲染均已实现；feed 带 `subscribe` 与单文档源内容更新监测仍后置（见 §24.7 已知偏差）。
 
-**正式开发交付面（同日晚补，已发 测试群；汇报产物不留仓库——用户拍板）**：接口数据契约 v1.0（自 spec v1.5 提炼的三对象字段级 + 状态机 + 门控 + 判据 + 接口面 + 平台需求八条快照）、示例故事线文字版（10 项任务分摊 / AI 自动 7 / 人 4 次判断 / 干预入口 / 节奏边界）、系统架构蓝图 / 产品模块关系图 / 故事线图三张。五件已发群「测试群」（`gid-test`）：文本消息 `msg-out-a`（含外部协助三件事：灵基平台八项排期 / 约同事丙对齐 / AI 速记结构化访问），文件消息 `file-out-a`（架构蓝图 png）/ `file-out-b`（模块关系 png）/ `file-out-c`（故事线 png）/ `file-out-d`（契约 md）/ `file-out-e`（故事线文字版 md），2026-08-19 16:51。**这些文件只存在于群消息，仓库不保留副本**；合同唯一事实源 = spec v1.5 + advance-lingee-migration。
+**正式开发交付面（同日晚补，已发 测试群；汇报产物不留仓库——用户拍板）**：接口数据契约 v1.0（自 spec v1.5 提炼的三对象字段级 + 状态机 + 门控 + 判据 + 接口面 + 平台需求八条快照）、示例故事线文字版（10 项任务分摊 / AI 自动 7 / 人 4 次判断 / 干预入口 / 节奏边界）、系统架构蓝图 / 产品模块关系图 / 故事线图三张。五件已发群「测试群」（`gid-test`）：文本消息 `msg-out-a`（含外部协助三件事：灵基平台八项排期 / 约同事丙对齐 / AI 速记结构化访问），文件消息 `file-out-a`（架构蓝图 png）/ `file-out-b`（模块关系 png）/ `file-out-c`（故事线 png）/ `file-out-d`（契约 md）/ `file-out-e`（故事线文字版 md），2026-08-19 16:51。**这些文件只存在于群消息，仓库不保留副本**；合同唯一事实源 = spec v1.5。
 ## 24.6 AI推进｜830 真数据闭环实验（2026-08-19，执行人：agent）
 
 实验脚本：[`.acceptance/advance-830-experiment.md`](../../.acceptance/advance-830-experiment.md)；driver：`advance-830-wave1.mjs` / `advance-830-wave1-fix.mjs` / `advance-830-wave2.mjs`；截图：`.acceptance/shots-advance-830/`。
@@ -1268,7 +1268,7 @@ Dream 路（跨事项推荐）纪律入 dreamAskPrompt（顺手落推荐事元�
 
 恢复路径：无软恢复，git 历史重建。
 
-## 24.41 终态套件迁出本仓（2026-08-27，纯文档）
+## 24.41 灵基终态文档迁出本仓（2026-08-27，纯文档）
 
-`docs/target-lingee/` 已迁至内部仓 [laver/ai-advance](http://code.yzjop.com/laver/ai-advance)，本仓不再承载灵基终态合同。OQ-43 六条写在那边 `docs/06` §1.5。本仓只留 MVP spec 与 [`advance-lingee-migration.md`](../migration/advance-lingee-migration.md) 三层判别。
+`docs/target-lingee/`、`docs/migration/advance-lingee-migration.md`、`docs/spec/lingee-platform-requirements.md` 已从本仓删除。本仓只维护 dsh MVP。
 

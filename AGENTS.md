@@ -10,7 +10,7 @@ dsh-yzj 是 DeepSeek Harness 的独立插件 bundle 仓库：`yzj-cli` 桥接、
 2. **文档即接口**：下一个读这个仓库的是另一个 agent，它以 `docs/` 为首要输入。文档陈旧 = 下一个 agent 必然做错。每个提交自问：「只读 docs/ 的人（agent）能准确重建当前系统的行为吗？」不能，就补。
 3. **docs/ 目录义务**（职责与阅读顺序见 [docs/README.md](docs/README.md)，改动对应面时同提交更新）：
    - `spec/` — 设计基线：`integration-master-plan.md`（整体方案/人在闭环验收基准）、`group-room-topics.md`（**v2.0 产品法**：1 群 = 1 群房间 + N 话题；v1.1 工作台三栏 P0–P3 已落地）、`dsh-home-session.md` / `dsh-home-transcript.md`（v1.x 历史快照；D9 写路径与消息日志机制沿用，1:1 绑定与融合一条流已被 v2.0 覆盖）、`todo-design.md`（todo 域 + §11.2 决策表）、`robot-channel-plan.md`（机器人通道协议；会话落点以 group-room-topics 为准）；
-   - `migration/` — 架构演进：`todo-backend-migration.md`（demo→原生后端分层 + §3 实测格式事实）、`advance-lingee-migration.md`（AI推进 MVP→灵基：合同/机制/脚手架三层 + 断层清单）；
+   - `migration/` — 架构演进：`todo-backend-migration.md`（demo→原生后端分层 + §3 实测格式事实）；
    - `status/` — `gap-analysis.md`：设计×实现分歧与验收证据，**每个功能提交都应在此留痕**；
    - `pitfalls/` — 踩坑库（见 Conventions「踩坑记录制度」）。
 4. **决策必须留档**：拍板（设计取舍、风险分级、命名）写进对应设计文档的决策表，附理由；不允许只存在于提交信息或对话里的决策。

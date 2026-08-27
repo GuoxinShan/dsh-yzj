@@ -3,7 +3,7 @@
 > 版本：v1.0
 > 日期：2026-08-21
 > 决策人：Guoxin Shan
-> 定位：AI推进的**领域模型视图**——对象、关系、不变量的合同。行为面（工具契约/状态机/门控/判据）以 [`ai-advance-design.md`](ai-advance-design.md) 为准；本文回答「这个域里有什么、为什么恰好是这些」。迁移分层（A 合同 / B 机制 / C 脚手架）见 [`../migration/advance-lingee-migration.md`](../migration/advance-lingee-migration.md)——本文全部内容属 A 层。
+> 定位：AI推进的**领域模型视图**——对象、关系、不变量的合同。行为面（工具契约/状态机/门控/判据）以 [`ai-advance-design.md`](ai-advance-design.md) 为准；本文回答「这个域里有什么、为什么恰好是这些」。
 
 > 配图：原领域模型全景图已随 `docs/diagrams/` 图集整体移除（2026-08-24，另有重绘安排），本文以文字合同为准。
 
@@ -102,6 +102,6 @@ Action = 意图(做什么) + 执行器(谁执行) + 归属(advanceId)
 2. ~~溯源断~~：建待办 refs=[todoId]、发消息 refs=[`im:<groupId>:<msgId>`]（msgId 缺失降级 warning 明示）；定会议落留痕事元（无效应对象，建成后经订阅回流）。
 3. ~~done 态刷新即丢~~：`doneActions` 内存 Set 废止，面板从事元流折叠（`foldDoneActions`，key + kind|文本 双键兼综合卡重排）。
 
-## 6. 与终态的关系
+## 6. 与实现的关系
 
-本文全部内容属迁移合同 A 层（灵基终态逐条照抄）。动作行的**文本协议**是 C 层脚手架（断层 4，灵基侧原生结构化）；dbt/SQLite 双表承载是 C 层。行动实体化（若触发决策 44 的推翻信号）在 MVP 侧不做，作为灵基原生推进域的需求输入。
+动作行的**文本协议**与 dbt/SQLite 双表是当前 MVP 承载。行动实体化（若触发决策 44 的推翻信号）在本仓不做。

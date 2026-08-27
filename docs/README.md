@@ -21,7 +21,6 @@ docs/
     meeting-minutes-template.md        金蝶标准四段式纪要模板（§16.1 ④-b：目标/内容/共识/下一步）
     robot-channel-plan.md              机器人通道调研与双向打通方案（v0.2：会话落点改打绑定对象）
     yzj-openapi-requirements.md        云之家开放能力需求（对外：感知/行动/人审三类 17 项 × CLI/OpenAPI 现状 × 缺口；任务复用 = worktask；P0-P2 汇总）
-    lingee-platform-requirements.md    灵基平台能力需求（对外：agent 定时任务 / agent SDK / 工具拦截 hook / 富交互卡片 / @ 候选源）
     routines-delivery.md               定时任务引擎选型（dsh-routines 参考调研）+ yzj chatnode 投递契约
     memory-vault-design.md             记忆库组件设计（v0.2：vault 模型 + dream 开关/进程内固化/模型链 + 插件默认模型 + 群组留缝）
     memory-dream-routine.yaml          dream 固化 routine 模板（dsh-routines，备选路径）
@@ -29,7 +28,6 @@ docs/
     headless-yzj.cordis.yml            headless overlay：只挂 bridge + tool-yzj（巡检用不了 ui-yzj）
   migration/                          ← 架构演进方案
     todo-backend-migration.md          待办 demo 后端 → 原生后端（四层架构 + §3 实测格式事实）
-    advance-lingee-migration.md        AI推进 dsh MVP → 灵基终态（三层判别 + MVP 证据；终态合同已迁出）
   status/                             ← 实现与设计的对照与验收证据
     gap-analysis.md                    设计×实现 gap 对照（每功能提交留痕，含验收证据；§24.1–24.10 为 AI推进 ①–④期 + 门控 + 主动发现 + 真机实验 + Dream 蓄水池）
   pitfalls/                           ← 实现级坑库（一坑一文件 + 索引）
@@ -51,5 +49,4 @@ docs/
 - 目录与文件名**英文 kebab-case**；正文中文（与全仓语言分工一致）。
 - spec 文档带版本号与日期头；演进用「vN 变更」段落追加，不重写历史。
 - `docs/` 根不再散放文档：新文档进对应子目录；新子目录须在本文件登记。
-- **灵基终态目标架构**已迁出本仓，实施依据在内部仓 [laver/ai-advance](http://code.yzjop.com/laver/ai-advance)（`docs/`）。本仓只留 MVP spec 与迁移判别方法。
 - **实验设计文档**：执行版实验设计放 `.acceptance/`（与验收脚本同目录，如 `advance-830-experiment.md`，已完工）；实验**证据**归档进 `status/gap-analysis.md`，不留散件。
