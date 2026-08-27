@@ -20,10 +20,9 @@ import type {} from '@dsh-yzj/tool-yzj/src/index.ts'
 import { applyWriteGate, type YzjWriteRecord } from './write-gate.ts'
 import { openBoundHome, isPlaceholderRoomTitle, topicAgentRoute, topicAgentComposition, type HomeOpenFace } from './home-open.ts'
 import {
-  backfillBoundLog, fusedSnapshot, groupSpaceSnapshot, handoffToGroup, homeIoFrom, parseImSend, roomSnapshot, roomSnapshotForGroup, sendImAndLog,
-  sessionEventsOf, runDreamSession, runTodoSession,
+  backfillBoundLog, fusedSnapshot, groupSpaceSnapshot, homeIoFrom, parseImSend, roomSnapshot, roomSnapshotForGroup, sendImAndLog,
+  runDreamSession, runTodoSession,
 } from './bound-io.ts'
-import { digestCandidates } from './handoff-digest.ts'
 import { attachYzjSession, ensureYzjHostWorkspace } from './yzj-cwd.ts'
 import { runAdvanceAction } from './advance-action.ts'
 import { parseContactUser } from './contact-parse.ts'
@@ -272,9 +271,8 @@ export interface YzjWriteGateFace {
  * Build the `/yzj` RPC handler: `workspaces`, `docs`, `events`, `groups`,
  * `messages`, `whoami`, `auth-status`, `auth-login`, `search`, `doc-get`, `doc-blocks`, `sheet-get`,
  * `workspace-get`, `event-get`, `contact-get`, `write-list`, and
- * `write-decide`, `home-open` / `home-send` / `home-fused` / `home-nav` / `home-handoff` /
- * `home-topic-lens` / `home-topic-ask` / `advance-scan-state` /
- * `advance-source-add` / `advance-source-remove`
+ * `write-decide`, `home-open` / `home-send` / `home-fused` / `home-nav` /
+ * `advance-scan-state` / `advance-source-add` / `advance-source-remove`
  * endpoints, all backed by the yzj-cli bridge, the write-gate, and `ctx.yzjHome`.
  * Endpoint payloads are validated as lossless JSON before use.
  * @param ctx - Cordis context carrying the bridge service.
@@ -1240,31 +1238,6 @@ function imCacheStore(): SqliteDb {
         const sent = await sendImAndLog(ctx, io, parsed)
         if (!sent.ok) return internalError(sent.error)
         return { ok: true, value: sent }
-      }
-      case 'home-digest': {
-        const sessionId = stringField(payload, 'sessionId')
-        if (sessionId === undefined) return internalError('home-digest endpoint requires a sessionId payload')
-        const agents = agentsFace(ctx)
-        const candidates = digestCandidates(sessionEventsOf(agents?.get(sessionId)))
-        return { ok: true, value: { candidates } }
-      }
-      case 'home-handoff': {
-        const io = homeIoFrom(ctx.get('yzjHome'))
-        if (io === undefined) return internalError('home-handoff: yzjHome 服务不可用（tool-yzj 未挂载）')
-        const groupId = stringField(payload, 'groupId')
-        const digest = stringField(payload, 'digest')
-        if (groupId === undefined) return internalError('home-handoff endpoint requires a groupId payload')
-        if (digest === undefined) return internalError('home-handoff endpoint requires a digest payload')
-        const agents = agentsFace(ctx)
-        if (agents === undefined) return internalError('home-handoff: agents 服务不可用')
-        const cwd = await ensureYzjHostWorkspace(ctx)
-        const result = await handoffToGroup({ ctx, home: io, agents, groupId, digest, cwd })
-        if ('error' in result) return internalError(result.error)
-        if ('sessionId' in result) await attachYzjSession(ctx, result.sessionId)
-        const topicId = 'topicSessionId' in result ? result.topicSessionId : undefined
-        if (typeof topicId === 'string' && topicId !== '') await attachYzjSession(ctx, topicId)
-        void backfillBoundLog(ctx, io, groupId).catch(() => undefined)
-        return { ok: true, value: result }
       }
       default:
         return internalError(`unknown /yzj endpoint ${endpoint}`)

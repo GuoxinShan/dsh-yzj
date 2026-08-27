@@ -1,7 +1,7 @@
 /**
  * Composer-side Yunzhijia seat: `conversation.input.dock`.
- * Topic 「回群聊」 / unbound 「丢进群」 live here. Drag-to-chip (floating
- * panel era) is retired — @ mention sources stay in input-source.ts.
+ * Leftover topic 「回群聊」 lives here. D8 「丢进群」 is retired (决策 55).
+ * Drag-to-chip (floating panel era) is retired — @ mention sources stay in input-source.ts.
  */
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { YzjHomeChrome, type YzjHomeChromeInjected } from './home-chrome.tsx'

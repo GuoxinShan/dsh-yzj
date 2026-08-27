@@ -1,6 +1,7 @@
 /**
- * D8「丢进群」digest helpers: default is a user-selected visible summary.
- * Full-transcript migrate is explicit. Pure — node RPC and client share it.
+ * D8 digest helpers: visible private-transcript lines (fused snapshot still
+ * projects `candidates`). Full-transcript compose stays for tests; the
+ * 「丢进群」picker UI is retired (决策 55).
  * @module @dsh-yzj/ui-yzj/handoff-digest
  */
 

@@ -12,7 +12,6 @@ import type { YzjPanelInject } from './rpc.ts'
 // 话题功能已撤下（决策 50）：topic-drawer / 话题 latch 保留在库中待恢复或删除。
 import { AdvanceFeedPicker } from './advance-feed-picker.tsx'
 import { setAdvanceFeedback, useAdvanceFeedback } from './advance-feedback.ts'
-import { setAdvanceAskDraft, useAdvanceAskDraft } from './advance-ask.ts'
 import { registerRoomComposerHost, ROOM_COMPOSER_HOST_ID } from './composer-host.ts'
 import {
   artifactOf, layoutRoomItems,
@@ -261,7 +260,6 @@ export function YzjFusedView(props: YzjFusedInjected) {
   const [unclamped, setUnclamped] = useState<ReadonlySet<string>>(() => new Set())
   const [feedTarget, setFeedTarget] = useState<{ summary: string; refs: string[] } | null>(null)
   const feedback = useAdvanceFeedback()
-  const askDraft = useAdvanceAskDraft()
   const highlightRef = useRef<HTMLDivElement | null>(null)
   const streamRef = useRef<HTMLDivElement | null>(null)
   const followBottomRef = useRef(true)
@@ -302,8 +300,8 @@ export function YzjFusedView(props: YzjFusedInjected) {
     setHighlightMsgId(props.anchorMsgId)
   }, [props.anchorMsgId, viewKey])
 
-  // 决策 41 讨论回环:advance 板「问助手/回到对话继续聊」直开话题抽屉(agent 问答面),
-  // 不停在群时间线。binding 就绪后消费 latch;无 sessionId 时按 title 现 mint 一个话题。
+  // 决策 41 讨论回环：产出会话优先；无产出会话则切对话域到订阅群。
+  // 话题抽屉已撤（决策 50），「打开话题」banner 已撤（决策 55）。
   /** 喂给推进 refs 的渠道 token（决策 49）：群 id 优先 props（R24 跟随），回退绑定群。 */
   const boundGroupId = value.binding?.yzjConversationId
   const feedGroupId = props.groupId ?? (typeof boundGroupId === 'string' ? boundGroupId : '')
@@ -477,12 +475,6 @@ export function YzjFusedView(props: YzjFusedInjected) {
               onDone={() => setAdvanceFeedback(null)}
             />
             <button type="button" className={css.chromeLink} onClick={() => setAdvanceFeedback(null)}>取消</button>
-          </div>
-        )}
-        {askDraft !== null && (
-          <div className={css.chrome} data-testid="yzj-advance-ask-banner">
-            <span>{askDraft.kind === 'export' ? '复盘沉淀已预备' : askDraft.kind === 'discuss' ? '进展讨论已预备' : '验收问题已预备'} · {askDraft.title}{askDraft.advanceId === '' ? '' : `（${askDraft.advanceId}）`}。打开话题后会出现在问助手栏。</span>
-            <button type="button" className={css.chromeLink} onClick={() => setAdvanceAskDraft(null)}>取消</button>
           </div>
         )}
         {emptyPhase ? (

@@ -1,5 +1,5 @@
 /**
- * Bound-home I/O: optimistic ②, backfill/dedupe, fused merge, D8 handoff.
+ * Bound-home I/O: optimistic ②, backfill/dedupe, fused merge.
  */
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
@@ -7,7 +7,7 @@ import {
   BoundLogStore, formatSummonWindow, type BoundLogLimits, type YzjLogEntry,
 } from '@dsh-yzj/tool-yzj/src/bound-log.ts'
 import {
-  backfillBoundLog, fusedSnapshot, groupSpaceSnapshot, handoffToGroup, parseImSend, parseWhoami, robotSkipOpenIds,
+  backfillBoundLog, fusedSnapshot, groupSpaceSnapshot, parseImSend, parseWhoami, robotSkipOpenIds,
   sendImAndLog, topicLensBubbles, runDreamSession, runTodoSession, todoDispatchPrompt, type HomeIoFace,
 } from '../src/bound-io.ts'
 
@@ -265,36 +265,6 @@ describe('fusedSnapshot', () => {
     const snapshot = fusedSnapshot(home, 'plain-private', { session: { events: [] } }, [])
     expect(snapshot.bound).toBe(false)
     expect(snapshot.items).toEqual([])
-  })
-})
-
-describe('handoffToGroup', () => {
-  it('posts the digest as ② and followups the bound session', async () => {
-    const home = memoryHomeIo()
-    const ctx = new Context()
-    ;(ctx as unknown as { yzjBridge: { run: (command: readonly string[]) => Promise<ReturnType<typeof runOf>> } }).yzjBridge = {
-      run: async (command) => {
-        if (command[0] === 'contact') return runOf([{ openId: 'me', name: '国鑫' }])
-        return runOf({ msgId: 'm-digest' })
-      },
-    }
-    const followups: unknown[] = []
-    const live = new Map<string, { followup: (msg: unknown) => void; inject: (msg: unknown) => void }>()
-    const agents = {
-      get: (id: string) => live.get(id),
-      resume: async () => { throw new Error('no log') },
-      create: async (opts: { sessionId: string }) => {
-        const agent = { followup: (msg: unknown) => { followups.push(msg) }, inject: () => {} }
-        live.set(opts.sessionId, agent)
-      },
-    }
-    const result = await handoffToGroup({
-      ctx, home, agents, groupId: 'g-target', digest: '［摘要］结论', cwd: '/tmp',
-    })
-    expect(result).toMatchObject({ sessionId: 'yzj-home-g-target' })
-    expect(home.getLog('g-target')?.entries[0]?.origin).toBe('dsh-send')
-    expect(home.getLog('g-target')?.entries[0]?.content).toContain('结论')
-    expect(followups).toHaveLength(1)
   })
 })
 

@@ -15,8 +15,7 @@ import { parseContactUser } from './contact-parse.ts'
 import { digestCandidates, textOfSessionEvent, type DigestCandidate } from './handoff-digest.ts'
 import { artifactBadgeOf, writeFileNameOf, type ArtifactBadge } from './artifact-badge.ts'
 import {
-  openBoundHome, openTopicHome, lastSessionTitle, isPlaceholderRoomTitle, identifiedUserMessage, publishHostSession, topicAgentRoute,
-  topicAgentComposition,
+  lastSessionTitle, isPlaceholderRoomTitle, identifiedUserMessage, publishHostSession,
   type HomeOpenAgents, type HomeOpenFace, type TopicAgentRoute, type TopicAgentSetup,
 } from './home-open.ts'
 import type { YzjWriteRecord } from './write-gate.ts'
@@ -783,75 +782,4 @@ export function groupSpaceSnapshot(
     }
   })
   return { rooms }
-}
-
-/** Structural plugin user-turn (no dsh-llm import — dual-face tsconfig). */
-function pluginTurn(text: string): ReturnType<typeof identifiedUserMessage> {
-  return identifiedUserMessage(text, { kind: 'plugin', plugin: 'ui-yzj' })
-}
-
-/**
- * D8 handoff: bind the target group room, post the confirmed digest as ②,
- * then mint a handoff topic and followup there (R3). Lands the user on the
- * group room; the topic is listed underneath.
- */
-export async function handoffToGroup(options: {
-  readonly ctx: Context
-  readonly home: HomeIoFace
-  readonly agents: HomeOpenAgents & {
-    get(sessionId: string): {
-      inject?: (message: unknown) => void
-      followup?: (message: unknown) => void
-    } | undefined
-  }
-  readonly groupId: string
-  readonly digest: string
-  readonly cwd: string
-}): Promise<{ sessionId: string; created: boolean; topicSessionId?: string } | { error: string }> {
-  if (options.digest.trim() === '') return { error: 'home-handoff: digest is empty' }
-  let opened
-  try {
-    opened = await openBoundHome({
-      home: options.home,
-      yzjConversationId: options.groupId,
-    })
-  } catch (error) {
-    return { error: `home-handoff open failed: ${String(error)}` }
-  }
-  const sent = await sendImAndLog(options.ctx, options.home, {
-    groupId: options.groupId,
-    msgType: 'text',
-    content: options.digest,
-    images: [],
-    atOpenIds: [],
-    atAll: false,
-  })
-  if (!sent.ok) return { error: sent.error }
-  let topicSessionId: string | undefined
-  try {
-    const route = topicAgentRoute(options.ctx)
-    const composition = await topicAgentComposition(options.ctx)
-    const topic = await openTopicHome({
-      home: options.home,
-      agents: options.agents,
-      yzjConversationId: options.groupId,
-      cwd: options.cwd,
-      source: 'handoff',
-      originText: options.digest,
-      title: '丢进群交接',
-      ...(route === undefined ? {} : { agentOptions: route }),
-      ...composition,
-    })
-    topicSessionId = topic.sessionId
-    const live = options.agents.get(topic.sessionId)
-    const agent = typeof live === 'object' && live !== null
-      ? live as { inject?: (message: unknown) => void; followup?: (message: unknown) => void }
-      : undefined
-    const window = options.home.formatSummonWindow(options.groupId, undefined, topic.sessionId)
-    if (window !== '') agent?.inject?.(pluginTurn(window))
-    agent?.followup?.(pluginTurn('用户从私密会话把工作丢进了本群。请基于群里刚发出的摘要，以本群共享身份继续协作。'))
-  } catch (error) {
-    return { error: `home-handoff followup failed: ${String(error)}` }
-  }
-  return { sessionId: opened.sessionId, created: opened.created, ...(topicSessionId === undefined ? {} : { topicSessionId }) }
 }

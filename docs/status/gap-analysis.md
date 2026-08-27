@@ -1254,3 +1254,16 @@ Dream 路（跨事项推荐）纪律入 dreamAskPrompt（顺手落推荐事元�
 | 保留路径（明示） | `im:<g>:<m>` 直查、dp-* 池 id 还原、doc 文件名解析全部不变；「发消息」动作的 imGroupTokens/imGroupLabel（决策 41）不受影响 | dp-* 与 im: 命中渲染事件行用例保留绿 |
 
 验收：全量 461 绿（净 -1：裸 msgId 命中渲染用例场景已死删除）+ typecheck 0 错 + build/bundle 绿 + GUI 重启回归。
+
+## 24.40 决策 55：丢进群 UI + 话题假 banner 退役（2026-08-27，已落地）
+
+用户拍板「把一些奇怪的 UI 都去掉，例如丢进群」。话题退役后，普通 DSH 会话 composer 上的「丢进群」和群房间「打开话题后会出现在问助手栏」都是假入口。
+
+| 面 | 交付 | 证据 |
+|---|---|---|
+| dock | 未绑定会话不再画「丢进群」；HandoffModal 删除。存量 `yzj-topic-*` 仍画「回群聊」 | home-chrome.client.spec 未绑定零 chrome、无「丢进群」 |
+| RPC | `/yzj home-digest` / `home-handoff` 删除；`handoffToGroup` 删除（会 mint 话题，与决策 53 冲突） | rpc.node.spec 两 endpoint unknown；bound-io.spec 无 handoff 用例 |
+| banner | 群房间 `yzj-advance-ask-banner` 删除（文案依赖已撤的话题问助手栏） | transcript 不再渲染该 testid；`verify-advance-feed.mjs` 断言 banner 不出现 |
+| 文档 | group-room-topics v1.22 §12；dsh-home-session 头注 D8 UI 退役；根 README / 包 README 同步 | — |
+
+恢复路径：无软恢复，git 历史重建。

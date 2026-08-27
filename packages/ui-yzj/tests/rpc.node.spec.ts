@@ -435,58 +435,14 @@ describe('createRpcHandler', () => {
     }
   })
 
-  it('home-handoff attaches only the minted topic, not the room host', async () => {
-    const { BoundLogStore } = await import('@dsh-yzj/tool-yzj/src/bound-log.ts')
-    const store = new BoundLogStore()
-    const ctx = new Context()
-    const { attached, registry } = recordingRegistry()
-    ctx.provide('workspaceRegistry', registry)
-    const rows = new Map<string, { dshSessionId: string; yzjConversationId: string; yzjKind: 'group' | 'dm' }>()
-    const topics = new Map<string, { sessionId: string }>()
-    ctx.provide('yzjHome', {
-      ensureBound: async (id: string, kind: 'group' | 'dm') => {
-        const existing = rows.get(id)
-        if (existing !== undefined) return { sessionId: existing.dshSessionId, created: false, yzjKind: existing.yzjKind }
-        const row = { dshSessionId: `yzj-home-${id}`, yzjConversationId: id, yzjKind: kind }
-        rows.set(id, row)
-        await store.ensureHeader(id, row.dshSessionId, kind)
-        return { sessionId: row.dshSessionId, created: true, yzjKind: kind }
-      },
-      ensureTopic: async (input: { yzjConversationId: string }) => {
-        const sessionId = `yzj-topic-${input.yzjConversationId}-handoff`
-        const existing = topics.get(sessionId)
-        if (existing !== undefined) return { sessionId, created: false }
-        topics.set(sessionId, { sessionId })
-        return { sessionId, created: true }
-      },
-      getByConversation: (id: string) => rows.get(id),
-      getBySession: (id: string) => [...rows.values()].find(row => row.dshSessionId === id),
-      appendLog: (id: string, incoming: never, options?: never) => {
-        const row = rows.get(id)
-        if (row === undefined) return Promise.resolve({ accepted: false, reason: 'unbound' })
-        return store.append(id, row.dshSessionId, row.yzjKind, incoming, options)
-      },
-      getLog: (id: string) => store.get(id),
-      getLogBySession: (id: string) => {
-        const row = [...rows.values()].find(item => item.dshSessionId === id)
-        return row === undefined ? undefined : store.get(row.yzjConversationId)
-      },
-      ackLocal: (id: string, local: string, real: string) => store.ackLocal(id, local, real),
-      failLocal: (id: string, local: string) => store.failLocal(id, local),
-      formatSummonWindow: () => '',
-      logs: store,
-    })
-    ctx.provide('agents', liveAgents())
-    ;(ctx as unknown as { yzjBridge: { run: (command: readonly string[]) => Promise<RunResult> } }).yzjBridge = {
-      run: async (command) => command[0] === 'contact' ? runOf([{ openId: 'me', name: '国鑫' }]) : runOf({ msgId: 'm-digest' }),
-    }
+  it('home-digest / home-handoff are gone with 丢进群 UI（决策 55）', async () => {
+    const ctx = mountBridge({})
     const handler = createRpcHandler(ctx, { list: () => [], decide: () => false })
-    const result = await handler('home-handoff', { groupId: 'g-a', digest: '［摘要］结论' }, undefined as never)
-    expect(result.ok && result.value).toMatchObject({
-      sessionId: 'yzj-home-g-a',
-      topicSessionId: 'yzj-topic-g-a-handoff',
-    })
-    expect(attached).toEqual(['yzj-topic-g-a-handoff'])
+    for (const endpoint of ['home-digest', 'home-handoff']) {
+      const result = await handler(endpoint, { groupId: 'g-a', digest: 'x', sessionId: 's' }, undefined as never)
+      expect(result.ok).toBe(false)
+      expect((result as { ok: false; error: { message: string } }).error.message).toContain('unknown /yzj endpoint')
+    }
   })
 
   it('home-open fails closed without yzjHome', async () => {

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Composer chrome: bound 发进群 vs unbound 丢进群; 发进群 does not look like a user-turn.
+ * Composer chrome: leftover topic 回群聊; D8 丢进群 retired (决策 55).
  */
 import { act } from 'react-dom/test-utils'
 import { createRoot } from 'react-dom/client'
@@ -25,9 +25,6 @@ function mount(bound: boolean) {
           sent.push(content)
           return { ok: true, value: { localId: 'local-1' } }
         }}
-        homeDigest={async () => ({ ok: true, value: { candidates: [] } })}
-        homeHandoff={async () => ({ ok: true, value: { sessionId: 'yzj-home-g-b' } })}
-        fetchGroups={async () => ({ ok: true, value: { list: [{ groupId: 'g-b', groupName: '目标群' }] } })}
       />,
     )
   })
@@ -43,12 +40,12 @@ describe('YzjHomeChrome', () => {
     expect(container.querySelector('[data-testid="yzj-home-chrome"]')).toBeNull()
   })
 
-  it('unbound sessions expose 丢进群 without a send-semantics lecture', async () => {
+  it('unbound sessions paint no 丢进群 chrome (决策 55)', async () => {
     const { container } = mount(false)
     await act(async () => { await Promise.resolve() })
-    expect(container.textContent).toContain('丢进群')
-    expect(container.textContent).not.toContain('只给助手')
+    expect(container.textContent).not.toContain('丢进群')
     expect(container.textContent).not.toContain('发进群')
+    expect(container.querySelector('[data-testid="yzj-home-chrome"]')).toBeNull()
   })
 
   it('native submit on a group room still routes into homeSend', async () => {
@@ -69,9 +66,6 @@ describe('YzjHomeChrome', () => {
             sent.push(content)
             return { ok: true, value: { localId: 'local-1' } }
           }}
-          homeDigest={async () => ({ ok: true, value: { candidates: [] } })}
-          homeHandoff={async () => ({ ok: true, value: { sessionId: 'yzj-home-g-b' } })}
-          fetchGroups={async () => ({ ok: true, value: { list: [] } })}
           inputActions={actions}
         />,
       )
@@ -108,10 +102,7 @@ describe('YzjHomeChrome', () => {
             },
           })}
           homeSend={async () => ({ ok: true, value: {} })}
-          homeDigest={async () => ({ ok: true, value: { candidates: [] } })}
-          homeHandoff={async () => ({ ok: true, value: { sessionId: 'yzj-home-g-a' } })}
           homeOpen={async () => ({ ok: true, value: { sessionId: 'yzj-home-g-a' } })}
-          fetchGroups={async () => ({ ok: true, value: { list: [] } })}
           focusBoundSession={(id) => { focused.push(id) }}
         />,
       )
@@ -128,6 +119,7 @@ describe('YzjHomeChrome', () => {
     expect(container.textContent).not.toContain('点这里回群聊')
     expect(container.textContent).not.toContain('问助手')
     expect(container.textContent).not.toContain('发进群')
+    expect(container.textContent).not.toContain('丢进群')
     act(() => { (chip as HTMLButtonElement).click() })
     await act(async () => { await Promise.resolve() })
     expect(focused).toEqual([])

@@ -150,10 +150,6 @@ export interface YzjPanelInject {
   homeBackfill?: (sessionId: string, opts?: { beforeMsgId?: string; limit?: number; groupId?: string }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** DSH「发进群」: optimistic ② + CLI send, no user-turn. */
   homeSend?: (sessionId: string, content: string | undefined, opts?: YzjPanelInject['sendMessageOpts'] & { groupId?: string }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Private-transcript digest candidates for 丢进群. */
-  homeDigest?: (sessionId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** Confirmed D8 handoff into a bound group session. */
-  homeHandoff?: (groupId: string, digest: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
 }
 
 /** Build the inject face from a connection handle; unavailable → failed calls. */
@@ -311,7 +307,5 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
       ...(opts?.atOpenIds === undefined ? {} : { atOpenIds: opts.atOpenIds }),
       ...(opts?.atAll !== true ? {} : { atAll: true }),
     }),
-    homeDigest: (sessionId) => call('home-digest', { sessionId }),
-    homeHandoff: (groupId, digest) => call('home-handoff', { groupId, digest }),
   }
 }

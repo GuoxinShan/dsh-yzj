@@ -104,9 +104,9 @@ export function apply(ctx: ClientContext): void {
     YzjSettingsSection,
   ))
 
-  // Topic 回群聊 / unbound 丢进群. Drag-to-chip retired with the floating
-  // panel (R21 v1.6). `conversation.composer.dock` only renders in the
-  // non-hero phase, so this seat stays on `conversation.input.dock`.
+  // Leftover topic 回群聊. D8 丢进群 retired (决策 55). Drag-to-chip
+  // retired with the floating panel (R21 v1.6). `conversation.composer.dock`
+  // only renders in the non-hero phase, so this seat stays on `conversation.input.dock`.
   ctx.slots.inject('conversation.input.dock', () => ctx.slots.register(
     {
       name: 'conversation.input.dock',
@@ -130,10 +130,7 @@ export function apply(ctx: ClientContext): void {
           },
           homeBinding: (id) => panelInject.homeBinding?.(id) ?? Promise.resolve({ ok: false as const, error: { message: 'homeBinding unavailable' } }),
           homeSend: (id, content) => panelInject.homeSend?.(id, content) ?? Promise.resolve({ ok: false as const, error: { message: 'homeSend unavailable' } }),
-          homeDigest: (id) => panelInject.homeDigest?.(id) ?? Promise.resolve({ ok: false as const, error: { message: 'homeDigest unavailable' } }),
-          homeHandoff: (groupId, digest) => panelInject.homeHandoff?.(groupId, digest) ?? Promise.resolve({ ok: false as const, error: { message: 'homeHandoff unavailable' } }),
           ...(panelInject.homeOpen === undefined ? {} : { homeOpen: panelInject.homeOpen }),
-          fetchGroups: (limit, page) => panelInject.fetchGroups(limit, page),
           focusBoundSession: panelInject.focusBoundSession,
         }
       },
