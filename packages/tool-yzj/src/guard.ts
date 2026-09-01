@@ -1,17 +1,24 @@
 /**
  * Approval guard for yzj write operations, gated by a risk-level table
  * (design v1.6 §5.1/§5.5): read-only tools pass through, standard-level
- * writes ask, strong-level writes (deletion, irreversible) ask with the
- * strong flag and never merge into batch confirmations. The ask broadcasts a
- * `yzj/ask-pending` host event carrying the full parsed arguments so the
- * confirmation-card bridge (ui-yzj node half) can append the durable
- * `yzj/write-request` session event with complete parameter display.
+ * writes confirm, strong-level writes (deletion, irreversible) confirm with
+ * the strong flag and never merge into batch confirmations.
+ *
+ * Confirmation is self-hosted: the guard broadcasts `yzj/ask-pending` then
+ * waits on `yzj/confirm-request` (ui-yzj write-gate answers) and returns
+ * allow/deny. It does **not** return harness `{ kind: 'ask' }` — GUI Full
+ * access sets `approval: never`, which rejects an ask before
+ * `approval/request` runs (pitfall-036 / D9). Headless overlays without a
+ * write-gate fail closed (`unavailable` → deny).
  */
 
 import type { Context } from '@deepseek-ai/cordis'
 
 /** Risk level of one gated write operation. */
 export type YzjRiskLevel = 'standard' | 'strong'
+
+/** Closed outcomes of the self-hosted confirmation waterfall. */
+export type YzjConfirmOutcome = 'allowed-once' | 'rejected' | 'cancelled' | 'unavailable'
 
 interface DangerousSpec {
   reason: string
@@ -62,15 +69,31 @@ const WRITE_SPECS: Record<string, DangerousSpec> = {
   // write-gate 按残留前缀跳过 GUI 卡。恢复只能从 git 历史重建。
 }
 
+/** Structural abort signal on a tools/pre-execute exec. */
+interface ConfirmSignal {
+  readonly aborted: boolean
+  addEventListener(type: 'abort', listener: () => void, options?: { once?: boolean }): void
+  removeEventListener(type: 'abort', listener: () => void): void
+}
+
+/** Payload of the self-hosted confirmation waterfall. */
+export interface YzjConfirmRequest {
+  sessionId: string
+  callId: string
+  toolName: string
+  reason: string
+  signal?: ConfirmSignal
+}
+
 /** Structural session id on a tools/pre-execute exec (agent is present in harness). */
 function callingSessionId(exec: { agent?: { session?: { id?: unknown } } }): string | undefined {
   const id = exec.agent?.session?.id
   return typeof id === 'string' ? id : undefined
 }
 
-/** The host-internal ask-pending event the guard emits before returning ask. */
+/** The host-internal ask-pending event the guard emits before waiting. */
 export interface YzjAskPending {
-  /** Exact tool call id; the approval answerer pairs it with the request. */
+  /** Exact tool call id; the confirmation answerer pairs it with the request. */
   callId: string
   toolName: string
   level: YzjRiskLevel
@@ -82,11 +105,21 @@ export interface YzjAskPending {
 declare module '@deepseek-ai/cordis' {
   interface Events {
     'yzj/ask-pending'(pending: YzjAskPending): void
+    'yzj/confirm-request'(
+      req: YzjConfirmRequest,
+      next: () => Promise<YzjConfirmOutcome>,
+    ): Promise<YzjConfirmOutcome>
   }
 }
 
+function denyReason(toolName: string, outcome: YzjConfirmOutcome): string {
+  if (outcome === 'rejected') return `用户拒绝了云之家操作「${toolName}」`
+  if (outcome === 'cancelled') return `云之家操作「${toolName}」的确认已取消`
+  return `云之家操作「${toolName}」需要确认，但当前没有确认通道`
+}
+
 /**
- * Register the `tools/pre-execute` ask guard plus the ask-pending broadcast.
+ * Register the `tools/pre-execute` confirm guard plus the ask-pending broadcast.
  * @param ctx - Cordis context carrying the tools registry.
  */
 export function applyApprovalGuard(ctx: Context): void {
@@ -106,6 +139,20 @@ export function applyApprovalGuard(ctx: Context): void {
       reason,
       args,
     })
-    return { kind: 'ask', reason }
+    const sessionId = callingSessionId(exec) ?? ''
+    const signal = exec.signal
+    const outcome = await ctx.waterfall(
+      'yzj/confirm-request',
+      {
+        sessionId,
+        callId: exec.callId,
+        toolName: exec.name,
+        reason,
+        ...signal === undefined ? {} : { signal },
+      },
+      () => Promise.resolve<YzjConfirmOutcome>('unavailable'),
+    )
+    if (outcome === 'allowed-once') return { kind: 'allow' }
+    return { kind: 'deny', reason: denyReason(exec.name, outcome) }
   })
 }

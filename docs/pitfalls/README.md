@@ -44,7 +44,7 @@
 | 33 | yzj-cli `msg-type file` 不能带 `--reply-msg-id`，产物文件进不了回复链 | ui-yzj 话题 job-done / `parseImSend` / `yzj_im_message_send` | [pitfall-033-cli-file-cannot-reply.md](pitfall-033-cli-file-cannot-reply.md) |
 | 34 | rc.7：`tool.call.toolview` 要 type-import merge；SessionId branded；禁止 `/src/` 深路径 | ui-yzj browser half / 根包 registry 对齐 | [pitfall-034-rc7-slot-merge-and-sessionid.md](pitfall-034-rc7-slot-merge-and-sessionid.md) |
 | 35 | 新鲜 web profile 的内测声明 / API Key 卡挡住云之家 dock | `.acceptance`  真机脚本 / 空 web profile 首启 | [pitfall-035-first-run-onboarding-masks-dock.md](pitfall-035-first-run-onboarding-masks-dock.md) |
-| 36 | GUI「Full access」档位 approval=never,yzj 写工具 ask 自动转 deny、确认卡 不弹 | `.acceptance` 确认卡实验 / 任何依赖弹卡的 GUI 会话 | [pitfall-036-full-access-disables-approval.md](pitfall-036-full-access-disables-approval.md) |
+| 36 | GUI「Full access」档位 approval=never 曾把 yzj `ask` 自动转 deny（**已修复**：改走 `yzj/confirm-request` 自托管） | 云之家写确认卡 / Full access 会话 | [pitfall-036-full-access-disables-approval.md](pitfall-036-full-access-disables-approval.md) |
 | 37 | 验收脚本的话题步骤对「目标群有没有话题锚点」敏感（**已失效**：推进验收脚本已删） | 历史 `.acceptance/verify-advance-feed.mjs` | [pitfall-037-acceptance-topic-data-precondition.md](pitfall-037-acceptance-topic-data-precondition.md) |
 | 38 | web profile bundle link 被切到 worktree 不归位：主 checkout build 与 GUI 加载 脱节 | 真机验收 / 实验环境前置 | [pitfall-038-profile-bundle-link-stale.md](pitfall-038-profile-bundle-link-stale.md) |
 | 39 | 工作台 overlay 空 sessionId 撞 home-fused 空 payload 校验（**已失效**：推进板已撤） | 历史推进板切 im 域 | [pitfall-039-overlay-empty-session-home-fused.md](pitfall-039-overlay-empty-session-home-fused.md) |

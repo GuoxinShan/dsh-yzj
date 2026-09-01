@@ -50,7 +50,7 @@
 
 ## 4. 确认流 / 确认卡（§5.2、旅程 7）— 🟢 已落地（含一处受限降级）
 
-**实现形态**：`tools/pre-execute` ask（guard，含分级）→ `yzj/ask-pending` 广播参数 → host `write-gate` 应答 `approval/request` waterfall（yzj_* 加上绑定家园的 `robot_notify` / `robot_continue`，配对 `approval/asked` 审计 id，内存 pending 记录）→ 浏览器确认卡（`tool.call.toolview` keyed）查询/决策（RPC `write-list`/`write-decide`）→ 终态由官方 `tools/result` 驱动。
+**实现形态**：`tools/pre-execute`（guard，含分级）广播 `yzj/ask-pending` → waterfall `yzj/confirm-request` → host `write-gate` 应答（自建 writeId，内存 pending）→ 浏览器确认卡（`tool.call.toolview` keyed）查询/决策（RPC `write-list`/`write-decide`）→ 终态由官方 `tools/result` 驱动。不 return harness `{ kind: 'ask' }`，因此 GUI Full access（`approval=never`）仍弹卡（pitfall-036 / D9）。旧 `approval/request` 应答保留作防御。
 
 | 设计点 | 实现 | 状态 |
 |---|---|---|
@@ -1229,4 +1229,17 @@ Dream 路（跨事项推荐）纪律入 dreamAskPrompt（顺手落推荐事元�
 ## 24.43 待办 + AI推进从公开仓撤出（2026-08-27）
 
 2026-08-27 待办+推进从公开仓撤出，完整实现在私有归档 GuoxinShan/dsh-yzj-archive。不是公开安装路径。公开仓保留 yzj-cli 桥、六域工具、群房间 + 话题、确认卡、工作台三域（对话 / 日程 / 知识库）。IM L2 缓存仍用 `~/.dsh/storages/yzj_advance.db` 的 `im_cache` 表。§17 / §24–§24.42 为历史验收记录。恢复只能从 git 历史或私有归档重建。
+
+## 24.44 Full access 仍弹云之家写确认卡（pitfall-036，D9 补强）
+
+用户指出 GUI「Full access」谈不出确认卡不合理。根因：该档位 = `{ sandbox: danger-full-access, approval: never }`，harness `ApprovalService.request()` 在派发瀑布前直接 `rejected`，旧 guard `{ kind: 'ask' }` 被 core tools 落成 deny，write-gate 没机会弹卡。
+
+| 面 | 交付 | 证据 |
+|---|---|---|
+| 产品法 | D9 补一句：确认卡不跟权限档位走；Full access 只放开本机沙箱 | `dsh-home-session.md` D9 + 验收 4 |
+| guard | 命中 WRITE_SPECS 后 `yzj/ask-pending` + `waterfall('yzj/confirm-request')`，映射 allow/deny；**不再 return ask** | `guard.spec.ts` |
+| write-gate | 应答 `yzj/confirm-request`（无 `approval/asked` 也建 pending）；旧 `approval/request` 路径保留 | `write-gate.spec.ts` |
+| 文档 | pitfall-036 标已修复 | pitfalls 索引 |
+
+headless overlay（无 ui-yzj）仍 fail-closed：瀑布 next → unavailable → deny。
 

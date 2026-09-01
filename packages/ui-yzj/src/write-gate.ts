@@ -1,23 +1,25 @@
 /**
- * Confirmation-card bridge for yzj write operations (design v1.6 §5.2).
+ * Confirmation-card bridge for yzj write operations (design v1.6 §5.2, D9).
  *
  * How it works within harness constraints: out-of-repo plugins cannot append
  * custom session event types (the generated `KNOWN_SESSION_EVENT_TYPES` set
  * refuses unknown events without an `ignorable` marker, and `Session.append`
- * offers no marker entry). The card therefore rides the OFFICIAL audit path:
+ * offers no marker entry). The card is a UI-only overlay on the already-logged
+ * tool call:
  *
- * - `tools/pre-execute` asks (tool-yzj guard) and broadcasts `yzj/ask-pending`
- *   with the full parsed arguments;
- * - this module answers the `approval/request` waterfall for `yzj_*` tools,
- *   keeping an in-memory pending record (status `pending` → `approved` /
- *   `cancelled`) that the browser card queries and decides through RPC;
+ * - `tools/pre-execute` (tool-yzj guard) broadcasts `yzj/ask-pending` with the
+ *   full parsed arguments, then waits on `yzj/confirm-request` (this module
+ *   answers, minting a writeId — not harness `{ kind: 'ask' }`, so GUI Full
+ *   access `approval: never` cannot auto-deny the card; pitfall-036);
+ * - an in-memory pending record (status `pending` → `approved` / `cancelled`)
+ *   is what the browser card queries and decides through RPC;
  * - the official `tools/result` event drives the terminal status (`done` /
  *   `failed`), so replay reconstructs results from the durable tool events
  *   while the card's transient state lives in this process (SPA reloads keep
  *   it; a host restart degrades to the ordinary tool card).
  *
- * The record never enters the model transcript; it is a UI-only decision
- * surface on top of the already-logged tool call.
+ * The `approval/request` listener is kept as a defensive fallback if some
+ * other gate still returns harness `ask` under Workspace Write.
  *
  * Type hygiene: this package compiles its node half and browser half in ONE
  * program, and importing the host-only packages (`user-approval`,
@@ -58,6 +60,15 @@ export interface YzjWriteAskPending {
   args: Record<string, unknown>
 }
 
+/** Self-hosted confirmation waterfall (guard waits; this module answers). */
+export interface YzjConfirmRequest {
+  readonly sessionId: string
+  readonly callId: string
+  readonly toolName: string
+  readonly reason: string
+  readonly signal?: YzjApprovalRequest['signal']
+}
+
 /** One tool execution as seen by `tools/result`. */
 interface YzjToolExecShape {
   name: string
@@ -67,6 +78,10 @@ interface YzjToolExecShape {
 declare module '@deepseek-ai/cordis' {
   interface Events {
     'yzj/ask-pending'(pending: YzjWriteAskPending): void
+    'yzj/confirm-request'(
+      req: YzjConfirmRequest,
+      next: () => Promise<YzjApprovalOutcome>,
+    ): Promise<YzjApprovalOutcome>
     'approval/request'(
       req: YzjApprovalRequest,
       next: () => Promise<YzjApprovalOutcome>,
@@ -83,7 +98,7 @@ export type YzjWriteStatus = 'pending' | 'approved' | 'cancelled' | 'done' | 'fa
 
 /** One browser-visible confirmation record (lossless JSON). */
 export interface YzjWriteRecord {
-  /** Stable id — the pairing approval/asked audit id. */
+  /** Stable id — minted for `yzj/confirm-request`, or the pairing approval/asked audit id on the fallback path. */
   writeId: string
   sessionId: string
   toolName: string
@@ -227,25 +242,24 @@ export function applyWriteGate(ctx: Context): {
     askPending.set(pending.callId, pending)
   })
 
-  ctx.on('approval/request', (req, next) => {
-    if (!isWriteGateTool(req.toolName)) return next()
-    // 决策 53：robot-yzj 已退役删除——yzj-robot-* 残留会话的确认请求跳过
-    // GUI 卡（无人值守通道本就没人点卡）。
-    if (req.agent.session.id.startsWith('yzj-robot-')) return next()
-    if (req.signal?.aborted === true) return Promise.resolve<YzjApprovalOutcome>('cancelled')
-    const claimed = new Set(records.keys())
-    const id = findApprovalId(req.agent.session.events, req.callId, claimed)
-    if (id === undefined) return next()
-    const pending = req.callId === undefined ? undefined : askPending.get(req.callId)
+  const hold = (
+    writeId: string,
+    sessionId: string,
+    toolName: string,
+    callId: string | undefined,
+    reason: string,
+    signal: YzjApprovalRequest['signal'] | undefined,
+  ): Promise<YzjApprovalOutcome> => {
+    const pending = callId === undefined ? undefined : askPending.get(callId)
     const record: LiveRecord = {
-      writeId: id,
-      sessionId: req.agent.session.id,
-      toolName: req.toolName,
-      ...req.callId === undefined ? {} : { callId: req.callId },
+      writeId,
+      sessionId,
+      toolName,
+      ...callId === undefined ? {} : { callId },
       level: pending?.level ?? 'standard',
-      domain: domainOf(req.toolName),
+      domain: domainOf(toolName),
       args: pending?.args ?? {},
-      reason: req.reason ?? pending?.reason ?? '',
+      reason: reason !== '' ? reason : (pending?.reason ?? ''),
       status: 'pending',
       time: Date.now(),
       resolve: undefined,
@@ -266,11 +280,30 @@ export function applyWriteGate(ctx: Context): {
       }
       const onAbort = (): void => { settle('cancelled') }
       record.resolve = settle
-      record.removeAbort = () => req.signal?.removeEventListener('abort', onAbort)
-      req.signal?.addEventListener('abort', onAbort, { once: true })
+      record.removeAbort = () => signal?.removeEventListener('abort', onAbort)
+      signal?.addEventListener('abort', onAbort, { once: true })
       records.set(record.writeId, record)
-      syncTopicStatus(req.agent.session.id)
+      syncTopicStatus(sessionId)
     })
+  }
+
+  ctx.on('yzj/confirm-request', (req, next) => {
+    if (!isWriteGateTool(req.toolName)) return next()
+    // 决策 53：robot-yzj 已退役删除——yzj-robot-* 残留会话的确认请求跳过
+    // GUI 卡（无人值守通道本就没人点卡）。
+    if (req.sessionId.startsWith('yzj-robot-')) return next()
+    if (req.signal?.aborted === true) return Promise.resolve<YzjApprovalOutcome>('cancelled')
+    return hold(crypto.randomUUID(), req.sessionId, req.toolName, req.callId, req.reason, req.signal)
+  })
+
+  ctx.on('approval/request', (req, next) => {
+    if (!isWriteGateTool(req.toolName)) return next()
+    if (req.agent.session.id.startsWith('yzj-robot-')) return next()
+    if (req.signal?.aborted === true) return Promise.resolve<YzjApprovalOutcome>('cancelled')
+    const claimed = new Set(records.keys())
+    const id = findApprovalId(req.agent.session.events, req.callId, claimed)
+    if (id === undefined) return next()
+    return hold(id, req.agent.session.id, req.toolName, req.callId, req.reason ?? '', req.signal)
   })
 
   // The official tool lifecycle drives the terminal card status.

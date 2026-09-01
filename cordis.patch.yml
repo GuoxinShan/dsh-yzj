@@ -12,8 +12,8 @@
     - id: yzj-bridge
       name: '@dsh-yzj/bundle/bridge'
 
-    # Model-facing tools over the bridge; destructive operations ask through
-    # the approval seam (the GUI approval panel answers).
+    # Model-facing tools over the bridge; destructive operations confirm
+    # through yzj/confirm-request (write-gate answers; not harness ask).
     - id: tool-yzj
       name: '@dsh-yzj/bundle/tool-yzj'
 

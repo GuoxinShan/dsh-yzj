@@ -1,9 +1,8 @@
 /**
- * Write-gate specs: the confirmation-card bridge answers the
- * `approval/request` waterfall for yzj_* writes plus bound-home
- * robot_notify / robot_continue, pairs the audit id, exposes pending
- * records, settles decisions, and lets the official `tools/result`
- * event drive the terminal status. Other requests delegate via next().
+ * Write-gate specs: the confirmation-card bridge answers
+ * `yzj/confirm-request` (and the leftover `approval/request` fallback)
+ * for yzj_* writes, exposes pending records, settles decisions, and lets
+ * the official `tools/result` event drive the terminal status.
  */
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
@@ -228,6 +227,41 @@ describe('applyWriteGate', () => {
       agent: { session: { id: 'yzj-robot-old', events: [{ type: 'approval/asked', data: { id: 'w1', callId: 'c1' } }] } },
       toolName: 'robot_notify',
       callId: 'c1',
+    }, () => Promise.resolve<YzjApprovalOutcome>('unavailable'))
+    expect(outcome).toBe('unavailable')
+  })
+
+  it('yzj/confirm-request mints a pending record without approval/asked (Full access path)', async () => {
+    const h = mount()
+    h.ask({ callId: 'c1', toolName: 'yzj_im_message_send', level: 'standard', reason: '云之家操作确认：发送 IM 消息', args: { groupId: 'g1', content: 'hello' } })
+    const pending = h.ctx.waterfall('yzj/confirm-request', {
+      sessionId: 's1',
+      callId: 'c1',
+      toolName: 'yzj_im_message_send',
+      reason: '云之家操作确认：发送 IM 消息',
+    }, () => Promise.resolve<YzjApprovalOutcome>('unavailable'))
+    const list = h.gate.list('s1')
+    expect(list.length).toBe(1)
+    const row = list[0]
+    if (row === undefined) throw new Error('expected a pending confirm record')
+    expect(row).toMatchObject({
+      callId: 'c1', domain: 'im', level: 'standard',
+      args: { groupId: 'g1', content: 'hello' }, status: 'pending',
+    })
+    expect(row.writeId).toEqual(expect.any(String))
+    expect(h.gate.decide(row.writeId, 'allowed-once')).toBe(true)
+    await expect(pending).resolves.toBe('allowed-once')
+    expect(recordOf(h.gate.list('s1'), row.writeId).status).toBe('approved')
+  })
+
+  it('yzj/confirm-request skips leftover yzj-robot-* sessions', async () => {
+    const ctx = new Context()
+    applyWriteGate(ctx)
+    const outcome = await ctx.waterfall('yzj/confirm-request', {
+      sessionId: 'yzj-robot-old',
+      callId: 'c1',
+      toolName: 'yzj_im_message_send',
+      reason: 'r',
     }, () => Promise.resolve<YzjApprovalOutcome>('unavailable'))
     expect(outcome).toBe('unavailable')
   })

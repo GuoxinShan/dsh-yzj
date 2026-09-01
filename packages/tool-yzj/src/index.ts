@@ -3,8 +3,8 @@
  * calendar, contact, im, and file domains. Every tool renders a bounded
  * model-facing digest and projects a capped structured payload for the UI
  * through `output.presentationMeta`; destructive or irreversible operations
- * ask through the `tools/pre-execute` approval seam (the bundle's browser
- * surface answers via the GUI approval panel).
+ * confirm through `yzj/confirm-request` (write-gate answers; not harness
+ * `{ kind: 'ask' }`, see pitfall-036).
  * @module @dsh-yzj/tool-yzj
  */
 

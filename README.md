@@ -42,7 +42,7 @@ dsh plugin --profile web add github:GuoxinShan/dsh-yzj#v0.1.0
 
 ### 确认流（确认卡）
 
-全部 28 个写工具按风险分级在 `tools/pre-execute` 返回 `ask`（标准确认 / 强确认），由 host 侧 `write-gate` 应答 `approval/request` waterfall 后，在浏览器渲染**按 domain 分发的确认卡**：参数全文（消息目标/文档落位/记录内容/日程时间等，不折叠截断；目标以解析后的名称展示，ID 不再裸露）、风险徽标（删除类强确认红色卡片）、四动词（确认 / 取消 / 查看上下文 / 编辑）。`查看上下文` 打开面板并锚定对应 tab/消息（卡片↔面板双向跳转）；终态由官方工具事件承载（回放安全）。覆盖：`doc`（含 workspace/rename/move/import/write/download/block）、`sheet`（含 table/record）、`calendar`、`im`（message send / group create / members）、`file upload/download`。
+全部 28 个写工具按风险分级在 `tools/pre-execute` 走 `yzj/confirm-request` 自托管确认（标准确认 / 强确认；**不** return harness `ask`，GUI Full access 仍弹卡），由 host 侧 `write-gate` 应答后，在浏览器渲染**按 domain 分发的确认卡**：参数全文（消息目标/文档落位/记录内容/日程时间等，不折叠截断；目标以解析后的名称展示，ID 不再裸露）、风险徽标（删除类强确认红色卡片）、四动词（确认 / 取消 / 查看上下文 / 编辑）。`查看上下文` 打开面板并锚定对应 tab/消息（卡片↔面板双向跳转）；终态由官方工具事件承载（回放安全）。覆盖：`doc`（含 workspace/rename/move/import/write/download/block）、`sheet`（含 table/record）、`calendar`、`im`（message send / group create / members）、`file upload/download`。
 
 **写路径两分（已拍板，见 [dsh-home-session.md](docs/spec/dsh-home-session.md) §8 / group-room-topics R6）**：确认卡门控的是 **agent 发起的写**；**用户从 DSH 发出**（群房间「发进群」）即用户本人意志，不经确认卡。删除类强确认。面板不再提供第二套 IM 发送。
 
