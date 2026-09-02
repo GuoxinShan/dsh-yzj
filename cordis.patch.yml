@@ -19,9 +19,11 @@
 
     # Browser surface: /yzj RPC channel (node half) + rich tool cards and the
     # workspace panel (browser half via the dsh.client declaration; the
-    # closure bundle ships as ./client).
+    # closure bundle ships as ./client). The Loader name is the package root so
+    # 0.1.2 client-modules treats the row as a package (subpaths are not
+    # scanned) and the graph id matches the handoff id `@dsh-yzj/bundle`.
     - id: ui-yzj
-      name: '@dsh-yzj/bundle/ui-yzj'
+      name: '@dsh-yzj/bundle'
 
     # Plugin-wide default model route ($DSH_HOME/yzj-model.json): the fallback
     # of the robot model-resolution chain and the dream executor (ctx.yzjModels).

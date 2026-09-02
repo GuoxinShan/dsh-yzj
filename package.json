@@ -9,6 +9,7 @@
     "node": "^22.19 || >=24"
   },
   "exports": {
+    ".": "./lib/ui-yzj.mjs",
     "./bridge": "./lib/bridge.mjs",
     "./tool-yzj": "./lib/tool-yzj.mjs",
     "./ui-yzj": "./lib/ui-yzj.mjs",

@@ -4,7 +4,7 @@
  * the factory only (a module-level handle would pin store identity across
  * plugin reloads); the two registrations share the factory's handle.
  */
-import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
+import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 
 /** Panel tabs (运营性内容 only — 机器人/记忆管理页在 设置 → 云之家). */
 export type YzjTab = 'docs' | 'calendar' | 'chat'

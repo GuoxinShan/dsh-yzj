@@ -24,10 +24,16 @@ monobundle 重构（commit ab714b2）把 `cordis.patch.yml` 行名改成 `@dsh-y
 
 ## 解法
 
-`packages/ui-yzj/tsdown.config.ts` 的 `clientBundle()` id 改为 loader 条目名 `@dsh-yzj/bundle/ui-yzj`（与 `cordis.patch.yml` 的 `name:` 字段一致），重建 bundle 并 `scripts/copy-client.mjs` 原样搬运到根 `lib/client.js`。CSS 注入标签的 `data-plugin`/`data-plugin-css` 随之带上行名，无副作用。不要反过来把 patch 行名改回包名：`@dsh-yzj/ui-yzj` 不是 profile 里安装的包，`resolvePkgJson` 会解析失败。
+handoff id 必须等于 **当时 harness 写进图行的 id**。0.1.1 图行 id 是 Loader 行名，所以当时写成 `@dsh-yzj/bundle/ui-yzj`。0.1.2 起图行 id 是包清单 `name`，且 **只有精确包名** 会被扫成 client 行（子路径默认不是，见 pitfall-047）。因此：
+
+- `cordis.patch.yml` 的 ui-yzj 行 `name` 改为包根 `@dsh-yzj/bundle`（根 `exports["."]` 指向 `./lib/ui-yzj.mjs`，host 半不变）
+- `packages/ui-yzj/tsdown.config.ts` 的 `clientBundle()` id 同步为 `@dsh-yzj/bundle`
+- 重建 bundle 并由 `scripts/copy-client.mjs` 搬到根 `lib/client.js`
+
+不要写成 workspace 包名 `@dsh-yzj/ui-yzj`：那不是 profile 里安装的包。
 
 ## 回归覆盖
 
-- `packages/ui-yzj/tests/client-bundle.client.spec.ts`：读构建产物 `lib/client.js`，断言首处 `__ModuleLoader__.load` handoff id 为 `@dsh-yzj/bundle/ui-yzj` 且无 `id: "@dsh-yzj/ui-yzj"`（产物缺失时自跳过，`lib/` 已提交故 CI 生效）。
+- `packages/ui-yzj/tests/client-bundle.client.spec.ts`：读构建产物 `lib/client.js`，断言首处 `__ModuleLoader__.load` handoff id 为 `@dsh-yzj/bundle`，且不含 `@dsh-yzj/ui-yzj` / `@dsh-yzj/bundle/ui-yzj`（产物缺失时自跳过）。
 - 人工验证：`pnpm run bundle` 后 `head -c 220 lib/client.js` 看注册 id；重启 web profile 不再报错（GUI 重启只能用户手动执行）。
 - 改行名/改 id 语义时：同时改 `cordis.patch.yml`、`tsdown.config.ts`、本条目与 `client-bundle.client.spec.ts` 的常量。

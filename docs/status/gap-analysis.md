@@ -1243,3 +1243,13 @@ Dream 路（跨事项推荐）纪律入 dreamAskPrompt（顺手落推荐事元�
 
 headless overlay（无 ui-yzj）仍 fail-closed：瀑布 next → unavailable → deny。
 
+## 24.45 harness 0.1.2 客户端扫描（2026-09-02，已落地）
+
+0.1.2 `dsh-client-modules` 只把精确包名扫成 client 行，图行 id 是清单 `name`。旧子路径 `@dsh-yzj/bundle/ui-yzj` 在 0.1.2 上 host 四行都在、浏览器半整面消失。
+
+| 面 | 交付 | 证据 |
+|---|---|---|
+| Loader | ui-yzj 行名 + 根 `exports["."]` = `@dsh-yzj/bundle` / `./lib/ui-yzj.mjs` | `cordis.patch.yml` + 根 `package.json` |
+| client | handoff id `@dsh-yzj/bundle`；`defineStore` 从 `@deepseek-ai/dsh-client-store` 取值；`PLATFORM_MODULES` 对齐 0.1.2 | `client-bundle.client.spec.ts`；本机 0.1.2 profile：设置「云之家」、侧栏面板、群会话列表 |
+| 文档 | pitfall-047；pitfall-010 解法改写 | pitfalls 索引 |
+

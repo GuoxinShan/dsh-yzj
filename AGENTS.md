@@ -32,7 +32,8 @@ packages/       @dsh-yzj/* workspace 包（均 private、ESM；开发态，发�
   model-yzj/      插件级默认模型路由
 根 = @dsh-yzj/bundle（monobundle）：tsdown 聚合六包 host half 进 lib/*.mjs +
   scripts/copy-client.mjs 搬运 ui-yzj closure bundle 为 lib/client.js；
-  cordis.patch.yml 行名用子路径（@dsh-yzj/bundle/<row>）；发布 = 构建 + tag
+  cordis.patch.yml：ui-yzj 行名是包根 `@dsh-yzj/bundle`（0.1.2 client-modules
+  只扫精确包名，见 pitfall-047）；其余行仍用子路径；发布 = 构建 + tag
   （见 docs/release.md）
 docs/           设计文档，本仓库的主体（见「Spec-driven」；索引与阅读顺序：docs/README.md）
   spec/           设计基线：integration-master-plan / group-room-topics（v2.0 产品法 + 工作台三域）/ dsh-home-session（v1.x 快照）/ robot-channel-plan
