@@ -22,6 +22,7 @@ import {
 } from './bound-io.ts'
 import { attachYzjSession, ensureYzjHostWorkspace } from './yzj-cwd.ts'
 import { parseContactUser } from './contact-parse.ts'
+import { unwrapCli, cliRows } from './cli-payload.ts'
 import { collectCalendarEvents } from '@dsh-yzj/tool-yzj/src/calendar-range.ts'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -55,7 +56,7 @@ async function bridgeResult(
     const detail = result.stderr.trim() === '' ? `${label} failed (exit ${result.exitCode})` : result.stderr.trim()
     return internalError(detail)
   }
-  return { ok: true, value: result.json ?? {} }
+  return { ok: true, value: unwrapCli(result.json) ?? {} }
 }
 
 /** Validate a string field of an RPC payload. */
@@ -89,12 +90,7 @@ async function recentGroupNames(ctx: Context): Promise<Map<string, string>> {
       break
     }
     if (!result.ok) break
-    const json = result.json
-    const rows = Array.isArray(json) ? json : (() => {
-      const rec = typeof json === 'object' && json !== null ? json as Record<string, unknown> : {}
-      const inner = typeof rec.data === 'object' && rec.data !== null ? rec.data as Record<string, unknown> : {}
-      return [rec.list, rec.data, inner.list].find(Array.isArray) ?? []
-    })()
+    const rows = cliRows(result.json)
     for (const row of rows) {
       const rec = typeof row === 'object' && row !== null ? row as Record<string, unknown> : {}
       const id = typeof rec.groupId === 'string' ? rec.groupId : ''
@@ -299,7 +295,7 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
         return bridgeResult(ctx, 'doc list', command)
       }
       case 'doc-search': {
-        // 知识库全局搜索(yzj-cli v0.1.4):面板知识库页搜索框;可选限库。
+        // 知识库全局搜索:面板知识库页搜索框;可选限库。
         const keyword = stringField(payload, 'keyword')
         if (keyword === undefined) return internalError('doc-search endpoint requires a keyword payload')
         const command = ['doc', 'search', '--keyword', keyword]
@@ -418,7 +414,7 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
           const detail = result.stderr.trim() === '' ? `doc block list failed (exit ${result.exitCode})` : result.stderr.trim()
           return internalError(detail)
         }
-        return { ok: true, value: result.json ?? {} }
+        return { ok: true, value: unwrapCli(result.json) ?? {} }
       }
       case 'sheet-get': {
         const id = stringField(payload, 'id')
@@ -484,7 +480,7 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
             const detail = result.stderr.trim() === '' ? `file upload failed (exit ${result.exitCode})` : result.stderr.trim()
             return internalError(detail)
           }
-          const payloadJson = result.json ?? {}
+          const payloadJson = unwrapCli(result.json) ?? {}
           const fileId = stringField(payloadJson, 'fileId') ?? stringField(payloadJson, 'file_id') ?? stringField(payloadJson, 'id')
           if (fileId === undefined) return internalError('file upload returned no fileId')
           return { ok: true, value: { fileId, name, size: bytes.length } }

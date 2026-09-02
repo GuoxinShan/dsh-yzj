@@ -6,11 +6,11 @@ Model-facing Yunzhijia tools over `ctx.yzjBridge`. This package owns tool schema
 
 | Domain | Tools |
 | ------ | ----- |
-| contact | `yzj_whoami`, `yzj_contact_search`, `yzj_contact_get` |
-| doc | `yzj_doc_workspace_list/get/create`, `yzj_doc_list/get/recent/create/rename/move/delete/import/download_url`, `yzj_doc_search/write/download` (v0.1.4), `yzj_doc_block_list/insert/update/delete/replace` |
-| sheet | `yzj_sheet_create/get`, `yzj_sheet_table_get/create/rename/delete`, `yzj_sheet_record_list/create/update/delete` |
+| contact | `yzj_whoami` (`yzj-cli whoami`), `yzj_contact_search`, `yzj_contact_get` |
+| doc | `yzj_doc_workspace_list/get/create`, `yzj_doc_list/get/recent/create/folder_create/rename/move/delete/import/download_url`, `yzj_doc_search/write/download`, `yzj_doc_block_list/insert/update/delete/replace` |
+| sheet | `yzj_sheet_create/get` (`get` accepts `lite`), `yzj_sheet_table_get/create/rename/delete`, `yzj_sheet_record_list/create/update/delete` |
 | calendar | `yzj_calendar_event_list/get/create/update/delete/participants`, `yzj_calendar_room_find` |
-| im | `yzj_im_message_send/list`, `yzj_im_group_recent`, `yzj_im_group_search/create/members_add/members_remove` (v0.1.4) |
+| im | `yzj_im_message_send/recall/list/search`, `yzj_im_group_recent`, `yzj_im_group_search/create/rename/members_add/members_remove` |
 | file | `yzj_file_upload`, `yzj_file_download` |
 
 Every tool returns `{ content, truncated, data }`:
@@ -26,7 +26,7 @@ Durable group-room table: one Yunzhijia conversation (group or DM) ↔ one DSH h
 
 ## Approval guard
 
-`tools/pre-execute` gates writes that must never run unconfirmed: `yzj_doc_delete`, `yzj_doc_move`, `yzj_doc_block_delete`, `yzj_sheet_table_delete`, `yzj_sheet_record_delete`, `yzj_calendar_event_delete`, `yzj_im_group_members_remove` (strong; these destructive commands also carry the CLI `--yes` flag after the product-level approval), `yzj_im_message_send`, `yzj_file_upload`, `yzj_file_download`/`yzj_doc_download` with `overwrite: true`, `yzj_doc_write`, `yzj_doc_block_replace`, `yzj_im_group_create`, `yzj_im_group_members_add`, `yzj_sheet_*` writes, `yzj_calendar_event_create`/`update`. The guard broadcasts `yzj/ask-pending` and waits on `yzj/confirm-request` (ui-yzj write-gate answers; `{ kind: 'allow' }` / `{ kind: 'deny' }`). It does **not** return harness `{ kind: 'ask' }` — GUI Full access sets `approval: never`, which would auto-reject an ask before the waterfall runs (pitfall-036). Headless overlays without write-gate fail closed (`unavailable` → deny).
+`tools/pre-execute` gates writes that must never run unconfirmed. Strong: `yzj_doc_delete`, `yzj_doc_block_delete`, `yzj_sheet_table_delete`, `yzj_sheet_record_delete`, `yzj_calendar_event_delete`, `yzj_im_group_members_remove` (CLI `--yes` after the card), `yzj_im_message_recall` (CLI has no `--yes`; the product card is the only gate). Standard: `yzj_im_message_send`, `yzj_file_upload`, `yzj_file_download`/`yzj_doc_download` with `overwrite: true`, `yzj_doc_move`/`workspace_create`/`create`/`folder_create`/`rename`/`import`/`write`/`block_insert`/`block_update`/`block_replace`, `yzj_im_group_create`/`rename`/`members_add`, `yzj_sheet_*` writes, `yzj_calendar_event_create`/`update`. The guard broadcasts `yzj/ask-pending` and waits on `yzj/confirm-request` (ui-yzj write-gate answers; `{ kind: 'allow' }` / `{ kind: 'deny' }`). It does **not** return harness `{ kind: 'ask' }` — GUI Full access sets `approval: never`, which would auto-reject an ask before the waterfall runs (pitfall-036). Headless overlays without write-gate fail closed (`unavailable` → deny). yzj-cli 0.1.6 high-risk commands without `--yes` exit **10** (`confirmation_required`); 0.1.4 used exit 3 for the same signal. Auth miss is still exit 3 (`credentials_missing`). Never bash-call the CLI for writes.
 
 ## Config
 

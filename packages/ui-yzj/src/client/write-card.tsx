@@ -12,6 +12,7 @@ import type { YzjWriteRecord } from '../write-gate.ts'
 import { YzjToolCard } from './cards.tsx'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
 import { decodeRef } from './input-source.ts'
+import { cliRows, unwrapCli } from '../cli-payload.ts'
 import css from './cards.module.css'
 
 /**
@@ -23,13 +24,16 @@ export const YZJ_WRITE_TOOL_NAMES = [
   // strong
   'yzj_doc_delete', 'yzj_doc_block_delete', 'yzj_sheet_table_delete',
   'yzj_sheet_record_delete', 'yzj_calendar_event_delete',
+  'yzj_im_group_members_remove', 'yzj_im_message_recall',
   // standard
   'yzj_im_message_send', 'yzj_file_upload', 'yzj_file_download',
   'yzj_doc_move', 'yzj_doc_workspace_create', 'yzj_doc_create',
-  'yzj_doc_rename', 'yzj_doc_import', 'yzj_doc_block_insert',
-  'yzj_doc_block_update', 'yzj_sheet_create', 'yzj_sheet_table_create',
-  'yzj_sheet_table_rename', 'yzj_sheet_record_create', 'yzj_sheet_record_update',
-  'yzj_calendar_event_create', 'yzj_calendar_event_update',
+  'yzj_doc_folder_create', 'yzj_doc_rename', 'yzj_doc_import',
+  'yzj_doc_write', 'yzj_doc_block_replace', 'yzj_doc_download',
+  'yzj_doc_block_insert', 'yzj_doc_block_update', 'yzj_sheet_create',
+  'yzj_sheet_table_create', 'yzj_sheet_table_rename', 'yzj_sheet_record_create',
+  'yzj_sheet_record_update', 'yzj_calendar_event_create', 'yzj_calendar_event_update',
+  'yzj_im_group_create', 'yzj_im_group_rename', 'yzj_im_group_members_add',
 ] as const
 
 /** The injected decision face the confirmation card receives. */
@@ -73,6 +77,15 @@ const WRITE_TITLES: Record<string, string> = {
   yzj_sheet_record_delete: '删除记录',
   yzj_calendar_event_delete: '取消日程',
   yzj_im_message_send: '发送消息',
+  yzj_im_message_recall: '撤回消息',
+  yzj_im_group_create: '创建群组',
+  yzj_im_group_rename: '修改群名',
+  yzj_im_group_members_add: '拉人进群',
+  yzj_im_group_members_remove: '移出群成员',
+  yzj_doc_folder_create: '新建文件夹',
+  yzj_doc_write: '整篇写文档',
+  yzj_doc_block_replace: '替换内容',
+  yzj_doc_download: '下载文档',
   yzj_file_upload: '上传文件',
   yzj_file_download: '下载文件',
   yzj_doc_move: '移动文档',
@@ -134,7 +147,7 @@ function useResolvedNames(record: YzjWriteRecord | undefined, inject: WriteCardI
     if (record.domain === 'im' && groupId !== '' && inject.fetchGroups !== undefined) {
       tasks.push(inject.fetchGroups(20).then((result) => {
         if (!result.ok) return
-        const group = asArray(asRecord(result.value).list).map(asRecord).find(g => asString(g.groupId) === groupId)
+        const group = cliRows(result.value).map(asRecord).find(g => asString(g.groupId) === groupId)
         if (group !== undefined && asString(group.groupName) !== '') out[groupId] = asString(group.groupName)
       }).catch(() => {}))
     }
@@ -142,7 +155,7 @@ function useResolvedNames(record: YzjWriteRecord | undefined, inject: WriteCardI
     if ((record.domain === 'doc' || record.domain === 'sheet') && docId !== '' && inject.fetchDoc !== undefined) {
       tasks.push(inject.fetchDoc(docId).then((result) => {
         if (!result.ok) return
-        const node = asRecord(result.value)
+        const node = asRecord(unwrapCli(result.value))
         const title = asString(node.title) !== '' ? asString(node.title) : asString(asRecord(node.data).title)
         if (title !== '') out[docId] = title
       }).catch(() => {}))
@@ -151,7 +164,7 @@ function useResolvedNames(record: YzjWriteRecord | undefined, inject: WriteCardI
     if (workspace !== '' && inject.fetchWorkspaces !== undefined) {
       tasks.push(inject.fetchWorkspaces().then((result) => {
         if (!result.ok) return
-        const ws = asArray(result.value).map(asRecord).find(w => asString(w.id) === workspace)
+        const ws = cliRows(result.value).map(asRecord).find(w => asString(w.id) === workspace)
         if (ws !== undefined && asString(ws.name) !== '') out[workspace] = asString(ws.name)
       }).catch(() => {}))
     }
@@ -161,8 +174,8 @@ function useResolvedNames(record: YzjWriteRecord | undefined, inject: WriteCardI
         if (openId === '') continue
         tasks.push(inject.fetchContact(openId).then((result) => {
           if (!result.ok) return
-          const list = asArray(result.value)
-          const user = asRecord(list[0] ?? {})
+          const list = cliRows(result.value)
+          const user = asRecord(list[0] ?? unwrapCli(result.value))
           const name = asString(user.name)
           if (name !== '') out[openId] = name
         }).catch(() => {}))
@@ -187,7 +200,31 @@ function ArgBody({ record, names }: { record: YzjWriteRecord; names: Record<stri
     case 'im': {
       const groupId = str('groupId')
       const toOpenId = str('toOpenId')
-      push('目标', groupId !== '' ? `群聊${nameOf(groupId, '') === '' ? '' : ` · ${nameOf(groupId, '')}`}` : `单聊${nameOf(toOpenId, '') === '' ? '' : ` · ${nameOf(toOpenId, '')}`}`, 't')
+      const target = groupId !== ''
+        ? `群聊${nameOf(groupId, '') === '' ? '' : ` · ${nameOf(groupId, '')}`}`
+        : toOpenId !== ''
+          ? `单聊${nameOf(toOpenId, '') === '' ? '' : ` · ${nameOf(toOpenId, '')}`}`
+          : ''
+      if (target !== '') push('目标', target, 't')
+      if (record.toolName === 'yzj_im_message_recall') {
+        push('操作', '撤回一条消息', 'rc')
+        break
+      }
+      if (record.toolName === 'yzj_im_group_rename') {
+        if (str('name') !== '') push('新群名', str('name'), 'nm')
+        break
+      }
+      if (record.toolName === 'yzj_im_group_create') {
+        if (str('name') !== '') push('群名', str('name'), 'nm')
+        const members = list('memberOpenIds')
+        if (members.length > 0) push('初始成员', `${members.length} 人`, 'mb')
+        break
+      }
+      if (record.toolName === 'yzj_im_group_members_add' || record.toolName === 'yzj_im_group_members_remove') {
+        const members = list('openIds')
+        if (members.length > 0) push('成员', `${members.length} 人`, 'mb')
+        break
+      }
       push('类型', str('msgType'), 'mt')
       const body = str('content') !== '' ? str('content') : str('text')
       if (body !== '') {
@@ -201,7 +238,7 @@ function ArgBody({ record, names }: { record: YzjWriteRecord; names: Record<stri
     }
     case 'doc': {
       const id = str('id')
-      push('文档', id === '' ? '新建文档' : nameOf(id, '文档操作'), 'id')
+      push('文档', id === '' ? (record.toolName === 'yzj_doc_folder_create' ? '新建文件夹' : '新建文档') : nameOf(id, '文档操作'), 'id')
       const ws = str('workspace')
       if (ws !== '') push('知识库', nameOf(ws, '知识库'), 'ws')
       if (str('title') !== '') push('标题', str('title'), 'ti')

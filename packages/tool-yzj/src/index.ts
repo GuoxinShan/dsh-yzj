@@ -269,11 +269,15 @@ export {
   TopicAnchorStore, topicSessionId, topicAnchorKey, yzjTopicDomainSpec,
 } from './topics.ts'
 export {
+  unwrapCli, cliList, cliObject,
+} from './shared.ts'
+export {
   BoundLogStore, applyAppend, ackLocalEntry, failLocalEntry, formatSummonWindow, threadEntries,
   mergeFused, cliMessageToEntry, cliMessageList, extractSendMsgId, localMsgId,
   robotOutboundEntry, isPluginFollowup, latestUserSourceKind, DEFAULT_BOUND_LOG_LIMITS, yzjHomeLogDomainSpec,
   clipLogParam,
 } from './bound-log.ts'
+export type { YzjToolBudget, YzjToolValue } from './shared.ts'
 export type {
   HomeBindingRecord, HomeEnsureResult, YzjConversationKind, YzjHomeFace,
 } from './home.ts'

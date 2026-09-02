@@ -28,6 +28,7 @@ import {
   type WriteCardInjected,
 } from './write-card.tsx'
 import type { YzjWriteRecord } from '../write-gate.ts'
+import { parseContactUser } from '../contact-parse.ts'
 
 export { createYzjStore } from './stores.ts'
 export { createYzjPanelInject } from './rpc.ts'
@@ -213,8 +214,7 @@ export function apply(ctx: ClientContext): void {
             fetchWhoami: async (): Promise<string> => {
               const result = await panelInject.fetchWhoami()
               if (!result.ok) return ''
-              const users = asArray(result.value)
-              return asString(asRecord(users[0] ?? {}).name)
+              return parseContactUser(result.value).name
             },
             fetchGroups: (limit, page) => panelInject.fetchGroups(limit, page),
             fetchWorkspaces: (type) => panelInject.fetchWorkspaces(type),

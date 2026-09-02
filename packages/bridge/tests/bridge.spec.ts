@@ -62,6 +62,34 @@ describe('yzjBridge.run', () => {
     expect(result.json).toBeUndefined()
   })
 
+  it('surfaces the 0.1.6 confirmation gate as exit 10 with stderr JSON', async () => {
+    const bridge = bridgeWith()
+    const result = await bridge.run(fakeArgs(['confirm']), { timeoutMs: 5_000 })
+    expect(result.ok).toBe(false)
+    expect(result.exitCode).toBe(10)
+    expect(result.stderr).toContain('confirmation_required')
+    expect(result.json).toBeUndefined()
+  })
+
+  it('surfaces 0.1.6 auth miss as exit 3 (not the confirm gate)', async () => {
+    const bridge = bridgeWith()
+    const result = await bridge.run(fakeArgs(['unauth']), { timeoutMs: 5_000 })
+    expect(result.ok).toBe(false)
+    expect(result.exitCode).toBe(3)
+    expect(result.stderr).toContain('credentials_missing')
+  })
+
+  it('parses the 0.1.6 success envelope from stdout', async () => {
+    const bridge = bridgeWith()
+    const result = await bridge.run(fakeArgs(['envelope']), { timeoutMs: 5_000 })
+    expect(result.ok).toBe(true)
+    expect(result.json).toEqual({
+      success: true,
+      identity: { openId: 'u1' },
+      data: { list: [{ groupId: 'g1', groupName: '测试群' }], more: false },
+    })
+  })
+
   it('writes the stdin body and closes the pipe', async () => {
     const bridge = bridgeWith()
     const result = await bridge.run(fakeArgs(['echoin']), {

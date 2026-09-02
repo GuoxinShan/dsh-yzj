@@ -14,6 +14,7 @@ import type {
 import type { YzjPanelInject } from './rpc.ts'
 import type { YzjDragRef } from './panel.tsx'
 import { clearRefContextCache, fetchRefContext } from './context.ts'
+import { cliRows } from '../cli-payload.ts'
 
 /** Compact ref string persisted with the chip (lossless JSON payload). */
 export function encodeRef(ref: YzjDragRef): string {
@@ -88,10 +89,6 @@ function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null ? value as Record<string, unknown> : {}
 }
 
-function asArray(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : []
-}
-
 function asString(value: unknown): string {
   return typeof value === 'string' ? value : ''
 }
@@ -101,17 +98,17 @@ function ensureWarm(cache: YzjSourceCache, inject: YzjPanelInject): Promise<void
   if (cache.warm !== null) return cache.warm
   cache.warm = Promise.all([
     inject.fetchWorkspaces().then((result) => {
-      if (result.ok) cache.workspaces = asArray(result.value)
+      if (result.ok) cache.workspaces = cliRows(result.value)
     }).catch(() => {}),
     inject.fetchGroups(20).then((result) => {
-      if (result.ok) cache.groups = asArray(asRecord(result.value).list)
+      if (result.ok) cache.groups = cliRows(result.value)
     }).catch(() => {}),
   ]).then(() => {
     // Docs come from the first three workspaces' first level (bounded warm).
     const roots = cache.workspaces.slice(0, 3)
     return Promise.all(roots.map(workspace =>
       inject.fetchDocs(asString(asRecord(workspace).id)).then((result) => {
-        if (result.ok) cache.docs = [...cache.docs, ...asArray(result.value)]
+        if (result.ok) cache.docs = [...cache.docs, ...cliRows(result.value)]
       }).catch(() => {}),
     ))
   }).then(() => {})
@@ -140,7 +137,7 @@ function contactCandidates(cache: YzjSourceCache, query: string, inject: YzjPane
   return inject.fetchSearch(q).then((result) => {
     const out: InputTriggerCandidate[] = []
     if (result.ok) {
-      for (const item of asArray(result.value)) {
+      for (const item of cliRows(result.value)) {
         const user = asRecord(item)
         const name = asString(user.name)
         if (name === '') continue

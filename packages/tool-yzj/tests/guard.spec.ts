@@ -51,6 +51,24 @@ describe('approval guard', () => {
     expect(confirms[0]?.reason).toContain('删除')
   })
 
+  it('confirms yzj_im_message_recall at strong level without merging', async () => {
+    const { listener, pending } = guard(async () => 'allowed-once')
+    const decision = await listener({
+      name: 'yzj_im_message_recall', callId: 'c1', arguments: { msgId: 'm1', groupId: 'g1' }, ...session,
+    }, async () => ({ kind: 'allow' }))
+    expect(decision.kind).toBe('allow')
+    expect(pending[0]?.level).toBe('strong')
+    expect(pending[0]?.reason).toContain('撤回')
+  })
+
+  it('confirms yzj_im_group_rename and yzj_doc_folder_create at standard level', async () => {
+    const { listener, pending } = guard(async () => 'allowed-once')
+    await listener({ name: 'yzj_im_group_rename', callId: 'c1', arguments: { groupId: 'g1', name: '新' }, ...session }, async () => ({ kind: 'allow' }))
+    await listener({ name: 'yzj_doc_folder_create', callId: 'c2', arguments: { workspace: 'kb', title: '夹' }, ...session }, async () => ({ kind: 'allow' }))
+    expect(pending[0]?.level).toBe('standard')
+    expect(pending[1]?.level).toBe('standard')
+  })
+
   it('confirms yzj_im_message_send at standard level', async () => {
     const { listener, pending, confirms } = guard(async () => 'allowed-once')
     const decision = await listener({ name: 'yzj_im_message_send', callId: 'c1', arguments: { groupId: 'g' }, ...session }, async () => ({ kind: 'allow' }))

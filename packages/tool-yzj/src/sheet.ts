@@ -9,7 +9,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import {
   runValue, yzjToolOutput, docLink,
-  asRecord, asArray, asString, asNumber, clipJson,
+  asRecord, asArray, asString, asNumber, clipJson, cliList, cliObject,
 } from './shared.ts'
 import type { YzjToolBudget } from './shared.ts'
 
@@ -62,9 +62,7 @@ function recordLine(record: unknown): string {
 
 /** The record array from either a `{records: [...]}` payload or a bare array. */
 function recordsOf(json: unknown): unknown[] {
-  const root = asRecord(json)
-  const records = asArray(root.records)
-  return records.length > 0 ? records : asArray(json)
+  return cliList(json, ['records', 'list'])
 }
 
 /** Register the sheet-domain tools. */
@@ -84,7 +82,7 @@ export function applySheetTools(ctx: Context, budget: YzjToolBudget): void {
       const command = ['sheet', 'create', '--workspace', args.workspace, '--title', args.title]
       if (args.parent !== undefined) command.push('--parent', args.parent)
       return runValue(ctx, budget, 'sheet create', command, (json) => {
-        const node = asRecord(json)
+        const node = cliObject(json)
         const id = asString(node.id)
         const link = docLink(id)
         return {
@@ -97,19 +95,23 @@ export function applySheetTools(ctx: Context, budget: YzjToolBudget): void {
 
   ctx.tools.register(defineTool({
     name: 'yzj_sheet_get',
-    description: 'Read a 多维表格\'s schema: one line per data table (integer table id, fields, views). Always call this before table/record operations to obtain real sheetIds and field names.',
+    description: 'Read a 多维表格\'s schema: one line per data table (integer table id, fields, views). Pass lite=true for names and ids only (no field details; yzj-cli --lite). Always call this before table/record operations to obtain real sheetIds and field names.',
     parameters: {
       id: { type: 'string', required: true, description: 'The 多维表格 node id (DOC_ID, fileSuffix=dbt).' },
+      lite: { type: 'boolean', description: 'If true, request the compact schema (table name + id, no field details).' },
     },
     output: yzjToolOutput,
     timeoutMs: budget.timeoutMs,
     isConcurrencySafe: () => true,
     async execute(args) {
-      return runValue(ctx, budget, 'sheet get', ['sheet', 'get', '--id', args.id], (json) => {
-        const sheets = asArray(asRecord(json).sheets)
+      const command = ['sheet', 'get', '--id', args.id]
+      if (args.lite === true) command.push('--lite')
+      return runValue(ctx, budget, 'sheet get', command, (json) => {
+        const schema = cliObject(json)
+        const sheets = cliList(schema, ['sheets'])
         const lines = sheets.map(tableLine)
         const content = lines.length === 0 ? '(no tables)' : lines.join('\n')
-        return { content, data: { schema: clipJson(json, { maxChars: budget.maxMetaChars }) } }
+        return { content, data: { schema: clipJson(schema, { maxChars: budget.maxMetaChars }) } }
       })
     },
   }))
@@ -128,7 +130,7 @@ export function applySheetTools(ctx: Context, budget: YzjToolBudget): void {
       return runValue(ctx, budget, 'sheet table get',
         ['sheet', 'table', 'get', '--id', args.id, '--table-id', String(args.tableId)],
         (json) => {
-          const table = asRecord(json)
+          const table = cliObject(json)
           const content = tableLine(table)
           return { content, data: { table: clipJson(table, { maxChars: budget.maxMetaChars }) } }
         })
@@ -230,7 +232,7 @@ export function applySheetTools(ctx: Context, budget: YzjToolBudget): void {
       return runValue(ctx, budget, 'sheet record list', command, (json) => {
         const records = recordsOf(json)
         const lines = records.map(recordLine)
-        const root = asRecord(json)
+        const root = cliObject(json)
         const next = asString(root.next_page_token ?? root.nextPageToken)
         const content = [
           ...(lines.length === 0 ? ['(no records)'] : lines),

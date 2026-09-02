@@ -7,6 +7,7 @@
  */
 import type { YzjPanelInject } from './rpc.ts'
 import type { YzjDragRef } from './panel.tsx'
+import { unwrapCli, cliRows } from '../cli-payload.ts'
 
 /** In-memory ref → context cache, keyed by a stable ref string. */
 const contextCache = new Map<string, string>()
@@ -84,7 +85,7 @@ export async function fetchRefContext(
       case 'workspace': {
         const result = await inject.fetchWorkspace(ref.id)
         if (result.ok) {
-          const ws = asRecord(result.value)
+          const ws = asRecord(unwrapCli(result.value))
           lines.push(`类型：${asString(ws.bizType) === '' ? '知识库' : asString(ws.bizType)} · 文档 ${typeof ws.docCount === 'number' ? ws.docCount : '?'} 篇 · 成员 ${typeof ws.memberCount === 'number' ? ws.memberCount : '?'} 人`)
           if (asString(ws.description) !== '') lines.push(`简介：${asString(ws.description)}`)
         }
@@ -96,16 +97,14 @@ export async function fetchRefContext(
           inject.fetchDocBlocks(ref.id),
         ])
         if (infoResult.ok) {
-          const node = asRecord(infoResult.value)
+          const node = asRecord(unwrapCli(infoResult.value))
           const suffix = asString(node.fileSuffix)
           lines.push(`类型：${suffix === 'dbt' ? '多维表格' : '在线文档'} · 更新 ${asString(node.updateTime).slice(0, 10)} · 创建人 ${asString(node.creatorName) === '' ? '未知' : asString(node.creatorName)}`)
           const link = asString(node.openWebUrl)
           if (link !== '') lines.push(`链接：${link}`)
         }
         if (blocksResult.ok) {
-          // The CLI wraps as { data: { blocks: [...] } } — check the data
-          // envelope first (see the preview walk for the duplication rules).
-          const blocksValue = asRecord(blocksResult.value)
+          const blocksValue = asRecord(unwrapCli(blocksResult.value))
           const blocks = asArray(asRecord(blocksValue.data).blocks ?? blocksValue.blocks)
           const excerpt = blocks.slice(0, 10).map(blockText).filter(text => text !== '').join(' ')
           if (excerpt !== '') {
@@ -117,10 +116,10 @@ export async function fetchRefContext(
         }
         // Design v1.6 §5.2 hard requirement 2: a dbt node previews its table
         // structure (schema) instead of an empty block digest.
-        if (infoResult.ok && asString(asRecord(infoResult.value).fileSuffix) === 'dbt') {
+        if (infoResult.ok && asString(asRecord(unwrapCli(infoResult.value)).fileSuffix) === 'dbt') {
           const sheetResult = await inject.fetchSheet(ref.id)
           if (sheetResult.ok) {
-            const sheetValue = asRecord(sheetResult.value)
+            const sheetValue = asRecord(unwrapCli(sheetResult.value))
             const sheets = asArray(sheetValue.sheets ?? asRecord(sheetValue.data).sheets)
             const tableLines = sheets.slice(0, 5).map((item) => {
               const table = asRecord(item)
@@ -136,7 +135,7 @@ export async function fetchRefContext(
         lines.push(`会话ID：${ref.id}`)
         const result = await inject.fetchMessages(ref.id, 8)
         if (result.ok) {
-          const messages = asArray(asRecord(result.value).list)
+          const messages = cliRows(result.value)
           const preview = [...messages].reverse().slice(0, 6).map((item) => {
             const message = asRecord(item)
             const time = asString(message.sendTime).slice(5, 16)
@@ -150,7 +149,7 @@ export async function fetchRefContext(
       case 'event': {
         const result = await inject.fetchEvent(ref.id)
         if (result.ok) {
-          const event = asRecord(result.value)
+          const event = asRecord(unwrapCli(result.value))
           const span = [clock(event.startDate), clock(event.endDate)].filter(part => part !== '').join(' → ')
           lines.push(`时间：${span === '' ? '未知' : span}`)
           if (asString(event.personName) !== '') lines.push(`组织者：${asString(event.personName)}`)
@@ -161,9 +160,8 @@ export async function fetchRefContext(
       case 'contact': {
         const result = await inject.fetchContact(ref.id)
         if (result.ok) {
-          const users = asArray(result.value)
-          const user = asRecord(users[0] ?? result.value)
-          const parts = [asString(user.department), asString(user.jobTitle), asString(user.jobNo) === '' ? '' : `工号 ${asString(user.jobNo)}`]
+          const rec = asRecord(unwrapCli(result.value))
+          const parts = [asString(rec.department), asString(rec.jobTitle), asString(rec.jobNo) === '' ? '' : `工号 ${asString(rec.jobNo)}`]
           lines.push(parts.filter(part => part !== '').join(' · '))
         }
         break
@@ -176,7 +174,7 @@ export async function fetchRefContext(
           lines.push(`所属会话：${groupId}`)
           const result = await inject.fetchMessages(groupId, 20, { type: 'new', msgId: ref.id })
           if (result.ok) {
-            const list = asArray(asRecord(result.value).list)
+            const list = cliRows(result.value)
             const hit = list.find(item => asString(asRecord(item).msgId) === ref.id)
             if (hit !== undefined) {
               const message = asRecord(hit)

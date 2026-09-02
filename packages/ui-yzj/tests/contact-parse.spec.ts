@@ -21,6 +21,14 @@ describe('parseContactUser', () => {
     expect(parseContactUser({ data: { list: [{ openId: 'u1', nickName: '老黎' }] } }).name).toBe('老黎')
   })
 
+  it('parses the 0.1.6 whoami success envelope (data is one user object)', () => {
+    expect(parseContactUser({
+      success: true,
+      identity: { openId: 'u1' },
+      data: { openId: 'u1', name: '老黎', photoUrl: 'p.png' },
+    })).toEqual({ openId: 'u1', name: '老黎', photoUrl: 'p.png' })
+  })
+
   it('parses a single object and alternate field names', () => {
     expect(parseContactUser({ oId: 'u1', name: '老黎', photo: 'p.png' }))
       .toEqual({ openId: 'u1', name: '老黎', photoUrl: 'p.png' })

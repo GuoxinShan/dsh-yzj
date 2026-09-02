@@ -30,6 +30,7 @@ import {
   GroupAvatar, ImLightbox, MessageBody, SenderAvatar, typeLabelOf,
 } from './im-render.tsx'
 import { CalendarPane } from './calendar-pane.tsx'
+import { cliRecord, cliRows } from '../cli-payload.ts'
 import css from './panel.module.css'
 
 /** The props shares the panel reads. */
@@ -160,7 +161,7 @@ export interface YzjPanelButtonProps {
 
 /** Sum the effective (read-aware) unread counts of a recent-session window. */
 function unreadTotalOf(value: unknown): number {
-  const list = asArray(asRecord(value).list)
+  const list = cliRows(value)
   return list.reduce<number>((sum, item) => {
     const group = asRecord(item)
     const server = typeof group.unreadCount === 'number' ? group.unreadCount : 0
@@ -353,7 +354,7 @@ function loadTab(
   if (tab === 'docs') {
     void props.fetchWorkspaces().then((result) => {
       if (result.ok) {
-        props.actions.setWorkspaces(asArray(result.value))
+        props.actions.setWorkspaces(cliRows(result.value))
         props.actions.setLoading(false)
       } else fail(result.error.message)
     })
@@ -372,7 +373,7 @@ function loadTab(
     const end = `${year}-${pad(month)}-${pad(new Date(year, month, 0).getDate())}`
     void props.fetchEvents(start, end).then((result) => {
       if (result.ok) {
-        props.actions.setCalEvents(asArray(result.value))
+        props.actions.setCalEvents(cliRows(result.value))
         props.actions.setLoading(false)
       } else fail(result.error.message)
     })
@@ -389,11 +390,11 @@ function loadTab(
     // CLI caps --limit at 20; the node half clamps, so ask for the max.
     void props.fetchGroups(20, 1).then((result) => {
       if (result.ok) {
-        const groups = asArray(asRecord(result.value).list)
-        putGroupWindow(groups, asRecord(result.value).more === true)
+        const groups = cliRows(result.value)
+        putGroupWindow(groups, cliRecord(result.value).more === true)
         props.actions.setGroups(groups)
         props.actions.setGroupsPage(1)
-        props.actions.setGroupsMore(asRecord(result.value).more === true)
+        props.actions.setGroupsMore(cliRecord(result.value).more === true)
         props.actions.setLoading(false)
       } else fail(result.error.message)
     })
@@ -505,7 +506,7 @@ export function YzjPanel(props: YzjPanelProps) {
         : props.fetchMessages(state.groupId, 20, { type: 'new', msgId: anchor })
       void fetch.then((result) => {
         if (!result.ok) return
-        const fresh = asArray(asRecord(result.value).list)
+        const fresh = cliRows(result.value)
         if (fresh.length === 0) return
         const known = new Set(state.messages.map(message => String(asRecord(message).msgId)))
         const delta = fresh.filter(message => !known.has(String(asRecord(message).msgId)))
@@ -735,7 +736,7 @@ export function YzjPanel(props: YzjPanelProps) {
     const result = await props.fetchDocSearch(keyword, state.workspaceId === '' ? undefined : state.workspaceId)
     setDocSearching(false)
     if (!result.ok) { props.actions.setError(result.error.message); return }
-    const rows = asArray(result.value).length > 0 ? asArray(result.value) : asArray(asRecord(result.value).list)
+    const rows = cliRows(result.value)
     setDocResults(rows.map(asRecord))
   }
 
@@ -745,7 +746,7 @@ export function YzjPanel(props: YzjPanelProps) {
     props.actions.setError('')
     void props.fetchDocs(workspace, parentId).then((result) => {
       if (result.ok) {
-        props.actions.setDocs(asArray(result.value))
+        props.actions.setDocs(cliRows(result.value))
       } else {
         props.actions.setError(result.error.message)
       }
@@ -872,7 +873,7 @@ export function YzjPanel(props: YzjPanelProps) {
         setEventDetail(base)
         return
       }
-      const detail = asRecord(result.value)
+      const detail = cliRecord(result.value)
       const ms = typeof detail.startDate === 'number' ? detail.startDate : typeof event.startDate === 'number' ? event.startDate : 0
       const start2 = clock(ms)
       const endMs = typeof detail.endDate === 'number' ? detail.endDate : typeof event.endDate === 'number' ? event.endDate : 0
@@ -921,10 +922,10 @@ export function YzjPanel(props: YzjPanelProps) {
     void props.fetchMessages(id, 20).then((result) => {
       if (gen !== openGenRef.current) return
       if (result.ok) {
-        const messages = asArray(asRecord(result.value).list)
-        putMessageWindow(id, messages, asRecord(result.value).more === true)
+        const messages = cliRows(result.value)
+        putMessageWindow(id, messages, cliRecord(result.value).more === true)
         props.actions.setMessages(messages)
-        props.actions.setMessagesMore(asRecord(result.value).more === true)
+        props.actions.setMessagesMore(cliRecord(result.value).more === true)
         props.actions.setMessagesAnchor(messages.length > 0 ? asString(asRecord(messages[0]).msgId) : '')
       } else {
         props.actions.setError(result.error.message)
@@ -943,9 +944,9 @@ export function YzjPanel(props: YzjPanelProps) {
     props.actions.setLoading(true)
     void props.fetchGroups(20, state.groupsPage + 1).then((result) => {
       if (result.ok) {
-        props.actions.appendGroups(asArray(asRecord(result.value).list))
+        props.actions.appendGroups(cliRows(result.value))
         props.actions.setGroupsPage(state.groupsPage + 1)
-        props.actions.setGroupsMore(asRecord(result.value).more === true)
+        props.actions.setGroupsMore(cliRecord(result.value).more === true)
       } else {
         props.actions.setError(result.error.message)
       }
@@ -965,10 +966,10 @@ export function YzjPanel(props: YzjPanelProps) {
       if (result.ok) {
         // type 'old' returns messages OLDER than the anchor, oldest-first —
         // prepend as-is so the top of the list stays the oldest message.
-        const older = asArray(asRecord(result.value).list)
+        const older = cliRows(result.value)
         props.actions.prependMessages(older)
-        putMessageWindow(state.groupId, [...older, ...state.messages], asRecord(result.value).more === true)
-        props.actions.setMessagesMore(asRecord(result.value).more === true)
+        putMessageWindow(state.groupId, [...older, ...state.messages], cliRecord(result.value).more === true)
+        props.actions.setMessagesMore(cliRecord(result.value).more === true)
         if (older.length > 0) {
           props.actions.setMessagesAnchor(asString(asRecord(older[0]).msgId))
         }
@@ -1018,7 +1019,7 @@ export function YzjPanel(props: YzjPanelProps) {
       return
     }
     const profile = await ensureMyProfile(props)
-    const payload = asRecord(result.value)
+    const payload = cliRecord(result.value)
     const now = new Date()
     const pad = (n: number): string => String(n).padStart(2, '0')
     const sendTime = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}.000`
@@ -1100,7 +1101,7 @@ export function YzjPanel(props: YzjPanelProps) {
           props.actions.setError(result.error.message)
           return
         }
-        const payload = asRecord(result.value)
+        const payload = cliRecord(result.value)
         const fileId = asString(payload.fileId ?? payload.file_id ?? payload.id)
         if (fileId === '') {
           props.actions.setError('上传失败：未返回文件 ID')
@@ -1426,7 +1427,7 @@ export function YzjPanel(props: YzjPanelProps) {
               props.actions.setLoading(true)
               props.actions.setError('')
               void props.fetchEvents(start, end).then((result) => {
-                if (result.ok) props.actions.setCalEvents(asArray(result.value))
+                if (result.ok) props.actions.setCalEvents(cliRows(result.value))
                 else props.actions.setError(result.error.message)
                 props.actions.setLoading(false)
               })

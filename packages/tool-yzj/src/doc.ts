@@ -9,7 +9,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import {
   runValue, yzjToolOutput, docLink,
-  asRecord, asArray, asString, asNumber, asBool, clipJson,
+  asRecord, asArray, asString, asNumber, asBool, clipJson, cliList, cliObject,
 } from './shared.ts'
 import type { YzjToolBudget } from './shared.ts'
 
@@ -97,7 +97,7 @@ export function applyDocTools(ctx: Context, budget: YzjToolBudget): void {
       const command = ['doc', 'workspace', 'list']
       if (args.type !== undefined) command.push('--type', args.type)
       return runValue(ctx, budget, 'doc workspace list', command, (json) => {
-        const workspaces = asArray(json)
+        const workspaces = cliList(json)
         const lines = workspaces.map(workspaceLine)
         const content = lines.length === 0 ? '(no workspaces)' : lines.join('\n')
         return { content, data: { list: clipJson(workspaces, { maxChars: budget.maxMetaChars }) } }
@@ -116,7 +116,7 @@ export function applyDocTools(ctx: Context, budget: YzjToolBudget): void {
     isConcurrencySafe: () => true,
     async execute(args) {
       return runValue(ctx, budget, 'doc workspace get', ['doc', 'workspace', 'get', '--id', args.id], (json) => {
-        const ws = asRecord(json)
+        const ws = cliObject(json)
         const content = workspaceLine(ws)
         return { content, data: { record: clipJson(ws, { maxChars: budget.maxMetaChars }) } }
       })
@@ -125,7 +125,7 @@ export function applyDocTools(ctx: Context, budget: YzjToolBudget): void {
 
   ctx.tools.register(defineTool({
     name: 'yzj_doc_workspace_create',
-    description: 'Create a knowledge base with the given name and optional description. visibility: 1=企业知识库, 2=个人知识库 (default 2); allMember sets the enterprise-wide permission (2=可编辑, 3=可查看, visibility=1 only, yzj-cli v0.1.4). Returns the new KB_ID.',
+    description: 'Create a knowledge base with the given name and optional description. visibility: 1=企业知识库, 2=个人知识库 (default 2); allMember sets the enterprise-wide permission (2=可编辑, 3=可查看, visibility=1 only). Returns the new KB_ID.',
     parameters: {
       name: { type: 'string', required: true, description: 'Knowledge base name.' },
       description: { type: 'string', description: 'Optional description.' },
@@ -141,7 +141,7 @@ export function applyDocTools(ctx: Context, budget: YzjToolBudget): void {
       if (args.visibility !== undefined) command.push('--visibility', String(args.visibility))
       if (args.allMember !== undefined) command.push('--all-member', String(args.allMember))
       return runValue(ctx, budget, 'doc workspace create', command, (json) => {
-        const ws = asRecord(json)
+        const ws = cliObject(json)
         const id = asString(ws.id)
         const content = `created 知识库 "${asString(ws.name) || args.name}"${id === '' ? '' : ` (${id})`}`
         return { content, data: { record: clipJson(ws, { maxChars: budget.maxMetaChars }) } }
@@ -163,7 +163,7 @@ export function applyDocTools(ctx: Context, budget: YzjToolBudget): void {
       const command = ['doc', 'list', '--workspace', args.workspace]
       if (args.parentId !== undefined) command.push('--parent-id', args.parentId)
       return runValue(ctx, budget, 'doc list', command, (json) => {
-        const nodes = asArray(json)
+        const nodes = cliList(json)
         const lines = nodes.map(nodeLine)
         const content = lines.length === 0 ? '(no nodes)' : lines.join('\n')
         return { content, data: { list: clipJson(nodes, { maxChars: budget.maxMetaChars }) } }
@@ -182,7 +182,7 @@ export function applyDocTools(ctx: Context, budget: YzjToolBudget): void {
     isConcurrencySafe: () => true,
     async execute(args) {
       return runValue(ctx, budget, 'doc get', ['doc', 'get', '--id', args.id], (json) => {
-        const node = asRecord(json)
+        const node = cliObject(json)
         const title = asString(node.title)
         const id = asString(node.id)
         const suffix = asString(node.fileSuffix)
@@ -224,7 +224,7 @@ export function applyDocTools(ctx: Context, budget: YzjToolBudget): void {
       }
       if (args.lastVisitTime !== undefined) command.push('--last-visit-time', String(args.lastVisitTime))
       return runValue(ctx, budget, 'doc recent', command, (json) => {
-        const nodes = asArray(json)
+        const nodes = cliList(json)
         const lines = nodes.map((record) => {
           const node = asRecord(record)
           const kb = asString(node.kbName)
@@ -242,7 +242,7 @@ export function applyDocTools(ctx: Context, budget: YzjToolBudget): void {
 
   ctx.tools.register(defineTool({
     name: 'yzj_doc_create',
-    description: 'Create an online doc (otl) in a knowledge base, optionally under a parent node. Returns the new node id and link. For 多维表格 use yzj_sheet_create; knowledge bases have no folder type — use a parent doc for grouping.',
+    description: 'Create an online doc (otl) in a knowledge base, optionally under a parent node. Returns the new node id and link. For 多维表格 use yzj_sheet_create. For a real folder node use yzj_doc_folder_create (distinct from a parent otl).',
     parameters: {
       workspace: { type: 'string', required: true, description: 'Knowledge base id (KB_ID).' },
       title: { type: 'string', required: true, description: 'Doc title (also shown as the node title; do not repeat it as a level-1 heading inside the doc).' },
@@ -255,11 +255,37 @@ export function applyDocTools(ctx: Context, budget: YzjToolBudget): void {
       const command = ['doc', 'create', '--workspace', args.workspace, '--title', args.title]
       if (args.parentId !== undefined) command.push('--parent-id', args.parentId)
       return runValue(ctx, budget, 'doc create', command, (json) => {
-        const node = asRecord(json)
+        const node = cliObject(json)
         const id = asString(node.id)
         const link = docLink(id)
         return {
           content: `created 文档 "${asString(node.title) || args.title}"${id === '' ? '' : ` (${id})`}\n${link}`,
+          data: { record: clipJson(node, { maxChars: budget.maxMetaChars }), id, link },
+        }
+      })
+    },
+  }))
+
+  ctx.tools.register(defineTool({
+    name: 'yzj_doc_folder_create',
+    description: 'Create a knowledge-base folder node (yzj-cli `doc folder create`, distinct from yzj_doc_create which makes an otl). Optional parentId nests it; omit for workspace root. Requires user confirmation.',
+    parameters: {
+      workspace: { type: 'string', required: true, description: 'Knowledge base id (KB_ID).' },
+      title: { type: 'string', required: true, description: 'Folder name.' },
+      parentId: { type: 'string', description: 'Optional parent node id; omit to create at the workspace root.' },
+    },
+    output: yzjToolOutput,
+    timeoutMs: budget.timeoutMs,
+    isConcurrencySafe: () => false,
+    async execute(args) {
+      const command = ['doc', 'folder', 'create', '--workspace', args.workspace, '--title', args.title]
+      if (args.parentId !== undefined) command.push('--parent-id', args.parentId)
+      return runValue(ctx, budget, 'doc folder create', command, (json) => {
+        const node = cliObject(json)
+        const id = asString(node.id)
+        const link = id === '' ? '' : docLink(id)
+        return {
+          content: `created 文件夹 "${asString(node.title) || args.title}"${id === '' ? '' : ` (${id})`}${link === '' ? '' : `\n${link}`}`,
           data: { record: clipJson(node, { maxChars: budget.maxMetaChars }), id, link },
         }
       })
@@ -278,7 +304,7 @@ export function applyDocTools(ctx: Context, budget: YzjToolBudget): void {
     isConcurrencySafe: () => false,
     async execute(args) {
       return runValue(ctx, budget, 'doc rename', ['doc', 'rename', '--id', args.id, '--title', args.title], (json) => {
-        const node = asRecord(json)
+        const node = cliObject(json)
         const id = asString(node.id) || args.id
         return {
           content: `renamed → "${args.title}" (${id})\n${docLink(id)}`,
@@ -302,7 +328,7 @@ export function applyDocTools(ctx: Context, budget: YzjToolBudget): void {
       return runValue(ctx, budget, 'doc move',
         ['doc', 'move', '--id', args.id, '--target-parent-id', args.targetParentId],
         (json) => {
-          const node = asRecord(json)
+          const node = cliObject(json)
           const id = asString(node.id) || args.id
           return {
             content: `moved (${id}) → parent (${args.targetParentId})\n${docLink(id)}`,
@@ -359,7 +385,7 @@ export function applyDocTools(ctx: Context, budget: YzjToolBudget): void {
       if (args.parentId !== undefined) command.push('--parent-id', args.parentId)
       command.push('--items', JSON.stringify(args.items))
       return runValue(ctx, budget, 'doc import', command, (json) => {
-        const nodes = asArray(json)
+        const nodes = cliList(json)
         if (nodes.length > 0) {
           const lines = nodes.map((record) => {
             const node = asRecord(record)
@@ -368,7 +394,7 @@ export function applyDocTools(ctx: Context, budget: YzjToolBudget): void {
           })
           return { content: lines.join('\n'), data: { list: clipJson(nodes, { maxChars: budget.maxMetaChars }) } }
         }
-        const raw = asRecord(json)
+        const raw = cliObject(json)
         const generic = Object.keys(raw).length === 0
           ? `imported ${args.items.length} item(s)`
           : `imported ${args.items.length} item(s)`
@@ -388,7 +414,7 @@ export function applyDocTools(ctx: Context, budget: YzjToolBudget): void {
     isConcurrencySafe: () => true,
     async execute(args) {
       return runValue(ctx, budget, 'doc download-url', ['doc', 'download-url', '--id', args.id], (json) => {
-        const payload = asRecord(json)
+        const payload = cliObject(json)
         const url = asString(payload.url ?? payload.downloadUrl)
         const content = url === '' ? '(no download url in response)' : url
         return { content, data: { record: clipJson(payload, { maxChars: budget.maxMetaChars }), url } }
@@ -410,7 +436,7 @@ export function applyDocTools(ctx: Context, budget: YzjToolBudget): void {
       const command = ['doc', 'block', 'list', '--id', args.id]
       if (args.blockId !== undefined) command.push('--block-id', args.blockId)
       return runValue(ctx, budget, 'doc block list', command, (json) => {
-        const blocks = asArray(asRecord(asRecord(json).data).blocks)
+        const blocks = cliList(json, ['blocks', 'list'])
         const lines = blocks.map(blockLine)
         const content = lines.length === 0 ? '(no blocks)' : lines.join('\n')
         return { content, data: { list: clipJson(blocks, { maxChars: budget.maxMetaChars }) } }
@@ -486,7 +512,7 @@ export function applyDocTools(ctx: Context, budget: YzjToolBudget): void {
 
   ctx.tools.register(defineTool({
     name: 'yzj_doc_search',
-    description: 'Search knowledge-base documents by keyword in title/file name (yzj-cli v0.1.4). Optional workspace scope; paged (pageNum from 1, pageSize ≤50). Use this to locate a doc before yzj_doc_get / yzj_doc_write / yzj_doc_download.',
+    description: 'Search knowledge-base documents by keyword in title/file name. Optional workspace scope; paged (pageNum from 1, pageSize ≤50). Use this to locate a doc before yzj_doc_get / yzj_doc_write / yzj_doc_download.',
     parameters: {
       keyword: { type: 'string', required: true, description: 'Search keyword (matches title and file name).' },
       workspace: { type: 'string', description: 'Limit to one knowledge base (KB_ID).' },
@@ -502,7 +528,7 @@ export function applyDocTools(ctx: Context, budget: YzjToolBudget): void {
       if (args.pageSize !== undefined) command.push('--page-size', String(args.pageSize))
       if (args.pageNum !== undefined) command.push('--page-num', String(args.pageNum))
       return runValue(ctx, budget, 'doc search', command, (json) => {
-        const rows = asArray(json).length > 0 ? asArray(json) : asArray(asRecord(json).list)
+        const rows = cliList(json)
         const lines = rows.map(nodeLine)
         const content = lines.length === 0 ? '(no matches)' : lines.join('\n')
         return { content, data: { list: clipJson(rows, { maxChars: budget.maxMetaChars }) } }
@@ -512,7 +538,7 @@ export function applyDocTools(ctx: Context, budget: YzjToolBudget): void {
 
   ctx.tools.register(defineTool({
     name: 'yzj_doc_write',
-    description: 'Write the WHOLE content of one smart doc (otl) in one call (yzj-cli v0.1.4): overwrite (default, replaces the entire body) or append (adds to the end). Content format markdown (default) or html. For surgical edits prefer yzj_doc_block_insert/update/replace — overwrite destroys the previous body, so it requires user confirmation.',
+    description: 'Write the WHOLE content of one smart doc (otl) in one call: overwrite (default, replaces the entire body) or append (adds to the end). Content format markdown (default) or html. For surgical edits prefer yzj_doc_block_insert/update/replace — overwrite destroys the previous body, so it requires user confirmation.',
     parameters: {
       id: { type: 'string', required: true, description: 'Doc node id (must be an otl smart doc).' },
       content: { type: 'string', required: true, description: 'Full document content (overwrite) or the segment to append (append).' },
@@ -535,7 +561,7 @@ export function applyDocTools(ctx: Context, budget: YzjToolBudget): void {
 
   ctx.tools.register(defineTool({
     name: 'yzj_doc_download',
-    description: 'Download one knowledge-base Office/HTML document node to a local file (yzj-cli v0.1.4). Without output the original file name lands in the current directory; without overwrite an existing file is auto-renamed (report.pdf → report (1).pdf). Overwriting an existing local file requires user confirmation.',
+    description: 'Download one knowledge-base Office/HTML document node to a local file. Without output the original file name lands in the current directory; without overwrite an existing file is auto-renamed (report.pdf → report (1).pdf). Overwriting an existing local file requires user confirmation.',
     parameters: {
       id: { type: 'string', required: true, description: 'Doc node id (must be an Office/HTML attachment-type node, not otl).' },
       output: { type: 'string', description: 'Output file path.' },
@@ -557,7 +583,7 @@ export function applyDocTools(ctx: Context, budget: YzjToolBudget): void {
 
   ctx.tools.register(defineTool({
     name: 'yzj_doc_block_replace',
-    description: 'Replace a block range inside an otl smart doc (yzj-cli v0.1.4): deletes blocks [start, end) then inserts content. start >= 1 (index 0 is the doc title and can never be removed); end is exclusive and must exceed start. content is the same block-node JSON array shape as yzj_doc_block_insert.',
+    description: 'Replace a block range inside an otl smart doc: deletes blocks [start, end) then inserts content. start >= 1 (index 0 is the doc title and can never be removed); end is exclusive and must exceed start. content is the same block-node JSON array shape as yzj_doc_block_insert.',
     parameters: {
       id: { type: 'string', required: true, description: 'Doc node id (otl).' },
       start: { type: 'number', required: true, description: 'Delete start index (inclusive, >= 1).' },

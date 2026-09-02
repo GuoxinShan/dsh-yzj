@@ -22,7 +22,8 @@ import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
 import css from './cards.module.css'
 
 /** Every wire tool name this package renders. */
-export const YZJ_TOOL_NAMES = [  'yzj_whoami',
+export const YZJ_TOOL_NAMES = [
+  'yzj_whoami',
   'yzj_contact_search',
   'yzj_contact_get',
   'yzj_doc_workspace_list',
@@ -32,6 +33,7 @@ export const YZJ_TOOL_NAMES = [  'yzj_whoami',
   'yzj_doc_get',
   'yzj_doc_recent',
   'yzj_doc_create',
+  'yzj_doc_folder_create',
   'yzj_doc_rename',
   'yzj_doc_move',
   'yzj_doc_delete',
@@ -63,10 +65,13 @@ export const YZJ_TOOL_NAMES = [  'yzj_whoami',
   'yzj_calendar_event_participants',
   'yzj_calendar_room_find',
   'yzj_im_message_send',
+  'yzj_im_message_recall',
   'yzj_im_message_list',
+  'yzj_im_message_search',
   'yzj_im_group_recent',
   'yzj_im_group_search',
   'yzj_im_group_create',
+  'yzj_im_group_rename',
   'yzj_im_group_members_add',
   'yzj_im_group_members_remove',
   'yzj_file_upload',
@@ -85,6 +90,7 @@ const FAMILY_TITLES: Record<string, string> = {
   yzj_doc_get: '文档详情',
   yzj_doc_recent: '最近文档',
   yzj_doc_create: '新建文档',
+  yzj_doc_folder_create: '新建文件夹',
   yzj_doc_rename: '重命名文档',
   yzj_doc_move: '移动文档',
   yzj_doc_delete: '删除文档',
@@ -116,10 +122,13 @@ const FAMILY_TITLES: Record<string, string> = {
   yzj_calendar_event_participants: '日程参会人',
   yzj_calendar_room_find: '空闲会议室',
   yzj_im_message_send: '发送消息',
+  yzj_im_message_recall: '撤回消息',
   yzj_im_message_list: '聊天记录',
+  yzj_im_message_search: '搜索消息',
   yzj_im_group_recent: '最近会话',
   yzj_im_group_search: '搜索群组',
   yzj_im_group_create: '创建群组',
+  yzj_im_group_rename: '修改群名',
   yzj_im_group_members_add: '拉人进群',
   yzj_im_group_members_remove: '移出群成员',
   yzj_file_upload: '上传文件',
@@ -427,6 +436,7 @@ function ActionBody(meta: UnknownRecord, toolName: string): ReactNode {
     rowsOut.push(row(title, sub, key))
   }
   if (toolName === 'yzj_im_message_send') push('消息已发送', '', 'sent')
+  else if (toolName === 'yzj_im_message_recall') push('消息已撤回', '', 'recall')
   else if (toolName === 'yzj_file_upload') push('上传成功', '', 'up')
   else if (toolName === 'yzj_file_download') push('已下载到本地', output, 'dl')
   else if (toolName === 'yzj_doc_download_url') { /* link row below */ }

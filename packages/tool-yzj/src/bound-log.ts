@@ -8,7 +8,7 @@
 import { z } from 'zod'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
-import { fileIdMark } from './shared.ts'
+import { fileIdMark, unwrapCli } from './shared.ts'
 import type { YzjConversationKind } from './home.ts'
 
 /** Product origin of one log row (T1/T7; R9 adds robot-outbound). */
@@ -264,9 +264,10 @@ export function cliMessageToEntry(
 
 /** Unwrap CLI list envelopes (pitfall-003: bare array / list / data). */
 export function cliMessageList(json: unknown): unknown[] {
-  if (Array.isArray(json)) return json
-  if (typeof json !== 'object' || json === null) return []
-  const record = json as Record<string, unknown>
+  const payload = unwrapCli(json)
+  if (Array.isArray(payload)) return payload
+  if (typeof payload !== 'object' || payload === null) return []
+  const record = payload as Record<string, unknown>
   if (Array.isArray(record.list)) return record.list
   if (Array.isArray(record.data)) return record.data
   if (typeof record.data === 'object' && record.data !== null) {
@@ -280,8 +281,9 @@ export function cliMessageList(json: unknown): unknown[] {
 
 /** Extract the real msgId from an `im message send` CLI payload. */
 export function extractSendMsgId(json: unknown): string | undefined {
-  if (typeof json !== 'object' || json === null) return undefined
-  const record = json as Record<string, unknown>
+  const payload = unwrapCli(json)
+  if (typeof payload !== 'object' || payload === null) return undefined
+  const record = payload as Record<string, unknown>
   for (const key of ['msgId', 'id', 'messageId']) {
     const value = record[key]
     if (typeof value === 'string' && value !== '') return value

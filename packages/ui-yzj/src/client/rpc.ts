@@ -14,7 +14,7 @@ export interface YzjRpcError {
 export interface YzjPanelInject {
   fetchWorkspaces: (type?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   fetchDocs: (workspace: string, parentId?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
-  /** 知识库文档搜索(v0.1.4):按标题/文件名关键词,可选限库。 */
+  /** 知识库文档搜索:按标题/文件名关键词,可选限库。 */
   fetchDocSearch: (keyword: string, workspace?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   fetchEvents: (start: string, end: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   fetchGroups: (limit?: number, page?: number) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>

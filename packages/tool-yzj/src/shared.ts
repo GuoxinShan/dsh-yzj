@@ -39,17 +39,46 @@ function digestOf(text: string, max: number): { content: string; truncated: bool
 /** A model-facing failure digest from a non-ok bridge invocation. */
 export function failureDigest(label: string, result: YzjRunResult, max: number): YzjToolValue {
   const reason = result.timedOut ? 'timed out' : `exit ${result.exitCode ?? 'killed'}`
-  const detail = result.stderr.trim() === '' ? '(no stderr)' : result.stderr.trim()
-  const hint = looksUnauthenticated(result.stderr)
-    ? '\n提示：yzj-cli 可能未登录，请先运行 `yzj-cli auth login` 完成浏览器/设备码登录。'
-    : ''
+  const detail = stderrDetail(result.stderr)
+  const hint = looksCliConfirm(result)
+    ? '\n提示：yzj-cli 0.1.6 高风险命令在非交互下 exit 10（confirmation_required）。本插件应在产品确认卡通过后附加 --yes；不要用 bash 直调 yzj-cli。'
+    : looksUnauthenticated(result.stderr)
+      ? '\n提示：yzj-cli 可能未登录，请先运行 `yzj-cli auth login` 完成浏览器/设备码登录。'
+      : result.exitCode === 5
+        ? '\n提示：exit 5 是 CLI 内部错误（含 --jq 求值失败）。本插件不传 --jq。'
+        : ''
   const { content, truncated } = digestOf(`yzj ${label} failed (${reason}): ${detail}${hint}`, max)
   return { content, truncated, data: {} }
+}
+
+/** Prefer the 0.1.6 stderr JSON `error.message`; fall back to the raw line. */
+function stderrDetail(stderr: string): string {
+  const text = stderr.trim()
+  if (text === '') return '(no stderr)'
+  try {
+    const parsed = JSON.parse(text) as unknown
+    const error = asRecord(asRecord(parsed).error)
+    const message = asString(error.message)
+    if (message !== '') return message
+  } catch {
+    // Non-JSON stderr stays verbatim.
+  }
+  return text
 }
 
 /** Heuristic: stderr mentions an auth/credential failure worth a login hint. */
 function looksUnauthenticated(stderr: string): boolean {
   return /(auth|login|登录|token|credential|unauthorized|未授权)/i.test(stderr)
+}
+
+/**
+ * CLI high-risk gate (skill 0.6.0): non-interactive delete family without
+ * `--yes` exits 10 with `confirmation_required`. 0.1.4 used exit 3 for the
+ * same signal — accept both so a missed `--yes` is not mistaken for auth.
+ */
+function looksCliConfirm(result: YzjRunResult): boolean {
+  if (result.exitCode === 10) return true
+  return /confirmation_required/.test(result.stderr)
 }
 
 /** Wrap a digest into the common tool value with an empty payload. */
@@ -64,12 +93,59 @@ export function valueOf(content: string, truncated: boolean, data: JsonValue): Y
 
 type UnknownRecord = Record<string, unknown>
 
+/** Keys that belong to the yzj-cli 0.1.6 success/error envelope, not the payload. */
+const CLI_ENVELOPE_KEYS = new Set(['success', 'identity', 'data', 'error'])
+
 export function asRecord(value: unknown): UnknownRecord {
   return typeof value === 'object' && value !== null ? value as UnknownRecord : {}
 }
 
 export function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : []
+}
+
+/**
+ * Peel the yzj-cli 0.1.6 success envelope `{success, identity, data}` down to
+ * `data`. Bare arrays and 0.1.4 unwrapped objects pass through. Idempotent.
+ *
+ * Empty write receipts omit `data`; those become `{}` so formatters do not
+ * see `success`/`identity` as business fields.
+ */
+export function unwrapCli(json: unknown): unknown {
+  if (json === undefined || json === null) return json
+  if (Array.isArray(json) || typeof json !== 'object') return json
+  const rec = json as UnknownRecord
+  if (rec.success === true && 'data' in rec) {
+    return rec.data === undefined || rec.data === null ? {} : rec.data
+  }
+  if (rec.success === true && rec.identity !== undefined) {
+    const extra = Object.keys(rec).filter(key => !CLI_ENVELOPE_KEYS.has(key))
+    if (extra.length === 0) return rec.data ?? {}
+  }
+  return json
+}
+
+/**
+ * Record array from any CLI list shape: bare array, `{list}`, `{records}`,
+ * `{blocks}`, `{messages}`, or the same keys under a leftover `.data`.
+ */
+export function cliList(json: unknown, keys: readonly string[] = ['list']): unknown[] {
+  const payload = unwrapCli(json)
+  if (Array.isArray(payload)) return payload
+  const rec = asRecord(payload)
+  for (const key of keys) {
+    if (Array.isArray(rec[key])) return rec[key] as unknown[]
+  }
+  const inner = asRecord(rec.data)
+  for (const key of keys) {
+    if (Array.isArray(inner[key])) return inner[key] as unknown[]
+  }
+  return []
+}
+
+/** Object payload after {@link unwrapCli}. */
+export function cliObject(json: unknown): UnknownRecord {
+  return asRecord(unwrapCli(json))
 }
 
 export function asString(value: unknown): string {
@@ -154,7 +230,7 @@ export async function runValue(
 ): Promise<YzjToolValue> {
   const result = await (ctx.yzjBridge).run(command, { timeoutMs: budget.timeoutMs })
   if (!result.ok) return failureDigest(label, result, budget.maxRenderChars)
-  const { content, data } = format(result.json)
+  const { content, data } = format(unwrapCli(result.json))
   const digest = digestOf(content, budget.maxRenderChars)
   // Every formatter builds its payload from clipped JSON or raw CLI records
   // (lossless JSON by construction); the schema's `data: { type: 'json' }`

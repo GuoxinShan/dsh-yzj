@@ -13,6 +13,7 @@ import type { YzjJumpTarget } from './cards.tsx'
 import { rememberImSeat } from './im-seat.ts'
 import { setWorkbenchDomain } from './workbench-domain.ts'
 import { openWorkbench } from './workbench-overlay.ts'
+import { cliRecord, cliRows } from '../cli-payload.ts'
 
 type PanelActions = BakedActions<YzjPanelState, YzjPanelActions>
 
@@ -33,10 +34,6 @@ export function registerPanelController(actions: PanelActions, inject: YzjPanelI
 
 function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null ? value as Record<string, unknown> : {}
-}
-
-function asArray(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : []
 }
 
 function asString(value: unknown): string {
@@ -71,9 +68,9 @@ export function openPanelTarget(target: YzjJumpTarget, anchorMsgId?: string): vo
     // R27: the cover is already open; do not mint a hanger session.
     void c.inject.fetchMessages(target.groupId, 20).then((result) => {
       if (!result.ok) return
-      const list = asArray(asRecord(result.value).list)
+      const list = cliRows(result.value)
       actions.setMessages(list)
-      actions.setMessagesMore(asRecord(result.value).more === true)
+      actions.setMessagesMore(cliRecord(result.value).more === true)
       actions.setMessagesAnchor(list.length > 0 ? asString(asRecord(list[0]).msgId) : '')
     })
   } else if (target.kind === 'doc') {
@@ -83,7 +80,7 @@ export function openPanelTarget(target: YzjJumpTarget, anchorMsgId?: string): vo
     actions.setTab('docs')
     actions.setWorkspaceId(target.workspaceId)
     void c.inject.fetchDocs(target.workspaceId).then((result) => {
-      if (result.ok) actions.setDocs(asArray(result.value))
+      if (result.ok) actions.setDocs(cliRows(result.value))
     })
   } else {
     actions.setTab('calendar')
@@ -96,7 +93,7 @@ export function openPanelTarget(target: YzjJumpTarget, anchorMsgId?: string): vo
     actions.setCalDay(`${year}-${pad(month)}-${pad(date.getDate())}`)
     actions.setCalEventId(target.event.id)
     void c.inject.fetchEvents(`${year}-${pad(month)}-01`, `${year}-${pad(month)}-${pad(new Date(year, month, 0).getDate())}`).then((result) => {
-      if (result.ok) actions.setCalEvents(asArray(result.value))
+      if (result.ok) actions.setCalEvents(cliRows(result.value))
     })
   }
 }

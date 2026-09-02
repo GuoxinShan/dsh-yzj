@@ -1,7 +1,10 @@
 /**
  * Contact payload unwrap (pitfall-003: bare array / list / data / single object).
- * Shared by host whoami and the browser sender-name cache.
+ * Shared by host whoami and the browser sender-name cache. Also peels the
+ * yzj-cli 0.1.6 `{success, identity, data}` envelope (whoami is one object).
  */
+
+import { unwrapCli } from './cli-payload.ts'
 
 /** One directory user projected for display. */
 export interface ContactUser {
@@ -22,15 +25,17 @@ function firstNonEmpty(...values: unknown[]): string {
 }
 
 function rowsOf(json: unknown): unknown[] {
-  if (Array.isArray(json)) return json
-  const record = asRecord(json)
+  const peeled = unwrapCli(json)
+  if (Array.isArray(peeled)) return peeled
+  const record = asRecord(peeled)
   if (Array.isArray(record.list)) return record.list
   if (Array.isArray(record.data)) return record.data
   if (typeof record.data === 'object' && record.data !== null) {
     const inner = asRecord(record.data)
     if (Array.isArray(inner.list)) return inner.list
+    if (Object.keys(inner).length > 0) return [record.data]
   }
-  return Object.keys(record).length === 0 ? [] : [json]
+  return Object.keys(record).length === 0 ? [] : [peeled]
 }
 
 /** Parse `contact user get` JSON into openId / name / photoUrl. */

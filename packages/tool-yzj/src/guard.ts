@@ -41,6 +41,7 @@ const WRITE_SPECS: Record<string, DangerousSpec> = {
   yzj_sheet_record_delete: { reason: '删除多维表格记录，不可恢复', level: 'strong' },
   yzj_calendar_event_delete: { reason: '取消/删除日程', level: 'strong' },
   yzj_im_group_members_remove: { reason: '移成员出群，不可恢复', level: 'strong' },
+  yzj_im_message_recall: { reason: '撤回已发出的 IM 消息，不可恢复', level: 'strong' },
   // --- standard: side effects but reversible/new ---
   yzj_im_message_send: { reason: '发送 IM 消息到云之家会话，发出后不可撤回', level: 'standard' },
   yzj_file_upload: { reason: '上传文件到云之家，即刻落服务端', level: 'standard' },
@@ -56,7 +57,9 @@ const WRITE_SPECS: Record<string, DangerousSpec> = {
   yzj_doc_write: { reason: '覆盖/追加写整个在线文档内容', level: 'standard' },
   yzj_doc_download: { reason: '下载文档并覆盖本地已有文件', level: 'standard', when: args => args.overwrite === true },
   yzj_im_group_create: { reason: '创建云之家群组', level: 'standard' },
+  yzj_im_group_rename: { reason: '修改云之家群名称，影响全体成员', level: 'standard' },
   yzj_im_group_members_add: { reason: '拉人进群', level: 'standard' },
+  yzj_doc_folder_create: { reason: '在知识库新建文件夹', level: 'standard' },
   yzj_sheet_create: { reason: '新建多维表格', level: 'standard' },
   yzj_sheet_table_create: { reason: '新建数据表', level: 'standard' },
   yzj_sheet_table_rename: { reason: '重命名数据表', level: 'standard' },

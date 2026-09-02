@@ -7,7 +7,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import {
   runValue, yzjToolOutput, linesOf,
-  asRecord, asArray, asString, asNumber, clipJson,
+  asRecord, asArray, asString, asNumber, clipJson, cliObject, cliList,
 } from './shared.ts'
 import type { YzjToolBudget } from './shared.ts'
 import { collectCalendarEvents } from './calendar-range.ts'
@@ -106,7 +106,7 @@ export function applyCalendarTools(ctx: Context, budget: YzjToolBudget): void {
     isConcurrencySafe: () => true,
     async execute(args) {
       return runValue(ctx, budget, 'calendar event get', ['calendar', 'event', 'get', '--id', args.id], (json) => {
-        const event = asRecord(json)
+        const event = cliObject(json)
         const content = eventLine(event)
         return { content, data: { record: clipJson(event, { maxChars: budget.maxMetaChars }) } }
       })
@@ -147,7 +147,7 @@ export function applyCalendarTools(ctx: Context, budget: YzjToolBudget): void {
       for (const id of args.attendeeOpenIds ?? []) command.push('--attendee-open-ids', id)
       if (args.calendarId !== undefined) command.push('--calendar-id', args.calendarId)
       return runValue(ctx, budget, 'calendar event create', command, (json) => {
-        const event = asRecord(json)
+        const event = cliObject(json)
         const id = asString(event.id)
         return {
           content: `created 日程 "${args.title}"${id === '' ? '' : ` (${id})`}`,
@@ -226,7 +226,7 @@ export function applyCalendarTools(ctx: Context, budget: YzjToolBudget): void {
       return runValue(ctx, budget, 'calendar event participants',
         ['calendar', 'event', 'participants', '--id', args.id],
         (json) => {
-          const participants = asArray(json)
+          const participants = cliList(json)
           const lines = participants.map((record) => {
             const p = asRecord(record)
             const name = asString(p.name ?? p.personName)
@@ -254,7 +254,7 @@ export function applyCalendarTools(ctx: Context, budget: YzjToolBudget): void {
       const command = ['calendar', 'room', 'find', '--start', args.start, '--end', args.end]
       if (args.openId !== undefined) command.push('--open-id', args.openId)
       return runValue(ctx, budget, 'calendar room find', command, (json) => {
-        const rooms = asArray(json)
+        const rooms = cliList(json)
         const lines = rooms.map((record) => {
           const room = asRecord(record)
           const name = asString(room.name ?? room.roomName)

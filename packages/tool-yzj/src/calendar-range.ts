@@ -6,7 +6,7 @@
  * (`[lo, stripeEnd]`) so empty tails collapse in one call. Week stripes
  * run in parallel.
  */
-import { asArray, asNumber, asRecord, asString } from './shared.ts'
+import { asArray, asNumber, asRecord, asString, unwrapCli } from './shared.ts'
 
 /** Inclusive local-day cap for one list expansion (a year). */
 export const CALENDAR_RANGE_MAX_DAYS = 366
@@ -103,17 +103,19 @@ export function calendarRangeDays(start: string, end: string): string[] | undefi
 }
 
 /**
- * Unwrap the three CLI list envelopes into a record array.
+ * Unwrap the CLI list envelopes into a record array (0.1.6 `{success,data}`
+ * plus 0.1.4 bare array / `{list}`).
  */
 export function calendarEventsFromJson(json: unknown): unknown[] {
-  if (Array.isArray(json)) return json
-  const record = asRecord(json)
+  const payload = unwrapCli(json)
+  if (Array.isArray(payload)) return payload
+  const record = asRecord(payload)
   if (Array.isArray(record.list)) return record.list
   if (Array.isArray(record.data)) return record.data
   const nested = asRecord(record.data)
   if (Array.isArray(nested.list)) return nested.list
   if (Array.isArray(nested.events)) return nested.events
-  return asArray(json)
+  return asArray(payload)
 }
 
 /**

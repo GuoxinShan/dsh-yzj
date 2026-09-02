@@ -149,16 +149,18 @@ describe('cli projection', () => {
     expect(row?.param).toBeUndefined()
   })
 
-  it('unwraps list envelopes (pitfall-003)', () => {
+  it('unwraps list envelopes (pitfall-003) including the 0.1.6 success wrapper', () => {
     expect(cliMessageList([{ msgId: 'a' }])).toHaveLength(1)
     expect(cliMessageList({ list: [{ msgId: 'b' }] })).toHaveLength(1)
     expect(cliMessageList({ data: { list: [{ msgId: 'c' }] } })).toHaveLength(1)
+    expect(cliMessageList({ success: true, identity: {}, data: { list: [{ msgId: 'd' }] } })).toHaveLength(1)
   })
 
   it('extracts send msgId from several CLI shapes', () => {
     expect(extractSendMsgId({ msgId: 'm1' })).toBe('m1')
     expect(extractSendMsgId({ data: { msgId: 'm2' } })).toBe('m2')
     expect(extractSendMsgId({ id: 'm3' })).toBe('m3')
+    expect(extractSendMsgId({ success: true, data: { msgId: 'm4' } })).toBe('m4')
   })
 
   it('reads fromUser.openId / oId / name when top-level fields are empty', () => {

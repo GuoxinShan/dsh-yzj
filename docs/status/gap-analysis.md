@@ -1253,3 +1253,18 @@ headless overlay（无 ui-yzj）仍 fail-closed：瀑布 next → unavailable �
 | client | handoff id `@dsh-yzj/bundle`；`defineStore` 先 0.1.2 `dsh-client-store` 再 0.1.1 `dsh-client-runtime/client`；`CLIENT_EXTERNALS` 含两个词 | `client-bundle.client.spec.ts`；0.1.2 `dsh web` 与 rc.18 桌面 |
 | 文档 | pitfall-047；pitfall-048；pitfall-010 解法改写 | pitfalls 索引 |
 
+## 24.46 tool-yzj+ui-yzj｜对齐 yzj-cli 0.1.6（skill 0.6.0）（2026-09-02）
+
+目标 npm `@yunzhijia/cli@0.1.6`（2026-09-02T11:10Z）。对照：未登录二进制 `--help` + skill `0.6.0` / `references/global.md` / `products/im.md`。**不**恢复待办/AI推进。本仓无重写版 `packages/bundle/skills/yzj-cli/SKILL.md`，未重建。
+
+| 面 | 交付 | 证据 |
+|---|---|---|
+| 信封 | 成功 stdout `{success, identity, data}`；list 在 `.data.list`；空写回执可无 data。`unwrapCli` / `cliList` / 浏览器 `cliRows` 同时吃 0.1.4 裸数组/`{list}` | `cli-envelope.spec.ts`；`v016-tools.spec.ts` 双形态 digest；`cli-payload.spec.ts` |
+| 退出码 | 高风险缺 `--yes` = **exit 10** + `confirmation_required`（0.1.4 曾用 exit 3）。认证缺失仍 exit 3。`--jq` 求值失败 exit 5。确认卡门控 agent 写；`--yes` 只在卡后透传删除族。recall/rename/folder create **无** `--yes` | pitfall-049；fake CLI `confirm`/`unauth`；recall 组装断言 |
+| whoami | 模型工具改打顶层 `whoami`；面板 RPC/bridge.check 仍 `contact user get`（0.1.4 无 whoami 时冒烟可 skip） | `v016-tools.spec.ts` |
+| 新 IM | `yzj_im_message_recall`（strong）、`yzj_im_message_search`、`yzj_im_group_rename`（standard）。`yzj_im_group_recent` 文案指向 search，不再写「没有群搜索」 | WRITE_SPECS + cards/write-card |
+| 其它 | `sheet get --lite`；`doc folder create`（`--help` 真实且与 `doc create` otl 不同，skill 0.6.0 仍写无独立文件夹——以 CLI 为准）→ `yzj_doc_folder_create` | `v016-tools.spec.ts` |
+| 未做 | 不关 G5（工作台挑群 UI 仍无搜索框；模型面群搜索 0.1.4 已有）。不 bash 直调 CLI 写命令 | 根 README 已知限制 |
+
+send 的 `--to-open-id` / `--at-open-id` / `--at-all` / `--reply-msg-id` / `--image` 与 0.1.6 `--help` 一致，未改 flag。
+

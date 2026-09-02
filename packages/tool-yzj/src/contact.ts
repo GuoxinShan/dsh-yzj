@@ -5,7 +5,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import { runValue, yzjToolOutput, asArray, asRecord, asString, clipJson } from './shared.ts'
+import { runValue, yzjToolOutput, asRecord, asString, clipJson, cliList, unwrapCli } from './shared.ts'
 import type { YzjToolBudget } from './shared.ts'
 
 /** One contact line: name, openId, department, job title, job number. */
@@ -24,27 +24,40 @@ function contactLine(record: unknown): string {
   return parts.join(' · ')
 }
 
-/** Extract the user array from either a bare array or an object payload. */
+/**
+ * User rows from `whoami` (one object) or `contact user get/search`
+ * (bare array / `{list}` / leftover `.data`).
+ */
 function usersOf(json: unknown): unknown[] {
-  const list = asArray(json)
-  return list.length > 0 ? list : asArray(asRecord(json).list)
+  const listed = cliList(json, ['list'])
+  if (listed.length > 0) return listed
+  const payload = unwrapCli(json)
+  if (Array.isArray(payload)) return payload
+  const rec = asRecord(payload)
+  if (asString(rec.openId ?? rec.oId ?? rec.name) !== '') return [payload]
+  return []
 }
 
 /** Register the three contact tools. */
 export function applyContactTools(ctx: Context, budget: YzjToolBudget): void {
   ctx.tools.register(defineTool({
     name: 'yzj_whoami',
-    description: 'Return the current yzj-cli login user: name, openId, department, job title, and job number.',
+    description: 'Return the current yzj-cli login user (yzj-cli whoami): name, openId, department, job title, job number, and token status.',
     parameters: {},
     output: yzjToolOutput,
     timeoutMs: budget.timeoutMs,
     isConcurrencySafe: () => true,
     async execute() {
-      return runValue(ctx, budget, 'contact user get', ['contact', 'user', 'get'], (json) => {
+      return runValue(ctx, budget, 'whoami', ['whoami'], (json) => {
         const users = usersOf(json)
         const lines = users.map(contactLine)
-        const content = lines.length === 0 ? '(no user info)' : lines.join('\n')
-        return { content, data: { record: asRecord(users[0]), users: clipJson(users, { maxChars: budget.maxMetaChars }) } }
+        const rec = asRecord(users[0])
+        const token = asString(rec.tokenStatus)
+        const content = [
+          lines.length === 0 ? '(no user info)' : lines.join('\n'),
+          ...(token === '' ? [] : [`token ${token}`]),
+        ].join('\n')
+        return { content, data: { record: rec, users: clipJson(users, { maxChars: budget.maxMetaChars }) } }
       })
     },
   }))

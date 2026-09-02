@@ -9,7 +9,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import {
   runValue, yzjToolOutput,
-  asRecord, asString, clipJson,
+  asString, clipJson, cliObject,
 } from './shared.ts'
 import type { YzjToolBudget } from './shared.ts'
 
@@ -36,7 +36,7 @@ export function applyFileTools(ctx: Context, budget: YzjToolBudget): void {
       for (const file of args.files) command.push('--file', file)
       if (args.name !== undefined) command.push('--name', args.name)
       return runValue(ctx, budget, 'file upload', command, (json) => {
-        const payload = asRecord(json)
+        const payload = cliObject(json)
         const fileId = asString(payload.fileId ?? payload.file_id ?? payload.id)
         const content = fileId === ''
           ? `uploaded ${args.files.length} file(s)`
