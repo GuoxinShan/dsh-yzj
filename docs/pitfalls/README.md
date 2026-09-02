@@ -62,3 +62,4 @@
 | 45 | GUI 重启撞 credentials 格式：旧 harness build 读扁平、v0.1.1-rc.2 起读 v1 嵌套（version:1+refs:）；压平旧解法对 v1 是毒药，改机器级共享文件前先确认读它的 build 版本 | 重启 web GUI 后 :3080 不起、boot 报 credentials-local | [pitfall-045-gui-restart-credentials-schema.md](pitfall-045-gui-restart-credentials-schema.md) |
 | 46 | 深路径 import 隐式携带 cordis augmentation，删除断链后 ctx.get 类型静默 any（不报新错，下游推断全塌） | 删任何 `@dsh-yzj/*/src/...` 深路径 import 前 | [pitfall-046-deep-import-carries-augmentation.md](pitfall-046-deep-import-carries-augmentation.md) |
 | 47 | 0.1.2 client-modules 只扫精确包名：ui-yzj 子路径行没有浏览器半 | monobundle + harness ≥ 0.1.2 | [pitfall-047-client-modules-package-root.md](pitfall-047-client-modules-package-root.md) |
+| 48 | 0.1.2 的 `dsh-client-store` 种子在 0.1.1 桌面上不存在：v0.1.2 静态导入整面 Failed to load plugins | ui-yzj `defineStore` / Oh My DSH rc.18 | [pitfall-048-store-seed-dual-runtime.md](pitfall-048-store-seed-dual-runtime.md) |

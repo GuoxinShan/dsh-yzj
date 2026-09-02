@@ -18,7 +18,7 @@ harness 0.1.2 上，host 四个 yzj 行都启用（bridge / tool-yzj / ui-yzj / 
 
 不改 harness。把 ui-yzj 的 Loader 名改成包根 `@dsh-yzj/bundle`（根 `exports["."]` = `./lib/ui-yzj.mjs`），并把 client bundle handoff id 改成同一个字符串。bridge / tool-yzj / model-yzj 仍走子路径——它们没有 `dsh.client`。
 
-0.1.2 同时把 snapshot store 从 `@deepseek-ai/dsh-client-runtime/client` 挪到平台种子 `@deepseek-ai/dsh-client-store`。`defineStore` 必须从 store 包取值，`tsdown.shared.ts` 的 `PLATFORM_MODULES` 必须跟 harness `packages/client/web/src/platform.ts` 对齐；否则 combo 已含 `@dsh-yzj/bundle/client.js` 也会 `missed the module table`。
+0.1.2 同时把 snapshot store 从 `@deepseek-ai/dsh-client-runtime/client` 挪到平台种子 `@deepseek-ai/dsh-client-store`。`PLATFORM_MODULES` 必须跟 0.1.2 `packages/client/web/src/platform.ts` 对齐，但 `defineStore` 不能只静态导入 store 包——0.1.1 桌面没有这个种子词，见 pitfall-048。
 
 不要插一条空的包根 host 行同时保留子路径 ui-yzj：图行 id 会是包名，旧 bundle 仍注册子路径，启动照样炸。
 

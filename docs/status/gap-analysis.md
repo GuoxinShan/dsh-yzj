@@ -1250,6 +1250,6 @@ headless overlay（无 ui-yzj）仍 fail-closed：瀑布 next → unavailable �
 | 面 | 交付 | 证据 |
 |---|---|---|
 | Loader | ui-yzj 行名 + 根 `exports["."]` = `@dsh-yzj/bundle` / `./lib/ui-yzj.mjs` | `cordis.patch.yml` + 根 `package.json` |
-| client | handoff id `@dsh-yzj/bundle`；`defineStore` 从 `@deepseek-ai/dsh-client-store` 取值；`PLATFORM_MODULES` 对齐 0.1.2 | `client-bundle.client.spec.ts`；本机 0.1.2 profile：设置「云之家」、侧栏面板、群会话列表 |
-| 文档 | pitfall-047；pitfall-010 解法改写 | pitfalls 索引 |
+| client | handoff id `@dsh-yzj/bundle`；`defineStore` 先 0.1.2 `dsh-client-store` 再 0.1.1 `dsh-client-runtime/client`；`CLIENT_EXTERNALS` 含两个词 | `client-bundle.client.spec.ts`；0.1.2 `dsh web` 与 rc.18 桌面 |
+| 文档 | pitfall-047；pitfall-048；pitfall-010 解法改写 | pitfalls 索引 |
 

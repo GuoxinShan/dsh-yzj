@@ -58,8 +58,8 @@ pnpm 从 GitHub 拉仓库根包（`@dsh-yzj/bundle`，`dsh.bundle` 声明被 rec
   `dsh.client`——子路径行必须配 `./ui-yzj/package.json` 导出，否则 client
   bundle 404；
 - harness 0.1.2 只扫精确包名，图行 id 是清单 `name`：ui-yzj 必须用包根行 +
-  handoff id `@dsh-yzj/bundle`，`defineStore` 从 `@deepseek-ai/dsh-client-store`
-  取值（pitfall-047 / pitfall-010）；
+  handoff id `@dsh-yzj/bundle`，`defineStore` 先 0.1.2 `dsh-client-store`
+  再 0.1.1 `dsh-client-runtime/client`（pitfall-047 / pitfall-048 / pitfall-010）；
 - tsdown 多 entry 输出 `.mjs`（ESM）——exports 用 `.mjs`，不是 `.js`；
 - closure-factory client bundle 绝不能重打包——复制搬运；
 - 安装验证用独立临时 profile（`dsh plugin --profile release-check add …`），
@@ -70,7 +70,8 @@ pnpm 从 GitHub 拉仓库根包（`@dsh-yzj/bundle`，`dsh.bundle` 声明被 rec
 
 | 版本 | 日期 | 形态 | 内容 |
 |---|---|---|---|
-| v0.1.2 | 2026-09-02 | monobundle + git | **适配 harness 0.1.2**：ui-yzj Loader 行与 client handoff id 改为包根 `@dsh-yzj/bundle`（0.1.2 不扫子路径、图行 id 是包名）；`defineStore` 改从平台种子 `@deepseek-ai/dsh-client-store` 取值。0.1.1 同一份 id 也对。pitfall-047 + 更新 pitfall-010。Release：https://github.com/GuoxinShan/dsh-yzj/releases/tag/v0.1.2 |
+| v0.1.3 | 2026-09-02 | monobundle + git | **0.1.1 / 0.1.2 双 runtime**：`defineStore` 先 require 0.1.2 `dsh-client-store`，未命中再 require 0.1.1 `dsh-client-runtime/client`；两个 specifier 进 `CLIENT_EXTERNALS`。修 v0.1.2 在 0.1.1 桌面（Oh My DSH rc.18）上 Failed to load plugins。pitfall-048。Release：https://github.com/GuoxinShan/dsh-yzj/releases/tag/v0.1.3 |
+| v0.1.2 | 2026-09-02 | monobundle + git | **适配 harness 0.1.2**：ui-yzj Loader 行与 client handoff id 改为包根 `@dsh-yzj/bundle`（0.1.2 不扫子路径、图行 id 是包名）；`defineStore` 改从平台种子 `@deepseek-ai/dsh-client-store` 取值。包根 id 在 0.1.1 也对，但静态 store 导入会在 0.1.1 桌面 Failed to load plugins（pitfall-048）。pitfall-047 + 更新 pitfall-010。Release：https://github.com/GuoxinShan/dsh-yzj/releases/tag/v0.1.2 |
 | v0.1.1 | 2026-08-16 | monobundle + git | **修复 web profile 启动崩溃**：client bundle 注册 id 与 loader 行名对齐（`@dsh-yzj/bundle/ui-yzj`），v0.1.0 因 ab714b2 行名改名后 tsdown id 未同步，browser half 挂载即报 `loaded without registering`；新增 bundle 契约测试 + pitfall-010。Release：https://github.com/GuoxinShan/dsh-yzj/releases/tag/v0.1.1 |
 | v0.1.0 | 2026-08-16 | monobundle + git | 全量功能（桥/命令族/定时/记忆/模型默认链），六行聚合 + client bundle，git 可装；**GitHub 安装全链路验收通过**（六行挂载 + client bundle 200）；Release 说明见 https://github.com/GuoxinShan/dsh-yzj/releases/tag/v0.1.0 |
 

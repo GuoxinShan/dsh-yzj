@@ -4,7 +4,27 @@
  * the factory only (a module-level handle would pin store identity across
  * plugin reloads); the two registrations share the factory's handle.
  */
-import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
+import type { EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
+
+type DefineStore = typeof import('@deepseek-ai/dsh-client-store').defineStore
+
+/**
+ * 0.1.2 seeds `@deepseek-ai/dsh-client-store`; 0.1.1 answers the same
+ * engine at `@deepseek-ai/dsh-client-runtime/client`. A static import of
+ * either specifier crashes the other runtime (client-modules require miss).
+ * The client factory injects `require`; keep the calls here so the bundle
+ * resolves against the shell table instead of inlining a second engine.
+ */
+function resolveDefineStore(): DefineStore {
+  const req = require as (spec: string) => { defineStore: DefineStore }
+  try {
+    return req('@deepseek-ai/dsh-client-store').defineStore
+  } catch {
+    return req('@deepseek-ai/dsh-client-runtime/client').defineStore
+  }
+}
+
+const defineStore = resolveDefineStore()
 
 /** Panel tabs (运营性内容 only — 机器人/记忆管理页在 设置 → 云之家). */
 export type YzjTab = 'docs' | 'calendar' | 'chat'

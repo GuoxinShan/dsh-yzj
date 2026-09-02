@@ -16,9 +16,9 @@ import type { UserConfig } from 'tsdown'
 import { transform } from 'lightningcss'
 
 /**
- * Browser platform modules the dsh web shell shares into its frozen module
- * table. Must stay byte-identical with the harness platform list the shell
- * seeds (packages/client/web/src/platform.ts).
+ * Browser platform modules the 0.1.2 web shell shares into its frozen
+ * module table. Must stay aligned with harness
+ * `packages/client/web/src/platform.ts`.
  */
 export const PLATFORM_MODULES = [
   'react', 'react/jsx-runtime', 'react-dom', 'react-dom/client', '@deepseek-ai/cordis',
@@ -27,14 +27,21 @@ export const PLATFORM_MODULES = [
   '@deepseek-ai/dsh-client-ui-primitives',
 ] as const
 
+/**
+ * 0.1.1 desktop still answers `defineStore` at this specifier (parser
+ * preload, not a 0.1.2 seed). Keep it external so a runtime fallback
+ * `require` hits the module table instead of inlining a second engine.
+ */
+export const LEGACY_STORE_MODULE = '@deepseek-ai/dsh-client-runtime/client'
+
 /** Wire/type layers a client bundle may inline: browser-safe contracts with no shared runtime identity. */
 const INLINE_SAFE = /^@deepseek-ai\/dsh-(host-apiproxy|session|llm|tools|brand)(\/|$)/
 
 /** Vendored framework libraries with no cross-plugin runtime identity. */
 const VENDORED_LIBRARY = /^@deepseek-ai\/(cosmokit|schemastery)(\/|$)/
 
-/** Externals resolved from the loader module table (0.1.2 baseline). */
-export const CLIENT_EXTERNALS: readonly string[] = [...PLATFORM_MODULES]
+/** Externals resolved from the loader module table (0.1.2 seeds + 0.1.1 store word). */
+export const CLIENT_EXTERNALS: readonly string[] = [...PLATFORM_MODULES, LEGACY_STORE_MODULE]
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('.', import.meta.url))
 

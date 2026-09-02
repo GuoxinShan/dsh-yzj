@@ -23,4 +23,15 @@ describe('client bundle loader entry', () => {
     expect(bundle).not.toContain('id: "@dsh-yzj/ui-yzj"')
     expect(bundle).not.toContain('id: "@dsh-yzj/bundle/ui-yzj"')
   })
+
+  it('resolves defineStore from the 0.1.2 seed, then the 0.1.1 runtime word', () => {
+    if (!existsSync(BUNDLE_PATH)) return
+    const bundle = readFileSync(BUNDLE_PATH, 'utf8')
+    expect(bundle).toContain('try')
+    expect(bundle).toContain('@deepseek-ai/dsh-client-store')
+    expect(bundle).toContain('@deepseek-ai/dsh-client-runtime/client')
+    expect(bundle.indexOf('@deepseek-ai/dsh-client-store')).toBeLessThan(
+      bundle.indexOf('@deepseek-ai/dsh-client-runtime/client'),
+    )
+  })
 })
