@@ -7,7 +7,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import {
   runValue, yzjToolOutput, linesOf,
-  asRecord, asArray, asString, asNumber, clipJson, cliObject, cliList,
+  asRecord, asString, asNumber, clipJson, cliObject, cliList,
 } from './shared.ts'
 import type { YzjToolBudget } from './shared.ts'
 import { collectCalendarEvents } from './calendar-range.ts'
