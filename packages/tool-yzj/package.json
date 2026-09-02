@@ -1,0 +1,33 @@
+{
+  "name": "@dsh-yzj/tool-yzj",
+  "description": "Model-facing Yunzhijia tools over the yzj-cli bridge: doc, sheet, calendar, contact, im, and file domains with bounded digests and UI presentation metadata",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/types/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc -b && tsdown",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@dsh-yzj/bridge": "workspace:^",
+    "@deepseek-ai/cordis": "link:../../../deepseek-harness/vendor/cordis",
+    "@deepseek-ai/dsh-storage-domain": "link:../../../deepseek-harness/packages/storage/storage-domain",
+    "@deepseek-ai/dsh-tools": "link:../../../deepseek-harness/packages/core/tools",
+    "@deepseek-ai/schemastery": "link:../../../deepseek-harness/vendor/schemastery",
+    "zod": "^4.4.3"
+  }
+}

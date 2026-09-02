@@ -1,0 +1,306 @@
+/*
+ * Tool-result cards and the write confirmation card, aligned to the dsh
+ * native visual language: --dsw-alias-* semantic tokens, 14px body text,
+ * layered borders, ghost/primary button styles.
+ */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 20px;
+  min-width: 0;
+}
+
+.errorCard {
+  border-color: var(--dsw-static-red-500);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Tinted icon box (prototype cc-head icon style). */
+.iconBox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--dsw-static-deepseek-100);
+  color: var(--dsw-static-deepseek-600);
+  flex: none;
+}
+
+.title {
+  font-weight: 600;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag {
+  flex: none;
+  margin-left: auto;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--dsw-static-deepseek-100);
+  color: var(--dsw-static-deepseek-600);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.tagRun {
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.tagFail {
+  background: var(--dsw-static-red-100);
+  color: var(--dsw-static-red-500);
+  font-weight: 600;
+}
+
+.rowWrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.rowWrap > * {
+  flex: 1;
+  min-width: 0;
+}
+
+.rowWrap .link {
+  flex: none;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 260px;
+  overflow: auto;
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base);
+}
+
+.rowTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.rowSub {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowId {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  flex: none;
+}
+
+.avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: none;
+}
+
+.avatarFallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--dsw-static-deepseek-100);
+  color: var(--dsw-static-deepseek-600);
+  font-size: 12px;
+  font-weight: 600;
+  flex: none;
+}
+
+.link {
+  color: var(--dsw-static-deepseek-500);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+/* Ghost jump button (card → floating panel), same link style as the panel. */
+.jump {
+  flex: none;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-static-deepseek-500);
+  font-size: 12px;
+  line-height: 16px;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: background-color 120ms var(--ds-ease-in-out, ease);
+}
+
+.jump:hover {
+  background: var(--dsw-static-deepseek-100);
+}
+
+.text {
+  color: var(--dsw-alias-label-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 13px;
+  line-height: 18px;
+  max-height: 200px;
+  overflow: auto;
+}
+
+/* --- write confirmation card --- */
+
+.strongCard {
+  border-color: var(--dsw-static-red-500);
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+}
+
+.tagStrong {
+  background: var(--dsw-static-red-100);
+  color: var(--dsw-static-red-500);
+  font-weight: 600;
+}
+
+.fullText {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 13px;
+  line-height: 18px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base);
+  max-height: 180px;
+  overflow: auto;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 2px;
+}
+
+.action,
+.actionPrimary {
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 16px;
+  padding: 5px 14px;
+  cursor: pointer;
+  transition: background-color 120ms var(--ds-ease-in-out, ease), border-color 120ms var(--ds-ease-in-out, ease);
+}
+
+.action:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  border-color: var(--dsw-alias-border-l3);
+}
+
+.actionPrimary {
+  border-color: transparent;
+  background: var(--dsw-alias-button-info-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+  font-weight: 600;
+}
+
+.actionPrimary:hover {
+  background: var(--dsw-alias-button-info-hover);
+  border-color: transparent;
+}
+
+/* write id — faint mono label at the header tail (prototype cc-id). */
+.writeId {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+
+/* 以本人身份执行 line under the target args. */
+.ccIdentity {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  padding: 2px 8px 0;
+}
+
+/* 关联引用 mini chips row. */
+.ccRefs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 8px;
+}
+
+.ccRefsLabel {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  flex: none;
+}
+
+.miniChip {
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--dsw-static-deepseek-100);
+  color: var(--dsw-static-deepseek-600);
+  font-size: 11px;
+  line-height: 16px;
+  flex: none;
+}
+
+/* Cancelled terminal card (prototype states.html 已取消). */
+.terminalCancel {
+  border-color: var(--dsw-alias-border-l3);
+  background: var(--dsw-alias-bg-layer-1);
+  opacity: 0.85;
+}

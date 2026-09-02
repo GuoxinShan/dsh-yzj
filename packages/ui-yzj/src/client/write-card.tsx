@@ -1,0 +1,393 @@
+/**
+ * Confirmation card for yzj write tools, registered into the keyed
+ * `tool.call.toolview` seat for every gated write tool name. While a write
+ * call sits in the approval gate (status pending/approved), the card shows
+ * the full gated arguments by domain, the risk level (strong = red), and the
+ * decision verbs (确认 / 取消 / 查看上下文 / 编辑). Settled or ungated calls
+ * fall back to the ordinary result card, whose content comes from the
+ * durable tool events — replay-safe by construction.
+ */
+import { useEffect, useState, type ReactNode } from 'react'
+import type { YzjWriteRecord } from '../write-gate.ts'
+import { YzjToolCard } from './cards.tsx'
+import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
+import { decodeRef } from './input-source.ts'
+import { cliRows, unwrapCli } from '../cli-payload.ts'
+import css from './cards.module.css'
+
+/**
+ * Every tool name gated by `@dsh-yzj/tool-yzj`'s approval guard. Keep in
+ * sync with `tool-yzj/src/guard.ts` `WRITE_SPECS` (a mismatch only affects
+ * which calls render the confirmation card, never the gate itself).
+ */
+export const YZJ_WRITE_TOOL_NAMES = [
+  // strong
+  'yzj_doc_delete', 'yzj_doc_block_delete', 'yzj_sheet_table_delete',
+  'yzj_sheet_record_delete', 'yzj_calendar_event_delete',
+  'yzj_im_group_members_remove', 'yzj_im_message_recall',
+  // standard
+  'yzj_im_message_send', 'yzj_file_upload', 'yzj_file_download',
+  'yzj_doc_move', 'yzj_doc_workspace_create', 'yzj_doc_create',
+  'yzj_doc_folder_create', 'yzj_doc_rename', 'yzj_doc_import',
+  'yzj_doc_write', 'yzj_doc_block_replace', 'yzj_doc_download',
+  'yzj_doc_block_insert', 'yzj_doc_block_update', 'yzj_sheet_create',
+  'yzj_sheet_table_create', 'yzj_sheet_table_rename', 'yzj_sheet_record_create',
+  'yzj_sheet_record_update', 'yzj_calendar_event_create', 'yzj_calendar_event_update',
+  'yzj_im_group_create', 'yzj_im_group_rename', 'yzj_im_group_members_add',
+] as const
+
+/** The injected decision face the confirmation card receives. */
+export interface WriteCardInjected {
+  /** One gated record for the call, or undefined when not gated. */
+  fetchWrite: (callId: string) => Promise<YzjWriteRecord | undefined>
+  /** Settle the pending decision; false when the record is no longer pending. */
+  decideWrite: (writeId: string, outcome: 'allowed-once' | 'rejected') => Promise<boolean>
+  /** Open the floating panel on the context the write targets. */
+  openContext: (record: YzjWriteRecord) => void
+  /** Push a draft text back into the composer for editing. */
+  editDraft: (text: string) => void
+  /** The logged-in user's display name, for the 以本人身份 line. */
+  fetchWhoami: () => Promise<string>
+  /** Name lookups so the card shows friendly labels, never raw ids. */
+  fetchGroups?: (limit?: number, page?: number) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
+  fetchWorkspaces?: (type?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
+  fetchDoc?: (id: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
+  fetchContact?: (openId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }>
+}
+
+type UnknownRecord = Record<string, unknown>
+
+function asRecord(value: unknown): UnknownRecord {
+  return typeof value === 'object' && value !== null ? value as UnknownRecord : {}
+}
+
+function asString(value: unknown): string {
+  return typeof value === 'string' ? value : ''
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : []
+}
+
+/** Short Chinese title per gated tool (mirrors cards.tsx families). */
+const WRITE_TITLES: Record<string, string> = {
+  yzj_doc_delete: '删除文档',
+  yzj_doc_block_delete: '删除内容',
+  yzj_sheet_table_delete: '删除数据表',
+  yzj_sheet_record_delete: '删除记录',
+  yzj_calendar_event_delete: '取消日程',
+  yzj_im_message_send: '发送消息',
+  yzj_im_message_recall: '撤回消息',
+  yzj_im_group_create: '创建群组',
+  yzj_im_group_rename: '修改群名',
+  yzj_im_group_members_add: '拉人进群',
+  yzj_im_group_members_remove: '移出群成员',
+  yzj_doc_folder_create: '新建文件夹',
+  yzj_doc_write: '整篇写文档',
+  yzj_doc_block_replace: '替换内容',
+  yzj_doc_download: '下载文档',
+  yzj_file_upload: '上传文件',
+  yzj_file_download: '下载文件',
+  yzj_doc_move: '移动文档',
+  yzj_doc_workspace_create: '新建知识库',
+  yzj_doc_create: '新建文档',
+  yzj_doc_rename: '重命名文档',
+  yzj_doc_import: '导入文档',
+  yzj_doc_block_insert: '插入内容',
+  yzj_doc_block_update: '更新内容',
+  yzj_sheet_create: '新建多维表格',
+  yzj_sheet_table_create: '新建数据表',
+  yzj_sheet_table_rename: '重命名数据表',
+  yzj_sheet_record_create: '新增记录',
+  yzj_sheet_record_update: '更新记录',
+  yzj_calendar_event_create: '新建日程',
+  yzj_calendar_event_update: '更新日程',
+}
+
+/** Domain labels for the card header. */
+const DOMAIN_LABELS: Record<string, string> = {
+  im: '消息', doc: '文档', kb: '知识库', sheet: '多维表格', calendar: '日程', file: '文件', other: '云之家',
+}
+
+function row(title: string, sub: string, key: string): ReactNode {
+  return (
+    <div className={css.row} key={key}>
+      <div className={css.rowTitle}>{title}</div>
+      {sub !== '' && <div className={css.rowSub}>{sub}</div>}
+    </div>
+  )
+}
+
+/** The full draft text a card's 编辑 verb restores into the composer. */
+export function writableDraft(record: YzjWriteRecord): string {
+  const args = asRecord(record.args)
+  const content = asString(args.content)
+  if (content !== '') return content
+  const text = asString(args.text)
+  if (text !== '') return text
+  const records = asString(args.records)
+  if (records !== '') return records
+  const title = asString(args.title)
+  if (title !== '') return title
+  return ''
+}
+
+/** The 查看上下文 jump: open the panel on the tab the write targets. */
+
+/** Resolve raw ids in the gated args to friendly names (per record). */
+function useResolvedNames(record: YzjWriteRecord | undefined, inject: WriteCardInjected): Record<string, string> {
+  const [names, setNames] = useState<Record<string, string>>({})
+  useEffect(() => {
+    if (record === undefined) return
+    let alive = true
+    const args = asRecord(record.args)
+    const out: Record<string, string> = {}
+    const tasks: Promise<void>[] = []
+    const groupId = asString(args.groupId)
+    if (record.domain === 'im' && groupId !== '' && inject.fetchGroups !== undefined) {
+      tasks.push(inject.fetchGroups(20).then((result) => {
+        if (!result.ok) return
+        const group = cliRows(result.value).map(asRecord).find(g => asString(g.groupId) === groupId)
+        if (group !== undefined && asString(group.groupName) !== '') out[groupId] = asString(group.groupName)
+      }).catch(() => {}))
+    }
+    const docId = asString(args.id)
+    if ((record.domain === 'doc' || record.domain === 'sheet') && docId !== '' && inject.fetchDoc !== undefined) {
+      tasks.push(inject.fetchDoc(docId).then((result) => {
+        if (!result.ok) return
+        const node = asRecord(unwrapCli(result.value))
+        const title = asString(node.title) !== '' ? asString(node.title) : asString(asRecord(node.data).title)
+        if (title !== '') out[docId] = title
+      }).catch(() => {}))
+    }
+    const workspace = asString(args.workspace)
+    if (workspace !== '' && inject.fetchWorkspaces !== undefined) {
+      tasks.push(inject.fetchWorkspaces().then((result) => {
+        if (!result.ok) return
+        const ws = cliRows(result.value).map(asRecord).find(w => asString(w.id) === workspace)
+        if (ws !== undefined && asString(ws.name) !== '') out[workspace] = asString(ws.name)
+      }).catch(() => {}))
+    }
+    if (inject.fetchContact !== undefined) {
+      for (const raw of asArray(args.organizerOpenIds)) {
+        const openId = asString(raw)
+        if (openId === '') continue
+        tasks.push(inject.fetchContact(openId).then((result) => {
+          if (!result.ok) return
+          const list = cliRows(result.value)
+          const user = asRecord(list[0] ?? unwrapCli(result.value))
+          const name = asString(user.name)
+          if (name !== '') out[openId] = name
+        }).catch(() => {}))
+      }
+    }
+    void Promise.all(tasks).then(() => { if (alive) setNames(out) })
+    return () => { alive = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [record])
+  return names
+}
+
+/** One line of gated arguments, domain-specific, ids resolved to names. */
+function ArgBody({ record, names }: { record: YzjWriteRecord; names: Record<string, string> }): ReactNode {
+  const args = asRecord(record.args)
+  const str = (key: string): string => asString(args[key])
+  const list = (key: string): unknown[] => asArray(args[key])
+  const rows: ReactNode[] = []
+  const push = (title: string, sub: string, key: string): void => { rows.push(row(title, sub, key)) }
+  const nameOf = (id: string, fallback: string): string => (id === '' ? '' : names[id] ?? fallback)
+  switch (record.domain) {
+    case 'im': {
+      const groupId = str('groupId')
+      const toOpenId = str('toOpenId')
+      const target = groupId !== ''
+        ? `群聊${nameOf(groupId, '') === '' ? '' : ` · ${nameOf(groupId, '')}`}`
+        : toOpenId !== ''
+          ? `单聊${nameOf(toOpenId, '') === '' ? '' : ` · ${nameOf(toOpenId, '')}`}`
+          : ''
+      if (target !== '') push('目标', target, 't')
+      if (record.toolName === 'yzj_im_message_recall') {
+        push('操作', '撤回一条消息', 'rc')
+        break
+      }
+      if (record.toolName === 'yzj_im_group_rename') {
+        if (str('name') !== '') push('新群名', str('name'), 'nm')
+        break
+      }
+      if (record.toolName === 'yzj_im_group_create') {
+        if (str('name') !== '') push('群名', str('name'), 'nm')
+        const members = list('memberOpenIds')
+        if (members.length > 0) push('初始成员', `${members.length} 人`, 'mb')
+        break
+      }
+      if (record.toolName === 'yzj_im_group_members_add' || record.toolName === 'yzj_im_group_members_remove') {
+        const members = list('openIds')
+        if (members.length > 0) push('成员', `${members.length} 人`, 'mb')
+        break
+      }
+      push('类型', str('msgType'), 'mt')
+      const body = str('content') !== '' ? str('content') : str('text')
+      if (body !== '') {
+        rows.push(<div className={css.fullText} key="c">{body}</div>)
+      }
+      const ats = list('atOpenIds')
+      if (ats.length > 0) push('提及', `${ats.length} 人`, 'at')
+      if (args.atAll === true) push('提及', '@所有人', 'atall')
+      if (str('replyMsgId') !== '') push('回复', '回复一条消息', 'rp')
+      break
+    }
+    case 'doc': {
+      const id = str('id')
+      push('文档', id === '' ? (record.toolName === 'yzj_doc_folder_create' ? '新建文件夹' : '新建文档') : nameOf(id, '文档操作'), 'id')
+      const ws = str('workspace')
+      if (ws !== '') push('知识库', nameOf(ws, '知识库'), 'ws')
+      if (str('title') !== '') push('标题', str('title'), 'ti')
+      if (record.toolName === 'yzj_doc_move') push('目标位置', str('targetParentId') !== '' ? '指定节点下' : '知识库根节点', 'tp')
+      if (str('operations') !== '') push('操作', str('operations').slice(0, 200), 'op')
+      if (str('element') !== '') push('插入内容', str('element').slice(0, 200), 'el')
+      break
+    }
+    case 'kb':
+      push('知识库名称', str('name'), 'n')
+      if (str('description') !== '') push('简介', str('description'), 'd')
+      break
+    case 'sheet': {
+      const id = str('id')
+      push('多维表格', id === '' ? '新建多维表格' : nameOf(id, '多维表格'), 'id')
+      const recordIds = str('recordIds')
+      if (recordIds !== '') push('删除记录', `${recordIds.split(',').filter(part => part !== '').length} 条`, 'rd')
+      if (str('records') !== '') push('记录', str('records').slice(0, 300), 'rc')
+      break
+    }
+    case 'calendar': {
+      push('标题', str('title'), 't')
+      if (str('start') !== '') push('开始', str('start'), 's')
+      if (str('end') !== '') push('结束', str('end'), 'e')
+      const orgs = list('organizerOpenIds')
+      if (orgs.length > 0) {
+        const orgNames = orgs.map(id => names[asString(id)] ?? '').filter(name => name !== '')
+        push('组织者', orgNames.length > 0 ? orgNames.join('、') : `${orgs.length} 人`, 'o')
+      }
+      break
+    }
+    case 'file':
+      if (list('files').length > 0) push('文件', `${list('files').length} 个文件`, 'f')
+      if (str('name') !== '') push('文件名', str('name'), 'n')
+      if (str('output') !== '') push('输出', str('output'), 'o')
+      break
+    default:
+      rows.push(<div className={css.text} key="j">{JSON.stringify(args)}</div>)
+  }
+  return <div className={css.rows}>{rows}</div>
+}
+
+/** Mini-chip labels for referenced refs (decode yzj:... tokens → titles). */
+function refChips(refs: unknown): ReactNode[] {
+  const out: ReactNode[] = []
+  const list = asArray(refs)
+  for (let index = 0; index < list.length; index += 1) {
+    const raw = asString(list[index])
+    if (raw === '') continue
+    const parsed = decodeRef(raw)
+    out.push(<span className={css.miniChip} key={`r${index}`}>{parsed?.title ?? raw.slice(0, 24)}</span>)
+  }
+  return out
+}
+
+/**
+ * The gated confirmation card. Pending/approved records render the decision
+ * surface; cancelled renders the terminal 已取消 card; done/failed and
+ * ungated calls delegate to the ordinary tool card so the durable result
+ * stays the terminal display.
+ */
+export function YzjWriteToolCard(props: ToolCallViewProps & WriteCardInjected) {
+  const { toolName, callId } = props
+  const [record, setRecord] = useState<YzjWriteRecord | undefined>(undefined)
+  const [ready, setReady] = useState(false)
+  const [meName, setMeName] = useState('')
+  const names = useResolvedNames(record, props)
+
+  useEffect(() => {
+    let live = true
+    setReady(false)
+    props.fetchWrite(callId)
+      .then((found) => { if (live) { setRecord(found); setReady(true) } })
+      .catch(() => { if (live) setReady(true) })
+    void props.fetchWhoami().then((name) => { if (live && name !== '') setMeName(name) }).catch(() => {})
+    return () => { live = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [callId])
+
+  if (!ready || record === undefined || record.status === 'done' || record.status === 'failed') {
+    return <YzjToolCard {...props} />
+  }
+
+  const strong = record.level === 'strong'
+  const settled = record.status === 'approved'
+  const title = WRITE_TITLES[toolName] ?? `云之家 · ${DOMAIN_LABELS[record.domain] ?? '写操作'}`
+  const draft = writableDraft(record)
+  const refs = refChips(asRecord(record.args).refs)
+  const decide = (outcome: 'allowed-once' | 'rejected', next: YzjWriteRecord['status']): void => {
+    void props.decideWrite(record.writeId, outcome).then((ok) => {
+      if (ok) setRecord({ ...record, status: next })
+    })
+  }
+
+  // Cancelled terminal: a distinct pale card instead of the raw rejection
+  // result (prototype states.html 已取消).
+  if (record.status === 'cancelled') {
+    return (
+      <div className={`${css.card} ${css.terminalCancel}`} role="status">
+        <div className={css.header}>
+          <span className={css.icon}>✕</span>
+          <span className={css.title}>{title} · 已取消</span>
+        </div>
+        <div className={css.text}>未产生任何写动作；「编辑」可把草稿塞回 composer 修改后再发起。</div>
+      </div>
+    )
+  }
+
+  return (
+    <div className={strong ? `${css.card} ${css.strongCard}` : css.card} role="status">
+      <div className={css.header}>
+        <span className={css.icon}>☁</span>
+        <span className={css.title}>{title}</span>
+        {settled ? (
+          <span className={css.tag}>执行中</span>
+        ) : (
+          <span className={strong ? `${css.tag} ${css.tagStrong}` : css.tag}>
+            {strong ? '强确认' : '需确认'}
+          </span>
+        )}
+        <span className={css.writeId}>{record.writeId}</span>
+      </div>
+      <div className={css.ccTarget}>
+        <ArgBody record={record} names={names} />
+        {meName !== '' && (
+          <div className={css.ccIdentity}>将以你本人（{meName}）身份执行</div>
+        )}
+      </div>
+      {refs.length > 0 && (
+        <div className={css.ccRefs}>
+          <span className={css.ccRefsLabel}>关联引用</span>
+          {refs}
+        </div>
+      )}
+      {settled ? (
+        <div className={css.text}>已批准，正在执行…</div>
+      ) : (
+        <div className={css.actions}>
+          <button type="button" className={css.action} onClick={() => props.openContext(record)}>查看上下文</button>
+          {draft !== '' && (
+            <button type="button" className={css.action} onClick={() => {
+              props.editDraft(draft)
+              decide('rejected', 'cancelled')
+            }}>编辑</button>
+          )}
+          <button type="button" className={css.action} onClick={() => decide('rejected', 'cancelled')}>取消</button>
+          <button type="button" className={css.actionPrimary} onClick={() => decide('allowed-once', 'approved')}>确认</button>
+        </div>
+      )}
+    </div>
+  )
+}

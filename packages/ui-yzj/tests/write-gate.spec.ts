@@ -1,0 +1,303 @@
+/**
+ * Write-gate specs: the confirmation-card bridge answers
+ * `yzj/confirm-request` (and the leftover `approval/request` fallback)
+ * for yzj_* writes, exposes pending records, settles decisions, and lets
+ * the official `tools/result` event drive the terminal status.
+ */
+import { Context } from '@deepseek-ai/cordis'
+import { describe, expect, it } from 'vitest'
+import { applyWriteGate, type YzjApprovalOutcome, type YzjWriteRecord } from '../src/write-gate.ts'
+
+interface FakeEvent { type: string; data: unknown }
+
+function sessionOf(events: FakeEvent[]) {
+  return {
+    id: 's1',
+    events: [
+      { type: 'turn/start', data: { turn: 1 } },
+      ...events,
+    ],
+  }
+}
+
+interface Harness {
+  ctx: Context
+  gate: ReturnType<typeof applyWriteGate>
+  ask: (over: Partial<Parameters<Context['emit']>[1]> & object) => void
+  request: (over?: {
+    toolName?: string
+    callId?: string
+    reason?: string
+    signal?: { aborted: boolean; addEventListener: () => void; removeEventListener: () => void }
+  }) => Promise<YzjApprovalOutcome>
+}
+
+function mount(events: FakeEvent[] = []): Harness {
+  const ctx = new Context()
+  const gate = applyWriteGate(ctx)
+  const session = sessionOf(events)
+  const ask = (over: { callId: string; toolName: string; level: 'standard' | 'strong'; reason: string; args: Record<string, unknown> }): void => {
+    ctx.emit('yzj/ask-pending', over)
+  }
+  const request = (over: {
+    toolName?: string
+    callId?: string
+    reason?: string
+    signal?: { aborted: boolean; addEventListener: () => void; removeEventListener: () => void }
+  } = {}): Promise<YzjApprovalOutcome> =>
+    ctx.waterfall('approval/request', {
+      agent: { session },
+      toolName: over.toolName ?? 'yzj_im_message_send',
+      callId: over.callId ?? 'c1',
+      ...over.reason === undefined ? {} : { reason: over.reason },
+      ...over.signal === undefined ? {} : { signal: over.signal },
+    }, () => Promise.resolve<YzjApprovalOutcome>('unavailable'))
+  return { ctx, gate, ask, request }
+}
+
+function asked(callId = 'c1', id = 'w1'): FakeEvent {
+  return { type: 'approval/asked', data: { id, callId } }
+}
+
+function recordOf(list: YzjWriteRecord[], id: string): YzjWriteRecord {
+  const found = list.find(record => record.writeId === id)
+  if (found === undefined) throw new Error(`record ${id} not found`)
+  return found
+}
+
+describe('applyWriteGate', () => {
+  it('delegates non-yzj requests to the next answerer', async () => {
+    const h = mount()
+    const outcome = await h.request({ toolName: 'bash' })
+    expect(outcome).toBe('unavailable')
+    expect(h.gate.list('s1')).toEqual([])
+  })
+
+  it('pairs the audit id and exposes a pending record with the ask args', async () => {
+    const h = mount([asked()])
+    h.ask({ callId: 'c1', toolName: 'yzj_im_message_send', level: 'standard', reason: '云之家操作确认：发送 IM 消息', args: { groupId: 'g1', content: 'hello' } })
+    const pending = h.request()
+    const list = h.gate.list('s1')
+    expect(list.length).toBe(1)
+    expect(list[0]).toMatchObject({
+      writeId: 'w1', callId: 'c1', domain: 'im', level: 'standard',
+      args: { groupId: 'g1', content: 'hello' }, status: 'pending',
+    })
+    // The waterfall stays open until decided.
+    let settled = false
+    void pending.then(() => { settled = true })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(settled).toBe(false)
+  })
+
+  it('decide allowed-once settles the waterfall and marks approved', async () => {
+    const h = mount([asked()])
+    h.ask({ callId: 'c1', toolName: 'yzj_im_message_send', level: 'standard', reason: 'r', args: {} })
+    const pending = h.request()
+    expect(h.gate.decide('w1', 'allowed-once')).toBe(true)
+    await expect(pending).resolves.toBe('allowed-once')
+    expect(recordOf(h.gate.list('s1'), 'w1').status).toBe('approved')
+    // A second decide on the settled record is a no-op.
+    expect(h.gate.decide('w1', 'rejected')).toBe(false)
+  })
+
+  it('decide rejected settles as cancelled', async () => {
+    const h = mount([asked()])
+    h.ask({ callId: 'c1', toolName: 'yzj_doc_delete', level: 'strong', reason: 'r', args: { id: 'd1' } })
+    const pending = h.request()
+    expect(h.gate.decide('w1', 'rejected')).toBe(true)
+    await expect(pending).resolves.toBe('rejected')
+    expect(recordOf(h.gate.list('s1'), 'w1').status).toBe('cancelled')
+    expect(recordOf(h.gate.list('s1'), 'w1').level).toBe('strong')
+  })
+
+  it('an aborted signal settles cancelled', async () => {
+    let abortListener: (() => void) | undefined
+    const signal = {
+      aborted: false,
+      addEventListener: (_type: string, listener: () => void) => { abortListener = listener },
+      removeEventListener: () => { abortListener = undefined },
+    }
+    const h = mount([asked()])
+    h.ask({ callId: 'c1', toolName: 'yzj_im_message_send', level: 'standard', reason: 'r', args: {} })
+    const pending = h.request({ signal })
+    expect(recordOf(h.gate.list('s1'), 'w1').status).toBe('pending')
+    abortListener?.()
+    await expect(pending).resolves.toBe('cancelled')
+    expect(recordOf(h.gate.list('s1'), 'w1').status).toBe('cancelled')
+  })
+
+  it('tools/result drives the terminal status after approval', async () => {
+    const h = mount([asked()])
+    h.ask({ callId: 'c1', toolName: 'yzj_im_message_send', level: 'standard', reason: 'r', args: {} })
+    void h.request()
+    h.gate.decide('w1', 'allowed-once')
+    h.ctx.emit('tools/result', { name: 'yzj_im_message_send', callId: 'c1' }, { isError: false, content: [{ type: 'text', text: 'sent' }] })
+    expect(recordOf(h.gate.list('s1'), 'w1').status).toBe('done')
+    expect(recordOf(h.gate.list('s1'), 'w1').error).toBeUndefined()
+  })
+
+  it('an error result marks the record failed with the digest text', async () => {
+    const h = mount([asked()])
+    h.ask({ callId: 'c1', toolName: 'yzj_doc_create', level: 'standard', reason: 'r', args: {} })
+    void h.request()
+    h.gate.decide('w1', 'allowed-once')
+    h.ctx.emit('tools/result', { name: 'yzj_doc_create', callId: 'c1' }, { isError: true, content: [{ type: 'text', text: 'yzj doc create failed (exit 7)' }] })
+    expect(recordOf(h.gate.list('s1'), 'w1').status).toBe('failed')
+    expect(recordOf(h.gate.list('s1'), 'w1').error).toContain('exit 7')
+  })
+
+  it('list filters by callId', async () => {
+    const h = mount([asked('c1', 'w1'), asked('c2', 'w2')])
+    h.ask({ callId: 'c1', toolName: 'yzj_im_message_send', level: 'standard', reason: 'r', args: {} })
+    h.ask({ callId: 'c2', toolName: 'yzj_doc_create', level: 'standard', reason: 'r', args: {} })
+    void h.request({ callId: 'c1' })
+    void h.request({ callId: 'c2' })
+    expect(h.gate.list('s1', 'c1').map(r => r.writeId)).toEqual(['w1'])
+    expect(h.gate.list('s1', 'c2').map(r => r.writeId)).toEqual(['w2'])
+    expect(h.gate.list('other-session').length).toBe(0)
+  })
+
+  it('a missing audit pair delegates to the next answerer', async () => {
+    const h = mount([])
+    const outcome = await h.request({ callId: 'c1' })
+    expect(outcome).toBe('unavailable')
+    expect(h.gate.list('s1')).toEqual([])
+  })
+
+  it('still claims a pick-group yzj-home-* that ConfirmBroker does not own', async () => {
+    const ctx = new Context()
+    ctx.provide('yzjRobot', { ownsConfirm: () => false })
+    const gate = applyWriteGate(ctx)
+    ctx.emit('yzj/ask-pending', {
+      callId: 'c1', toolName: 'yzj_im_message_send', level: 'standard',
+      reason: 'r', args: { groupId: 'g1' },
+    })
+    const pending = ctx.waterfall('approval/request', {
+      agent: {
+        session: {
+          id: 'yzj-home-picked',
+          events: [{ type: 'turn/start', data: { turn: 1 } }, { type: 'approval/asked', data: { id: 'w1', callId: 'c1' } }],
+        },
+      },
+      toolName: 'yzj_im_message_send',
+      callId: 'c1',
+    }, () => Promise.resolve<YzjApprovalOutcome>('unavailable'))
+    expect(gate.list('yzj-home-picked').map(r => r.writeId)).toEqual(['w1'])
+    gate.decide('w1', 'allowed-once')
+    await expect(pending).resolves.toBe('allowed-once')
+  })
+
+  it('claims a GUI turn on an inbound-registered bound home (operator can confirm in DSH)', async () => {
+    const ctx = new Context()
+    ctx.provide('yzjRobot', { ownsConfirm: () => true })
+    const gate = applyWriteGate(ctx)
+    ctx.emit('yzj/ask-pending', {
+      callId: 'c1', toolName: 'yzj_im_message_send', level: 'standard',
+      reason: 'r', args: { groupId: 'g1' },
+    })
+    const pending = ctx.waterfall('approval/request', {
+      agent: {
+        session: {
+          id: 'yzj-home-inbound',
+          events: [
+            { type: 'user/message', data: { source: { kind: 'user' } } },
+            { type: 'approval/asked', data: { id: 'w1', callId: 'c1' } },
+          ],
+        },
+      },
+      toolName: 'yzj_im_message_send',
+      callId: 'c1',
+    }, () => Promise.resolve<YzjApprovalOutcome>('unavailable'))
+    expect(gate.list('yzj-home-inbound').map(r => r.writeId)).toEqual(['w1'])
+    gate.decide('w1', 'allowed-once')
+    await expect(pending).resolves.toBe('allowed-once')
+  })
+
+  // 决策 53：robot-yzj 已退役删除——ownsConfirm 代理路径与 inbound-plugin 跳过
+  // 分支随之移除（yzj-robot-* 残留前缀跳过保留）。
+
+
+
+
+  it('still skips leftover yzj-robot-* for robot_notify (residual prefix)', async () => {
+    const ctx = new Context()
+    applyWriteGate(ctx)
+    const outcome = await ctx.waterfall('approval/request', {
+      agent: { session: { id: 'yzj-robot-old', events: [{ type: 'approval/asked', data: { id: 'w1', callId: 'c1' } }] } },
+      toolName: 'robot_notify',
+      callId: 'c1',
+    }, () => Promise.resolve<YzjApprovalOutcome>('unavailable'))
+    expect(outcome).toBe('unavailable')
+  })
+
+  it('yzj/confirm-request mints a pending record without approval/asked (Full access path)', async () => {
+    const h = mount()
+    h.ask({ callId: 'c1', toolName: 'yzj_im_message_send', level: 'standard', reason: '云之家操作确认：发送 IM 消息', args: { groupId: 'g1', content: 'hello' } })
+    const pending = h.ctx.waterfall('yzj/confirm-request', {
+      sessionId: 's1',
+      callId: 'c1',
+      toolName: 'yzj_im_message_send',
+      reason: '云之家操作确认：发送 IM 消息',
+    }, () => Promise.resolve<YzjApprovalOutcome>('unavailable'))
+    const list = h.gate.list('s1')
+    expect(list.length).toBe(1)
+    const row = list[0]
+    if (row === undefined) throw new Error('expected a pending confirm record')
+    expect(row).toMatchObject({
+      callId: 'c1', domain: 'im', level: 'standard',
+      args: { groupId: 'g1', content: 'hello' }, status: 'pending',
+    })
+    expect(row.writeId).toEqual(expect.any(String))
+    expect(h.gate.decide(row.writeId, 'allowed-once')).toBe(true)
+    await expect(pending).resolves.toBe('allowed-once')
+    expect(recordOf(h.gate.list('s1'), row.writeId).status).toBe('approved')
+  })
+
+  it('yzj/confirm-request skips leftover yzj-robot-* sessions', async () => {
+    const ctx = new Context()
+    applyWriteGate(ctx)
+    const outcome = await ctx.waterfall('yzj/confirm-request', {
+      sessionId: 'yzj-robot-old',
+      callId: 'c1',
+      toolName: 'yzj_im_message_send',
+      reason: 'r',
+    }, () => Promise.resolve<YzjApprovalOutcome>('unavailable'))
+    expect(outcome).toBe('unavailable')
+  })
+
+  it('pending write on yzj-topic-* sets confirm and falls back after delivery', async () => {
+    const ctx = new Context()
+    const rows = new Map<string, { status: 'running' | 'confirm' | 'done' }>([
+      ['yzj-topic-1', { status: 'running' }],
+    ])
+    ctx.provide('yzjHome', {
+      getTopicBySession: (id: string) => rows.get(id),
+      setTopicStatus: async (id: string, status: 'running' | 'confirm' | 'done') => {
+        rows.set(id, { status })
+      },
+    })
+    const gate = applyWriteGate(ctx)
+    const session = {
+      id: 'yzj-topic-1',
+      events: [
+        { type: 'turn/start', data: { turn: 1 } },
+        { type: 'approval/asked', data: { id: 'w1', callId: 'c1' } },
+      ],
+    }
+    ctx.emit('yzj/ask-pending', {
+      callId: 'c1', toolName: 'yzj_im_message_send', level: 'standard', reason: 'r', args: {},
+    })
+    const pending = ctx.waterfall('approval/request', {
+      agent: { session },
+      toolName: 'yzj_im_message_send',
+      callId: 'c1',
+    }, () => Promise.resolve<YzjApprovalOutcome>('unavailable'))
+    expect(rows.get('yzj-topic-1')?.status).toBe('confirm')
+    expect(gate.decide('w1', 'allowed-once')).toBe(true)
+    await pending
+    expect(rows.get('yzj-topic-1')?.status).toBe('confirm')
+    ctx.emit('tools/result', { name: 'yzj_im_message_send', callId: 'c1' }, { isError: false, content: [] })
+    expect(rows.get('yzj-topic-1')?.status).toBe('running')
+  })
+})

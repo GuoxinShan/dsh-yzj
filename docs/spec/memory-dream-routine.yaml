@@ -1,0 +1,42 @@
+# dsh-routines routine 模板：记忆固化（dream）——【备选路径】
+#
+# v0.2 起主路径是进程内 dream（面板开关 + 每日定时 + 可配模型，见
+# docs/spec/memory-vault-design.md §7.1）：web profile 挂 memory-yzj 后在
+# 「记忆」tab 开启 dream 即可，无需本文件。
+#
+# 本模板适用于想要「固化跑在独立 headless 会话 + digest 经 chatnode 推群」的场合。
+# 注意：本路径的模型 = headless profile 的默认路由（dsh-routines 无 per-routine
+# 模型字段，实读确认），不跟随 dream.json 的模型设置；dream.json 的 enabled=false
+# 开关对本路径同样生效（跨进程共享同一文件）。
+#
+# 用法：复制到 $DSH_HOME/routines/（或 routine 全局目录），按需改 name/schedule。
+# 前置条件：headless profile 的 cordis.patch.yml 挂了 memory-yzj 行（routine 子进程
+# 里才有 memory_* 工具）；固化摘要推群需 ops daemon + 桥链路（routines-delivery.md）。
+name: memory-dream
+schedule: "@daily"
+timezone: Asia/Shanghai
+profile: headless
+cwd: C:/Users/rocks
+overlap: skip
+timeoutMin: 10
+deliver:
+  - type: file
+  - type: chatnode
+prompt: |
+  你是记忆固化引擎（dream），负责整理记忆库的观察草稿区。严格按以下步骤工作：
+
+  1. 调用 memory_dream_load(scope="user") 获取记忆库现状（sections/entities 的
+     内容与 rev、全部 open observations）。
+  2. 对每条 open observation 依据佐证规则判定：
+     - 单日单源信号（无其他观察/段落佐证）→ 留观，不出决策；
+     - 信息已被某个 section/entity 覆盖 → drop_observation；
+     - 多源或跨日佐证、或用户明确陈述的稳定事实/偏好/决策 → promote_observation
+       （并入合适的 section，content 写成自包含的陈述句；必要时同步 upsert_entity）；
+     - 过时或与现状矛盾 → update_section 重写该段（rev 必须来自本次 load）；
+     - 都不适用但值得留痕 → log_only。
+     注意：source 为 routine:* 的例行产出信号默认不直接提升（防自反馈）。
+  3. 若所有段落数值有变，section 的 order/title 保持 load 返回的原值，不要重排。
+  4. 调用 memory_dream_apply(scope="user", decisions=<JSON 数组字符串>, summary="<一句话摘要>")。
+     decisions 里每条 update_section/upsert_entity/promote_observation 引用 load 返回的 rev；
+     单条被拒（rev-conflict 等）不影响其余条目，无需重试。
+  5. 最后用一两句话总结固化结果（提升 N · 丢弃 N · 段更新 N），这段话会推送到群。

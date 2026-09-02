@@ -1,0 +1,10 @@
+import { chromium } from 'playwright'
+const [html, png] = process.argv.slice(2)
+const browser = await chromium.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true })
+const page = await browser.newPage({ viewport: { width: 1320, height: 1000 }, deviceScaleFactor: 2, locale: 'zh-CN' })
+await page.goto('file://' + html, { waitUntil: 'load' })
+await page.evaluate(() => document.fonts.ready)
+await page.waitForTimeout(1200)
+await page.screenshot({ path: png, fullPage: true })
+await browser.close()
+console.log('shot ok', png)

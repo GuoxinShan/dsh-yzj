@@ -1,0 +1,1799 @@
+/*
+ * Yunzhijia floating panel + sidebar toggle, redesigned on the dsh native
+ * visual language: semantic --dsw-alias-* tokens, 16px rhythm, layered
+ * borders, card-like list entries, chat bubbles for the message stream.
+ */
+
+/* Sidebar-foot toggle: a labeled pill in the wide column, a centered rail
+   icon when the sidebar is collapsed. The occupant owns its geometry. */
+.toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  transition: background-color 120ms var(--ds-ease-in-out, ease), color 120ms var(--ds-ease-in-out, ease);
+}
+
+.toggle:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.toggleActive {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-static-deepseek-500);
+}
+
+.toggleLabel {
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* Floating-ball unread badge on the sidebar toggle. */
+.unreadBadge {
+  position: relative;
+  flex: none;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--dsw-static-red-500);
+  color: #ffffff;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+}
+
+/* ── Panel frame ─────────────────────────────────────────────────────── */
+
+.panel {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  width: min(880px, 96vw);
+  height: min(700px, 94vh);
+  margin: auto;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 14px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  box-shadow: 0 16px 48px rgb(0 0 0 / 0.18);
+  font-size: 14px;
+  line-height: 20px;
+  overflow: hidden;
+}
+
+.panelEmbedded {
+  position: relative;
+  inset: auto;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* Header row: brand + title + spacer + icon actions. */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  flex: none;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  color: var(--dsw-static-deepseek-500);
+  flex: none;
+}
+
+.title {
+  font-weight: 600;
+  font-size: 14px;
+  flex: none;
+}
+
+.headerSpacer {
+  flex: 1;
+}
+
+/* Tab rail: its own row under the header, pill segmented control. */
+.tabs {
+  display: flex;
+  gap: 2px;
+  padding: 2px 12px 8px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  flex: none;
+  overflow: hidden;
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex: 1;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 120ms var(--ds-ease-in-out, ease), color 120ms var(--ds-ease-in-out, ease);
+}
+
+.tab:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.tabActive {
+  background: var(--dsw-static-deepseek-100);
+  color: var(--dsw-static-deepseek-600);
+  font-weight: 600;
+}
+
+.tabActive:hover {
+  background: var(--dsw-static-deepseek-100);
+  color: var(--dsw-static-deepseek-600);
+}
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  flex: none;
+  transition: background-color 120ms var(--ds-ease-in-out, ease), color 120ms var(--ds-ease-in-out, ease);
+}
+
+.iconButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.iconButton:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.headerButton {
+  padding: 5px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  cursor: pointer;
+  flex: none;
+  transition: background-color 120ms var(--ds-ease-in-out, ease);
+}
+
+.headerButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.headerButton:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Wide two-pane layout: left list, right content ──────────────────── */
+
+.twoPane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.paneLeft {
+  width: 250px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--dsw-alias-border-l1);
+}
+
+/* 知识库搜索框(v0.1.4) */
+
+.docSearch {
+  flex: none;
+  padding: 8px 8px 0;
+}
+
+.docSearchInput {
+  width: 100%;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 28px;
+  padding: 0 10px;
+  outline: none;
+}
+
+.docSearchInput:focus {
+  border-color: var(--dsw-static-deepseek-500);
+}
+
+/* 知识库类型分组标头(个人/企业) */
+
+.paneGroupLabel {
+  flex: none;
+  padding: 6px 4px 2px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-tertiary);
+  letter-spacing: 0.5px;
+}
+
+.paneRight {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.paneList {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.paneEmpty {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 13px;
+}
+
+.paneHead {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px 8px;
+}
+
+.paneTitle {
+  font-size: 14px;
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Active row in the left list: brand bar + bolder title + tinted ground —
+ * clearly distinct from hover (issue #3). */
+.itemActive {
+  background: var(--dsw-static-deepseek-100);
+  box-shadow: inset 3px 0 0 var(--dsw-static-deepseek-500);
+}
+
+.itemActive:hover {
+  background: var(--dsw-static-deepseek-100);
+}
+
+.itemActive .itemTitleText {
+  font-weight: 700;
+  color: var(--dsw-static-deepseek-600);
+}
+
+/* ── Status strips ───────────────────────────────────────────────────── */
+
+/* 全部已读 toolbar above the group list. */
+.readAllRow {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+
+.readAllHint {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.readAll {
+  flex: none;
+  padding: 3px 12px;
+  border: 1px solid var(--dsw-static-deepseek-500);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-static-deepseek-500);
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+  transition: background-color 120ms var(--ds-ease-in-out, ease), color 120ms var(--ds-ease-in-out, ease);
+}
+
+.readAll:hover:not(:disabled) {
+  background: var(--dsw-static-deepseek-100);
+}
+
+.readAll:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--dsw-static-red-500);
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+  color: var(--dsw-static-red-400);
+  font-size: 12px;
+  flex: none;
+}
+
+.errorText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.errorDismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  flex: none;
+}
+
+.errorDismiss:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.loading {
+  padding: 6px 12px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  flex: none;
+}
+
+/* ── Lists ───────────────────────────────────────────────────────────── */
+
+.list {
+  flex: 1;
+  overflow: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* Generic entry: icon block + title + sub, hover-revealed surface. */
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+  transition: background-color 120ms var(--ds-ease-in-out, ease);
+}
+
+.item:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.itemTitle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font-weight: 500;
+}
+
+.itemTitleText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itemSub {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 16px;
+  padding-left: 42px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* First-letter glyph blocks (docs, groups, contacts) — avatar-sized. */
+.docGlyph,
+.groupGlyph,
+.userGlyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--dsw-static-deepseek-100);
+  color: var(--dsw-static-deepseek-600);
+  font-size: 14px;
+  font-weight: 600;
+  flex: none;
+}
+
+.badge {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--dsw-static-red-500);
+  color: #ffffff;
+  font-size: 11px;
+  line-height: 16px;
+  flex: none;
+}
+
+/* Jump-anchor message highlight (查看上下文 / 通知定位). */
+.itemAnchored {
+  outline: 2px solid var(--dsw-static-deepseek-500);
+  outline-offset: -1px;
+  background: var(--dsw-static-deepseek-100);
+}
+
+/* Chat message bubble: meta row + body. */
+.msgItem {
+  position: relative;
+  padding-left: 18px;
+  background: var(--dsw-alias-bg-layer-1);
+  border: 1px solid var(--dsw-alias-border-l1);
+}
+
+/* ── Reference-style IM list (prototype overlay.html) ────────────────── */
+
+/* One message row: [avatar] [meta + content] — no bubbles. */
+.msgRow {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 10px 4px 18px;
+  border-radius: 10px;
+  min-width: 0;
+}
+
+.msgRow:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.msgRowSystem {
+  justify-content: center;
+  padding-left: 10px;
+}
+
+/* Sender avatar (28px round photo, glyph fallback). */
+.msgAvatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: none;
+  margin-top: 2px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.msgAvatarFallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--dsw-static-deepseek-100);
+  color: var(--dsw-static-deepseek-600);
+  font-size: 12px;
+  font-weight: 600;
+  flex: none;
+  margin-top: 2px;
+}
+
+/* Name · time line + content column. */
+.msgStack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  flex: 1;
+  min-width: 0;
+}
+
+.msgMetaLine {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 1px;
+}
+
+.msgSender {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  flex: none;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.msgTime {
+  color: var(--dsw-alias-label-caption);
+  font-size: 11px;
+  line-height: 14px;
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+/* Content: plain text column (no bubble background). */
+.msgContent {
+  min-width: 0;
+  margin-top: 2px;
+}
+
+/* 锚点 pill on anchor-jumped messages. */
+.anchorTag {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--dsw-static-deepseek-100);
+  color: var(--dsw-static-deepseek-600);
+  font-size: 10px;
+  line-height: 16px;
+}
+
+/* Anchor hint bar under the chat header (查看上下文 jump). */
+.anchorHint {
+  flex: none;
+  margin: 0 10px;
+  padding: 4px 10px;
+  border: 1px solid var(--dsw-static-deepseek-500);
+  border-radius: 8px;
+  background: var(--dsw-static-deepseek-100);
+  color: var(--dsw-static-deepseek-600);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+/* Group chips row: quick switching without going back (prototype). */
+.groupChips {
+  flex: none;
+  display: flex;
+  gap: 6px;
+  padding: 6px 10px 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.groupChips::-webkit-scrollbar {
+  display: none;
+}
+
+.groupChip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+  transition: border-color 120ms var(--ds-ease-in-out, ease), background-color 120ms var(--ds-ease-in-out, ease), color 120ms var(--ds-ease-in-out, ease);
+}
+
+.groupChip:hover {
+  border-color: var(--dsw-static-deepseek-500);
+  color: var(--dsw-alias-label-primary);
+}
+
+.groupChipActive {
+  border-color: var(--dsw-static-deepseek-500);
+  background: var(--dsw-static-deepseek-100);
+  color: var(--dsw-static-deepseek-600);
+  font-weight: 600;
+}
+
+.chipBadge {
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--dsw-static-red-500);
+  color: #ffffff;
+  font-size: 10px;
+  line-height: 14px;
+}
+
+/* Hover-revealed 回复 action on a message row. */
+.msgReply {
+  margin-top: 2px;
+  padding: 2px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-static-deepseek-500);
+  font-size: 11px;
+  line-height: 16px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms var(--ds-ease-in-out, ease), background-color 120ms var(--ds-ease-in-out, ease);
+}
+
+.msgRow:hover .msgReply {
+  opacity: 1;
+}
+
+.msgReply:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* Date separator between message days. */
+.dayDivider {
+  display: table;
+  margin: 6px auto 2px;
+  padding: 1px 10px;
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+/* Group header inside the chat view: avatar + name. */
+.groupHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 10px 8px;
+}
+
+.groupHeadName {
+  font-size: 14px;
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.msgBody {
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 18px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  min-width: 0;
+}
+
+/* Fixed chat header (back + group identity) above the scrolling list. */
+.chatHeader {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 0;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-base);
+}
+
+.panelBanner {
+  margin: 6px 8px 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--dsw-static-deepseek-100);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.chatHeader .groupHead {
+  padding: 2px 6px 6px;
+}
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-static-deepseek-500);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  flex: none;
+  transition: background-color 120ms var(--ds-ease-in-out, ease);
+}
+
+.back:hover {
+  background: var(--dsw-static-deepseek-100);
+}
+
+.more {
+  margin: 6px auto 2px;
+  padding: 5px 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-static-deepseek-500);
+  font-size: 12px;
+  cursor: pointer;
+  flex: none;
+  transition: background-color 120ms var(--ds-ease-in-out, ease);
+}
+
+.more:hover:not(:disabled) {
+  background: var(--dsw-static-deepseek-100);
+}
+
+.more:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  text-align: center;
+  padding: 44px 0;
+}
+
+/* ── Search + me ─────────────────────────────────────────────────────── */
+
+.searchRow {
+  display: flex;
+  gap: 6px;
+  padding: 10px 10px 6px;
+  flex: none;
+}
+
+.searchInput {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 120ms var(--ds-ease-in-out, ease), background-color 120ms var(--ds-ease-in-out, ease);
+}
+
+.searchInput:focus {
+  border-color: var(--dsw-static-deepseek-500);
+  background: var(--dsw-alias-bg-base);
+}
+
+.meCard {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 6px 10px 8px;
+  padding: 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-1);
+  flex: none;
+}
+
+.meAvatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: none;
+}
+
+.meAvatarFallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--dsw-static-deepseek-100);
+  color: var(--dsw-static-deepseek-600);
+  font-size: 18px;
+  font-weight: 600;
+  flex: none;
+}
+
+.meInfo {
+  min-width: 0;
+}
+
+.meName {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.meSub {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 16px;
+  margin-top: 2px;
+}
+
+/* ── Floating ball (prototype) ───────────────────────────────────────── */
+
+/* Fixed anchor for ball + hover quick-dock; both stay inside this subtree
+   so mouseleave never fires while moving between them. */
+.floatWrap {
+  position: fixed;
+  right: 26px;
+  bottom: 26px;
+  z-index: 90;
+}
+
+.floatBall {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: none;
+  background: var(--dsw-alias-button-info-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+  box-shadow: 0 4px 14px rgb(46 111 242 / 0.35);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 120ms var(--ds-ease-in-out, ease), transform 120ms var(--ds-ease-in-out, ease);
+}
+
+.floatBall:hover {
+  background: var(--dsw-alias-button-info-hover);
+  transform: scale(1.04);
+}
+
+/* Active (panel open): keep the ball visible as the persistent toggle. */
+.floatBallActive {
+  box-shadow: 0 0 0 2px var(--dsw-alias-bg-base), 0 0 0 4px var(--dsw-static-deepseek-500), 0 4px 14px rgb(46 111 242 / 0.35);
+}
+
+.floatBallBadge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  border: 2px solid var(--dsw-alias-bg-base);
+  background: var(--dsw-static-red-500);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Hover quick-dock: one shortcut per panel tab, stacked above the ball. */
+.floatDock {
+  position: absolute;
+  right: 0;
+  bottom: 62px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.14);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(6px);
+  transition: opacity 120ms var(--ds-ease-in-out, ease), transform 120ms var(--ds-ease-in-out, ease), visibility 120ms;
+}
+
+.floatDockOpen {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+}
+
+.floatDockItem {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 92px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  transition: background-color 120ms var(--ds-ease-in-out, ease), color 120ms var(--ds-ease-in-out, ease);
+}
+
+.floatDockItem:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.floatDockLabel {
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.floatDockBadge {
+  position: absolute;
+  top: 2px;
+  left: 26px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  border: 1px solid var(--dsw-alias-bg-layer-1);
+  background: var(--dsw-static-red-500);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── Anchor toast ────────────────────────────────────────────────────── */
+
+.panelToast {
+  margin: 2px 4px 6px;
+  background: var(--dsw-static-neutral-bluish-850);
+  color: var(--dsw-alias-label-primary-foreground);
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+  padding: 8px 12px;
+  border-radius: 999px;
+}
+
+/* ── Complete IM: avatars, senders, media, link cards ────────────────── */
+
+/* Group avatar image (32px block, first-letter fallback). */
+.avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex: none;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+/* Right-aligned relative time in a group row. */
+.itemTime {
+  color: var(--dsw-alias-label-caption);
+  font-size: 11px;
+  line-height: 14px;
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+/* Sender name above the message body (falls back to the type label). */
+.msgSender {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  flex: none;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Reply quote line above a message body. */
+.msgQuote {
+  display: block;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 16px;
+  padding: 4px 8px;
+  margin: 0 0 4px;
+  border-left: 2px solid var(--dsw-alias-border-l3);
+  background: var(--dsw-alias-bg-layer-2);
+  border-radius: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* Inline richText image: bounded, click to enlarge. */
+.msgImage {
+  display: block;
+  max-width: 100%;
+  max-height: 220px;
+  border-radius: 8px;
+  margin-top: 4px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-2);
+  cursor: zoom-in;
+}
+
+.msgBold {
+  font-weight: 600;
+}
+
+/* Proxy-image placeholder / failure states. */
+.msgImageSkeleton,
+.msgImageFail {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.msgImageFail {
+  color: var(--dsw-static-red-400);
+}
+
+/* Centered system row (撤回 / 入群 / 公告). */
+.msgSystem {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
+}
+
+/* File chip: ext icon + name + size, opens the download URL. */
+.msgFile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  text-decoration: none;
+  margin-top: 2px;
+  min-width: 0;
+  cursor: pointer;
+  transition: border-color 120ms var(--ds-ease-in-out, ease), background-color 120ms var(--ds-ease-in-out, ease);
+}
+
+.msgFileGroup {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  min-width: 0;
+}
+
+.msgFile:hover:not(:disabled) {
+  border-color: var(--dsw-static-deepseek-500);
+  background: var(--dsw-static-deepseek-100);
+}
+
+.msgFile:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* PDF chip companion: explicit 下载 beside the preview chip. */
+.msgFileDownload {
+  flex: none;
+  align-self: center;
+  padding: 4px 8px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 14px;
+  cursor: pointer;
+  transition: border-color 120ms var(--ds-ease-in-out, ease), color 120ms var(--ds-ease-in-out, ease);
+}
+
+.msgFileDownload:hover {
+  border-color: var(--dsw-static-deepseek-500);
+  color: var(--dsw-static-deepseek-500);
+}
+
+.msgFileIcon {
+  font-size: 20px;
+  line-height: 20px;
+  flex: none;
+}
+
+.msgFileMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.msgFileName {
+  font-size: 13px;
+  line-height: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.msgFileSize {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 14px;
+}
+
+/* Link card (light app / survey / interactive card). */
+.linkCard {
+  display: flex;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  text-decoration: none;
+  margin-top: 2px;
+  min-width: 0;
+  transition: border-color 120ms var(--ds-ease-in-out, ease);
+}
+
+.linkCard:hover {
+  border-color: var(--dsw-static-deepseek-500);
+}
+
+.linkCardThumb {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 6px;
+  flex: none;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.linkCardBody {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.linkCardTitle {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.linkCardDesc {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.linkCardAction {
+  color: var(--dsw-static-deepseek-500);
+  font-size: 11px;
+  line-height: 14px;
+}
+
+/* Image lightbox: dark full-screen overlay, click / Esc to close. */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgb(0 0 0 / 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: zoom-out;
+}
+
+.lightboxImg {
+  max-width: 90vw;
+  max-height: 90vh;
+  border-radius: 8px;
+  box-shadow: 0 24px 64px rgb(0 0 0 / 0.5);
+}
+
+/* PDF preview inside the lightbox. */
+.lightboxPdf {
+  width: min(720px, 92vw);
+  height: min(90vh, 900px);
+  border: none;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 24px 64px rgb(0 0 0 / 0.5);
+}
+
+/* ── Message composer (real-IM toolbar + reply) ──────────────────────── */
+
+.composer {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+  flex: none;
+}
+
+.composerRow {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+/* @ mention menu (issue #4): floats above the composer row. */
+.atMenu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  min-width: 180px;
+  max-width: 260px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-base);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.2);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.atHint {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 15px;
+  padding: 5px 8px;
+}
+
+.atItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12.5px;
+  line-height: 1;
+  padding: 7px 8px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.atItem:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.atGlyph {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--dsw-static-deepseek-100);
+  color: var(--dsw-static-deepseek-600);
+  font-size: 11px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.composerInput {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 18px;
+  font-family: inherit;
+  resize: none;
+  outline: none;
+  max-height: 120px;
+  overflow-y: auto;
+  transition: border-color 120ms var(--ds-ease-in-out, ease);
+}
+
+.composerInput:focus {
+  border-color: var(--dsw-static-deepseek-500);
+}
+
+.composerInput::placeholder {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.composerInput:disabled {
+  opacity: 0.6;
+}
+
+.composerSend {
+  flex: none;
+  padding: 7px 14px;
+  border: none;
+  border-radius: 10px;
+  background: var(--dsw-static-deepseek-500);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 120ms var(--ds-ease-in-out, ease), opacity 120ms var(--ds-ease-in-out, ease);
+}
+
+.composerSend:hover:not(:disabled) {
+  background: var(--dsw-static-deepseek-600);
+}
+
+.composerSend:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.composerToolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.toolButton {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 15px;
+  line-height: 15px;
+  cursor: pointer;
+  transition: background-color 120ms var(--ds-ease-in-out, ease);
+}
+
+.toolButton:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.toolButton:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.toolStatus {
+  margin-left: 6px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+}
+
+/* Reply target bar above the input row. */
+.replyBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-left: 2px solid var(--dsw-static-deepseek-500);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-1);
+  font-size: 12px;
+}
+
+.replyText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.replyCancel {
+  flex: none;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 14px;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.replyCancel:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* Emoji picker popover above the composer. */
+.emojiPanel {
+  position: absolute;
+  left: 10px;
+  bottom: calc(100% - 4px);
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 2px;
+  padding: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-base);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.16);
+  z-index: 30;
+}
+
+.emojiCell {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 17px;
+  cursor: pointer;
+}
+
+.emojiCell:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* ── Calendar month grid (real calendar component) ───────────────────── */
+
+.calHead {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px 4px;
+}
+
+.calTitle {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.calNav {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 16px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.calNav:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* 今天 quick jump: pill next to the month nav. */
+.calToday {
+  margin-left: 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 9px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.calToday:hover {
+  border-color: var(--dsw-static-deepseek-500);
+  background: var(--dsw-static-deepseek-100);
+  color: var(--dsw-static-deepseek-600);
+}
+
+/* Docs folder drill-down: breadcrumb trail + row chevron. */
+.crumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  min-width: 0;
+}
+
+.crumbLink {
+  border: none;
+  background: none;
+  padding: 2px 3px;
+  color: var(--dsw-static-deepseek-500);
+  font-size: 13px;
+  line-height: 18px;
+  cursor: pointer;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crumbLink:hover {
+  text-decoration: underline;
+}
+
+.crumbItem {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.crumbSep {
+  color: var(--dsw-alias-label-caption);
+  font-size: 12px;
+  padding: 0 1px;
+}
+
+.crumbCurrent {
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  padding: 2px 3px;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.docRowWrap {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  min-width: 0;
+}
+
+.docRowWrap .item {
+  flex: 1;
+  min-width: 0;
+}
+
+.drill {
+  flex-shrink: 0;
+  width: 30px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 9px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-tertiary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  align-self: center;
+  height: 30px;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.drill:hover {
+  border-color: var(--dsw-static-deepseek-500);
+  color: var(--dsw-static-deepseek-600);
+  background: var(--dsw-static-deepseek-100);
+}
+
+.calGrid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  padding: 4px 10px 10px;
+}
+
+.calDow {
+  text-align: center;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 20px;
+}
+
+.calBlank {
+  height: 30px;
+}
+
+.calCell {
+  position: relative;
+  height: 30px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 120ms var(--ds-ease-in-out, ease);
+}
+
+.calCell:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.calCellToday {
+  box-shadow: inset 0 0 0 1px var(--dsw-static-deepseek-500);
+}
+
+.calCellSelected {
+  background: var(--dsw-static-deepseek-100);
+  font-weight: 600;
+  color: var(--dsw-static-deepseek-600);
+}
+
+.calCellHas {
+  font-weight: 600;
+  color: var(--dsw-static-deepseek-500);
+}
+
+.calDayNum {
+  line-height: 18px;
+}
+
+.calDot {
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--dsw-static-deepseek-500);
+}
+
+/* Event rows + detail card in the calendar right pane. */
+.eventTime {
+  color: var(--dsw-static-deepseek-500);
+  font-size: 11px;
+  line-height: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.eventDetail {
+  margin-top: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.eventDetailTitle {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.eventDetailRow {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.eventDetailContent {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ── Doc preview in the docs right pane ──────────────────────────────── */
+
+.docMeta {
+  flex: none;
+  padding: 0 10px 6px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.docBody {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 2px 12px 12px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 22px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}

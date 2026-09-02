@@ -1,0 +1,757 @@
+/**
+ * Durable bound-session message log (docs/spec/dsh-home-transcript.md).
+ * ① inbound / ② DSH-send live here — never as harness Session.append events.
+ * The fused VIEW merges this log with official session events by timestamp.
+ * @module @dsh-yzj/tool-yzj/bound-log
+ */
+
+import { z } from 'zod'
+import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
+import type { Domain, KvTable } from '@deepseek-ai/dsh-storage-domain'
+import { fileIdMark, unwrapCli } from './shared.ts'
+import type { YzjConversationKind } from './home.ts'
+
+/** Product origin of one log row (T1/T7; R9 adds robot-outbound). */
+export type YzjLogOrigin = 'inbound' | 'dsh-send' | 'backfill' | 'robot-outbound'
+
+/** Wire/status of one log row. Only ② uses pending/failed. */
+export type YzjLogStatus = 'pending' | 'acked' | 'failed'
+
+/** Digest-level message kind stored in the log (no binaries). */
+export type YzjLogMsgType = 'text' | 'richText' | 'file' | 'other'
+
+/** One durable IM row keyed by (yzjConversationId, msgId). */
+export interface YzjLogEntry {
+  readonly msgId: string
+  readonly sentAt: number
+  readonly fromOpenId: string
+  readonly fromName: string
+  readonly content: string
+  readonly msgType: YzjLogMsgType
+  readonly origin: YzjLogOrigin
+  readonly isSelf: boolean
+  readonly replyMsgId?: string
+  readonly topicSessionId?: string
+  /** Clipped CLI param snapshot for the group-room renderer (file_id / desc / reply; no binaries). Optional so old blobs still parse. */
+  readonly param?: Readonly<Record<string, unknown>>
+  readonly status: YzjLogStatus
+}
+
+/** One conversation's log header + rows (ascending sentAt). */
+export interface YzjBoundMessageLog {
+  readonly yzjConversationId: string
+  readonly dshSessionId: string
+  readonly yzjKind: YzjConversationKind
+  readonly updatedAt: number
+  readonly entries: readonly YzjLogEntry[]
+}
+
+/** Caps that must stay Config fields, not code constants (spec §3.4). */
+export interface BoundLogLimits {
+  readonly backfillLimit: number
+  readonly summonWindowMessages: number
+  readonly summonWindowChars: number
+  readonly logRetention: number
+}
+
+/** Default caps from the transcript spec. */
+export const DEFAULT_BOUND_LOG_LIMITS: BoundLogLimits = {
+  backfillLimit: 50,
+  summonWindowMessages: 20,
+  summonWindowChars: 4000,
+  logRetention: 500,
+}
+
+/** Result of one append attempt. */
+export interface BoundLogAppendResult {
+  readonly accepted: boolean
+  readonly reason:
+    | 'appended'
+    | 'duplicate'
+    | 'echo-collapsed'
+    | 'promoted-to-dsh-send'
+    | 'promoted-to-robot-outbound'
+    | 'enriched'
+    | 'robot-skipped'
+    | 'anomaly-kept'
+    | 'unbound'
+  readonly entry?: YzjLogEntry
+}
+
+const entrySchema = z.object({
+  msgId: z.string().min(1),
+  sentAt: z.number(),
+  fromOpenId: z.string(),
+  fromName: z.string(),
+  content: z.string(),
+  msgType: z.enum(['text', 'richText', 'file', 'other']),
+  origin: z.enum(['inbound', 'dsh-send', 'backfill', 'robot-outbound']),
+  isSelf: z.boolean(),
+  replyMsgId: z.string().optional(),
+  topicSessionId: z.string().optional(),
+  param: z.record(z.string(), z.unknown()).optional(),
+  status: z.enum(['pending', 'acked', 'failed']),
+}) as unknown as z.ZodType<YzjLogEntry>
+
+const logSchema = z.object({
+  yzjConversationId: z.string().min(1),
+  dshSessionId: z.string().min(1),
+  yzjKind: z.enum(['group', 'dm']),
+  updatedAt: z.number(),
+  entries: z.array(entrySchema),
+}) as unknown as z.ZodType<YzjBoundMessageLog>
+
+/** Durable domain: one log per Yunzhijia conversation id. */
+export const yzjHomeLogDomainSpec = defineDomain({
+  name: 'yzj_home_logs',
+  version: 0,
+  tables: {
+    logs: domainTable<string, YzjBoundMessageLog>(logSchema),
+  },
+})
+
+/** True when this id is an optimistic DSH-send placeholder (T8). */
+export function isLocalMsgId(msgId: string): boolean {
+  return msgId.startsWith('local-')
+}
+
+/** Allocate an optimistic ② primary key. */
+export function localMsgId(now = Date.now()): string {
+  return `local-${now}`
+}
+
+/** Parse CLI `sendTime` ("YYYY-MM-DD HH:mm:ss.SSS") into unix ms. */
+export function parseSendTime(text: unknown, fallback = Date.now()): number {
+  const value = typeof text === 'string' ? text.trim() : ''
+  if (value === '') return fallback
+  const normalized = value.includes('T') ? value : value.replace(' ', 'T')
+  const parsed = Date.parse(normalized)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+/** Coerce a CLI/robot msgType into the log vocabulary. */
+export function logMsgTypeOf(value: unknown): YzjLogMsgType {
+  const text = typeof value === 'string' ? value : ''
+  if (text === 'richText' || text === 'file' || text === 'text' || text === 'other') return text
+  if (text === 'image' || text === 'img') return 'richText'
+  return text === '' ? 'text' : 'other'
+}
+
+/** Digest one CLI message body (no binaries). */
+export function digestOfCliMessage(record: Record<string, unknown>): string {
+  const content = typeof record.content === 'string' ? record.content : ''
+  if (content !== '') return content
+  const msgType = logMsgTypeOf(record.msgType)
+  const param = typeof record.param === 'object' && record.param !== null
+    ? record.param as Record<string, unknown>
+    : {}
+  if (msgType === 'file') {
+    const name = typeof param.name === 'string' ? param.name : ''
+    return name === '' ? '[文件]' : `[文件] ${name}`
+  }
+  if (msgType === 'richText') return content === '' ? '[图文]' : content
+  const title = typeof param.title === 'string' ? param.title : ''
+  return title === '' ? `[${msgType}]` : title
+}
+
+const PARAM_KEEP = [
+  'file_id', 'name', 'size', 'ext', 'desc',
+  'replyMsgId', 'replySummary', 'replyPersonName',
+  'title', 'thumbUrl', 'webpageUrl', 'sysType', 'interactiveCard',
+] as const
+
+const PARAM_JSON_MAX = 8_192
+
+/**
+ * Keep the renderer-facing CLI param keys. Drop binaries and oversized
+ * adaptive-card JSON so the durable log stays a digest.
+ */
+export function clipLogParam(raw: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (raw === undefined) return undefined
+  const out: Record<string, unknown> = {}
+  for (const key of PARAM_KEEP) {
+    const value = raw[key]
+    if (value !== undefined) out[key] = value
+  }
+  if (Object.keys(out).length === 0) return undefined
+  let text = JSON.stringify(out)
+  if (text.length > PARAM_JSON_MAX) {
+    delete out.interactiveCard
+    text = JSON.stringify(out)
+  }
+  if (text.length > PARAM_JSON_MAX) return undefined
+  return out
+}
+
+function paramMissing(entry: YzjLogEntry): boolean {
+  return entry.param === undefined || Object.keys(entry.param).length === 0
+}
+
+function firstNonEmpty(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === 'string' && value !== '') return value
+  }
+  return ''
+}
+
+function withParam(hit: YzjLogEntry, incoming: YzjLogEntry): YzjLogEntry {
+  if (incoming.param === undefined) return hit
+  if (!paramMissing(hit) && JSON.stringify(hit.param).length >= JSON.stringify(incoming.param).length) {
+    return hit
+  }
+  return {
+    ...hit,
+    param: incoming.param,
+    msgType: hit.msgType === 'text' && incoming.msgType !== 'text' ? incoming.msgType : hit.msgType,
+  }
+}
+
+/** Fill empty identity on a collision without changing origin. */
+function withIdentity(hit: YzjLogEntry, incoming: YzjLogEntry): YzjLogEntry {
+  const fromOpenId = hit.fromOpenId === '' ? incoming.fromOpenId : hit.fromOpenId
+  const fromName = hit.fromName === '' ? incoming.fromName : hit.fromName
+  if (fromOpenId === hit.fromOpenId && fromName === hit.fromName) return hit
+  return { ...hit, fromOpenId, fromName }
+}
+
+function enrichHit(hit: YzjLogEntry, incoming: YzjLogEntry): YzjLogEntry {
+  return withIdentity(withParam(hit, incoming), incoming)
+}
+
+/**
+ * Project one CLI `im message list` row into a log entry. Caller sets origin
+ * and isSelf; robot skip happens before append.
+ */
+export function cliMessageToEntry(
+  record: unknown,
+  origin: YzjLogOrigin,
+  selfOpenId: string,
+): YzjLogEntry | undefined {
+  const row = typeof record === 'object' && record !== null ? record as Record<string, unknown> : {}
+  const msgId = typeof row.msgId === 'string' && row.msgId !== ''
+    ? row.msgId
+    : typeof row.id === 'string' && row.id !== '' ? row.id : ''
+  if (msgId === '') return undefined
+  const param = typeof row.param === 'object' && row.param !== null
+    ? row.param as Record<string, unknown>
+    : {}
+  const fromUser = typeof row.fromUser === 'object' && row.fromUser !== null
+    ? row.fromUser as Record<string, unknown>
+    : {}
+  const fromOpenId = firstNonEmpty(row.fromOpenId, row.openId, fromUser.openId, fromUser.oId)
+  const fromName = firstNonEmpty(
+    row.fromName, fromUser.name, fromUser.userName, fromUser.nickName, row.userName,
+  )
+  const replyMsgId = typeof param.replyMsgId === 'string' && param.replyMsgId !== ''
+    ? param.replyMsgId
+    : typeof row.replyMsgId === 'string' && row.replyMsgId !== '' ? row.replyMsgId : undefined
+  const clipped = clipLogParam(param)
+  const entry: YzjLogEntry = {
+    msgId,
+    sentAt: parseSendTime(row.sendTime ?? row.time),
+    fromOpenId,
+    fromName,
+    content: digestOfCliMessage(row),
+    msgType: logMsgTypeOf(row.msgType),
+    origin,
+    isSelf: selfOpenId !== '' && fromOpenId === selfOpenId,
+    status: 'acked',
+    ...(replyMsgId === undefined ? {} : { replyMsgId }),
+    ...(clipped === undefined ? {} : { param: clipped }),
+  }
+  return entry
+}
+
+/** Unwrap CLI list envelopes (pitfall-003: bare array / list / data). */
+export function cliMessageList(json: unknown): unknown[] {
+  const payload = unwrapCli(json)
+  if (Array.isArray(payload)) return payload
+  if (typeof payload !== 'object' || payload === null) return []
+  const record = payload as Record<string, unknown>
+  if (Array.isArray(record.list)) return record.list
+  if (Array.isArray(record.data)) return record.data
+  if (typeof record.data === 'object' && record.data !== null) {
+    const inner = record.data as Record<string, unknown>
+    if (Array.isArray(inner.list)) return inner.list
+    if (Array.isArray(inner.messages)) return inner.messages
+  }
+  if (Array.isArray(record.messages)) return record.messages
+  return []
+}
+
+/** Extract the real msgId from an `im message send` CLI payload. */
+export function extractSendMsgId(json: unknown): string | undefined {
+  const payload = unwrapCli(json)
+  if (typeof payload !== 'object' || payload === null) return undefined
+  const record = payload as Record<string, unknown>
+  for (const key of ['msgId', 'id', 'messageId']) {
+    const value = record[key]
+    if (typeof value === 'string' && value !== '') return value
+  }
+  if (typeof record.data === 'object' && record.data !== null) {
+    const inner = record.data as Record<string, unknown>
+    for (const key of ['msgId', 'id', 'messageId']) {
+      const value = inner[key]
+      if (typeof value === 'string' && value !== '') return value
+    }
+  }
+  return undefined
+}
+
+function sameSpeakerAndBody(a: YzjLogEntry, b: YzjLogEntry): boolean {
+  return a.fromOpenId === b.fromOpenId && a.content === b.content
+}
+
+/** Origins that win T8 collisions (user DSH-send and assistant posts). */
+function isStickyOrigin(origin: YzjLogOrigin): boolean {
+  return origin === 'dsh-send' || origin === 'robot-outbound'
+}
+
+/** One assistant post into the group-room log (R9). */
+export function robotOutboundEntry(input: {
+  readonly msgId: string
+  readonly content: string
+  readonly fromOpenId: string
+  readonly fromName?: string
+  readonly topicSessionId?: string
+  readonly replyMsgId?: string
+  readonly sentAt?: number
+}): YzjLogEntry {
+  return {
+    msgId: input.msgId,
+    sentAt: input.sentAt ?? Date.now(),
+    fromOpenId: input.fromOpenId,
+    fromName: input.fromName !== undefined && input.fromName !== '' ? input.fromName : '助手',
+    content: input.content,
+    msgType: 'text',
+    origin: 'robot-outbound',
+    isSelf: false,
+    status: 'acked',
+    ...(input.replyMsgId === undefined || input.replyMsgId === '' ? {} : { replyMsgId: input.replyMsgId }),
+    ...(input.topicSessionId === undefined || input.topicSessionId === '' ? {} : { topicSessionId: input.topicSessionId }),
+  }
+}
+
+function sortEntries(entries: YzjLogEntry[]): YzjLogEntry[] {
+  return [...entries].sort((left, right) => {
+    if (left.sentAt !== right.sentAt) return left.sentAt - right.sentAt
+    return left.msgId.localeCompare(right.msgId)
+  })
+}
+
+function trimRetention(entries: YzjLogEntry[], retention: number): YzjLogEntry[] {
+  if (entries.length <= retention) return entries
+  return entries.slice(entries.length - retention)
+}
+
+/**
+ * Apply T7/T8/T12 collision rules. Pure: returns the next entries array.
+ */
+export function applyAppend(
+  existing: readonly YzjLogEntry[],
+  incoming: YzjLogEntry,
+  options: { readonly skipOpenIds?: readonly string[] } = {},
+): { entries: YzjLogEntry[]; result: BoundLogAppendResult } {
+  if (options.skipOpenIds !== undefined && options.skipOpenIds.includes(incoming.fromOpenId)) {
+    return { entries: [...existing], result: { accepted: false, reason: 'robot-skipped' } }
+  }
+  const byId = new Map(existing.map(entry => [entry.msgId, entry]))
+  const hit = byId.get(incoming.msgId)
+  if (hit !== undefined) {
+    if (isStickyOrigin(hit.origin) && !isStickyOrigin(incoming.origin)) {
+      const enriched = enrichHit(hit, incoming)
+      if (enriched !== hit) {
+        byId.set(hit.msgId, enriched)
+        return {
+          entries: sortEntries([...byId.values()]),
+          result: { accepted: true, reason: 'enriched', entry: enriched },
+        }
+      }
+      return { entries: [...existing], result: { accepted: false, reason: 'echo-collapsed', entry: hit } }
+    }
+    if (!isStickyOrigin(hit.origin) && incoming.origin === 'dsh-send' && sameSpeakerAndBody(hit, incoming)) {
+      const promoted: YzjLogEntry = {
+        ...enrichHit(hit, incoming),
+        origin: 'dsh-send',
+        isSelf: true,
+        status: 'acked',
+      }
+      byId.set(hit.msgId, promoted)
+      return {
+        entries: sortEntries([...byId.values()]),
+        result: { accepted: true, reason: 'promoted-to-dsh-send', entry: promoted },
+      }
+    }
+    if (!isStickyOrigin(hit.origin) && incoming.origin === 'robot-outbound') {
+      const filled = withIdentity(hit, incoming)
+      const promoted: YzjLogEntry = {
+        ...filled,
+        origin: 'robot-outbound',
+        isSelf: false,
+        fromName: incoming.fromName === '' ? filled.fromName : incoming.fromName,
+        status: 'acked',
+        ...(incoming.topicSessionId === undefined ? {} : { topicSessionId: incoming.topicSessionId }),
+      }
+      byId.set(hit.msgId, promoted)
+      return {
+        entries: sortEntries([...byId.values()]),
+        result: { accepted: true, reason: 'promoted-to-robot-outbound', entry: promoted },
+      }
+    }
+    if (!isStickyOrigin(hit.origin) && incoming.origin === 'dsh-send') {
+      return { entries: [...existing], result: { accepted: false, reason: 'anomaly-kept', entry: hit } }
+    }
+    const enriched = enrichHit(hit, incoming)
+    if (enriched !== hit) {
+      byId.set(hit.msgId, enriched)
+      return {
+        entries: sortEntries([...byId.values()]),
+        result: { accepted: true, reason: 'enriched', entry: enriched },
+      }
+    }
+    return { entries: [...existing], result: { accepted: false, reason: 'duplicate', entry: hit } }
+  }
+  const next = sortEntries([...existing, incoming])
+  return { entries: next, result: { accepted: true, reason: 'appended', entry: incoming } }
+}
+
+/**
+ * Rewrite an optimistic `local-*` row to the real msgId after CLI ack (T8).
+ * If the real id already exists, collapse the local row (echo).
+ */
+export function ackLocalEntry(
+  existing: readonly YzjLogEntry[],
+  localId: string,
+  realMsgId: string,
+): YzjLogEntry[] {
+  const local = existing.find(entry => entry.msgId === localId)
+  if (local === undefined) return [...existing]
+  const withoutLocal = existing.filter(entry => entry.msgId !== localId)
+  const collision = withoutLocal.find(entry => entry.msgId === realMsgId)
+  if (collision !== undefined) {
+    const promoted: YzjLogEntry = collision.origin === 'dsh-send'
+      ? { ...collision, status: 'acked' }
+      : { ...collision, origin: 'dsh-send', isSelf: true, status: 'acked' }
+    return sortEntries(withoutLocal.map(entry => entry.msgId === realMsgId ? promoted : entry))
+  }
+  return sortEntries([...withoutLocal, { ...local, msgId: realMsgId, status: 'acked' }])
+}
+
+/** Mark an optimistic ② row failed (keep the bubble; do not roll into ③). */
+export function failLocalEntry(existing: readonly YzjLogEntry[], localId: string): YzjLogEntry[] {
+  return existing.map(entry => entry.msgId === localId ? { ...entry, status: 'failed' as const } : entry)
+}
+
+/**
+ * Reply-chain around a topic anchor: walk parents via replyMsgId, then
+ * descendants that reply into that set. Empty when the root is not in the log.
+ */
+export function threadEntries(
+  entries: readonly YzjLogEntry[],
+  rootMsgId: string,
+): YzjLogEntry[] {
+  const byId = new Map(entries.map(entry => [entry.msgId, entry]))
+  if (!byId.has(rootMsgId)) return []
+  const keep = new Set<string>()
+  let cursor: string | undefined = rootMsgId
+  while (cursor !== undefined && !keep.has(cursor)) {
+    keep.add(cursor)
+    cursor = byId.get(cursor)?.replyMsgId
+  }
+  let grew = true
+  while (grew) {
+    grew = false
+    for (const entry of entries) {
+      const reply = entry.replyMsgId
+      if (reply !== undefined && keep.has(reply) && !keep.has(entry.msgId)) {
+        keep.add(entry.msgId)
+        grew = true
+      }
+    }
+  }
+  return entries.filter(entry => keep.has(entry.msgId))
+}
+
+/**
+ * Summon-window digest (spec §5.2). Both summon paths MUST call this.
+ * Empty log with no groupId → '' (do not inject an empty block).
+ * groupId / per-line msgId are required so the model can send or reply.
+ * Topics with a root prefer the reply chain; missing root falls back to the
+ * group near-window.
+ */
+export function formatSummonWindow(
+  log: YzjBoundMessageLog | undefined,
+  options: {
+    readonly maxMessages: number
+    readonly maxChars: number
+    readonly excludeMsgId?: string
+    readonly groupId?: string
+    readonly topic?: {
+      readonly title?: string
+      readonly rootMsgId?: string
+      readonly originWho?: string
+      readonly originText?: string
+    }
+  },
+): string {
+  const groupId = options.groupId ?? log?.yzjConversationId ?? ''
+  const root = options.topic?.rootMsgId?.trim() ?? ''
+  const thread = root === '' ? [] : threadEntries(log?.entries ?? [], root)
+  const pool = thread.length > 0 ? thread : (log?.entries ?? [])
+  const acked = pool.filter(entry => {
+    if (entry.status !== 'acked') return false
+    if (options.excludeMsgId !== undefined && entry.msgId === options.excludeMsgId) return false
+    return true
+  })
+  const window = acked.slice(-Math.max(0, options.maxMessages))
+  const lines: string[] = []
+  let chars = 0
+  for (let index = window.length - 1; index >= 0; index -= 1) {
+    const entry = window[index]
+    if (entry === undefined) continue
+    const when = formatWindowTime(entry.sentAt)
+    const who = entry.isSelf ? '我' : (entry.fromName === '' ? entry.fromOpenId : entry.fromName)
+    const replyId = entry.replyMsgId
+    const replyDigest = replyId === undefined ? '' : shortReply(log, replyId)
+    const reply = replyId === undefined
+      ? ''
+      : ` 回复 msgId=${replyId}${replyDigest === '' ? '' : ` ${replyDigest}`}`
+    const line = `[${when}] ${who} msgId=${entry.msgId}: ${entry.content}${fileIdMark(entry.param)}${reply}`
+    if (chars + line.length + 1 > options.maxChars && lines.length > 0) break
+    lines.unshift(line)
+    chars += line.length + 1
+  }
+  const meta = ['［本群最近消息（仅本轮上下文，非完整群档）］']
+  if (groupId !== '') {
+    meta.push(`groupId: ${groupId}`)
+    meta.push('发群用 yzj_im_message_send 的 groupId；回复某条把 replyMsgId 设成该行 msgId。')
+  }
+  const topic = options.topic
+  if (topic !== undefined) {
+    const title = topic.title?.trim() ?? ''
+    if (title !== '') meta.push(`话题: ${title}`)
+    const root = topic.rootMsgId?.trim() ?? ''
+    if (root !== '') meta.push(`锚点 msgId: ${root}`)
+    const excerpt = (topic.originText ?? '').replace(/\s+/g, ' ').trim().slice(0, 80)
+    if (excerpt !== '') {
+      const who = (topic.originWho ?? '').trim()
+      const rootEntry = root === '' ? undefined : log?.entries.find(entry => entry.msgId === root)
+      meta.push(`锚：${who === '' ? '' : `${who}：`}${excerpt}${fileIdMark(rootEntry?.param)}`)
+    }
+  }
+  if (lines.length === 0 && groupId === '' && topic === undefined) return ''
+  if (lines.length === 0) return meta.join('\n')
+  return `${meta.join('\n')}\n${lines.join('\n')}`
+}
+
+function formatWindowTime(sentAt: number): string {
+  const date = new Date(sentAt)
+  const pad = (n: number): string => String(n).padStart(2, '0')
+  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+function shortReply(log: YzjBoundMessageLog | undefined, replyMsgId: string): string {
+  const hit = log?.entries.find(entry => entry.msgId === replyMsgId)
+  if (hit === undefined) return ''
+  return hit.content.replace(/\s+/g, ' ').trim().slice(0, 24)
+}
+
+/** Lightweight session event the fused view sorts against. */
+export interface FusedSessionEvent {
+  readonly type: string
+  readonly time: number
+  readonly data: unknown
+}
+
+/** Write-gate pending overlay (host memory; G3 still not a session event). */
+export interface FusedPending {
+  readonly writeId: string
+  readonly time: number
+  readonly toolName: string
+  readonly status: string
+}
+
+/** One row of the fused VIEW (not written to the official session log). */
+export type FusedItem =
+  | { readonly kind: 'im'; readonly time: number; readonly entry: YzjLogEntry }
+  | { readonly kind: 'session'; readonly time: number; readonly hide: boolean; readonly event: FusedSessionEvent }
+  | { readonly kind: 'pending'; readonly time: number; readonly pending: FusedPending }
+
+/** True when a user/message is a plugin followup trigger (spec §4.4) — hide in the fused view. */
+export function isPluginFollowup(event: FusedSessionEvent): boolean {
+  if (event.type !== 'user/message') return false
+  const data = typeof event.data === 'object' && event.data !== null ? event.data as Record<string, unknown> : {}
+  const source = typeof data.source === 'object' && data.source !== null ? data.source as Record<string, unknown> : {}
+  return source.kind === 'plugin'
+}
+
+/** Latest user/message source kind on a session log (write-gate split). */
+export function latestUserSourceKind(events: readonly { type: string; data: unknown }[]): 'user' | 'plugin' | 'none' {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event === undefined || event.type !== 'user/message') continue
+    const data = typeof event.data === 'object' && event.data !== null ? event.data as Record<string, unknown> : {}
+    const source = typeof data.source === 'object' && data.source !== null ? data.source as Record<string, unknown> : {}
+    return source.kind === 'plugin' ? 'plugin' : 'user'
+  }
+  return 'none'
+}
+
+/**
+ * Merge ①② log rows with official ③④ events and write-gate pending.
+ * Ascending; same-ms IM before session (summon ① before its followup).
+ * Pending cards stick after the last session event with time ≤ pending.time.
+ */
+export function mergeFused(
+  entries: readonly YzjLogEntry[],
+  events: readonly FusedSessionEvent[],
+  pending: readonly FusedPending[] = [],
+): FusedItem[] {
+  const items: FusedItem[] = []
+  for (const entry of entries) {
+    items.push({ kind: 'im', time: entry.sentAt, entry })
+  }
+  for (const event of events) {
+    items.push({
+      kind: 'session',
+      time: event.time,
+      hide: isPluginFollowup(event),
+      event,
+    })
+  }
+  items.sort((left, right) => {
+    if (left.time !== right.time) return left.time - right.time
+    const rank = (item: FusedItem): number => item.kind === 'im' ? 0 : item.kind === 'session' ? 1 : 2
+    return rank(left) - rank(right)
+  })
+  const withPending = [...items]
+  const orderedPending = [...pending].sort((a, b) => a.time - b.time)
+  for (const card of orderedPending) {
+    let insertAt = withPending.length
+    for (let index = withPending.length - 1; index >= 0; index -= 1) {
+      const item = withPending[index]
+      if (item !== undefined && item.kind === 'session' && item.time <= card.time) {
+        insertAt = index + 1
+        break
+      }
+    }
+    withPending.splice(insertAt, 0, { kind: 'pending', time: card.time, pending: card })
+  }
+  return withPending
+}
+
+/** Durable store: one log per yzjConversationId, memory-fallback until open(). */
+export class BoundLogStore {
+  private logs: KvTable<string, YzjBoundMessageLog> | undefined
+  private readonly memory = new Map<string, YzjBoundMessageLog>()
+  private limits: BoundLogLimits = DEFAULT_BOUND_LOG_LIMITS
+
+  /** Apply Config caps (schema fields, not constants). */
+  setLimits(limits: Partial<BoundLogLimits>): void {
+    this.limits = { ...this.limits, ...limits }
+  }
+
+  /** Current caps. */
+  getLimits(): BoundLogLimits {
+    return this.limits
+  }
+
+  /** Open (or adopt) the domain; safe to await repeatedly. */
+  async open(facility: { open(spec: typeof yzjHomeLogDomainSpec): Promise<Domain<typeof yzjHomeLogDomainSpec>> }): Promise<void> {
+    if (this.logs !== undefined) return
+    const domain = await facility.open(yzjHomeLogDomainSpec)
+    this.logs = domain.table('logs')
+    for (const [key, value] of this.memory) {
+      if (this.logs.get(key) === undefined) await this.logs.put(key, value)
+    }
+    this.memory.clear()
+  }
+
+  /** Close the domain (idempotent). */
+  async close(): Promise<void> {
+    this.logs = undefined
+  }
+
+  /** Log for one Yunzhijia conversation, or undefined. */
+  get(yzjConversationId: string): YzjBoundMessageLog | undefined {
+    return this.logs?.get(yzjConversationId) ?? this.memory.get(yzjConversationId)
+  }
+
+  /** Ensure a header exists (binding table is authority for dshSessionId). */
+  async ensureHeader(
+    yzjConversationId: string,
+    dshSessionId: string,
+    yzjKind: YzjConversationKind,
+  ): Promise<YzjBoundMessageLog> {
+    const existing = this.get(yzjConversationId)
+    if (existing !== undefined) {
+      if (existing.dshSessionId === dshSessionId && existing.yzjKind === yzjKind) return existing
+      const synced: YzjBoundMessageLog = { ...existing, dshSessionId, yzjKind, updatedAt: Date.now() }
+      await this.put(synced)
+      return synced
+    }
+    const created: YzjBoundMessageLog = {
+      yzjConversationId,
+      dshSessionId,
+      yzjKind,
+      updatedAt: Date.now(),
+      entries: [],
+    }
+    await this.put(created)
+    return created
+  }
+
+  /** Append one row with T8 collision rules. */
+  async append(
+    yzjConversationId: string,
+    dshSessionId: string,
+    yzjKind: YzjConversationKind,
+    incoming: YzjLogEntry,
+    options: { readonly skipOpenIds?: readonly string[] } = {},
+  ): Promise<BoundLogAppendResult> {
+    const header = await this.ensureHeader(yzjConversationId, dshSessionId, yzjKind)
+    const { entries, result } = applyAppend(header.entries, incoming, options)
+    if (!result.accepted && result.reason !== 'promoted-to-dsh-send' && result.reason !== 'promoted-to-robot-outbound') return result
+    const next: YzjBoundMessageLog = {
+      ...header,
+      updatedAt: Date.now(),
+      entries: trimRetention(entries, this.limits.logRetention),
+    }
+    await this.put(next)
+    return result
+  }
+
+  /** Rewrite local-* → real msgId after CLI ack. */
+  async ackLocal(yzjConversationId: string, localId: string, realMsgId: string): Promise<YzjBoundMessageLog | undefined> {
+    const header = this.get(yzjConversationId)
+    if (header === undefined) return undefined
+    const next: YzjBoundMessageLog = {
+      ...header,
+      updatedAt: Date.now(),
+      entries: ackLocalEntry(header.entries, localId, realMsgId),
+    }
+    await this.put(next)
+    return next
+  }
+
+  /** Mark local-* failed. */
+  async failLocal(yzjConversationId: string, localId: string): Promise<YzjBoundMessageLog | undefined> {
+    const header = this.get(yzjConversationId)
+    if (header === undefined) return undefined
+    const next: YzjBoundMessageLog = {
+      ...header,
+      updatedAt: Date.now(),
+      entries: failLocalEntry(header.entries, localId),
+    }
+    await this.put(next)
+    return next
+  }
+
+  private async put(log: YzjBoundMessageLog): Promise<void> {
+    if (this.logs !== undefined) {
+      await this.logs.put(log.yzjConversationId, log)
+      return
+    }
+    this.memory.set(log.yzjConversationId, log)
+  }
+}

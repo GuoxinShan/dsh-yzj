@@ -1,0 +1,481 @@
+# 云之家机器人通道调研与双向打通方案（对接 ui-yzj）
+
+> 版本：v0.3（调研稿 + 会话落点两次覆盖）｜ 日期：2026-08-17
+> v0.3 变更：**v2.0 产品法再覆盖会话落点**（Guoxin Shan，[`group-room-topics.md`](group-room-topics.md)）——1 群 = 1 群房间 + N 话题会话；§3.6 S1 的 per-thread 锚定**复活**为 `(groupId, rootMsgId) → 话题会话`（加「话题必须在群房间可见」不变量）；§9 与 v0.2 的「打开/恢复绑定会话」相应改为「锚定或新建话题会话」。协议面（WS、ack-then-push、sendMsgUrl、allowFrom、工作区三层）继续有效。
+> v0.2 变更：**产品法覆盖会话落点**（Guoxin Shan，[`dsh-home-session.md`](dsh-home-session.md)）——DSH 是唯一家园；一条云之家会话 ↔ 恰好一条 DSH session；隐藏 `yzj-robot-*` 平行 session、以及 `!fork` / `robot_fork` 开新根，在该法下错误，应打开/恢复绑定会话。本文 §1–§8 **不改写**：协议、spike、S1/S3/§8 工具面仍是当时设计与实现快照。覆盖条款见 **§9**。
+> 调研来源：云之家开放平台官方文档（opendocs，2026-08-16 抓取）、openclaw-yzj v2026.4.9 源码（本地参考 `.openclaw-yzj/`，不入 workspace）、yzj-cli 实测。
+> 定位：整体方案 §8「无人值守衔接点」的落地前调研 + ui-yzj 集成设计。回答两个问题：**机器人体系到底长什么样**、**双向打通怎么接进我们已经做好的东西**。v0.2 起第三个问题由会话家园回答：**打进哪一条 DSH session**。
+
+---
+
+## 1. 机器人体系全景（三种形态 + 管理）
+
+### 1.1 群组机器人（Webhook 机器人）——纯出站
+
+官方文档：`/opendocs/docs/api/im/im-robot.md`、`/guide/im/robot.md`。
+
+- **创建**：群设置 → 群组机器人 → 创建，**需群管理员**；只填名称，创建即得 Webhook 地址。
+- **Webhook = 出站 API**：`POST https://…/gateway/robot/webhook/send?yzjtype=&yzjtoken=`，token 在 URL 内（`yzjtype` 即授权码，文档原话）；仅管理员可见。
+- **出站消息能力**（比预想丰富）：
+  - 文本：`{content}`，支持 `@All`（不区分大小写）；
+  - **应用类消息 `msgType:1`**：三种样式 `customStyle` 0 原始 / 1 主次内容 / 2 图表，带 `appName/title/lightAppId/thumbUrl/webpageUrl`——webpageUrl 可跳轻应用/网页；
+  - **卡片消息 `type:25`**：模板 + 数据 + 基本状态/独享状态（按人区分），见 §1.4；
+  - 精确提醒：`notifyParams:[{type:"mobiles"|"openIds", values:[…]}]`，≤100 人、自动去重、仅群内成员生效。
+- **限制**：每机器人 **30 条/分钟**；token 无轮换机制，泄露 = 删除重建。
+- **无入站**——它听不到群消息，只能单向推送。
+
+### 1.2 对话机器人（企业自建对话机器人）——双向主角
+
+官方文档：`/opendocs/docs/api/im/chatbot.md`、`/guide/im/robot.md` §企业自建对话机器人。
+
+- **创建**：群设置 → 群组机器人 → 创建自定义机器人 → **创建对话型机器人**（手机/桌面端需最新版客户端）；填名称/Logo/描述 + **消息接收地址（公网 HTTPS）**。创建时云之家发一次测试请求（固定 `secret=test-secret`、`robotId=test-robotId`，见 §2.1），**3 秒内返回正确格式才能创建成功**——这是纯本机部署的最大门槛，见 §4 spike。
+- 创建成功给两样东西：**机器人密钥 appSecret**（签名验证用，泄露同样只能删重建）+ **发送消息接口地址 sendMsgUrl**（含 yzjtoken）。
+- **唤起**：群内 `@机器人 消息` → 云之家 POST 到消息接收地址（或走 WS，见 §2.2）。
+- **入站报文**：`{type:2, robotId, robotName, operatorOpenid, operatorName, time, msgId, content, groupType}`；header 带 `sign`（验签）+ `sessionId`。
+- **同步响应契约**：每次请求 **3 秒内**回 `{success, data:{type, content}}`，超时用户侧显示「哎呀,出现了点小问题」。**LLM 不可能同步出活** → 唯一可行模式是 **ack-then-push**：立即回 `{success:true, data:{type:2, content:""}}`，agent 处理完经 sendMsgUrl 主动推回（openclaw-yzj 正是这么实现的，已验证可行）。
+- **出站**：sendMsgUrl 同 §1.1 全套（文本/应用卡片/notifyParams），另有引用回复 `param:{replyMsgId,…} + paramType:3`；回复也支持卡片 `type:25`。
+
+### 1.3 个人机器人——待登录实测
+
+- 入口 `https://www.yunzhijia.com/im/personalRobotCreate`（openclaw README 给出），**重定向登录页，未登录抓不到内容**。
+- openclaw 对它与群机器人用同一套协议（sendMsgUrl + websocket 推导），推断是**无需群管理员**的个人对话机器人入口。
+- 未决问题（需登录后实测）：会话形态（单聊？）、`groupType` 取值、能否不挂群使用、创建时是否同样强制公网测试。见 §4。
+
+### 1.4 消息卡片（type 25）——机器人也有交互按钮
+
+官方文档：`/opendocs/docs/server-api/cardmsg.md`。
+
+- 卡片搭建工具：`https://www.yunzhijia.com/developers/`（可视化，产模板 ID）。
+- 模板 + 数据（`${var}` 变量）+ 状态（基本状态全员可见；**独享状态按人区分**，审批类卡片的经典用法）。
+- **回传交互**：提交按钮 + 输入控件 → 用户点按钮 → 云之家把 `{oid, outTrackId, eventData}` POST 到**模板上配置的回调地址**；卡片可更新（基本/独享状态均可，独享优先）。
+- **对本方案的意义**：「机器人建议动作 → 人确认」的确认卡可以在**云之家侧**做成真按钮（不再只能群内文本回复「确认」）——但前提是有公网回调地址。本机场景先用文本确认，卡片按钮作为公网部署时的增强。修正此前「机器人消息无交互按钮」的判断。
+- 跳转交互支持 cloudhub 协议（deep link 回跳云之家原生页面/轻应用）——todo deep link 需求的现成通道。
+
+### 1.5 机器人管理
+
+- **无个人可用的集中管理 API**；群机器人管理收在群设置（管理员）；yzj-cli v0.1.3 实测**无任何 robot 子命令**（`unrecognized subcommand`）——机器人配置无法 CLI 化，只能 Web 手工操作，我们的产品要做**引导**而不是自动化。
+- 密钥生命周期：appSecret 创建时一次性展示；泄露处理统一为删除重建（无轮换）。文档明示 webhook「仅管理员可见」。
+- 频控：群机器人 30 条/分钟（对话机器人未文档化，spike 观测）。
+
+### 1.6 顺带发现：官方待办 API（影响 `../migration/todo-backend-migration.md`）
+
+`/opendocs/docs/api/im/im-todo.md`：`generatetodo.json / action.json / checkcreatetodo.json` 三接口。
+
+- 幂等主键 `openId+appId+sourceId`（与我们的稳定 ID 理念天然对齐）；同步/异步双模式；`url` 字段即 deep link；`todoType` 0 通知中心 / 1 待审批。
+- **门槛**：app 级 accessToken + 轻应用 secret（管理员在管理中心-应用管理获取）→ **企业级能力，个人用户不可用**。
+- **硬约束**：状态不可逆（待处理→已处理，不支持回退）——与我们「done→in_progress 重开」语义冲突；**无变更 webhook**（§5 清单里那条官方确实没有），用户在云之家侧处理需轮询 `checkcreatetodo` 感知。
+- 结论：todo 迁移的目标后端多一个选项（企业团队库 + 自建轻应用时可升原生待办），个人库维持 dbt；映射时不可逆状态机要单独设计（建议：重开 = 删旧建新换 sourceId，文档 FAQ 6 给了官方口径）。
+
+### 1.7 依赖分层：零注册可推进 vs 必须开放平台协调
+
+> 结论先行：**R0–R2 主线（双向打通 MVP）全部落在 A+B 两层，零开放平台依赖，可立即推进**；需要跨部门协调的只有 D 层三块（原生待办后端、卡片更新/订阅号、应用身份 API），均不阻塞主线，协调可并行启动。
+
+| 层 | 能力 | 获取方式 | 谁能自助 | 状态 |
+|---|---|---|---|---|
+| **A. CLI 用户身份**（已落地） | 六域 45 工具 + 面板 + todo demo | `yzj-cli auth login`（OS keychain） | 每个用户自己 | ✅ 已在跑 |
+| **B. 机器人自助**（openclaw-yzj 已验证的路径） | 群 Webhook 机器人**出站**（文本/@All/notifyParams） | 群设置→群组机器人→创建，复制 Webhook URL 粘进配置 | **群管理员**，无需任何注册 | 协议已验证，待接入 |
+| | 对话机器人**WS 双向**（入站触发 agent + 出站回推/引用回复） | 群设置→创建对话型机器人：一次性公网测试（临时隧道可过）→ 得 appSecret + sendMsgUrl → 此后 WS 出站长连接免公网 | **群管理员**，无需任何注册 | 协议已验证，待 spike ①②③ |
+| | 个人机器人（免群管理员入口，协议同上 + DM 形态） | `yunzhijia.com/im/personalRobotCreate` | 每个用户自己 | ✅ **已实测（§4.1）：创建零门槛、WS 双向、全协议通过** |
+| | HmacSHA1 验签 / msgId 去重 / WS 重连 | 随机器人创建附带（appSecret + sendMsgUrl） | — | openclaw 四模块直接移植 |
+| **C. 灰色待验证**（可能无需企业应用，但需某种账号/字段） | ~~type:25 卡片一次性发送~~ **已判死（2026-08-16）**：webhook 通道 param 白名单剥离，交互卡片不可达；应用类视觉卡片（msgType:1）归入 B 层可用形态 | — | ❌ 二轮实测 | |
+| | msgType:1 应用类消息（文档标注 `lightAppId` 必填——是否接受非注册值未知） | 待验证 | 待验证 | spike ⑥ |
+| | 卡片**回传交互**（回调地址配在模板上） | 需公网 HTTPS 回调 | — | 本机场景不用；公网部署时评估 |
+| **D. 必须开放平台/跨部门协调** | **原生待办 API**（generatetodo/action/checkcreatetodo） | accessToken（oauth）+ 轻应用 secret（**管理中心-应用管理，管理员**）；app 级授权 | ❌ 需协调 | todo 原生后端选项，不阻塞 demo |
+| | 卡片**更新**（基本/独享状态） | 必须真实有效 appid（=轻应用） | ❌ 需协调 | R3 增强 |
+| | 订阅号推送（pubacc/pubsendV2） | 订阅号 id+secret（订阅号管理员）+ pubtoken | ❌ 需协调 | 未纳入路线 |
+| | 应用身份 IM 开放 API（`/api/im/index` 等以应用发消息、org 同步） | accessToken + 企业授权 | ❌ 需协调 | 未纳入路线 |
+
+**对推进节奏的含义**：现在就能动手的是 A+B——spike ①–⑤、`packages/robot-yzj` 协议层、WS 入站→session→回推、面板设置卡。找其他部门协调的申请（轻应用注册 + secret、必要时订阅号）**今天就并行发起**，因为它只影响 R3（卡片增强）和 todo 原生后端迁移，周期再长也不卡主线。
+
+---
+
+## 2. 协议细节（源码 + 文档交叉验证，实现直接抄这里）
+
+### 2.1 签名验签（修正官方文档笔误）
+
+- 摘要串：`robotId,robotName,operatorOpenid,operatorName,time,msgId,content` 逗号拼接。
+- 算法：官方文档正文写「HmacSHA256」，但同页 Java 示例实为 **HmacSHA1**；openclaw-yzj 用 SHA1 且线上工作。**以 SHA1 为准**。
+- Base64 输出放 `sign` header。openclaw 的实现缺陷要修掉：比较未用 timing-safe（自写了 `timingSafeEqualBuffer` 却没接上）——移植时接上。
+- 创建时的测试请求 secret 固定为 `test-secret`，`robotId=test-robotId`（跳过验签放行该固定值即可）。
+
+### 2.2 WebSocket 入站（免公网，本机场景的生命线）
+
+- 推导规则（openclaw `ws-url.ts`）：`sendMsgUrl` 取 host + `yzjtoken` → `wss://{host}/xuntong/websocket?yzjtoken={token}`。
+- **出站长连接**：不需要任何公网回调/端口，个人本机 dsh 直接可用。
+- 帧协议为 openclaw 行为逆向（auth/ping/pong/ack 控制帧 + 消息帧），心跳 ping、陈旧检测、指数退避重连、坏帧计数强制重连的工程实现可直接移植（`websocket-client.ts`）。
+- 修复项：连接选项 `rejectUnauthorized:false` 必须去掉。
+- Webhook 与 WS 双入口并存时按 `msgId` 去重（TTL 10min Map，`dedupe-store.ts`）。
+- `sessionId` header（仅 Webhook 入站携带）：同用户同群同机器人 30 分钟内共享——**只能当活跃会话线索，不能当持久 session key**。
+
+### 2.3 出站语义（实测确认）
+
+- `groupType===3`：群聊语境，**不带 `notifyParams`** 广播全群；否则带 `notifyParams:[{type:"openIds",values:[operatorOpenid]}]` 只提醒发送者（形成私聊形态回复）。
+- 引用回复：`param:{replyMsgId, replySummary, replyPersonName, isReference:true} + paramType:3`。
+- 每分钟 30 条频控下的播报策略要合并/限流。
+
+### 2.4 未验证的三件事（spike 清单，见 §4）
+
+robotId 与 CLI groupId 的 ID 空间映射；创建流程的公网测试是否可绕过（决定部署门槛）；`xuntong/websocket` 真实帧格式（openclaw 的逆向可能不完备）。
+
+---
+
+## 3. 双向打通：接进 ui-yzj 的设计
+
+### 3.1 要不要做？——做，但定位是「增量身份」而非替换
+
+- 整体方案 §8 早已预留：无人值守（入站触发 + 出站播报）只有机器人身份能做，CLI 用户身份做不了（凭据在 keychain、无推送通道）。
+- 但**推送只覆盖机器人所在群**：用户其余群/私聊的未读仍走现有 CLI `unreadCount` 轮询。§5.3 第一层「整体替换为真推送」修正为**混合模式**：机器人群推送、其余照旧轮询。
+- 写路径从两分变三分：用户直写（面板，不经确认卡）/ agent 写（工具 + 确认卡）/ **机器人无人值守写**（新路径，门控语义见 3.4）——§5.5「待拍板成文」的原则要扩写。
+
+> **v0.2**：产品模型里机器人出站不是第三说话人，而是绑定会话 agent 轮次的投递（[`dsh-home-session.md`](dsh-home-session.md) D4/§8）。上句「三分」保留为**通道/凭据**分层（CLI 用户身份 vs 机器人 token），不是家园里的第三张嘴。写路径两分已拍板。
+
+### 3.2 新增包 `packages/robot-yzj`（host 面为主）
+
+```
+协议层（移植 openclaw 四模块 + 修复）     ws-url 推导 / HmacSHA1 验签(timing-safe) / msgId 去重 / WS 客户端(去 rejectUnauthorized)
+账户与配置                               sendMsgUrl + appSecret + allowFrom 白名单（openId 列表）
+                                         挂 harness 配置（bundle cordis.patch.yml 带 config schema）
+入站路由                                 operatorOpenid+robotId → DSH session 映射（每群一个 session）
+                                         ack-then-push：入站即回空 content，异步 dispatch 进 session
+出站播报服务 ctx.yzjRobot                 send(text|card, {notify, reply}) —— 三处消费：
+                                         ① 入站回复 ② schedule 播报（替换机器人群的轮询触发）
+                                         ③ 待办催办（todo §5「IM 通知」的落地通道）
+生命周期                                 全部经 ctx.effect() 注册，插件停用即断连、无残留
+```
+
+关键决策：**WS 客户端跑在 host 进程**（Node），不走浏览器 WebSocket——host 存活即可收消息（与「第二层播报 host 侧执行」同前提），浏览器只消费状态与通知。
+
+### 3.3 ui-yzj 的结合点（现有代码的落位）
+
+| 现有结构 | 结合方式 |
+|---|---|
+| `/yzj` RPC 通道（`ui-yzj/src/index.ts`） | 新增端点：`robot-status`（连接状态/最近入站）、`robot-send`（面板直发，用户直写语义）、`robot-config`（读写机器人配置 + 连接测试） |
+| 面板 tab（`panel.tsx` TABS） | **不加页签**（v0.3 定稿：管理/配置不进工作台页签）；机器人管理在 **设置 → 云之家 · 机器人**（与记忆库管理同处一个设置节，分段切换；`settings.section` 插槽，注册 id `yzj`）。设置卡：sendMsgUrl 粘贴即推导 WS 地址、连接状态灯、allowFrom 管理、创建引导文案——把 §1.2 的 Web 操作步骤内置成图文向导 |
+| 未读角标聚合（`stores.ts` + unreadTotalOf） | 机器人入站消息计数并入聚合：来源标记 `robot`，点开落对应群的会话 tab（有映射时）或机器人会话视图 |
+| write-gate（`write-gate.ts` approval/request） | 机器人触发的写**不经 GUI 确认卡**（人不在 GUI 前）——走 §3.4 的群内确认协议；write-gate 保持只服务 GUI 路径，不混 |
+| ConversationNodeDefinition 卡片族 | 入站消息在 session 里渲染为带群/发送人上下文的轮次；机器人回复带「已推送到群」终态标记 |
+| im-cache（`im-cache.ts`） | 机器人所在群的消息缓存复用现有 groupId 通道回源（依赖 spike：robotId↔groupId 映射） |
+
+### 3.4 安全模型（机器人无人值守写的门控）
+
+- **allowFrom 白名单**：openclaw 只支持 pairing 且不支持 allowFrom——我们按 `operatorOpenid` 自建白名单（默认仅 CLI 登录用户本人可指挥），面板可管理。
+- **动作分级**（对齐 guard 的 WRITE_SPECS 理念）：
+  - 只读动作（查日程/查文档/列待办）：白名单内直接执行直接答；
+  - 低风险写（建待办、给自己发提醒）：白名单内直接执行 + 播报结果；
+  - 高风险写（发消息给别人、删文档、改表）：**建议卡协议**——机器人推「建议 + 编号」，白名单用户在群里回复「确认 N / 取消 N」（文本协议，30 分钟窗口），或回 GUI 走原有确认卡；两通道都收敛到同一 writeId 状态机。
+- **审计**：入站 msgId、决策人 openId、执行结果全部进 session 日志（Trajectory 可回放），与 §5.5 审计原则一致。
+- 频控护栏：出站 30 条/分钟内做合并与节流，避免 agent 长回复刷屏（分片 + 引用回复挂接）。
+
+### 3.5 分期（按 §1.7 依赖分层标注）
+
+- **R0 spike（半天~1 天，先决；依赖 A+B，零注册）**：§4 清单 ①–⑤ 逐项实测，任何一项不过都要回头改设计。⑥（卡片实发）顺带做，结果只影响 R3。
+- **R1 MVP（依赖 B）**：robot-yzj 包协议层 + WS 入站 → session → agent → 回群（ack-then-push）；面板机器人设置卡 + 状态灯；allowFrom 本人限定。
+- **R2 协作（依赖 B）**：建议卡协议（群内文本确认 + GUI 确认卡双通道）；schedule 播报与待办催办接入 `ctx.yzjRobot`；角标混合聚合。
+- **R3 增强（依赖 D——开放平台协调项）**：**真交互确认卡（Adaptive Cards）**——协议已在重保群样本中确证（inline cardJson + Action.Submit + _secondConfirm + 模板回调），等轻应用/回调地址协调到位即可实现，`RobotSender.sendCard` 已留扩展点；此前 webhook 通道的应用类视觉卡片（msgType:1）已在线（确认卡/回执形态）。原生待办后端 = D 层；公网部署形态（Webhook 双入口）。
+
+> 协调申请（D 层：轻应用注册 + secret、原生待办 API 授权；订阅号视需要）在 R0 启动时并行发起，目标只覆盖 R3 与 todo 迁移，不进 R1/R2 关键路径。
+
+### 3.6 会话管理模型：全功能对齐 Claude Tag（Slack）
+
+> 调研来源：Claude 官方文档 claude.com/docs/claude-tag/*（2026-08-16 抓取：overview / how-it-works / commands / getting-started / memory / when-claude-responds）。目标不是「能回消息」，而是下表每项能力对齐、或显式给出云之家协议下的等价物/降级物。
+
+#### 3.6.1 Claude Tag 会话模型事实清单（官方文档提炼）
+
+| # | 能力 | Claude Tag 行为 |
+|---|---|---|
+| C1 | **会话单位 = thread** | 每个 thread 一个 session；另有每频道一个顶层 ambient session（响应无 @ 的消息时用它工作） |
+| C2 | **发起** | 频道内 `@Claude + 任务` 即开 session；**频道任何成员**都可发起 |
+| C3 | **steering** | session 在 thread 激活后「属于那里的所有人」——**thread 内回复（无需再 @）即可转向**，任何成员不限发起人 |
+| C4 | **进度面** | 「is thinking…」行 + **checklist（Done/In progress 原地更新）**；结尾带 Open session in Claude 只读全记录链接（含每个工具调用）+ Configure 链接 + 所用模型 |
+| C5 | **命令族**（bang 前缀、独立成句，附加词降级为普通 prompt） | `!help`；`!configure`（频道配置页链接）；`!restart`（thread 内=换 thread session 且**重读 thread 历史、保留消息内容丢弃额外上下文**；顶层=换频道 session）；`!mute`/`!unmute`（**按 thread** 静音，直接 @ 自动解除；无频道级静音）；`!feedback [text]`；`!routines [#频道]`（列例行任务，结果仅提问者可见）；`!fork #频道 <prompt>`（thread 会话续到新频道新 thread，双向链接，仅公开频道） |
+| C6 | **响应触发三档** | DM=永远响应（无需 @）；已加入的 thread=永远响应；频道顶层=**按判断响应**（Respond automatically 频道级开关，@=保证响应） |
+| C7 | **自静音** | 频道消息持续无可响应内容时自动关闭主动回复 |
+| C8 | **编辑/删除语义** | 编辑→收到 before/after 便签但**不据此行动**（纠错需新回复）；删除→无通知；删 thread 根消息（已有回复）→session 保留 |
+| C9 | **记忆归属频道**（非用户） | 显式「remember for this channel」+ 自动沉淀事实 + **可回读该频道过往 session 转录**（按时间/主题，非全文检索）；公开频道记忆全 workspace 共享，私有频道隔离（own store + 只读 workspace）；长 playbook 官方建议放仓库而非记忆 |
+| C10 | **DM vs 频道** | DM 跑在**发起者自己的账号/连接器**上（归因个人）；频道跑在管理员为该频道配的连接上（agent 身份）；DM 仅 1:1 |
+| C11 | **例行任务 routines** | 计划任务、频道 watch、PR 订阅——独立触发、主动投递进频道 |
+| C12 | **回复署名** | ambient 回复署名「Claude」；任务回复署名「Claude [任务描述]」 |
+| C13 | **沙箱生命周期** | 会话开始创建（持有工作文件），**闲置即弃** |
+| C14 | **入群自我介绍** | 首次被邀入频道：读历史、建议几个可接任务 |
+
+#### 3.6.2 云之家协议约束（与 Slack 的硬差异）
+
+| 差异 | 影响 |
+|---|---|
+| **无 thread 原语**：只有引用回复链（replyMsgId） | thread≈回复链；锚定依赖「机器人消息 msgId → session」映射（见 S1） |
+| **机器人只收 @ 消息**；引用回复机器人但不带 @ 是否送达**未知** | C3「无需再 @」需 spike ⑦ 验证；不可达则降级「链内回复需带 @」（@ 保证响应语义仍在） |
+| **消息不可编辑** | C4 checklist 原地更新不可达 → 降级为里程碑分段推送（30 条/分预算内）或 R3 卡片状态更新 |
+| **无编辑/删除事件推送** | C8 大部分语义 N/A（简化而非损失） |
+| **群/私聊由 groupType 区分**；出站 notifyParams 可单发 | DM 语义 ≈ 个人机器人/单发回复模式 |
+| **3 秒 ack** | ack 文本本身即「is thinking…」等价物（C4 前半天然达成） |
+| **可读群历史**（CLI `im message list`）+ **DSH session/Trajectory 本地全量在册** | 比 Claude Tag 更强：session 全记录无需云端链接；「重读 thread」可真回源 |
+
+#### 3.6.3 对齐设计（S 系列，每项标注对应 C#）
+
+**S1 会话单位与锚定（C1/C2/C3）**
+- 私聊面（个人机器人，或 groupType≠3 单发语境）：**每用户×机器人一个持久 session**（= C10 DM 语义：无需 @、消息即指令；群内单发回复也归入该用户 session）。
+- 群聊面（groupType=3）：
+  - **顶层 @机器人（非引用）→ 开新 session**，锚定该消息 msgId；
+  - **引用回复机器人消息 → 接续该消息所属 session**（查 msgId→session 映射；⑦ 实测：出站响应直接带 msgId、入站 msgParam 带 replyRootMsgId，登记与接续均为 O(1) 查表）；
+  - 链内任何成员可 steer（C3「属于所有人」）；带 @ 保证送达（C6 语义）；
+  - **每群另设一个 ambient session**：承载 routines 播报、待办催办等主动投递（C1 频道 session 对应物）；顶层无 @ 消息协议收不到，C6 的「按判断响应」档标记 **N/A-v1**，其价值由 ambient session 的 routines 覆盖。
+- session 实体 = **DSH live session**（followup 进同一 session；Trajectory 即全记录）——C13「闲置即弃」弱化为 DSH session 常驻（更强，无对齐缺口）。
+
+> **v0.2**：上列 S1「顶层 @ → 开新 session / 每群 ambient session / 每用户×机器人一个 `yzj-robot-*`」是当时对齐 Claude Tag thread 模型的设计。产品法（[`dsh-home-session.md`](dsh-home-session.md)）改为 **一条云之家会话 ↔ 恰好一条 DSH 绑定会话**；平行根与 fork 开新根作废，见 §9。
+
+**S2 进度面（C4/C12）**
+- ack 即时回「收到，处理中…」+ 引用用户消息（replyMsgId 引用卡片）= is thinking + 上下文锚定；
+- 长任务按里程碑分段推送（checklist 文本形态：已完成/进行中），受 30 条/分节流合并；
+- 每次交付末尾附 **「在 DSH 中打开会话」deep link**（GUI 会话 URL）= Open session in Claude（等价达成）；R3 卡片消息可升级为可更新 checklist；
+- C12 署名等价：回复首行任务摘要（协议无显示名变体）。
+
+**S3 命令族（C5，全量实现——R2.10/R2.11 补齐）**
+
+> 状态注：下表为设计基线；实现均已落地（!configure/!feedback/!fork 于 R2.10，!fork 群名支持 R2.11）。行为差异以实现为准：`!configure` 回 GUI 链接（config `guiUrl`，未配置则文本指引）；`!fork` 目标支持群名或 groupId（群名经 CLI `im group recent` 惰性解析并持久化到 surface）；`!feedback` 落 `~/.dsh/robot-feedback.log`；`!routines` 指向 dsh-routines（harness schedule 已退役）；`!restart` 不重读历史（保留聊天记录、清空额外上下文——回源重放未做）。
+
+| 命令 | 行为 |
+|---|---|
+| `!help` | 列出可用命令与当前群配置摘要 |
+| `!configure` | 回复面板「机器人设置卡」deep link（GUI 即配置页） |
+| `!restart` | 归档当前 session（Trajectory 留档），新 session **回读本链历史**（`im message list` 按 replyMsgId 链回源重放为上下文——C5「重读 thread、丢弃额外上下文」语义）；链内执行=重启该链 session，顶层执行=重启群 ambient session |
+| `!mute` / `!unmute` | 按 session/链静音（配置标记；直接 @ 自动解除）；群级降噪=面板「仅 @ 响应」开关（云之家下天然默认，协议只送 @） |
+| `!routines` | 列出本群 schedule 例行任务 + watcher（DSH schedule 子系统），**仅提问者可见**（单发 notifyParams） |
+| `!fork <群名/群ID> <指令>` | 当前 session 上下文摘要交接给目标群新 session，双群各回一条带引用的交接消息（跨群双向链接降级为引用回链；要求机器人在两群） |
+| `!feedback <文本>` | 写入本地反馈日志 + 回执（可选转发维护群） |
+
+**S4 记忆（C9）**
+- 归属**群/机器人**，不归属用户：「记住本群规则：…」→ per-group 指令集（配置内，小而稳定）；
+- 长 playbook → **云之家知识库文档**（官方同款建议「仓库>记忆」；我们有现成 doc 域，agent 可读写）；
+- 回读过往 session：DSH session 注册表按群列出历史会话 + Trajectory 转录（C9 第三条等价，且可全文检索——更强）；
+- 公开/私有频道记忆隔离（C9）≈ 企业知识库 vs 个人知识库边界，天然对齐。
+
+**S5 触发与静音（C6/C7/C8）**
+- 私聊=永远响应；链内（引用机器人消息）=响应；顶层=@ 才响应（协议决定，恰为 Claude Tag 保守档）；
+- C6 判断档 N/A-v1（无全量消息流），价值由 routines 补足；C7 自静音随之 N/A；
+- C8 编辑/删除语义整体 N/A（协议无事件），纠错=新回复（与 Claude Tag 实际指引一致）。
+
+**S6 例行任务（C11）**：原设计为 DSH schedule（every ≥5min）+ 群 watcher（CLI 轮询增量，混合模式 §3.1）→ 经 ambient session 投递。**实现（R2.7 起）改为外部引擎 dsh-routines**（专用 `ops` daemon + headless 子进程 + chatnode 桥投递，见 `routines-delivery.md`）——harness schedule 在非 root agent 上不可用（pitfall-007）已退役；**群 watcher（关键词轮询）仍未实现**（gap-analysis §20.10 记录）；PR 订阅类无对应源，N/A。
+
+**S7 入群自我介绍（C14）**：机器人配置完成后**首次收到某群消息**时，读该群近期历史（CLI）+ 给出 3 个建议任务——低成本对齐。
+
+**S8 命令解析安全**：bang 命令独立成句才生效（对齐 C5：附加词降级为普通 prompt）；命令权限 = 该 session 的消息权限（observer 不能 restart 他人 session——allowFrom 白名单 + 链内成员判定）。
+
+#### 3.6.4 对齐总表（验收用）
+
+| Claude Tag 能力 | 我们的实现 | 状态 |
+|---|---|---|
+| C1 thread/频道双 session | S1 回复链 session + 群 ambient session | ✅ 等价 |
+| C2 任何人可发起 | S1（allowFrom 白名单内任何成员） | ✅ |
+| C3 链内免 @ steering | 引用回复接续 session；DM 已实测（引用消息必达）；群内免 @ 待群机器人补测 | ✅ DM / ⚠️ 群 |
+| C4 进度/checklist/全记录链接 | S2 ack+里程碑推送 + DSH 会话 deep link；原地更新→R3 卡片 | ✅ / R3 增强 |
+| C5 命令族 7 条 | S3 全量实现（!fork 跨群交接降级） | ✅（R2.10 补齐 !fork/!configure/!feedback；会话 deep link 降级为 guiUrl + 会话 id 文本行，见 S2） |
+| C6 触发三档 | 私聊/链内/@（保守档） | ✅（判断档 N/A） |
+| C7 自静音 | N/A（无全量流，价值由 routines 覆盖） | ➖ 显式放弃 |
+| C8 编辑/删除语义 | N/A（协议无事件） | ➖ |
+| C9 频道归属记忆 | S4 per-group 指令 + 知识库 playbook + session 转录回读 | ✅ 等价或更强 |
+| C10 DM/频道双身份 | 私聊=CLI 用户身份上下文，群=机器人身份 | ✅ |
+| C11 routines | S6 schedule + watcher | ✅ |
+| C12 任务署名 | 回复首行任务摘要（文本等价） | ✅ |
+| C13 沙箱闲置即弃 | DSH session 常驻 + §8.4 三层工作区（话题私有 cwd + 群共享区） | ✅ 更强（per-thread 隔离语义经私有工作区达成，常驻替代闲置即弃） |
+| C14 入群自我介绍 | S7 | ✅ |
+
+
+---
+
+## 4. Spike 验证清单（动手前必须过）
+
+| # | 验证项 | 方法 | 不过的后果 |
+|---|---|---|---|
+| 1 | 创建对话机器人是否强制可用的公网 HTTPS 测试地址；**WS-only 是否长期可用**（测试仅发生在创建时？） | 临时隧道（ngrok/frp）过创建 → 断隧道 → 观察 WS 推导连接是否持续收消息 | 若 WS 需要创建后持续回调，本机方案坍塌，转公网部署形态 |
+| 2 | `robotId` 与 CLI `groupId` 是否同 ID 空间；入站消息能否在 `im message list` 回源 | 群里 @机器人发消息 → 拿 robotId 对照 `yzj_im_group_recent` / `yzj_im_message_list` | 不映射则面板锚定/回源/im-cache 复用全部落空，机器人会话需独立视图 |
+| 3 | `xuntong/websocket` 真实帧协议（auth/ping 间隔/ack 格式） | 抓包对比 openclaw 帧分类；长时间连接观察心跳 | 帧分类不完备则重写 WS 客户端解析层 |
+| 4 | 个人机器人（personalRobotCreate）形态：会话类型、groupType、创建流程是否同样卡公网测试 | 登录云之家实测 | 个人入口不可用时，无群管理员权限的用户无法自建机器人（产品边界收窄为群管理员可用） |
+| 5 | 对话机器人频控与消息长度上限 | 压测观察 | 播报分片策略参数化 |
+| 6 | 出站 `msgtype:1/25` 从 sendMsgUrl 发是否真的可用（文档只给了群机器人样例） | 实发验证 | 卡片增强（R3）降级为纯文本 |
+| 7 | **引用回复机器人但不带 @ 是否送达**（S1/C3 链内免 @ 的前提）；**sendMsgUrl 响应是否返回 msgId**（msgId→session 映射登记的来源；若无则出站后经 `im message list` 回捞） | 群里引用机器人消息不 @ 它观察 WS 入站；发消息查响应体；对照 `im message list` | 免 @ 不可达→链内 steering 需带 @（降级可用）；msgId 拿不到→靠回捞（稍重）或按时间窗锚定（最后手段） |
+
+### 4.1 R0 实测结论（2026-08-16，个人机器人通道，全部通过）
+
+> 环境：真实个人机器人（web 个人入口创建，`yzjtype=0`），本机 Node 25 原生 WebSocket 直连，探针/工具与原始帧日志见 `spike/robot/`（凭据与日志 gitignored）。**个人机器人通道上 R0 全部验证项通过，MVP（R1/R2）可在此通道先行落地，群对话机器人补充群场景。**
+
+| # | 结果 | 证据 |
+|---|---|---|
+| ① | ✅ **个人机器人创建完全不要求接收地址**（无公网测试、无隧道）；WS 出站长连接即全部入站 | 用户创建流程实录；`wss://www.yunzhijia.com/xuntong/websocket?yzjtoken=…` open 即认证（首帧 `{"success":true,"cmd":"auth"}`） |
+| ② | ✅ **同 ID 空间**：机器人 DM 就是 CLI 可见的普通会话（`im group recent` 首项「个人助手 · 类型3」，groupId `BOT-<uid变体>-BOT-<robotId>`）；`im message list` 完整回源（含机器人消息与引用关系） | CLI 实测双向对照 |
+| ③ | ✅ **WS 帧协议实测**（比 openclaw 逆向更完整）：`directPush/robotMessage`（完整入站消息）；`directPush/msgChg`（消息变更，**带 needAck+seq**，如 replyCount 变更）；`message/lastUpdateTime`（同步信号）；30s pong 心跳；**机器人自身出站不回环**（无 echo 风险） | 帧日志 `spike/robot/logs/ws-*.ndjson` |
+| ④ | ✅ **个人机器人形态**：DM 场景（groupType=3 的 BOT-BOT 通道）、创建零门槛、**自带 nomi 云 AI 应答**（历史可见）；网页版 DM 无用户侧引用 UI（但引用元数据通道存在，见⑦） | 创建流程 + 历史消息实录 |
+| ⑤ | ✅ **频控远宽于文档**：35 条 @800ms（≈75 条/分）全部成功（「30 条/分」为群机器人限制）；**长度上限 5000–6000 字之间**（5000 OK / 6000 FAIL，超限返回 HTTP 200 + `errorCode 1401002 "消息内容太长"`，可检测、可分片） | 压测记录 |
+| ⑥ | ⚠️ **修正（2026-08-16 二轮实测推翻初判）**：webhook 通道的交互卡片**不可用**——8 个信封变体（msgtype 2/25/26 × param.baseInfo/param.interactiveCard/msg.msg）全部回落 `param:null` 纯文本；初判"假模板渲染真卡片"系客户端把长应用类消息误读为卡片。**应用类消息（msgType:1）是 webhook 通道唯一的视觉卡片形态**（标题/主次内容/webpageUrl 跳转，无按钮）。真交互卡片（Adaptive Cards 1.4：Action.Submit/Input/_secondConfirm，inline cardJson 发送）属**开放平台应用通道**（D 层）——证据：重保群告警平台卡片的原始消息样本（param.interactiveCard.cardJson，回调走卡片平台→模板回调地址）。R3 卡片增强改判为 D 层依赖 | 两轮探针 + 重保群只读样本 |
+| ⑦ | ✅ **a）入站推送带全套回复链元数据**：`msgParam:{replyMsgId, replyPersonId, replyPersonName, replySummary, replyRootMsgId}`——**服务端自带链根 replyRootMsgId**，session 锚定无需自行回溯；**b）出站响应直接返回 msgId**（与消息历史一致），映射登记零回捞 | 帧日志 + CLI 对照 |
+
+**对设计的三点修正（并入 §3）**：
+1. **R1 MVP 直接落在个人机器人 DM 通道**——零创建门槛、免公网、全协议验证通过；群对话机器人（需公网测试创建）降为群场景增强，不在 MVP 关键路径。
+2. **S1 锚定简化**：出站响应带 msgId（零回捞）+ 入站带 replyRootMsgId（零链回溯）——「msgId→session」映射登记与「回复接续 session」判定都是 O(1) 查表。
+3. **出站预算**：单条 ≤5000 字（agent 长回复分片线）；速率按 75 条/分内做节流合并即可（保守取 30 条/分仍有 2.4 倍余量）。
+
+**遗留观察项**：WS 长连接 ≥1h 稳定性（探针挂机中，结论后补）；群对话机器人创建流程（公网测试是否强制）待群场景立项时补测。
+
+---
+
+## 5. 对现有文档的修订项
+
+- `integration-master-plan.md` §5.3「下期替换：第一层轮询替换为真推送」→ 修正为混合模式（§3.1）；§8 补本文链接与建议卡协议。
+- `../migration/todo-backend-migration.md` §4 迁移步骤 → 增加原生待办 API 后端选项及企业门槛/不可逆状态机注意事项（§1.6）；§5「变更 webhook」标注官方 API 亦无。
+- `../status/gap-analysis.md` → 机器人通道立项后补对照节。
+
+> **v0.2**：总方案 v1.8 与 gap §22 已按会话家园产品法修订指针；本文会话落点覆盖见 §9。
+
+## 6. 参考来源
+
+- 官方文档（2026-08-16 抓取，`www.yunzhijia.com/opendocs/docs/`）：`api/im/im-robot.md`、`api/im/chatbot.md`、`guide/im/robot.md`、`server-api/cardmsg.md`、`api/im/im-todo.md`
+- Claude Tag 官方文档（2026-08-16 抓取，`claude.com/docs/claude-tag/`）：`overview.md`、`concepts/how-it-works.md`、`users/commands.md`、`users/getting-started.md`、`users/memory.md`、`users/when-claude-responds.md`（会话模型对齐基准，§3.6）
+- openclaw-yzj v2026.4.9 源码（本地 `.openclaw-yzj/`，MIT）：`ws-url.ts`、`signature.ts`、`websocket-client.ts`、`dedupe-store.ts`、`monitor.ts`、`inbound-dispatcher.ts`、`onboarding.ts`
+- yzj-cli v0.1.3 实测：无 robot 命令（`unrecognized subcommand 'robot'`）
+- 整体方案 §8、§5.3、§5.5；待办后端迁移说明 v1.0
+
+---
+
+## 7. 实现状态（R1 MVP host 面已落地，2026-08-16）
+
+> 代码：`packages/robot-yzj`（host 包，bundle 第 5 行挂载，`ctx.yzjRobot` 服务）；验收证据见 `../status/gap-analysis.md` §17。设计基线 = 本文 §3.2/§3.6 的 DM 子集（S1 持久 session / S2 ack-then-push / S3 命令族子集 / S5 触发 / S8 命令解析安全）。
+> **本节为 R1 快照**：群场景（R2）与双向控制（R2.6+）已落地，现状以 gap-analysis §20 与本文 §8 为准。
+
+### 7.1 已实现面
+
+| 模块 | 内容 |
+|---|---|
+| `src/protocol.ts` | 实测帧分类（`auth` / `pong` / `message+lastUpdateTime` / `directPush robotMessage` / `directPush msgChg`）、`deriveWebSocketUrl`、`msgParam` 回复链解析（含 `replyRootMsgId`）、TTL msgId 去重 |
+| `src/socket.ts` | 重连管理：30s `{cmd:"ping"}` 心跳、陈旧检测（120s 无帧强制重连）、指数退避（1s 起、30s 封顶）、停止清空全部定时器；socket/timer/clock 全可注入 |
+| `src/outbound.ts` | sendMsgUrl 出站：`msgtype:2` 信封、`param/paramType:3` 引用卡、`notifyParams` 定向、响应 msgId 提取、4000 字分片（上限实测 5000–6000，`1401002` 映射 too-long）、串行化限流（默认 1.2s/条） |
+| `src/router.ts` | 每 (robot, user) DM 持久 session（id `yzj-robot-<robot>-<user>`）；ack-then-push（ack 即 is-thinking 面；`whenIdle()` 后按 seq 水位收 `assistant/message` 文本推回，防重发）；独立成句 bang 命令 `!help/!status/!mute/!unmute/!restart`；allowFrom 鉴权（默认解析 CLI 登录用户 openId，其余拒绝且不建 session）；`dispose()` 清全部句柄 |
+| `src/index.ts` | `ctx.yzjRobot`（`getStatus/send/dmSession`）+ Config（`sendMsgUrl`/`enabled`/`allowFrom`）+ `ctx.effect` 生命周期（停用即断连清态） |
+
+### 7.2 挂机观察补充（探针 19 分钟）
+
+- WS 零断连（pong 30s 稳定）——spike ① 长稳定性的部分证据；
+- 新帧型 `extSystemMsg`（`user_status` 系统通知）——分类器按 `other` 容忍；
+- **未 ack 的 `msgChg`（`needAck:true, seq:N`）被服务端每 ~90s 重推同一 seq**——ack 帧格式未实测；MVP 不消费 msgChg，仅为日志噪音；**ack 实现列入 R2**（抓包确认形状后补）。
+
+### 7.3 未实现（对应 §3.5 分期）
+
+- 面板机器人设置卡 + `/yzj` RPC 端点（`robot-status`/`robot-send`/`robot-config`）→ R1 UI 半（下一步）；
+- 群场景（群聊锚定、`!fork`/`!routines`、ambient session、群内建议卡）→ R2；
+- 卡片消息（type 25）、watcher 混合角标 → R2/R3。
+
+---
+
+## 8. DSH→机器人 双向控制（R2.6，2026-08-16）
+
+> 代码：`packages/robot-yzj/src/control.ts`（工具）+ `src/surface.ts`（持久表面）+ router/service 扩展；验收证据见 `../status/gap-analysis.md` §20.8。
+
+### 8.1 能力面（操作者在任意 DSH 会话可用）
+
+| 工具 | 用途 | 走通路径 |
+|---|---|---|
+| `robot_status` | 通道状态：连接、**cwd**、provider/model、allowFrom、已见会话表面（groupId/robotId/最后锚定 session）、live session id | 直读服务 |
+| `robot_notify` | 主动通知：文本推送到通道会话（群机器人推群、个人机器人推 DM），无 agent 轮次 | 服务 `notify()` → `RobotSender.send` |
+| `robot_continue` | 双向续接：以操作者身份向会话注入一条消息，走**完整入站管线**（ack、鉴权、确认卡裁决、记忆动词、intro 判定、agent 轮次、PushHub 推回） | 构造 `synthetic` 入站消息 → `router.handle()` |
+| `robot_fork` | 把机器人会话 fork 成**操作者侧新根会话**（继承已完成回合 + cwd + parentSession），出现在 DSH 会话列表可继续处理 | `agents.create({seed, meta})` |
+| `robot_share_write` | 把文本写入**群共享工作区**（`<cwd>/groups/<groupId>/shared/`）：默认存在即自动唯一名防冲突，`overwrite:true` 才显式覆盖；经确认卡门控 | 宿主直写，见 §8.4 |
+| `robot_share_list` | 列出群共享工作区文件（名/大小/mtime） | 直读共享区目录，见 §8.4 |
+
+### 8.2 关键决策
+
+| 决策 | 选择 | 理由 |
+|---|---|---|
+| 工具是否过确认门控 | **不过**（区别于 `yzj_im_message_send`） | 机器人是操作者自有通道：出站已受 allowFrom 白名单约束、入站身份由白名单首人承担；工具体拒绝 `yzj-robot-*` 会话调用（禁止机器人自驱） |
+| 续接的身份 | allowFrom 解析出的首个 openId（默认 CLI 登录用户），`operatorName` 标记 `DSH 控制台` | 与入站鉴权同一策略，操作者即白名单首人 |
+| synthetic 消息的出站锚点 | **不带** replyMsgId（真实入站才带） | synthetic msgId 服务端不存在，引用卡无法解析；群面仍带 `notifyOpenIds` 定向提醒 |
+| synthetic 会话续接 | 复用该群面最后锚定的 session（`lastSession` 表）；重启后从持久 `robot_yzj_surface` 域恢复 | 避免 fake msgId 锚出新线程；跨重启续接真实会话 |
+| 工作目录 | **三层模型**（§8.4）：`cwd`/`defaultCwd` 为通道根；**缺省 = 自动分配 `~/.dsh/robot-workspaces/robot-<yzjtype>-<token8>`**（不再回落宿主 cwd，共享区/私有目录自包含）；DM 会话落通道根；群话题会话落 `<根>/groups/<groupId>/<rootMsgId>/`（私有工作区）；群共享区 `<根>/groups/<groupId>/shared/`。`robot_status` 可见通道根 | 对齐 Claude Tag per-thread 沙箱的隔离语义（话题间结构性无冲突）；共享区等价其「文件同步到持久存储」；写共享区经 `robot_share_write`（唯一通道），session 权限保持 workspace-write 不动；cwd 自动分配免用户手填 |
+| fork 的 seed | 最后一个 `turn/end` 之前的完整前缀（与 harness fork 子代理同一边界） | 平衡完成回合前缀才能被会话边界校验接受 |
+| fork 生命周期 | 服务持有 handle，插件卸载时一并 dispose | 根会话随通道插件生命周期，不泄漏 |
+
+### 8.3 持久表面域 `robot_yzj_surface`
+
+- 表 `surfaces`：键 `surface:<channelIndex>:<groupId>` → `{robotId, robotName, groupType, time, lastSessionId?}`；
+- 表 `meta`：键 `recent:<channelIndex>` → 最近群面 groupId；
+- 作用：重启后 `robot_continue`/`robot_fork` 无需等待新入站即可解析真实 robotId/groupId 与最后会话（续接真实会话的前提）。
+
+### 8.4 群工作区三层模型与共享区（2026-08-16 决策）
+
+> 代码：`packages/robot-yzj/src/share.ts`（工具）+ `router.ts`（session cwd 解析与共享区指令注入）；决策背景见 §3.6.4 C13 行与 gap-analysis §20.9。
+
+**目录模型**：
+
+```
+<通道cwd>/                                DM 会话（每 (robot, user) 一个持久 session，落通道根）
+<通道cwd>/groups/<groupId>/shared/        群共享区（显式协作，跨话题可见）
+<通道cwd>/groups/<groupId>/<rootMsgId>/   群话题会话私有工作区（该 session 的 cwd）
+```
+
+- 群话题会话 cwd = `<通道cwd>/groups/<groupId>/<rootMsgId>/`（创建时递归 mkdir；rootMsgId 即链根，跨重启稳定）；DM 会话维持通道根不动；
+- **隔离语义**：私有工作区按话题隔离——`write report.md` 只落在本话题目录，话题间**结构性无冲突**（对齐 Claude Tag per-thread 沙箱的隔离价值）；同群续接（回复链）= 同 session = 同目录，不受影响；
+- **共享区**：群共享文件落在 `shared/`，是跨话题协作的唯一显式通道（等价 Claude Tag 的「文件同步到持久存储」；我们无同步集成，用可见目录承担）；记忆按群（memory 域）与共享区按群同粒度，文本上下文与文件产物一致；
+- **resume/迁移**：resume 旧 session 沿用 header.cwd，只有新话题落新布局；`!restart` 锚新链根 = 新私有目录，旧目录留存当历史。
+
+**权限模型（session 权限不动）**：
+
+- 机器人会话保持 workspace-write：harness 内置 `write`/`edit` 被沙箱限制在 session workspace（私有 cwd 树）内，共享区在 workspace 外，**内置工具写共享区被拒**——权限边界 = 通道边界；
+- 共享区唯一写通道是 `robot_share_write`（插件宿主进程直写，不受 session 沙箱约束）；读共享区用内置 `read`/`glob`（只读操作不受沙箱限制，零新工具）；
+- 写门控：`robot_share_write` 进 `WRITE_SPECS`（standard 级），GUI 会话走 GUI 确认卡、`yzj-robot-*` 会话走群内建议卡——复用既有确认链路，零新机制。
+
+**工具面（注册于 robot-yzj，所有会话可用，不禁机器人会话——区别于 §8.2 的 operator-only）**：
+
+| 工具 | 语义 |
+|---|---|
+| `robot_share_write(groupId?, filename, content, overwrite?)` | 写 `<cwd>/groups/<groupId>/shared/<filename>`；filename 防穿越（拒 `/`、`\`、`..`、空名）；**冲突策略：目标已存在默认自动唯一名（`name-2.ext`），`overwrite:true` 才显式覆盖**；临时文件 + rename 原子写；返回实际路径与原有文件提示 |
+| `robot_share_list(groupId?)` | 列共享区文件（名/大小/mtime），供写前查重 |
+
+- `groupId` 缺省 = 该通道最近见过的群表面；`robotIndex` 缺省 0；
+- 每轮对**群会话**注入共享区指令（绝对路径 + 「写共享区必须用 `robot_share_write`，禁止裸文件工具写绝对路径」），DM 不注入；
+- **实测结论（2026-08-16，3081 测试实例 + 假通道）**：内置 `write` 在 workspace-write 下对 cwd 外路径被沙箱拒（`D:/dsh-share-outside/…` 实测拒绝）、cwd 内放行——「读用内置、写走工具」成立；内置 `read`/`glob` 只读不受沙箱约束（工具面无 `sandbox_permissions`，fs-sandbox 只拦 write/edit）。
+- **边界条件（实测发现）**：workspace-write 豁免**平台临时区**（`%TEMP%` 等，fs-sandbox 既有语义）——通道 `cwd` 若配置在临时区下，共享区落入豁免区、内置 `write` 可写，「唯一写通道」不成立。**部署注意：通道 `cwd` 不要配置在平台临时区**（默认宿主 cwd 不受影响）。
+
+### 8.5 通道管理设置卡 + `channelsFile`（2026-08-16 决策）
+
+> 解决两个盲区：注册/删除/启停机器人通道没有 UI（只能手改 cordis.patch.yml + 重启），通道默认路由（provider/model）也没有 UI 配置入口（只能按会话覆盖）。代码：`packages/robot-yzj`（`channelsFile` 读取 + `saveChannels`）+ `packages/ui-yzj`（**设置 → 云之家 · 机器人**「通道管理」section；v0.3 起管理面与记忆库同处设置节，不再占工作台页签）。gap-analysis §20.12。
+
+**配置来源语义**：
+
+- 通道文件默认 `~/.dsh/robot-channels.json`，**零配置可用**（设置卡直接读写；显式键 `channelsFile` 仅覆盖位置）：
+  - **文件存在且可读 → 文件是唯一来源**（`defaultProvider`/`defaultModel`/`robots` 全从文件读，`config.robots` 与 `config.default*` 被忽略——手改 patch 请改文件，语义写进 README）；
+  - 文件不存在 → 退回 `config.robots`（现状兼容，行为不变）；
+- **种子化迁移**：设置卡首次保存时若文件不存在，先写入当前生效配置（`config.robots` + `config.default*`）作为种子，再应用修改——现有两条真实通道自动进文件、之后可编辑，用户无感；
+- JSON 结构：`{defaultProvider?, defaultModel?, robots: [{sendMsgUrl, provider?, model?, cwd?, enabled?, allowFrom?}]}`；写回时保留文件里已有的 `default*`（设置卡 v1 不编辑全局默认）；
+- **生效方式**：保存 = 原子写文件（tmp + rename），**当前进程通道不变，重启 GUI 后生效**（与改 host 代码同体验）；不做热生效（动态增删 WS 通道需要改造通道生命周期，风险大，列为后续）。
+
+**设置卡 UI（设置 → 云之家 · 机器人，两级结构）**：
+
+- **一级（机器人列表）**：每行 = 状态灯 + 类型名 + 连接状态 + 自动 cwd + **群数徽标**（该机器人见过的群数）；点击进入详情；底部「添加机器人」表单（sendMsgUrl 粘贴 + 可选默认 Provider/Model，**无 cwd 输入——工作目录自动分配**），内置**两条创建路径引导**：
+  - 方式一 · 个人机器人（推荐，本机可用）：个人创建页零门槛，无需公网地址；
+  - 方式二 · 群对话机器人（需群管理员）：创建时云之家强制填「消息接收地址」（公网 HTTPS）并立即测试请求——本机用临时隧道（ngrok/frp）过创建，创建成功后 WS 免公网、隧道可关；**创建时给的 appSecret 不需要配置**（WS 入站凭据在 sendMsgUrl 的 yzjtoken 内；appSecret 仅 webhook 双入口验签用，属公网部署形态，见 §2.1）；
+- **二级（单个机器人详情）**：
+  - 基本信息：类型、sendMsgUrl（只读）、自动 cwd（只读显示）；
+  - **模型配置**：该机器人默认 Provider/Model 下拉 + 保存（写 channelsFile）；
+  - **已配置的群（N）**：该机器人见过的群表面列表（群名 + 最后会话时间），每群行内可指定该群的模型覆盖（保存/删除覆盖，走 `robot-override-set/delete`）；
+  - **群共享工作区**：群下拉（该机器人表面）→ 路径 + 文件列表 + 面板直写；
+  - 危险区：删除该机器人（两段确认）。
+- 保存后提示「已保存，重启 GUI 后生效」；列表显示**当前生效**通道（内存），重启后与文件一致。
+
+**与「按会话指定模型」的关系**：通道管理设置默认路由（作用于该通道全部会话）；按会话覆盖仍是更细粒度（同通道不同群不同模型），保留——两档配置语义：通道默认 > 会话覆盖 > harness 默认。
+
+---
+
+## 9. v0.2 会话落点覆盖（2026-08-17，产品法）
+
+> 事实源：[`dsh-home-session.md`](dsh-home-session.md)。本节**不改** §3.6 / §7 / §8 的历史设计与实现快照，只宣布哪些会话语义被覆盖。协议（WS、ack-then-push、sendMsgUrl、allowFrom、工作区三层）仍有效。
+
+北极星：DSH 是唯一对话家园。机器人通道是入站触发 + 出站投递，**不是第三套聊天**。
+
+| 当时设计 / 现行实现 | 产品法 |
+|---|---|
+| 每 (robot, user) DM 持久 session，id `yzj-robot-<robot>-<user>` | ❌ 隐藏平行家园。应绑定该云之家 DM 的 **一条** DSH session，`followup()` 进它 |
+| 群：顶层 @ → **开新** session；引用回复续链；另加 ambient session | ❌ 一条群 ↔ 一条绑定 DSH session。回复链是节点引用，不是新根。ambient / 免 @ 非本版 MVP；routines 投递进**同一条**绑定会话 |
+| `!fork` 把上下文交到目标群**新 session** | ❌ 打开或恢复目标群绑定会话（bind+continue，无确认卡）。跨群摘要交接走 DSH「丢进群」（有确认模态），禁止新根 |
+| `robot_fork` → `agents.create` 操作者侧新根（`fork-yzj-robot-…`） | ❌ 应 `focus`/resume 绑定会话。工具若保留，语义改为打开绑定对象，不 `create` 新根 |
+| 入站在 session 里当普通轮次；面板另有 IM composer | 绑定会话 transcript 含四类节点（入站群消息、用户本人发群、对 agent、agent 轮次）。面板降为挑选器，无第二 composer |
+| 机器人帖子像独立说话人 | 机器人帖子 = agent 轮次在云之家的**投递**，不是产品模型第三身份 |
+| `robot_notify` / `robot_continue` 不过确认门控（§8.2）；`operatorOnly` 只拦 `yzj-robot-*` | ❌ 入站改打 `yzj-home-*` 后旧前缀闸失效。绑定家园上这两项进 WRITE_SPECS（D9）；未绑定操作者控制台与面板 RPC 仍无卡；残留 `yzj-robot-*` 仍 execute 拒绝 |
+
+实现：**绑定表已落地**（`ctx.yzjHome`）；入站 `followup()` 打 `yzj-home-*`；`!fork` / `robot_fork` 打开或恢复绑定会话（bind+continue，**不**弹确认卡——确认卡是 DSH「丢进群」跨群交接，见 G4）。绑定会话「群工作」融合 ①②③④（官方 Chat tab 仍在）；面板 composer 降为快捷发进群（写 ②，未删除）。绑定家园上 `robot_notify` / `robot_continue` 走 WRITE_SPECS + write-gate / ConfirmBroker（D9）；未绑定操作者控制台与面板 RPC 仍无卡。仍开放 G3/G5。对照：[`../status/gap-analysis.md`](../status/gap-analysis.md) §22。

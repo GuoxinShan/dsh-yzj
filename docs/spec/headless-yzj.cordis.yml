@@ -1,0 +1,12 @@
+# Headless overlay: host half only (bridge + tool-yzj). ui-yzj needs the
+# web connection service and must not load here.
+#
+# Usage:
+#   dsh --profile headless --patch docs/spec/headless-yzj.cordis.yml
+# Same plugin ids as the web bundle patch, so adding this on a profile that
+# already mounted those rows replaces them instead of double-registering.
+- insert:
+    - id: yzj-bridge
+      name: '@dsh-yzj/bundle/bridge'
+    - id: tool-yzj
+      name: '@dsh-yzj/bundle/tool-yzj'

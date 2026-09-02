@@ -1,0 +1,31 @@
+# The @dsh-yzj/bundle patch layer: mounts the Yunzhijia bridge, tool family,
+# model defaults, and the browser surface over the base + web-app layers.
+# robot-yzj / memory-yzj 已彻底退役删除（决策 53，2026-08-25）：包、RPC、卡片、
+# 工具全无——机器人通道/记忆库/话题功能面不再存在；恢复只能从 git 历史重建。
+# All rows resolve into this single monobundle package via
+# its exports subpaths; @deepseek-ai/* come from the registry. Deployments override
+# per-row config in their own cordis.patch.yml (an id-targeted patch replaces the
+# whole config).
+- insert:
+    # Host channel to the yzj-cli binary (spawns it directly, reusing the
+    # machine's yzj-cli login state; the harness never sees credentials).
+    - id: yzj-bridge
+      name: '@dsh-yzj/bundle/bridge'
+
+    # Model-facing tools over the bridge; destructive operations confirm
+    # through yzj/confirm-request (write-gate answers; not harness ask).
+    - id: tool-yzj
+      name: '@dsh-yzj/bundle/tool-yzj'
+
+    # Browser surface: /yzj RPC channel (node half) + rich tool cards and the
+    # workspace panel (browser half via the dsh.client declaration; the
+    # closure bundle ships as ./client). The Loader name is the package root so
+    # 0.1.2 client-modules treats the row as a package (subpaths are not
+    # scanned) and the graph id matches the handoff id `@dsh-yzj/bundle`.
+    - id: ui-yzj
+      name: '@dsh-yzj/bundle'
+
+    # Plugin-wide default model route ($DSH_HOME/yzj-model.json): the fallback
+    # of the robot model-resolution chain and the dream executor (ctx.yzjModels).
+    - id: model-yzj
+      name: '@dsh-yzj/bundle/model-yzj'

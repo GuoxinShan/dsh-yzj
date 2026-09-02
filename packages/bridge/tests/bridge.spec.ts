@@ -1,0 +1,182 @@
+/**
+ * Bridge unit tests against a fake yzj-cli binary: argv passthrough, JSON
+ * parsing, failure exits, stdin bodies, capture caps, timeout kills, and the
+ * spawn-failure path. The fake is a real executable on POSIX (shebang);
+ * Windows cannot spawn a shebang script directly, so the tests route the
+ * fake through `node` there (`fakeArgs`), which keeps `argv.slice(2)` — and
+ * therefore every assertion — identical. The `check()` healthy branch is
+ * skipped on Windows because its internal fixed command cannot carry the
+ * fake-script prefix.
+ */
+import { Context } from '@deepseek-ai/cordis'
+import { describe, expect, it } from 'vitest'
+import { fileURLToPath } from 'node:url'
+import { writeFileSync, mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import YzjBridge, { resolveNpmLauncher, YzjSpawnError } from '../src/index.ts'
+
+const FAKE_BINARY = fileURLToPath(new URL('./fixtures/fake-yzj-cli.mjs', import.meta.url))
+
+const WINDOWS = process.platform === 'win32'
+
+/** Bridge config pointing at an executable the current platform can spawn. */
+function bridgeWith(config: Record<string, unknown> = {}): YzjBridge {
+  return new YzjBridge(new Context(), {
+    binary: WINDOWS ? process.execPath : FAKE_BINARY,
+    ...config,
+  })
+}
+
+/** Command vector for one bridge run; routes the fake through node on Windows. */
+function fakeArgs(command: readonly string[]): string[] {
+  return WINDOWS ? [FAKE_BINARY, ...command] : [...command]
+}
+
+describe('yzjBridge.run', () => {
+  it('passes argv verbatim and parses stdout as JSON', async () => {
+    const bridge = bridgeWith()
+    const result = await bridge.run(fakeArgs(['contact', 'user', 'get']), { timeoutMs: 5_000 })
+    expect(result.ok).toBe(true)
+    expect(result.exitCode).toBe(0)
+    expect(result.json).toEqual({ argv: ['contact', 'user', 'get'] })
+    expect(result.timedOut).toBe(false)
+    expect(result.truncated).toBe(false)
+  })
+
+  // Skipped on Windows: the node shim sees --profile as a node flag (bad
+  // option); the real yzj-cli.exe accepts it as its own flag, which is what
+  // this test pins on POSIX.
+  it.skipIf(WINDOWS)('prepends the configured --profile flag before the command', async () => {
+    const bridge = bridgeWith({ profile: 'work' })
+    const result = await bridge.run(fakeArgs(['calendar', 'event', 'list']), { timeoutMs: 5_000 })
+    expect(result.json).toEqual({ argv: ['--profile', 'work', 'calendar', 'event', 'list'] })
+  })
+
+  it('reports a non-zero exit as a result, not a rejection', async () => {
+    const bridge = bridgeWith()
+    const result = await bridge.run(fakeArgs(['boom']), { timeoutMs: 5_000 })
+    expect(result.ok).toBe(false)
+    expect(result.exitCode).toBe(7)
+    expect(result.stderr).toBe('boom failed\n')
+    expect(result.json).toBeUndefined()
+  })
+
+  it('surfaces the 0.1.6 confirmation gate as exit 10 with stderr JSON', async () => {
+    const bridge = bridgeWith()
+    const result = await bridge.run(fakeArgs(['confirm']), { timeoutMs: 5_000 })
+    expect(result.ok).toBe(false)
+    expect(result.exitCode).toBe(10)
+    expect(result.stderr).toContain('confirmation_required')
+    expect(result.json).toBeUndefined()
+  })
+
+  it('surfaces 0.1.6 auth miss as exit 3 (not the confirm gate)', async () => {
+    const bridge = bridgeWith()
+    const result = await bridge.run(fakeArgs(['unauth']), { timeoutMs: 5_000 })
+    expect(result.ok).toBe(false)
+    expect(result.exitCode).toBe(3)
+    expect(result.stderr).toContain('credentials_missing')
+  })
+
+  it('parses the 0.1.6 success envelope from stdout', async () => {
+    const bridge = bridgeWith()
+    const result = await bridge.run(fakeArgs(['envelope']), { timeoutMs: 5_000 })
+    expect(result.ok).toBe(true)
+    expect(result.json).toEqual({
+      success: true,
+      identity: { openId: 'u1' },
+      data: { list: [{ groupId: 'g1', groupName: '测试群' }], more: false },
+    })
+  })
+
+  it('writes the stdin body and closes the pipe', async () => {
+    const bridge = bridgeWith()
+    const result = await bridge.run(fakeArgs(['echoin']), {
+      stdin: '{"a":1}',
+      timeoutMs: 5_000,
+    })
+    expect(result.ok).toBe(true)
+    expect(result.json).toEqual({ argv: ['echoin'], stdin: '{"a":1}' })
+  })
+
+  it('kills a command that exceeds the timeout budget', async () => {
+    const bridge = bridgeWith()
+    const result = await bridge.run(fakeArgs(['slow']), { timeoutMs: 50 })
+    expect(result.ok).toBe(false)
+    expect(result.timedOut).toBe(true)
+    expect(result.exitCode).toBeNull()
+  })
+
+  it('caps captured streams at maxOutputChars', async () => {
+    const bridge = bridgeWith({ maxOutputChars: 64 })
+    const result = await bridge.run(fakeArgs(['big']), { timeoutMs: 5_000 })
+    expect(result.truncated).toBe(true)
+    expect(result.stdout.length).toBeLessThanOrEqual(64)
+  })
+
+  it('rejects with YzjSpawnError when the binary cannot be launched', async () => {
+    const bridge = new YzjBridge(new Context(), { binary: '/nonexistent/yzj-cli' })
+    await expect(bridge.run(['doc', 'list'])).rejects.toBeInstanceOf(YzjSpawnError)
+  })
+
+  it('check() returns false when the binary is missing', async () => {
+    const bridge = new YzjBridge(new Context(), { binary: '/nonexistent/yzj-cli' })
+    await expect(bridge.check(5_000)).resolves.toBe(false)
+  })
+
+  it.skipIf(WINDOWS)(
+    'check() returns true for a healthy binary',
+    async () => {
+      const bridge = bridgeWith()
+      await expect(bridge.check(5_000)).resolves.toBe(true)
+    },
+  )
+
+  it('start() returns immediately and a second identical argv is a no-op', async () => {
+    const bridge = bridgeWith()
+    const began = Date.now()
+    try {
+      const first = await bridge.start(fakeArgs(['slow']), { timeoutMs: 5_000 })
+      expect(first.alreadyRunning).toBe(false)
+      expect(Date.now() - began).toBeLessThan(1_000)
+      const second = await bridge.start(fakeArgs(['slow']), { timeoutMs: 5_000 })
+      expect(second.alreadyRunning).toBe(true)
+    } finally {
+      bridge.stopAll()
+    }
+  })
+
+  it('start() rejects with YzjSpawnError when the binary cannot be launched', async () => {
+    const bridge = new YzjBridge(new Context(), { binary: '/nonexistent/yzj-cli' })
+    await expect(bridge.start(['auth', 'login'])).rejects.toBeInstanceOf(YzjSpawnError)
+  })
+})
+
+describe('resolveNpmLauncher', () => {
+  it('extracts the node entry script from an npm .cmd launcher', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'yzj-cmd-'))
+    const cmdPath = join(dir, 'yzj-cli.cmd')
+    writeFileSync(cmdPath, [
+      '@ECHO off',
+      'SET dp0=%~dp0',
+      'IF EXIST "%dp0%\\node.exe" (',
+      '  SET "_prog=%dp0%\\node.exe"',
+      ') ELSE (',
+      '  SET "_prog=node"',
+      ')',
+      '"%_prog%"  "%dp0%\\node_modules\\@yunzhijia\\cli\\scripts\\run.js" %*',
+    ].join('\r\n'))
+    const script = resolveNpmLauncher(cmdPath)
+    const norm = (value: string): string => value.replaceAll('\\', '/')
+    expect(norm(script ?? '')).toBe(norm(join(dir, 'node_modules', '@yunzhijia', 'cli', 'scripts', 'run.js')))
+  })
+
+  it('returns undefined for non-npm launchers and missing files', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'yzj-cmd-'))
+    expect(resolveNpmLauncher(join(dir, 'missing.cmd'))).toBeUndefined()
+    const plain = join(dir, 'plain.cmd')
+    writeFileSync(plain, '@ECHO off\r\nstart app.exe %*\r\n')
+    expect(resolveNpmLauncher(plain)).toBeUndefined()
+  })
+})

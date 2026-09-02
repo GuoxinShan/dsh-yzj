@@ -1,0 +1,37 @@
+node_modules/
+packages/*/lib/
+*.tsbuildinfo
+dist/
+
+# The monobundle aggregate output (root lib/) IS committed: git-based installs
+# (dsh plugin add github:...#tag) receive source only — an unbuilt lib would
+# 404. Unignore the aggregate entries explicitly (re-ignored below per-file).
+lib/*
+!lib/bridge.mjs
+!lib/tool-yzj.mjs
+!lib/ui-yzj.mjs
+!lib/robot-yzj.mjs
+!lib/memory-yzj.mjs
+!lib/model-yzj.mjs
+!lib/client.js
+!lib/client.js.map
+
+# sibling checkouts cloned into the workspace root (never part of this repo)
+.openclaw-yzj/
+
+# acceptance artifacts
+.acceptance/shots*/
+.DS_Store
+
+# robot spike local state — credentials and tools never enter git
+spike/robot/secret.local.json
+spike/robot/bin/
+spike/robot/logs/
+spike/robot/test-model.patch.yml
+
+
+# Grok/Cursor skill dirty markers (local only)
+.agents/skills/**/.is-changed
+
+# OpenTurtle CLI local state (cache/drafts/state.db)
+.openturtle-cli/

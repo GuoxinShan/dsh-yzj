@@ -1,0 +1,31 @@
+/*
+ * Composer-side seats: the drop band and the post-drop quick actions,
+ * aligned to the dsh native visual language.
+ */
+
+.dropBand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 4px 0 0;
+  padding: 3px 10px;
+  border: 1px dashed var(--dsw-static-deepseek-500);
+  border-radius: 8px;
+  background: var(--dsw-static-deepseek-100);
+  color: var(--dsw-static-deepseek-600);
+  font-size: 11px;
+  font-weight: 600;
+  animation: bandIn 150ms var(--ds-ease-out, ease-out);
+}
+
+@keyframes bandIn {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
