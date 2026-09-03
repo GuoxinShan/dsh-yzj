@@ -1,0 +1,4 @@
+{
+  "name": "dsh-yzj",
+  "install": "bash .cursor/install.sh"
+}
