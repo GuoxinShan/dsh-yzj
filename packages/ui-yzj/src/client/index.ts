@@ -1,6 +1,6 @@
 /**
- * Browser half: 云之家 dock (injected under New Session) plus the
- * center-column workbench cover (R27) and keyed tool-result cards.
+ * Browser half: IM shell occupancy (inbox + conversation) plus keyed tool cards.
+ * Workbench overlay / 云之家 dock / topic leftover chrome are not mounted.
  */
 import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
@@ -11,13 +11,6 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 import { YzjToolCard, YZJ_TOOL_NAMES } from './cards.tsx'
-import { YzjComposerDock } from './composer.tsx'
-import type { YzjHomeChromeInjected } from './home-chrome.tsx'
-import { YzjSessionShell, type YzjSessionShellInjected } from './session-shell.tsx'
-import { type YzjGroupSpaceInjected } from './group-space.tsx'
-import { mountWorkbench } from './workbench-mount.tsx'
-import { mountSidebarEntry } from './sidebar-entry.tsx'
-import { closeWorkbench } from './workbench-overlay.ts'
 import { applyYzjAtSource } from './input-source.ts'
 import { YzjSettingsSection } from './settings-section.tsx'
 import { createYzjPanelInject } from './rpc.ts'
@@ -29,6 +22,11 @@ import {
 } from './write-card.tsx'
 import type { YzjWriteRecord } from '../write-gate.ts'
 import { parseContactUser } from '../contact-parse.ts'
+import {
+  YzjHideHostComposer, selectImComposer, bindImConversationView,
+} from './im-shell.tsx'
+import { mountInbox } from './inbox-mount.tsx'
+import './shell.module.css'
 
 export { createYzjStore } from './stores.ts'
 export { createYzjPanelInject } from './rpc.ts'
@@ -89,7 +87,6 @@ export function apply(ctx: ClientContext): void {
   const panelInject = {
     ...rpcInject,
     focusBoundSession: (sessionId: string): void => {
-      closeWorkbench()
       const sessions = ctx.sessions as unknown as Parameters<typeof focusBoundSession>[0] | undefined
       if (sessions === undefined || typeof sessions.open !== 'function') return
       focusBoundSession(sessions, sessionId)
@@ -97,78 +94,83 @@ export function apply(ctx: ClientContext): void {
   }
   const openWriteContextFor = (record: YzjWriteRecord): void => openWriteContext(record)
 
-  // 云之家 settings section (设置 → 云之家): robot-channel management.
-  // Memory vault UI is deferred (R21 v1.6). `slots.inject` defers until the
-  // settings shell declares the seat.
+  /** Session-less write face for IM confirm cards (projection already carries the record). */
+  const imWrite: WriteCardInjected = {
+    fetchWrite: async () => undefined,
+    decideWrite: async (writeId, outcome): Promise<boolean> => {
+      const result = await panelInject.decideWrite(writeId, outcome)
+      return result.ok && asRecord(result.value).settled === true
+    },
+    openContext: openWriteContextFor,
+    editDraft: () => {},
+    fetchWhoami: async (): Promise<string> => {
+      const result = await panelInject.fetchWhoami()
+      if (!result.ok) return ''
+      return parseContactUser(result.value).name
+    },
+    fetchGroups: (limit, page) => panelInject.fetchGroups(limit, page),
+    fetchWorkspaces: (type) => panelInject.fetchWorkspaces(type),
+    fetchDoc: (id) => panelInject.fetchDoc(id),
+    fetchContact: (openId) => panelInject.fetchContact(openId),
+  }
+
+  const writeInjectOf = (sessionId?: SessionId): WriteCardInjected => {
+    const actx = sessionId === undefined ? undefined : scopeOf(ctx, sessionId)
+    return {
+      fetchWrite: async (callId): Promise<YzjWriteRecord | undefined> => {
+        if (sessionId === undefined) return undefined
+        const result = await panelInject.fetchWrite(sessionId, callId)
+        if (!result.ok) return undefined
+        const list = asArray(asRecord(result.value).list)
+        return list.length > 0 ? list[0] as YzjWriteRecord : undefined
+      },
+      decideWrite: async (writeId, outcome): Promise<boolean> => {
+        const result = await panelInject.decideWrite(writeId, outcome)
+        return result.ok && asRecord(result.value).settled === true
+      },
+      openContext: openWriteContextFor,
+      editDraft: (text): void => {
+        if (actx !== undefined) insertDraftText(actx, text)
+      },
+      fetchWhoami: async (): Promise<string> => {
+        const result = await panelInject.fetchWhoami()
+        if (!result.ok) return ''
+        return parseContactUser(result.value).name
+      },
+      fetchGroups: (limit, page) => panelInject.fetchGroups(limit, page),
+      fetchWorkspaces: (type) => panelInject.fetchWorkspaces(type),
+      fetchDoc: (id) => panelInject.fetchDoc(id),
+      fetchContact: (openId) => panelInject.fetchContact(openId),
+    }
+  }
+
   ctx.slots.inject('settings.section', () => ctx.slots.register(
     { name: 'settings.section', id: 'yzj', order: 25, label: '云之家', inject: () => panelInject },
     YzjSettingsSection,
   ))
 
-  // Leftover topic 回群聊. D8 丢进群 retired (决策 55). Drag-to-chip
-  // retired with the floating panel (R21 v1.6). `conversation.composer.dock`
-  // only renders in the non-hero phase, so this seat stays on `conversation.input.dock`.
-  ctx.slots.inject('conversation.input.dock', () => ctx.slots.register(
-    {
-      name: 'conversation.input.dock',
-      id: 'yzj-home-chrome',
-      order: 100,
-      inject: (sessionId: SessionId): YzjHomeChromeInjected => {
-        const actx = scopeOf(ctx, sessionId)
-        const draftFace = (): { draft: string; draftRev: number } => {
-          const conversation = actx?.get('conversation') as
-            | { input: { for: (actx: unknown) => { state: { getSnapshot(): { draft: string; draftRev: number } } } } }
-            | undefined
-          return conversation?.input.for(actx).state.getSnapshot() ?? { draft: '', draftRev: 0 }
-        }
-        return {
-          sessionId,
-          readDraft: () => draftFace().draft,
-          clearDraft: () => {
-            if (actx === undefined) return
-            const state = draftFace()
-            actx.bail(actx, 'slash/input-insert-text', { text: '', span: { start: 0, end: state.draft.length, draftRev: state.draftRev } })
-          },
-          homeBinding: (id) => panelInject.homeBinding?.(id) ?? Promise.resolve({ ok: false as const, error: { message: 'homeBinding unavailable' } }),
-          homeSend: (id, content) => panelInject.homeSend?.(id, content) ?? Promise.resolve({ ok: false as const, error: { message: 'homeSend unavailable' } }),
-          ...(panelInject.homeOpen === undefined ? {} : { homeOpen: panelInject.homeOpen }),
-          focusBoundSession: panelInject.focusBoundSession,
-        }
-      },
-    },
-    YzjComposerDock,
-  ))
+  // workspaces is a single seat already taken by ui-workspace (pitfall-050).
+  ctx.effect(() => mountInbox(panelInject))
 
-  ctx.slots.inject('conversation.session.header.actions', () => ctx.slots.register(
+  // Center is IM (list tab), not host Chat+trajectory. Composer chain hides InputBar.
+  // conversation.view has no SlotMap inject face — close over panel/write (pitfall-050).
+  ctx.slots.inject('conversation.view', () => ctx.slots.register(
     {
-      name: 'conversation.session.header.actions',
-      id: 'yzj-session-shell',
-      order: -80,
-      label: '群聊',
-      inject: (sessionId: SessionId): YzjSessionShellInjected => ({
-        sessionId,
-        homeBinding: (id) => panelInject.homeBinding?.(id) ?? Promise.resolve({ ok: false as const, error: { message: 'homeBinding unavailable' } }),
-        homeOpen: (groupId, title) => panelInject.homeOpen?.(groupId, title) ?? Promise.resolve({ ok: false as const, error: { message: 'homeOpen unavailable' } }),
-        focusBoundSession: panelInject.focusBoundSession,
-      }),
+      name: 'conversation.view',
+      id: 'yzj-im',
+      order: -200,
+      label: '助手',
     },
-    YzjSessionShell,
+    bindImConversationView(panelInject, imWrite),
   ))
-
-  const dockInject: YzjGroupSpaceInjected = {
-    homeNav: () => panelInject.homeNav?.() ?? Promise.resolve({ ok: false as const, error: { message: 'homeNav unavailable' } }),
-    focusBoundSession: panelInject.focusBoundSession,
-    fetchGroups: (limit, page) => panelInject.fetchGroups(limit, page),
-    ...(panelInject.homeOpen === undefined ? {} : { homeOpen: panelInject.homeOpen }),
-  }
-  ctx.effect(() => {
-    const disposeView = mountWorkbench(panelInject)
-    const disposeEntry = mountSidebarEntry(dockInject)
-    return () => {
-      disposeView()
-      disposeEntry()
-    }
-  }, 'ui-yzj: workbench overlay + sidebar entry')
+  ctx.slots.inject('conversation.composer', () => ctx.slots.register(
+    {
+      name: 'conversation.composer',
+      select: selectImComposer,
+      priority: -50,
+    },
+    YzjHideHostComposer,
+  ))
 
   applyYzjAtSource(ctx, panelInject)
 
@@ -194,34 +196,7 @@ export function apply(ctx: ClientContext): void {
       {
         name: 'tool.call.toolview',
         key: toolName,
-        inject: (sessionId: SessionId): WriteCardInjected => {
-          const actx = scopeOf(ctx, sessionId)
-          return {
-            fetchWrite: async (callId): Promise<YzjWriteRecord | undefined> => {
-              const result = await panelInject.fetchWrite(sessionId, callId)
-              if (!result.ok) return undefined
-              const list = asArray(asRecord(result.value).list)
-              return list.length > 0 ? list[0] as YzjWriteRecord : undefined
-            },
-            decideWrite: async (writeId, outcome): Promise<boolean> => {
-              const result = await panelInject.decideWrite(writeId, outcome)
-              return result.ok && asRecord(result.value).settled === true
-            },
-            openContext: openWriteContextFor,
-            editDraft: (text): void => {
-              if (actx !== undefined) insertDraftText(actx, text)
-            },
-            fetchWhoami: async (): Promise<string> => {
-              const result = await panelInject.fetchWhoami()
-              if (!result.ok) return ''
-              return parseContactUser(result.value).name
-            },
-            fetchGroups: (limit, page) => panelInject.fetchGroups(limit, page),
-            fetchWorkspaces: (type) => panelInject.fetchWorkspaces(type),
-            fetchDoc: (id) => panelInject.fetchDoc(id),
-            fetchContact: (openId) => panelInject.fetchContact(openId),
-          }
-        },
+        inject: (sessionId: SessionId): WriteCardInjected => writeInjectOf(sessionId),
       },
       YzjWriteToolCard,
     ))

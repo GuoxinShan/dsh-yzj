@@ -12,11 +12,24 @@ Model-facing Yunzhijia tools over `ctx.yzjBridge`. This package owns tool schema
 | calendar | `yzj_calendar_event_list/get/create/update/delete/participants`, `yzj_calendar_room_find` |
 | im | `yzj_im_message_send/recall/list/search`, `yzj_im_group_recent`, `yzj_im_group_search/create/rename/members_add/members_remove` |
 | file | `yzj_file_upload`, `yzj_file_download` |
+| present | `present` — speak into the current IM projection (assistant DM or local-only group thread). Never sends to Yunzhijia. Not in `WRITE_SPECS`. |
 
 Every tool returns `{ content, truncated, data }`:
 
 - `content` — the model-facing digest capped at `maxRenderChars` (rendered through `output.render`).
 - `data` — the capped structured payload projected through `output.presentationMeta`. **Never model-visible**; persisted with the session log (`tool/result` meta) so the browser UI reproduces the card on live and replay paths alike.
+
+## Assistants (`ctx.yzjAssistants`)
+
+User-defined 1..N IM contacts (factory id `default` / name 「助手」). Each maps
+to one hidden DSH session (`yzj-assistant-<id>`, cwd `~/.dsh-yzj/assistants/<id>/`)
+and a **serial** queue. `present` bubbles and local-only group threads live in
+domain `yzj_assistants` — not as forged session events (F4). `HomeBindingStore`
+still only serves people-room logs; it is not one-assistant-per-group.
+
+Hidden-session turns plant a one-shot `［IM present］` instruction. If the model
+never calls `present`, `fallbackPresent` copies the last `assistant/message`
+text so the IM is not stuck on 助手正在处理….
 
 ## Home binding (`ctx.yzjHome`)
 

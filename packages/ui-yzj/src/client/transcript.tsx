@@ -4,7 +4,7 @@
  * canvas prototype (self right, others left). Agent work lives on yzj-topic-*.
  * Registered as conversation.view「群聊」— not a Session.append event type.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { resolveSenders, senderNameOf } from './im-cache.ts'
 import { ImLightbox, MessageBody, SenderAvatar, typeLabelOf } from './im-render.tsx'
 import { emitRoomReplyRequest } from './reply-bus.ts'
@@ -69,6 +69,10 @@ export interface YzjFusedInjected {
   focusBoundSession?: (sessionId: string) => void
   fetchFileData?: YzjPanelInject['fetchFileData']
   fetchContact?: YzjPanelInject['fetchContact']
+  /** Local-only assistant thread under this group message. */
+  renderThread?: (entry: FusedImEntry) => ReactNode
+  /** Hover: 转发给助手 (does not post to Yunzhijia). */
+  onForwardToAssistant?: (entry: FusedImEntry) => void
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -529,6 +533,7 @@ export function YzjFusedView(props: YzjFusedInjected) {
             ].filter(Boolean).join(' ')
             const time = clock(entry.sentAt)
             return (
+              <div key={`im-wrap-${entry.msgId}`}>
               <div
                 key={`im-${entry.msgId}`}
                 className={rowClass}
@@ -606,8 +611,20 @@ export function YzjFusedView(props: YzjFusedInjected) {
                     >
                       回复
                     </button>
+                    {props.onForwardToAssistant !== undefined && (
+                      <button
+                        type="button"
+                        className={css.roomAction}
+                        data-testid={`yzj-forward-assistant-${entry.msgId}`}
+                        onClick={() => props.onForwardToAssistant?.(entry)}
+                      >
+                        转发给助手
+                      </button>
+                    )}
                   </span>
                 </span>
+              </div>
+              {props.renderThread?.(entry)}
               </div>
             )
           })}

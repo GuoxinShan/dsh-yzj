@@ -76,4 +76,35 @@ describe('YzjSettingsSection', () => {
     expect(face.container.textContent).toContain('云之家未登录')
     expect(face.container.querySelector('[data-testid="yzj-login-open"]')).not.toBeNull()
   })
+
+  it('lists assistants and creates another via 新建助手', async () => {
+    const created: Array<{ name: string; prompt?: string }> = []
+    const face = mountSection({
+      assistantsList: async () => ({
+        ok: true,
+        value: { assistants: [{ id: 'default', name: '助手' }, ...created.map((row, i) => ({ id: `a${i}`, name: row.name }))] },
+      }),
+      assistantsCreate: async (name, prompt) => {
+        created.push(prompt === undefined ? { name } : { name, prompt })
+        return { ok: true, value: { assistant: { id: 'research', name } } }
+      },
+    })
+    await flush()
+    expect(face.container.textContent).toContain('助手')
+    expect(face.container.querySelector('[data-testid="yzj-settings-assistants"]')).not.toBeNull()
+    const nameInput = face.container.querySelector<HTMLInputElement>('input[aria-label="助手名称"]')
+    expect(nameInput).not.toBeNull()
+    act(() => {
+      if (nameInput === null) return
+      const proto = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')
+      proto?.set?.call(nameInput, '研究助手')
+      nameInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await flush()
+    act(() => {
+      face.container.querySelector<HTMLButtonElement>('[data-testid="yzj-create-assistant"]')?.click()
+    })
+    await flush()
+    expect(created).toEqual([{ name: '研究助手' }])
+  })
 })

@@ -1268,3 +1268,21 @@ headless overlay（无 ui-yzj）仍 fail-closed：瀑布 next → unavailable �
 
 send 的 `--to-open-id` / `--at-open-id` / `--at-all` / `--reply-msg-id` / `--image` 与 0.1.6 `--help` 一致，未改 flag。
 
+## 25. v3.0｜IM 壳（2026-09-03）
+
+产品法：[`docs/spec/im-shell.md`](../spec/im-shell.md)。表面从工作台盖层换成 IM。不恢复待办 / AI推进 / 入站机器人 / 话题 UI / 交给助手 / 悬浮球。
+
+| 面 | 交付 | 证据 |
+|---|---|---|
+| 助手 1..N | domain `yzj_assistants`；出厂 `default` / 「助手」；隐藏 session `yzj-assistant-*` + cwd `~/.dsh-yzj/assistants/<id>/` + 串行队列 | `assistants.spec.ts` |
+| `present` | 模型工具，写 IM 投影，不进 WRITE_SPECS，永不 `im message send`；回合结束回退 last assistant text | `assistants.spec.ts` present / fallback |
+| RPC | `assistants-list/create`、`assistant-ask`、`assistant-thread-ask`、`assistant-projection/threads/process` | `rpc.node.spec.ts` |
+| 收件箱 | 门户进 `sidebar.workspaces` 区域（不 register 单占座，pitfall-050）；钉助手 + 最近群 | `inbox.client.spec.tsx` / `inbox-mount.client.spec.tsx` |
+| 助手 DM | Grok-Bot 气泡 + 确认卡 + 弱化「查看过程」；无 tool trace | `assistant-dm.client.spec.tsx` |
+| 人群房间 | `home-send` 发群；回复 + `@助手` 拦截；只你可见本地线程；header「问助手」 | `group-room.client.spec.tsx` / `room-composer.spec.ts` intercept |
+| 身份 | 0.1.6 whoami：`data` + 同级 `identity`，不假定顶层 openId | `contact-parse.spec.ts` |
+| Occupancy | 不占 layout `conversation` / `sidebar.workspaces` 单座；占 `conversation.view` + composer chain；CSS 藏 New Session / 文件夹树 / details / tablist | pitfall-050；`client/index.ts` |
+| 停止挂载 | 工作台 overlay、云之家 dock、`conversation.input.dock` 话题残留 | `src/client/index.ts` 不再 mount |
+
+**已知限制**：(a) 无 focused session 时 `conversation.view` 不画——依赖 GUI 已有当前会话；(b) V1 无回复目标的 `@助手` 不受理；(c) 日程/知识库只在 composer `+` / 设置，不是首页页签；(d) 真机 GUI 本切片未跑（cloud agent 无 web profile）；(e) 助手 DM 的 `input-source.ts` @ 芯片仍挂在官方 InputBar 上，IM 自绘 composer 是纯文本（官方条被 chain 藏住）。
+

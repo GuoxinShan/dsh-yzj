@@ -1,6 +1,6 @@
 # AGENTS.md
 
-dsh-yzj 是 DeepSeek Harness 的独立插件 bundle 仓库：`yzj-cli` 桥接、六域模型面工具族（写确认流）、云之家浏览器 UI（富卡片 + 工作台面板）。一切能力经 Cordis 插件交付——bridge 提供服务、tool-yzj 注册工具、ui-yzj 双面呈现、bundle 挂成 profile patch 层；不修改 harness 本体。**动手前先读 [docs/README.md](docs/README.md)（文档索引与阅读顺序）**；实现与设计的分歧记录在 [docs/status/gap-analysis.md](docs/status/gap-analysis.md)。待办与 AI推进已从本公开仓撤出（完整实现在私有归档 GuoxinShan/dsh-yzj-archive）。
+dsh-yzj 是 DeepSeek Harness 的独立插件 bundle 仓库：`yzj-cli` 桥接、六域模型面工具族（写确认流）、云之家浏览器 UI（IM 壳 + 富卡片）。一切能力经 Cordis 插件交付——bridge 提供服务、tool-yzj 注册工具、ui-yzj 双面呈现、bundle 挂成 profile patch 层；不修改 harness 本体。**动手前先读 [docs/README.md](docs/README.md)（文档索引与阅读顺序）**；实现与设计的分歧记录在 [docs/status/gap-analysis.md](docs/status/gap-analysis.md)。待办与 AI推进已从本公开仓撤出（完整实现在私有归档 GuoxinShan/dsh-yzj-archive）。
 
 ## Spec-driven：文档就是仓库的主体
 
@@ -9,7 +9,7 @@ dsh-yzj 是 DeepSeek Harness 的独立插件 bundle 仓库：`yzj-cli` 桥接、
 1. **文档先于代码**：新功能先在 `docs/` 落设计（目标、契约、验收口径），再写实现；实现过程中设计变更，**先改文档再改代码**，同一提交。
 2. **文档即接口**：下一个读这个仓库的是另一个 agent，它以 `docs/` 为首要输入。文档陈旧 = 下一个 agent 必然做错。每个提交自问：「只读 docs/ 的人（agent）能准确重建当前系统的行为吗？」不能，就补。
 3. **docs/ 目录义务**（职责与阅读顺序见 [docs/README.md](docs/README.md)，改动对应面时同提交更新）：
-   - `spec/` — 设计基线：`integration-master-plan.md`（整体方案/人在闭环验收基准）、`group-room-topics.md`（**v2.0 产品法**：1 群 = 1 群房间 + N 话题；工作台三域 对话 / 日程 / 知识库）、`dsh-home-session.md` / `dsh-home-transcript.md`（v1.x 历史快照；D9 写路径与消息日志机制沿用，1:1 绑定与融合一条流已被 v2.0 覆盖）、`robot-channel-plan.md`（机器人通道协议；会话落点以 group-room-topics 为准）；
+   - `spec/` — 设计基线：`im-shell.md`（**v3.0 产品法**：IM 壳 / 助手单聊 1..N / 人群房间 / `present`）、`integration-master-plan.md`、`group-room-topics.md`（v2.0 历史法，导航已被 im-shell 覆盖）、`dsh-home-session.md` / `dsh-home-transcript.md`（v1.x 快照；D9 写路径与消息日志沿用）、`robot-channel-plan.md`；
    - `status/` — `gap-analysis.md`：设计×实现分歧与验收证据，**每个功能提交都应在此留痕**（§17 / §24 待办+推进历史节已归档）；
    - `pitfalls/` — 踩坑库（见 Conventions「踩坑记录制度」）。
 4. **决策必须留档**：拍板（设计取舍、风险分级、命名）写进对应设计文档的决策表，附理由；不允许只存在于提交信息或对话里的决策。
@@ -26,7 +26,8 @@ packages/       @dsh-yzj/* workspace 包（均 private、ESM；开发态，发�
   bridge/         ctx.yzjBridge —— 有界子进程通道：argv 数组直启 yzj-cli
   tool-yzj/       模型面工具族 + 写操作确认 guard（风险表）
   ui-yzj/         dsh.client 双面包：node half 为 /yzj RPC 通道 + write-gate，
-                  browser half 为 toolview 富卡片 + 云之家工作台（侧栏单入口 + 顶栏页签 对话/日程/知识库 + 三栏；悬浮球已退役）
+                  browser half 为 IM 壳（收件箱 + 助手 DM + 人群房间）+ toolview 富卡片
+                  （工作台盖层 / 悬浮球已退役）
   # robot-yzj / memory-yzj 已彻底退役删除（决策 53，2026-08-25）——包、RPC、
   # 工具、话题交互面全无；历史见 git 与 docs/spec/*-plan.md 档案
   model-yzj/      插件级默认模型路由
@@ -36,7 +37,7 @@ packages/       @dsh-yzj/* workspace 包（均 private、ESM；开发态，发�
   只扫精确包名，见 pitfall-047）；其余行仍用子路径；发布 = 构建 + tag
   （见 docs/release.md）
 docs/           设计文档，本仓库的主体（见「Spec-driven」；索引与阅读顺序：docs/README.md）
-  spec/           设计基线：integration-master-plan / group-room-topics（v2.0 产品法 + 工作台三域）/ dsh-home-session（v1.x 快照）/ robot-channel-plan
+  spec/           设计基线：im-shell（v3.0 IM 壳）/ integration-master-plan / group-room-topics（v2.0 历史）/ dsh-home-session（v1.x 快照）/ robot-channel-plan
   status/          gap-analysis：设计×实现分歧与验收证据（每功能提交留痕）
   pitfalls/        实现级坑库（pitfall-NNN-*.md）——动手前先查，解决新坑后回写（见 Conventions「踩坑记录制度」）
 .acceptance/    Playwright 浏览器验收脚本（verify-*.mjs）+ 验收证据截图

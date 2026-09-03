@@ -11,8 +11,7 @@ import type { YzjPanelActions, YzjPanelState } from './stores.ts'
 import type { YzjPanelInject } from './rpc.ts'
 import type { YzjJumpTarget } from './cards.tsx'
 import { rememberImSeat } from './im-seat.ts'
-import { setWorkbenchDomain } from './workbench-domain.ts'
-import { openWorkbench } from './workbench-overlay.ts'
+import { setImPane, setImSelection } from './im-nav.ts'
 import { cliRecord, cliRows } from '../cli-payload.ts'
 
 type PanelActions = BakedActions<YzjPanelState, YzjPanelActions>
@@ -49,14 +48,13 @@ function asString(value: unknown): string {
 export function openPanelTarget(target: YzjJumpTarget, anchorMsgId?: string): void {
   const c = controller
   if (target.kind === 'group') {
-    setWorkbenchDomain('im')
+    setImSelection({ kind: 'group', groupId: target.groupId })
     rememberImSeat({ groupId: target.groupId, sessionId: '' })
   } else if (target.kind === 'doc' || target.kind === 'workspace') {
-    setWorkbenchDomain('docs')
+    setImPane('docs')
   } else {
-    setWorkbenchDomain('calendar')
+    setImPane('calendar')
   }
-  openWorkbench()
   if (c === null) return
   const actions = c.actions
   actions.setOpen(true)

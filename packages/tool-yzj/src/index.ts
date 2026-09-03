@@ -18,6 +18,8 @@ import { applyCalendarTools } from './calendar.ts'
 import { applyImTools } from './im.ts'
 import { applyFileTools } from './file.ts'
 import { YzjHomeService } from './home.ts'
+import { YzjAssistantsService } from './assistants.ts'
+import { applyPresentTool } from './present.ts'
 import { applyApprovalGuard } from './guard.ts'
 import type { YzjToolBudget } from './shared.ts'
 
@@ -67,6 +69,8 @@ export function apply(ctx: Context, config: Config): void {
   applyCalendarTools(ctx, budget)
   applyImTools(ctx, budget)
   applyFileTools(ctx, budget)
+  applyPresentTool(ctx, budget)
+  const assistants = new YzjAssistantsService(ctx)
   // Product-home binding table (dsh-home-session): one Yunzhijia
   // conversation ↔ one DSH session. Shared by UI pick-group.
   const home = new YzjHomeService(ctx, {
@@ -77,7 +81,10 @@ export function apply(ctx: Context, config: Config): void {
   })
   ctx.inject(['storageDomain'], () => {
     void home.openNow()
+    void assistants.openNow()
   })
+  void assistants.openNow()
+  applyPresentInstruction(ctx as never)
   // Window is a one-shot plugin inject (not a snapshot section). Register
   // on the host so official Chat and drawer turns both see it (events bubble).
   applySummonOncePreStep(ctx as never, home)
@@ -262,6 +269,72 @@ export function sessionIdFromAssemble(assemble: AssembleFace | undefined): strin
   return undefined
 }
 
+const PRESENT_MARK = '［IM present］'
+const PRESENT_INSTRUCTION = [
+  '［IM present］You are speaking through a Yunzhijia IM shell.',
+  'The user does not see this DSH session, tool traces, thinking, or bash.',
+  'Call the `present` tool with the text they should read.',
+  '`yzj_im_message_send` posts to Yunzhijia as the user and still needs a confirm card.',
+  'If you never `present`, the IM stays on 助手正在处理… until the turn ends.',
+].join(' ')
+
+/**
+ * First enter on a hidden assistant session: remind the model to `present`.
+ * Planted once as a plugin user line (same family as the summon window).
+ */
+export function applyPresentInstruction(
+  ctx: { on: (name: string, listener: (...args: never[]) => unknown) => unknown },
+): void {
+  ctx.on('agent/pre-step', (async (payload: {
+    agent?: { session?: { id?: string; events?: readonly { type: string; data: unknown }[] } }
+    messages?: unknown[]
+  }, next: () => Promise<{ kind: string; messages?: unknown[] }>) => {
+    const decision = await next()
+    if (decision.kind !== 'enter') return decision
+    const sessionId = payload.agent?.session?.id
+    if (sessionId === undefined || !sessionId.startsWith('yzj-assistant-')) return decision
+    const events = payload.agent?.session?.events ?? []
+    const incoming = decision.messages ?? payload.messages ?? []
+    const already = [...events, ...incoming.map(item => ({ type: 'user/message', data: item }))].some((event) => {
+      const data = userMessageData(event)
+      return data !== undefined && textOfUserMessage(data).includes(PRESENT_MARK)
+    })
+    if (already) return decision
+    const planted = {
+      id: crypto.randomUUID(),
+      role: 'user' as const,
+      content: [{ type: 'text' as const, text: PRESENT_INSTRUCTION }],
+      source: { kind: 'plugin' as const, plugin: 'yzj-present' },
+    }
+    return { kind: 'enter', messages: [planted, ...incoming] }
+  }) as never)
+}
+
+/** Last assistant/message text in a session log (fallback present). */
+export function lastAssistantText(events: readonly { type: string; data: unknown }[]): string {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event?.type !== 'assistant/message') continue
+    const data = typeof event.data === 'object' && event.data !== null
+      ? event.data as Record<string, unknown>
+      : {}
+    const content = data.content
+    if (typeof content === 'string' && content.trim() !== '') return content.trim()
+    if (Array.isArray(content)) {
+      const text = content.map((part) => {
+        if (typeof part === 'string') return part
+        if (typeof part === 'object' && part !== null) {
+          const piece = (part as Record<string, unknown>).text
+          return typeof piece === 'string' ? piece : ''
+        }
+        return ''
+      }).join('').trim()
+      if (text !== '') return text
+    }
+  }
+  return ''
+}
+
 export {
   HomeBindingStore, conversationKindOf, homeSessionId, yzjHomeDomainSpec,
 } from './home.ts'
@@ -277,6 +350,13 @@ export {
   robotOutboundEntry, isPluginFollowup, latestUserSourceKind, DEFAULT_BOUND_LOG_LIMITS, yzjHomeLogDomainSpec,
   clipLogParam,
 } from './bound-log.ts'
+export {
+  AssistantStore, YzjAssistantsService, assistantSessionId, isAssistantSessionId,
+  DEFAULT_ASSISTANT_ID, threadKey, yzjAssistantsDomainSpec,
+} from './assistants.ts'
+export type {
+  AssistantRecord, PresentBubble, LocalThread, TurnTarget, AssistantDmProjection,
+} from './assistants.ts'
 export type { YzjToolBudget, YzjToolValue } from './shared.ts'
 export type {
   HomeBindingRecord, HomeEnsureResult, YzjConversationKind, YzjHomeFace,

@@ -4,16 +4,17 @@
  * the factory only (a module-level handle would pin store identity across
  * plugin reloads); the two registrations share the factory's handle.
  */
-import type { EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
+import type { EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
 
-type DefineStore = typeof import('@deepseek-ai/dsh-client-store').defineStore
+type DefineStore = typeof import('@deepseek-ai/dsh-client-runtime/client').defineStore
 
 /**
- * 0.1.2 seeds `@deepseek-ai/dsh-client-store`; 0.1.1 answers the same
- * engine at `@deepseek-ai/dsh-client-runtime/client`. A static import of
- * either specifier crashes the other runtime (client-modules require miss).
- * The client factory injects `require`; keep the calls here so the bundle
- * resolves against the shell table instead of inlining a second engine.
+ * Types come from `@deepseek-ai/dsh-client-runtime/client` (rc.7 folded the
+ * store engine there). 0.1.2 briefly seeded `@deepseek-ai/dsh-client-store`.
+ * A static import of either specifier crashes the other runtime
+ * (client-modules require miss). The client factory injects `require`; keep
+ * the calls here so the bundle resolves against the shell table instead of
+ * inlining a second engine.
  */
 function resolveDefineStore(): DefineStore {
   const req = require as (spec: string) => { defineStore: DefineStore }

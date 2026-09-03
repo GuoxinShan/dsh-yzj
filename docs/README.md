@@ -9,8 +9,9 @@ docs/
   README.md                          ← 本文件：索引与阅读顺序
   release.md                           发布流程（GitHub 分享 / npm 全量发布 + 前置检查清单）
   spec/                              ← 设计基线（要做什么、为什么、验收口径）
+    im-shell.md                        **v3.0 产品法**：IM 壳（助手单聊 1..N + 人群房间 + present）
     integration-master-plan.md         云之家×dsh 集成整体方案（v1.8 指针 → 会话家园；正文仍为 v1.7 人在闭环）
-    group-room-topics.md               v2.0 产品法：1 群 = 1 群房间 + N 话题会话；工作台盖层；v1.17 R31 侧栏单入口 + 顶栏页签；R30 透镜产物卡；R29 job-done 投递；R27 盖层；R26 未登录入口
+    group-room-topics.md               v2.0 历史产品法（群房间 + 话题 / 工作台）；导航已被 im-shell 覆盖
     dsh-home-session.md                DSH 唯一会话家园（v1.x 历史快照；D2/D3 被 group-room-topics 覆盖，D9 等仍有效）
     dsh-home-transcript.md             绑定会话可见时间线：插件消息日志（v1.x 历史快照；存储/去重/回填/切会话分阶段机制沿用，融合视图条款被覆盖）
     meeting-minutes-template.md        金蝶标准四段式纪要模板（目标/内容/共识/下一步）
@@ -28,13 +29,14 @@ docs/
 ## 阅读顺序（新 agent 接手）
 
 1. **`README.md`（仓库根）**——三分钟了解包结构与能力面。
-2. **`spec/integration-master-plan.md`**——系统全貌：目标、用户旅程、人在闭环验收基准（会话模型见下一份）。
-3. **`spec/group-room-topics.md`**——**当前产品法（v2.0 / v1.23 工作台）**：1 群 = 1 群房间 + N 话题会话；两视图各一个发送动词；导航 = 侧栏脚一个「云之家」入口 + 工作台顶栏页签（对话 / 日程 / 知识库）+ 会话列表。对照 `status/gap-analysis.md` §23。待办 / 推进 /「喂给推进」已从公开仓撤出。
-4. **`spec/dsh-home-session.md`** / **`spec/dsh-home-transcript.md`**——v1.x 历史快照：会话对象、写路径 D9、消息日志存储/去重/回填/召唤窗口（机制沿用）；1:1 绑定与融合一条流已被 v2.0 覆盖（保留/作废对照见 group-room-topics §6）。
-5. **`status/gap-analysis.md`**——当前实现状态与已验收证据（§15–§21 为既有面；§22 为 v1.8 实现快照；**§23 为 v2.0 目标 vs 现状**；§17 / §24 待办+推进历史节已归档，见文末 2026-08-27）。
-6. **`pitfalls/README.md` 索引**——动手前必查；命中相关条目先读再写代码。话题「发给助手」没近窗先读 pitfall-027；工作台盖中间栏先读 pitfall-028；每轮重贴 / 跨日倒序 / 文件没 fileId 先读 pitfall-029；日程永远停在某天第一次先读 pitfall-032；想把文件挂进回复链先读 pitfall-033（CLI `file` 不支持 `--reply-msg-id`）。对齐 harness rc.7 / 注册 `tool.call.toolview` / branded `SessionId` 先读 pitfall-034。空 web profile 真机点 dock 被内测声明挡住先读 pitfall-035。Full access 档位曾把确认卡掐掉（**已修复**，走 `yzj/confirm-request`）先读 pitfall-036；验收脚本话题数据态先读 pitfall-037；CLI 输出形状/0.1.6 统一信封先读 pitfall-003；0.1.6 确认闸 exit 10 vs 认证 exit 3 先读 pitfall-049。
-7. 其余设计文档（机器人协议 → `spec/robot-channel-plan.md`（会话落点已被 dsh-home-session 覆盖）；定时任务 → `spec/routines-delivery.md`；记忆库 → `spec/memory-vault-design.md`）。待办 / AI推进 spec 已从本仓删除，完整实现在私有归档 GuoxinShan/dsh-yzj-archive。
-8. **插件开发 skill**（`.agents/skills/`）——`cordis-plugin-development` 按 cookbook 座位提炼成本仓契约；`editing-cordis-compositions` 仍是创造模式原文。本仓规矩在 `AGENTS.md`。索引见 [`.agents/skills/README.md`](../.agents/skills/README.md)。
+2. **`spec/im-shell.md`**——**当前产品法（v3.0 IM 壳）**：助手是 1..N 条特殊单聊；云之家群/同事是人群房间；IM 只渲染 `present` 气泡 + 写确认卡。对照 `status/gap-analysis.md` §25。
+3. **`spec/integration-master-plan.md`**——系统全貌：目标、用户旅程、人在闭环验收基准（会话模型见 IM 壳 + 下一份历史法）。
+4. **`spec/group-room-topics.md`**——v2.0 历史产品法（群房间 + 话题 / 工作台三域）。导航与视图已被 im-shell 覆盖；人群房间日志、写路径 D9、话题前缀仍有效。
+5. **`spec/dsh-home-session.md`** / **`spec/dsh-home-transcript.md`**——v1.x 历史快照：写路径 D9、消息日志存储/去重/回填（机制沿用）。
+6. **`status/gap-analysis.md`**——当前实现状态与已验收证据（**§25 为 v3.0 IM 壳**；§23 为 v2.0 工作台快照；§17 / §24 待办+推进已归档）。
+7. **`pitfalls/README.md` 索引**——动手前必查。单占槽二次 register 先读 pitfall-050；CLI 信封/0.1.6 先读 pitfall-003 / 049；确认卡 Full access 先读 pitfall-036。
+8. 其余设计文档（机器人协议 → `spec/robot-channel-plan.md`；定时任务 → `spec/routines-delivery.md`；记忆库 → `spec/memory-vault-design.md`）。待办 / AI推进 spec 已从本仓删除。
+9. **插件开发 skill**（`.agents/skills/`）——`cordis-plugin-development`；本仓规矩在 `AGENTS.md`。
 
 ## 命名规则
 
