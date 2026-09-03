@@ -200,7 +200,7 @@ export function YzjGroupRoom(props: {
 
   return (
     <div className={css.shell} data-testid="yzj-group-room">
-      <header className={css.header}>
+      <header className={css.header} data-yzj-im-header="">
         <div>
           <div className={css.headerTitle}>{props.groupName || '群聊'}</div>
           <div className={css.headerSub}>人群房间</div>
@@ -244,7 +244,7 @@ export function YzjGroupRoom(props: {
         />
       </div>
       {error !== '' && <p className={css.alert} role="alert">{error}</p>}
-      <div className={css.composer}>
+      <div className={css.composer} data-yzj-im-composer="">
         {replyTo !== null && (
           <div className={homeCss.roomReplyBar} data-testid="yzj-room-reply">
             <span className={homeCss.roomReplyText}>回复：{replyTo.summary}</span>

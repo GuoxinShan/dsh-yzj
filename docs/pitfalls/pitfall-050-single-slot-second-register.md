@@ -12,7 +12,7 @@ harness rc.7：`sidebar.workspaces` 与 layout `conversation` 都是 `{ kind: 's
 
 - 收件箱：门户进 `[data-slot="sidebar.workspaces"]`，CSS 藏文件夹树；不 `register` 该单占座。设置座不动。
 - 中间 IM：占 list 槽 `conversation.view`（id `yzj-im`，label 助手），自动点该 tab，CSS 藏 tablist / details / New Session。
-- 官方输入条：`conversation.composer` chain takeover 画 `null`。
+- 官方输入条：`conversation.composer` chain 仍登记并画 `null`，但 **rc.7 `overlay:true` 不会卸 fallback InputBar**；alpha.3 甚至没有 `[data-composer-seat]`。真正隐藏见 pitfall-052（CSS + `watchHostChrome`）。
 - 不要占 layout `conversation` 或 `details`。
 
 ## 回归覆盖（Regression coverage）

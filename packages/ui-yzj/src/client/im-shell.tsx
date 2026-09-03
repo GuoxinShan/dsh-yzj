@@ -14,6 +14,7 @@ import { YzjDomainWorkbench } from './workbench-pane.tsx'
 import { getImPane, getImSelection, markImOccupancy, setImPane, subscribeImSelection } from './im-nav.ts'
 import { registerPanelController } from './panel-controller.ts'
 import type { WriteCardInjected } from './write-card.tsx'
+import { watchHostChrome } from './host-chrome.ts'
 import css from './shell.module.css'
 
 function useStoreOf(store: { getSnapshot: () => YzjPanelState; subscribe: (fn: () => void) => () => void }) {
@@ -51,7 +52,7 @@ export function YzjImShell(props: {
   if (pane === 'calendar' || pane === 'docs') {
     return (
       <div className={css.shell} data-testid="yzj-im-pane">
-        <header className={css.header}>
+        <header className={css.header} data-yzj-im-header="">
           <button type="button" className={css.back} onClick={() => setImPane('')}>← 返回</button>
           <div className={css.headerTitle}>{pane === 'calendar' ? '日程' : '知识库'}</div>
         </header>
@@ -120,19 +121,6 @@ export function selectImComposer({ interactions }: ComposerChainProps): { im: tr
 
 /** Collapse the official composer seat; the IM shell draws its own. */
 export function YzjHideHostComposer() {
-  useEffect(() => {
-    const seat = document.querySelector<HTMLElement>('[data-composer-seat]')
-    if (seat === null) return
-    seat.style.setProperty('height', '0')
-    seat.style.setProperty('min-height', '0')
-    seat.style.setProperty('overflow', 'hidden')
-    seat.style.setProperty('padding', '0')
-    return () => {
-      seat.style.removeProperty('height')
-      seat.style.removeProperty('min-height')
-      seat.style.removeProperty('overflow')
-      seat.style.removeProperty('padding')
-    }
-  }, [])
+  useEffect(() => watchHostChrome(), [])
   return null
 }

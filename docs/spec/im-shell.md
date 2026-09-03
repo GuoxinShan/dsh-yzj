@@ -25,10 +25,13 @@
 | I6 | 群 `@助手` | **不**调用 `im message send`。点名预定义助手。锚点 = 被回复的群 `msgId`。工作挂在该消息下，**只你可见**本地线程。V1：没有回复目标的 `@` 不受理（去助手 DM）。空 composer 只 `@` 不得发到云之家 | 空 `@` 发群不可撤回；线程可见性跟容器 |
 | I7 | 助手发群 | 仍走 `yzj_im_message_send` + 确认卡，以用户本人身份 | 写路径两分不改 |
 | I8 | 日程 / 知识库 | **不是**首页页签。经 composer `+`、设置、或问助手调既有 `yzj_*` | 首页只有收件箱 + 对话 |
-| I9 | 占位 | workspaces / layout `conversation` 是单占，二次 register 抛错（pitfall-050）。收件箱门户进 workspaces 区域；IM 占 `conversation.view` list + composer chain 藏官方条；CSS 藏 details / New Session / 文件夹树。不抄 Bruce `next/graph` / 委派 / 私账 | 核验 harness rc.7 SlotCore：single 只有一座 |
+| I9 | 占位 | workspaces / layout `conversation` 是单占，二次 register 抛错（pitfall-050）。收件箱门户进 workspaces 区域；IM 占 `conversation.view` list。官方 InputBar 的真正隐藏见 I13（chain 画 null 不够）。CSS 藏 details / New Session / 文件夹树。不抄 Bruce `next/graph` / 委派 / 私账 | 核验 harness rc.7 SlotCore：single 只有一座 |
 | I10 | 存储 | `present` 气泡进插件状态（domain `yzj_assistants`），**不**伪造自定义 durable session 事件（F4）。隐藏 session 日志仍是工具/确认审计；IM 投影不是那条日志的撒谎副本 | harness 禁止外部自定义事件类型 |
 | I11 | 不恢复 | 入站云之家机器人、话题 UI、交给助手、悬浮球、面板第二 IM、待办、AI推进 | 公开仓已撤；本刀不回潮 |
 | I12 | `present` 回退 | 模型应显式 `present`。若一轮只用了其它工具、从未 `present`，IM 停在「助手正在处理…」，直到 `present` 或回合结束时把**最后一条助手文本**回退 present——用户不能卡死。优先显式工具 | 空回合不可接受 |
+| I13 | 宿主 composer / chrome | **真正收起**官方 InputBar + 权限/模型条 + token 统计 + session 标题 /「标准模式」/「Session 日志」/ layout toggle。不能只靠 `conversation.composer` chain 画 `null`：rc.7 `overlay:true` 时 elected 与 fallback 是兄弟，null 卸不掉 InputBar；**0.1.2-alpha.3 没有 `[data-composer-seat]`**，针对该属性的 JS 是 no-op。隐藏走 CSS + DOM（多选择器），不依赖 seat 属性。IM 自己的输入打 `data-yzj-im-composer`，不得误伤 | 真机 Oh My DSH / alpha.3 截图是双 composer；IM 只要一条输入 |
+| I14 | 收件箱分区 + 头像 | 云之家消息首页四段：**助手（钉）/ 单聊 / 群 / 订阅通知**。分类用 CLI `im group recent` 已有字段：`groupType`（会话列表枚举）+ `BOT-` 前缀 + `headerUrl`/`photoUrl`。**不**恢复话题 badge。inbox 复用 `parseRecentGroups`，禁止再发明只认 `BOT-` 的扁平 stub | 截图扁平列表 + 字母 glyph 不是产品 |
+| I15 | 新建助手入口 | 收件箱 header「+」+ 首次引导行即可 `assistants-create` 并选中新行。设置页目录保留，但**不得**要求钻进设置才能建助手 | 助手是 1..N 联系人，入口必须在 inbox |
 
 ---
 
@@ -90,12 +93,26 @@ Composer 占位「发到群里，@ 可叫助手（不会发到群）」。`@` �
 |---|---|
 | `sidebar.workspaces` | **不 register**（单占，ui-workspace 已占，二次 register 抛错，pitfall-050）。门户收件箱进 `[data-slot="sidebar.workspaces"]`，CSS 藏文件夹树。设置座不碰 |
 | layout `conversation` | **不占**（单占，ui-conversation 已占） |
-| `conversation.view` | 占 list：id `yzj-im`、label 助手；自动点该 tab；CSS 藏 tablist。中间是 IM，不是 Chat+轨迹 |
-| `conversation.composer` | chain takeover 画 `null`（composer 画在壳内） |
+| `conversation.view` | 占 list：id `yzj-im`、label 助手；自动点该 tab；CSS 藏 tablist。中间是 IM，不是 Chat+轨迹。IM header 是联系人（助手名 / 群名），不是宿主 session 标题 |
+| `conversation.composer` | chain 仍登记（rc.7 有该槽）画 `null`；**真正隐藏**靠 `html[data-dsh-yzj-im]` CSS + `watchHostChrome()` DOM 收起：`[data-composer-seat]`、`[data-composer-card]`、`[class*='composerSeat'/'composerStack'/'InputBar']`、placeholder「发消息或做任务」、统计行「N 轮 ·」、session header 的 titleRow / headerActions / headerUtilities。alpha.3 无 seat 属性时 CSS/DOM 仍生效。IM composer 标 `data-yzj-im-composer` |
 | `details` | 不占；IM 态 CSS 藏 |
 | 工作台 overlay / 「云之家」dock / 话题 dock | **停止挂载** |
 
+收件箱（workspaces 门户）：搜索 + **新建助手**；列表四段 助手 / 单聊 / 群 / 订阅通知；行头像 = `headerUrl` \|\| `photoUrl`（`referrerPolicy=no-referrer`），glyph 仅 fallback。分类见 `inboxRoomKind`（`parseRecentGroups` 保留 `groupType`）。
+
 「查看过程」：IM 壳切到过程投影（读隐藏 session 事件摘要），不把工具轨迹画进气泡流。返回 = 回到 IM 投影。
+
+### 4.1 `im group recent` 分类（I14）
+
+CLI 行已带 `groupType` + `headerUrl`（`groupLine` / `parseRecentGroups`）。这是**最近会话列表**枚举（云之家 web IM / XuntongConstants），不是群管理接口的「内部群=1 / 外部群=2 / 部门群=3」：
+
+| `groupType` | 收件箱段 | 备注 |
+|---|---|---|
+| 0 或 1 或缺省非 `BOT-` | 群 | 0 出现在部分载荷 |
+| 2 或 `groupId` 以 `BOT-` 开头 | 单聊 | `BOT-` 是本仓测过的 DM id 空间（`home.ts`） |
+| ≥3 或 id 含 `pubacc` | 订阅通知 | 3 公共号 / 4 服务号 / ≥5 轻应用与通知号 |
+
+助手段不是 CLI 行，来自 `assistants-list`。
 
 ---
 

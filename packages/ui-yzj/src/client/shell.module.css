@@ -17,6 +17,27 @@
   display: none !important;
 }
 
+/* Host InputBar + session chrome. Do not use [class*='composerCard'] — that
+   hits the IM .composerCard hash (pitfall-052). */
+:global(html[data-dsh-yzj-im]) :global([data-composer-seat]),
+:global(html[data-dsh-yzj-im]) :global([data-composer-card]),
+:global(html[data-dsh-yzj-im]) :global([class*='composerSeat']),
+:global(html[data-dsh-yzj-im]) :global([class*='composerStack']),
+:global(html[data-dsh-yzj-im]) :global([class*='composerHero']),
+:global(html[data-dsh-yzj-im]) :global([class*='InputBar']),
+:global(html[data-dsh-yzj-im]) :global([class*='titleRow']),
+:global(html[data-dsh-yzj-im]) :global([class*='headerUtilities']),
+:global(html[data-dsh-yzj-im]) :global([class*='headerActions']),
+:global(html[data-dsh-yzj-im]) :global([class*='sessionLogButton']) {
+  display: none !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: 0 !important;
+}
+
 :global([data-slot='sidebar.workspaces'] > :not([data-yzj-inbox-host])) {
   display: none !important;
 }
@@ -28,6 +49,115 @@
   min-height: 0;
   background: var(--dsw-alias-bg-base, #111);
   color: var(--dsw-alias-label-primary, #eee);
+}
+
+.inboxBar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 10px;
+}
+
+.inboxBar .search {
+  flex: 1;
+  min-width: 0;
+}
+
+.addBtn {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  margin-top: 4px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1, #1c1c1c);
+  color: var(--dsw-alias-label-primary, #eee);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.addBtn:hover {
+  background: var(--dsw-alias-interactive-bg-hover-solid, #242424);
+}
+
+.createBox {
+  display: flex;
+  gap: 6px;
+  padding: 0 10px 8px;
+}
+
+.createBox input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--dsw-alias-border-l2, #2a2a2a);
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: var(--dsw-alias-bg-layer-1, #1c1c1c);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+}
+
+.createBox button {
+  flex: none;
+  border: 0;
+  border-radius: 8px;
+  padding: 6px 12px;
+  background: var(--dsw-static-deepseek-600, #3b82f6);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.createBox button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.createHint {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border: 1px dashed var(--dsw-alias-border-l2, #2a2a2a);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary, #aaa);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.createHint:hover {
+  color: var(--dsw-alias-label-primary, #eee);
+  background: var(--dsw-alias-interactive-bg-hover-solid, #1e1e1e);
+}
+
+.sectionTitle {
+  padding: 10px 12px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--dsw-alias-label-tertiary, #888);
+}
+
+.inboxAvatar {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  overflow: hidden;
+}
+
+.inboxAvatar img,
+.inboxAvatar span {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
 }
 
 .search {

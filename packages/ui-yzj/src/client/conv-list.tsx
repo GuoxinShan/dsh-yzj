@@ -86,6 +86,39 @@ function kindOf(groupId: string): 'group' | 'dm' {
   return groupId.startsWith('BOT-') ? 'dm' : 'group'
 }
 
+/** Inbox section for a Yunzhijia people-room row (not an assistant). */
+export type InboxRoomKind = 'dm' | 'group' | 'subscription'
+
+/**
+ * Classify an `im group recent` row into inbox sections.
+ * Uses CLI fields only: `BOT-` id space (measured DM) plus recent-session
+ * `groupType` (Yunzhijia conversation-list enum, not group-admin 内部/外部).
+ * 1 = group, 2 = DM, ≥3 = public/service/notification; 0 counts as group.
+ */
+export function inboxRoomKind(row: { groupId: string; groupType?: number }): InboxRoomKind {
+  const id = row.groupId
+  if (/pubacc/i.test(id)) return 'subscription'
+  if (id.startsWith('BOT-')) return 'dm'
+  const type = row.groupType
+  if (type === 2) return 'dm'
+  if (type !== undefined && type >= 3) return 'subscription'
+  return 'group'
+}
+
+function groupTypeOf(item: Record<string, unknown>): number | undefined {
+  const value = item.groupType
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return undefined
+}
+
+function photoOf(item: Record<string, unknown>): string {
+  return asString(item.headerUrl) || asString(item.photoUrl)
+}
+
 /** L2: missing / unknown status counts as running (pre-P3 rows). */
 export function topicStatusOf(status: string | undefined): 'running' | 'confirm' | 'done' {
   return status === 'confirm' || status === 'done' ? status : 'running'
@@ -158,19 +191,32 @@ export function parseNavRooms(value: unknown): { groupId: string; sessionId: str
   })
 }
 
+/** One row from `im group recent` (CLI fields the inbox actually classifies on). */
+export interface RecentGroupRoom {
+  readonly groupId: string
+  readonly groupName: string
+  readonly lastMsg: Record<string, unknown>
+  readonly lastMsgSendTime: unknown
+  readonly headerUrl?: string
+  readonly groupType?: number
+}
+
 /** Recent CLI rows plus whether another page exists. */
-export function parseRecentGroups(value: unknown): { rooms: { groupId: string; groupName: string; headerUrl?: string; lastMsg: Record<string, unknown>; lastMsgSendTime: unknown }[]; more: boolean } {
+export function parseRecentGroups(value: unknown): { rooms: RecentGroupRoom[]; more: boolean } {
   const rec = asRecord(value)
   const rooms = asArray(rec.list).flatMap((row) => {
     const item = asRecord(row)
     const groupId = asString(item.groupId)
     if (groupId === '') return []
+    const headerUrl = photoOf(item)
+    const groupType = groupTypeOf(item)
     return [{
       groupId,
       groupName: asString(item.groupName) || (kindOf(groupId) === 'dm' ? '私聊' : '群聊'),
       lastMsg: asRecord(item.lastMsg),
       lastMsgSendTime: item.lastMsgSendTime,
-      ...(asString(item.headerUrl) === '' ? {} : { headerUrl: asString(item.headerUrl) }),
+      ...(headerUrl === '' ? {} : { headerUrl }),
+      ...(groupType === undefined ? {} : { groupType }),
     }]
   })
   return { rooms, more: rec.more === true }
@@ -181,7 +227,7 @@ export function parseRecentGroups(value: unknown): { rooms: { groupId: string; g
  * group message wins the preview (prefix 「话题·」) and the sort key.
  */
 export function buildConvRows(
-  recent: readonly { groupId: string; groupName: string; headerUrl?: string; lastMsg: Record<string, unknown>; lastMsgSendTime: unknown }[],
+  recent: readonly RecentGroupRoom[],
   bound: readonly { groupId: string; sessionId: string; groupName: string; yzjKind: 'group' | 'dm'; topics: readonly ConvTopicView[] }[],
 ): ConvRow[] {
   const boundById = new Map(bound.map(room => [room.groupId, room]))

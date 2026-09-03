@@ -152,7 +152,8 @@ export function apply(ctx: ClientContext): void {
   // workspaces is a single seat already taken by ui-workspace (pitfall-050).
   ctx.effect(() => mountInbox(panelInject))
 
-  // Center is IM (list tab), not host Chat+trajectory. Composer chain hides InputBar.
+  // Center is IM (list tab), not host Chat+trajectory. Composer chain paints
+  // null; watchHostChrome actually collapses InputBar/stats (pitfall-052).
   // conversation.view has no SlotMap inject face — close over panel/write (pitfall-050).
   ctx.slots.inject('conversation.view', () => ctx.slots.register(
     {

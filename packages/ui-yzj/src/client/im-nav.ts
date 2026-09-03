@@ -4,6 +4,8 @@
  * do not share a React tree.
  */
 
+import { watchHostChrome } from './host-chrome.ts'
+
 export type ImSelection =
   | { readonly kind: 'assistant'; readonly assistantId: string }
   | { readonly kind: 'group'; readonly groupId: string; readonly groupName?: string }
@@ -82,6 +84,7 @@ export function markImOccupancy(): () => void {
   applyDom()
   selectImViewTab()
   if (typeof document === 'undefined') return () => {}
+  const stopChrome = watchHostChrome()
   const observer = new MutationObserver(() => {
     applyDom()
     selectImViewTab()
@@ -89,6 +92,7 @@ export function markImOccupancy(): () => void {
   observer.observe(document.body, { childList: true, subtree: true })
   return () => {
     observer.disconnect()
+    stopChrome()
     document.documentElement.removeAttribute('data-dsh-yzj-im')
     document.documentElement.removeAttribute('data-dsh-yzj-peek')
   }

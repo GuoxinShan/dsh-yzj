@@ -1277,12 +1277,14 @@ send 的 `--to-open-id` / `--at-open-id` / `--at-all` / `--reply-msg-id` / `--im
 | 助手 1..N | domain `yzj_assistants`；出厂 `default` / 「助手」；隐藏 session `yzj-assistant-*` + cwd `~/.dsh-yzj/assistants/<id>/` + 串行队列 | `assistants.spec.ts` |
 | `present` | 模型工具，写 IM 投影，不进 WRITE_SPECS，永不 `im message send`；回合结束回退 last assistant text | `assistants.spec.ts` present / fallback |
 | RPC | `assistants-list/create`、`assistant-ask`、`assistant-thread-ask`、`assistant-projection/threads/process` | `rpc.node.spec.ts` |
-| 收件箱 | 门户进 `sidebar.workspaces` 区域（不 register 单占座，pitfall-050）；钉助手 + 最近群 | `inbox.client.spec.tsx` / `inbox-mount.client.spec.tsx` |
+| 收件箱 | 门户进 `sidebar.workspaces` 区域（不 register 单占座，pitfall-050）；四段 助手 / 单聊 / 群 / 订阅通知；`parseRecentGroups` 保留 `groupType`+`headerUrl`/`photoUrl`；`GroupAvatar`；inbox「新建助手」 | `inbox.client.spec.tsx` / `inbox-mount.client.spec.tsx` / `conv-list.client.spec.tsx` `inboxRoomKind` |
 | 助手 DM | Grok-Bot 气泡 + 确认卡 + 弱化「查看过程」；无 tool trace | `assistant-dm.client.spec.tsx` |
 | 人群房间 | `home-send` 发群；回复 + `@助手` 拦截；只你可见本地线程；header「问助手」 | `group-room.client.spec.tsx` / `room-composer.spec.ts` intercept |
 | 身份 | 0.1.6 whoami：`data` + 同级 `identity`，不假定顶层 openId | `contact-parse.spec.ts` |
-| Occupancy | 不占 layout `conversation` / `sidebar.workspaces` 单座；占 `conversation.view` + composer chain；CSS 藏 New Session / 文件夹树 / details / tablist | pitfall-050；`client/index.ts` |
+| Occupancy | 不占 layout `conversation` / `sidebar.workspaces` 单座；占 `conversation.view` + composer chain 画 null；**CSS+DOM 收起官方 InputBar/统计/session chrome**（不依赖 `data-composer-seat`，pitfall-052）；CSS 藏 New Session / 文件夹树 / details / tablist | pitfall-050 / 052；`host-chrome.ts`；`host-chrome.client.spec.tsx` |
 | 停止挂载 | 工作台 overlay、云之家 dock、`conversation.input.dock` 话题残留 | `src/client/index.ts` 不再 mount |
 
-**已知限制**：(a) 无 focused session 时 `conversation.view` 不画——依赖 GUI 已有当前会话；(b) V1 无回复目标的 `@助手` 不受理；(c) 日程/知识库只在 composer `+` / 设置，不是首页页签；(d) 真机 GUI 本切片未跑（cloud agent 无 web GUI）；(e) 助手 DM 的 `input-source.ts` @ 芯片仍挂在官方 InputBar 上，IM 自绘 composer 是纯文本（官方条被 chain 藏住）；(f) 未构建的兄弟 harness 上 `cards` / `panel-hooks` / `panel-switch` 三个旧 client spec 因缺 `dsh-client-runtime/lib/client.js` 无法加载——与本刀无关，347 条已跑测试全绿。
+**已知限制**：(a) 无 focused session 时 `conversation.view` 不画——依赖 GUI 已有当前会话；(b) V1 无回复目标的 `@助手` 不受理；(c) 日程/知识库只在 composer `+` / 设置，不是首页页签；(d) cloud agent 无 web GUI；宿主 chrome 隐藏由 jsdom 覆盖有/无 `data-composer-seat` 两种 DOM，真机须重启 GUI（host + 根 `lib/client.js`，pitfall-016/051）后对照截图验收；(e) 助手 DM 的 `input-source.ts` @ 芯片仍挂在官方 InputBar 上，IM 自绘 composer 是纯文本；(f) 未构建的兄弟 harness 上 `cards` / `panel-hooks` / `panel-switch` 三个旧 client spec 因缺 `dsh-client-runtime/lib/client.js` 无法加载——与本刀无关。
+
+**表面重做（同 PR，2026-09-03）**：真机 Oh My DSH / harness **0.1.2-alpha.3** 截图暴露双 composer、session 标题泄漏、扁平 inbox、无头像、无新建助手。本刀按 I13–I15 修；不恢复待办 / AI推进 / 入站机器人 / 话题 UI / 交给助手 / 悬浮球。
 

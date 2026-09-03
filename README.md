@@ -38,7 +38,7 @@ dsh plugin --profile web add github:GuoxinShan/dsh-yzj#v0.1.0
 pnpm install
 pnpm --filter @dsh-yzj/tool-yzj --filter @dsh-yzj/ui-yzj typecheck
 pnpm --filter @dsh-yzj/tool-yzj --filter @dsh-yzj/ui-yzj test
-pnpm --filter @dsh-yzj/ui-yzj bundle   # 改 browser half 后
+pnpm --filter @dsh-yzj/ui-yzj bundle   # tsdown + copy-client → 根 lib/client.js
 ```
 
-改 UI 后重建 bundle 并重启 GUI。
+改 UI 后重建 bundle（须 copy 到根 `lib/client.js`，见 pitfall-051）并重启 GUI。

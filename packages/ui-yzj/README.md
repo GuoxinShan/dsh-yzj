@@ -24,12 +24,15 @@ Does **not** `register` layout `conversation` or `sidebar.workspaces` (those
 single seats are already taken; a second register throws — pitfall-050).
 
 - **Inbox** — portals into `[data-slot="sidebar.workspaces"]` and hides the
-  folder tree. Settings stay on `sidebar.settings`. CSS hides New Session /
-  session rows / details / the view tablist.
+  folder tree. Settings stay on `sidebar.settings`. Sectioned list 助手 /
+  单聊 / 群 / 订阅通知 (`parseRecentGroups` + `inboxRoomKind`); avatars from
+  `headerUrl`/`photoUrl`. Header `+` creates an assistant without opening 设置.
+  CSS hides New Session / session rows / details / the view tablist.
 - **Center** — occupies `conversation.view` (`id: yzj-im`, label 助手) with
   the IM shell (assistant DM or people room). `conversation.composer` chain
-  hides the official InputBar. Workbench overlay / 云之家 dock / topic leftover
-  chrome are **not mounted**.
+  paints `null`; host InputBar / stats / session chrome are collapsed via CSS
+  + `watchHostChrome` (works without `data-composer-seat`, pitfall-052).
+  Workbench overlay / 云之家 dock / topic leftover chrome are **not mounted**.
 - **Assistant DM** — Grok-Bot bubbles from `present` + pending yzj confirm
   cards. Muted 「查看过程」opens a digest of the hidden session (not a tool
   trace in the bubble stream). Composer `+` opens calendar/docs as a pane,

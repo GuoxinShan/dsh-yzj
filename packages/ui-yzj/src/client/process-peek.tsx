@@ -48,7 +48,7 @@ export function YzjProcessPeek(props: {
 
   return (
     <div className={css.shell} data-testid="yzj-process-peek">
-      <header className={css.header}>
+      <header className={css.header} data-yzj-im-header="">
         <button
           type="button"
           className={css.back}

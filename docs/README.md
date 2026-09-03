@@ -34,7 +34,7 @@ docs/
 4. **`spec/group-room-topics.md`**——v2.0 历史产品法（群房间 + 话题 / 工作台三域）。导航与视图已被 im-shell 覆盖；人群房间日志、写路径 D9、话题前缀仍有效。
 5. **`spec/dsh-home-session.md`** / **`spec/dsh-home-transcript.md`**——v1.x 历史快照：写路径 D9、消息日志存储/去重/回填（机制沿用）。
 6. **`status/gap-analysis.md`**——当前实现状态与已验收证据（**§25 为 v3.0 IM 壳**；§23 为 v2.0 工作台快照；§17 / §24 待办+推进已归档）。
-7. **`pitfalls/README.md` 索引**——动手前必查。单占槽二次 register 先读 pitfall-050；CLI 信封/0.1.6 先读 pitfall-003 / 049；确认卡 Full access 先读 pitfall-036。
+7. **`pitfalls/README.md` 索引**——动手前必查。单占槽二次 register 先读 pitfall-050；藏官方 InputBar 先读 pitfall-052；client copy 先读 pitfall-051；CLI 信封/0.1.6 先读 pitfall-003 / 049；确认卡 Full access 先读 pitfall-036。
 8. 其余设计文档（机器人协议 → `spec/robot-channel-plan.md`；定时任务 → `spec/routines-delivery.md`；记忆库 → `spec/memory-vault-design.md`）。待办 / AI推进 spec 已从本仓删除。
 9. **插件开发 skill**（`.agents/skills/`）——`cordis-plugin-development`；本仓规矩在 `AGENTS.md`。
 

@@ -97,7 +97,7 @@ export function YzjAssistantDm(props: {
 
   return (
     <div className={css.shell} data-testid="yzj-assistant-dm">
-      <header className={css.header}>
+      <header className={css.header} data-yzj-im-header="">
         <div>
           <div className={css.headerTitle}>{name}</div>
           <div className={css.headerSub}>专属助手 · 单聊</div>
@@ -130,7 +130,7 @@ export function YzjAssistantDm(props: {
         <div ref={bottom} />
       </div>
       {error !== '' && <p className={css.alert} role="alert">{error}</p>}
-      <div className={css.composer} style={{ position: 'relative' }}>
+      <div className={css.composer} style={{ position: 'relative' }} data-yzj-im-composer="">
         {plus && (
           <div className={css.menu} data-testid="yzj-plus-menu">
             <button type="button" onClick={() => { setPlus(false); props.onOpenPane?.('calendar') }}>日程</button>

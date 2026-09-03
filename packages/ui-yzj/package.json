@@ -43,8 +43,8 @@
   ],
   "license": "MIT",
   "scripts": {
-    "build": "tsc -b && tsdown",
-    "bundle": "tsdown --env.DSH_BUILD_FACE=client",
+    "build": "tsc -b && tsdown && node ../../scripts/copy-client.mjs",
+    "bundle": "tsdown --env.DSH_BUILD_FACE=client && node ../../scripts/copy-client.mjs",
     "typecheck": "tsc -b"
   },
   "dependencies": {
