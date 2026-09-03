@@ -70,7 +70,10 @@ export function YzjAssistantDm(props: {
   }, [props.assistantId, props.panel])
 
   useEffect(() => {
-    bottom.current?.scrollIntoView({ block: 'end' })
+    const node = bottom.current
+    if (node !== null && typeof node.scrollIntoView === 'function') {
+      node.scrollIntoView({ block: 'end' })
+    }
   }, [bubbles.length, processing, writes.length])
 
   const send = async (): Promise<void> => {

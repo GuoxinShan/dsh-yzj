@@ -6,15 +6,20 @@
  */
 import type { EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
 
-type DefineStore = typeof import('@deepseek-ai/dsh-client-runtime/client').defineStore
+type DefineStore = (decl: {
+  persist?: string
+  init: () => YzjPanelState
+  actions: YzjPanelActions
+}) => EngineStoreHandle<YzjPanelState, YzjPanelActions>
 
 /**
- * Types come from `@deepseek-ai/dsh-client-runtime/client` (rc.7 folded the
- * store engine there). 0.1.2 briefly seeded `@deepseek-ai/dsh-client-store`.
- * A static import of either specifier crashes the other runtime
- * (client-modules require miss). The client factory injects `require`; keep
- * the calls here so the bundle resolves against the shell table instead of
- * inlining a second engine.
+ * 0.1.2 seeds `@deepseek-ai/dsh-client-store`; rc.7 answers the same
+ * engine at `@deepseek-ai/dsh-client-runtime/client`. A static import of
+ * either specifier crashes the other runtime (client-modules require miss).
+ * The client factory injects `require`; keep the calls here so the bundle
+ * resolves against the shell table instead of inlining a second engine.
+ * Do not `typeof import()` the runtime specifier — tsdown would emit that
+ * word before the store seed and invert pitfall-048's order check.
  */
 function resolveDefineStore(): DefineStore {
   const req = require as (spec: string) => { defineStore: DefineStore }

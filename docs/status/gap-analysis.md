@@ -1284,5 +1284,5 @@ send 的 `--to-open-id` / `--at-open-id` / `--at-all` / `--reply-msg-id` / `--im
 | Occupancy | 不占 layout `conversation` / `sidebar.workspaces` 单座；占 `conversation.view` + composer chain；CSS 藏 New Session / 文件夹树 / details / tablist | pitfall-050；`client/index.ts` |
 | 停止挂载 | 工作台 overlay、云之家 dock、`conversation.input.dock` 话题残留 | `src/client/index.ts` 不再 mount |
 
-**已知限制**：(a) 无 focused session 时 `conversation.view` 不画——依赖 GUI 已有当前会话；(b) V1 无回复目标的 `@助手` 不受理；(c) 日程/知识库只在 composer `+` / 设置，不是首页页签；(d) 真机 GUI 本切片未跑（cloud agent 无 web profile）；(e) 助手 DM 的 `input-source.ts` @ 芯片仍挂在官方 InputBar 上，IM 自绘 composer 是纯文本（官方条被 chain 藏住）。
+**已知限制**：(a) 无 focused session 时 `conversation.view` 不画——依赖 GUI 已有当前会话；(b) V1 无回复目标的 `@助手` 不受理；(c) 日程/知识库只在 composer `+` / 设置，不是首页页签；(d) 真机 GUI 本切片未跑（cloud agent 无 web GUI）；(e) 助手 DM 的 `input-source.ts` @ 芯片仍挂在官方 InputBar 上，IM 自绘 composer 是纯文本（官方条被 chain 藏住）；(f) 未构建的兄弟 harness 上 `cards` / `panel-hooks` / `panel-switch` 三个旧 client spec 因缺 `dsh-client-runtime/lib/client.js` 无法加载——与本刀无关，347 条已跑测试全绿。
 

@@ -28,14 +28,22 @@ const RUNTIME_CLIENT_ALIAS = existsSync(HARNESS_SOURCE)
       .map(root => join(root, 'packages/client/runtime/src/client/index.ts'))
       .find(candidate => existsSync(candidate)) ?? HARNESS_SOURCE
 
+/** Prefer a built primitives lib (unbuilt sibling checkout has none). */
+const PRIMITIVES_LIB = [
+  join(HARNESS, 'ui-primitives/lib/index.js'),
+  join(ROOT, 'node_modules/@deepseek-ai/dsh-client-ui-primitives/lib/index.js'),
+].find(candidate => existsSync(candidate)) ?? join(HARNESS, 'ui-primitives/src/index.ts')
+
 export default defineConfig({
   resolve: {
     alias: {
       // runtime's lib/client.js is a closure-factory artifact requiring the
       // shell loader; its source is a plain ESM browser entry that vitest can
-      // import directly. ui-primitives' lib/index.js is a plain ESM build and
-      // resolves normally.
+      // import directly. ui-primitives' sibling link has no lib/ until the
+      // harness is built — fall back to the workspace registry artifact.
       '@deepseek-ai/dsh-client-runtime/client': RUNTIME_CLIENT_ALIAS,
+      // ui-yzj's workspace link points at the unbuilt sibling tree (no lib/).
+      '@deepseek-ai/dsh-client-ui-primitives': PRIMITIVES_LIB,
     },
   },
   plugins: [{

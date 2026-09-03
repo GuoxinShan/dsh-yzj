@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * 云之家 settings-section: robot management only (memory pane deferred).
+ * 云之家 settings-section: login + 新建助手 (robot/memory cards retired).
  */
 import { act } from 'react-dom/test-utils'
 import { createRoot, type Root } from 'react-dom/client'
@@ -54,11 +54,11 @@ async function flush(): Promise<void> {
 }
 
 describe('YzjSettingsSection', () => {
-  it('机器人/记忆卡已撤下（决策 50）：不拉机器人数据，只剩登录卡', async () => {
+  it('does not restore robot/memory management cards', async () => {
     const face = mountSection()
     await flush()
     const text = face.container.textContent ?? ''
-    expect(text).not.toContain('机器人')
+    expect(text).toContain('新建助手')
     expect(text).not.toContain('记忆库')
     expect(face.calls.robotStatus ?? 0).toBe(0)
     expect(face.calls.memoryScope ?? 0).toBe(0)
