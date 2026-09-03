@@ -5,7 +5,27 @@
 import { act } from 'react-dom/test-utils'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { buildConvRows, clearConvListHold, YzjConvList } from '../src/client/conv-list.tsx'
+import { buildConvRows, clearConvListHold, parseRecentGroups, YzjConvList } from '../src/client/conv-list.tsx'
+
+describe('parseRecentGroups', () => {
+  const list = [{ groupId: 'g-a', groupName: '群A', lastMsg: { content: 'hi' }, lastMsgSendTime: '2026-09-03 10:00:00' }]
+
+  it('parses the unwrapped `{ list }` shape', () => {
+    expect(parseRecentGroups({ list }).rooms).toHaveLength(1)
+  })
+
+  it('tolerates a leftover `{ data: { list } }` envelope (pitfall-050)', () => {
+    // A stale/older host bundle can hand the raw CLI envelope through unparsed;
+    // the list must still populate instead of blanking.
+    const parsed = parseRecentGroups({ data: { list, count: 1 } })
+    expect(parsed.rooms).toHaveLength(1)
+    expect(parsed.rooms[0]?.groupId).toBe('g-a')
+  })
+
+  it('prefers the top-level list when both exist', () => {
+    expect(parseRecentGroups({ list, data: { list: [] } }).rooms).toHaveLength(1)
+  })
+})
 
 describe('buildConvRows', () => {
   it('prefixes 话题· when topic activity is newer than the last group message', () => {

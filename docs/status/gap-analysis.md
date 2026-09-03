@@ -2,6 +2,7 @@
 
 > 对齐对象：`../spec/integration-master-plan.md`（v1.7 人在闭环验收基准；**v1.8 会话家园产品法见 `../spec/dsh-home-session.md`，实现对照 §22**）↔ 本仓库现有实现（`packages/bridge`、`packages/tool-yzj`、`packages/ui-yzj`、`packages/bundle`、`packages/robot-yzj`）
 > 核验日期：2026-08-14 之后（实现开发期）
+> **v2.1 留痕**（2026-09-03）：修复「工作台对话会话列表恒空」——随包提交的 `lib/` 产物落后于 `src/`（解信封修复 `unwrapCli` 未构建进发布 host bundle），`im group recent` 的 `{data:{list}}` 信封未展开、`conv-list.tsx#parseRecentGroups` 只认顶层 `.list` → 0 行。解法：`parseRecentGroups` 对残留 `.data` 信封健壮化 + 用当前源码重建全部 `lib/` 产物。真机（设备码登录真实账号）验证：会话列表铺出 4 个真实群。详见 [pitfall-050](../pitfalls/pitfall-050-shipped-lib-stale-empty-conv-list.md)（并见 016/003）。
 > **v2.0 增补**（2026-08-17，Guoxin Shan）：**群房间 + 话题会话产品法**（[`../spec/group-room-topics.md`](../spec/group-room-topics.md)）取代 v1.8 的 1:1 绑定与融合一条流。**设计已拍板；锚定 / 入站话题 / 群房间视图 / 写闸 / 出站进日志 / 面板第二 IM 退役已落地**，对照 **§23**。§22 保留为 v1.8 实现快照。
 > v1.8 增补：**会话家园产品法**（2026-08-17，Guoxin Shan）——目标是 DSH 唯一家园 + 1:1 绑定。**绑定对象 + 融合时间线已落地**：入站与挑群打 `yzj-home-*`；`conversation.view`「群工作」融合 ①②③④；面板 composer 降为快捷 ②。仍开放 G3/G5。v1.7 完成度口径不因此改写。
 > v1.4 增补：**UI 后续演化对照**（git `08fc7b1` → `af3bf5d`，19 个 ui-yzj commit）——面板四 tab→三 tab、悬浮球唯一入口、面板真 IM composer（用户直写）、拖入快捷动作移除、确认卡去 ID 化、未读持久化；新增 §16。v1.3 增补：**最终验收状态**（git `de3c058`）——全部可开发缺口完成：锚点定位高亮、@ 候选三组、拖入即处理引导均已落地；剩余仅机制受限项（多 chip 合并、通知卡、确认卡事件族，均为 harness 契约边界）与待拍板项（合并确认、快照决策）。全量 build/typecheck/test 通过（58 passed）。v1.2 增补：实现进展状态全量刷新（git 至 `491db61`）——P0 消息回源、P1 门禁分级 + 确认卡、通知层一/三、skill、影子任务库、dbt 预览均已落地；剩余缺口见 §15 更新清单。v1.1 增补：补全实现侧全部工具明细（§2）；新增设计补强「悬浮窗全量拖拽 → composer」（§2A，用户思路）。

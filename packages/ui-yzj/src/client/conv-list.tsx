@@ -160,7 +160,12 @@ export function parseNavRooms(value: unknown): { groupId: string; sessionId: str
 
 /** Recent CLI rows plus whether another page exists. */
 export function parseRecentGroups(value: unknown): { rooms: { groupId: string; groupName: string; headerUrl?: string; lastMsg: Record<string, unknown>; lastMsgSendTime: unknown }[]; more: boolean } {
-  const rec = asRecord(value)
+  const outer = asRecord(value)
+  // Robust to a leftover CLI `{ data: { list } }` envelope: the node half
+  // unwraps `success`-tagged payloads, but tolerate the raw shape too so a
+  // stale/older host bundle or an envelope change cannot blank the list
+  // (see docs/pitfalls: recent-groups nested under `.data`).
+  const rec = Array.isArray(outer.list) ? outer : (Array.isArray(asRecord(outer.data).list) ? asRecord(outer.data) : outer)
   const rooms = asArray(rec.list).flatMap((row) => {
     const item = asRecord(row)
     const groupId = asString(item.groupId)
