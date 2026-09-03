@@ -28,6 +28,18 @@ dsh plugin --profile web add github:GuoxinShan/dsh-yzj#v0.1.0
 
 安装后重启 GUI（源码启动时重启 `node --import tsx/esm apps/cli/src/bin.ts web`），侧栏脚出现一个「云之家」入口；点开工作台后用顶栏页签切对话 / 日程 / 知识库（记忆入口搁置）。
 
+### 前置：yzj-cli（云之家 CLI）
+
+bridge 直启的 `yzj-cli` 来自 npm **`@yunzhijia/cli`**（该包 `bin` 即 `yzj-cli`）。装它并登录后本插件的工具才有真实数据：
+
+```sh
+npm i -g @yunzhijia/cli   # 提供 yzj-cli 可执行文件（也可 pnpm add -g）
+yzj-cli auth login        # 浏览器授权；无浏览器环境（SSH / CI / Cloud Agent）加 --device 走设备码
+yzj-cli whoami            # 验证登录态
+```
+
+登录态存机器级 `~/.yzj-cli/config.json`（+ 系统钥匙串）；DSH 与 harness 全程不接触 appSecret/accessToken——bridge 只 spawn CLI 复用其登录态。未装/未登录时工具降级：面板显示「未登录」并回显 CLI 的 `credentials_missing` 提示（此时只读 bash 兜底可用，写操作仍必须走 `yzj_*` 工具确认卡）。CLI 不在 PATH 时，用 bridge 的 `binary` 配置指向其绝对路径。
+
 > 本地开发用 `link:` 依赖指向 harness checkout；对外安装走 monobundle + git tag
 > （根包依赖已全部指向 registry 的 `@deepseek-ai` rc.7 系列，见 docs/release.md）。
 

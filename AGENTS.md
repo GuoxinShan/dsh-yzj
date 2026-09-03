@@ -81,7 +81,27 @@ Cloud Agent VM 上本仓库 checkout 在 `/workspace`，故 `link:../../../deeps
 - **兄弟 harness（必须已构建）**：克隆 `deepseek-ai/deepseek-harness` 的 tag `dsh-v0.1.2-alpha.5`（bundle 目标版本，见 [docs/release.md](docs/release.md)）到 `/deepseek-harness`（该目录在根 `/`、需 `sudo mkdir` + `chown`），`pnpm install` 后 **`pnpm run build:lib`**。client 包的 `lib/types` 只有构建后才存在——不构建则 `@deepseek-ai/dsh-client-store` 等解析失败（它是 0.1.2 才有的包，registry rc.7 无回退）。
 - **Workspace**：harness 就位后 `pnpm install`（`link:` 解析成功），随后 `pnpm test` 应全绿（vitest 经 alias 走 harness 源，356 tests）。
 
-**跑 GUI 应用**（在 harness checkout 下，node 22.x）：先 `pnpm run build:web` 产出前端 `apps/web/dist`——**否则 `dsh web` 只返回空壳 HTML、页面全白**；再 `pnpm dsh plugin --profile web add -w link:/workspace` 装本 bundle，`pnpm dsh web --no-open --port 3080`。启动行打印的 `?token=…` URL 首访设 auth cookie 后 303 → `/`（Playwright/浏览器自动带 cookie）。未装/未登录 yzj-cli 时 bridge 报 `spawn yzj-cli ENOENT` / 面板「未登录」属预期（机器级凭据，本仓不提供）。
+**跑 GUI 应用**（在 harness checkout 下，node 22.x）：先 `pnpm run build:web` 产出前端 `apps/web/dist`——**否则 `dsh web` 只返回空壳 HTML、页面全白**；再 `pnpm dsh plugin --profile web add -w link:/workspace` 装本 bundle，`pnpm dsh web --no-open --port 3080`。启动行打印的 `?token=…` URL 首访设 auth cookie 后 303 → `/`（Playwright/浏览器自动带 cookie）。装好插件后侧栏脚出现「云之家」入口，工作台三域（对话 / 日程 / 知识库）+ 群房间 composer 会渲染。
+
+**yzj-cli（真实数据面）**：`npm i -g @yunzhijia/cli` 装出 `yzj-cli`；Cloud Agent 无浏览器，用 `yzj-cli auth login --device`（设备码，专为 SSH/CI/Agent）——打印 code+URL，人在别处批准即可。**未装** → bridge `spawn yzj-cli ENOENT`；**装了未登录** → 面板回显 CLI 的 `credentials_missing`（非 ENOENT）；**已登录** → 真实数据 + 写路径/确认流可测。凭据在 `~/.yzj-cli/config.json`，本仓不提供。
+
+**模型（让 GUI 里 agent 真跑起来）**：harness 自定义 provider 走 `$DSH_HOME/settings.yaml`（默认 `~/.dsh`）。opencode zen 是 OpenAI 兼容网关，**必须**带自定义 header `x-opencode-client`（GUI「添加自定义 provider」表单无 header 字段，只能写 YAML）；配 `llm-pi-ai` provider（`api: openai-completions`、`baseURL: https://opencode.ai/zen/v1`、`apiKeyEnv: OPENCODE_API_KEY`、`headers.x-opencode-client`、`models`）+ `agent-default-model` 选默认模型；任一可用 provider 就位即跳过 DeepSeek 上手弹窗。免费模型本地冒烟可 keyless：`export OPENCODE_API_KEY=public` + 模型 `mimo-v2.5-free`（`deepseek-v4-flash-free` 等在 public 层不可用）；真实 key 经 Secrets 注入同名 env 覆盖。示例（已验证 agent 能跑完一轮）：
+
+```yaml
+# ~/.dsh/settings.yaml
+llm-pi-ai:
+  providers:
+    opencode-zen:
+      apiKeyEnv: OPENCODE_API_KEY
+      api: openai-completions
+      baseURL: https://opencode.ai/zen/v1
+      headers: { x-opencode-client: "opencode/1.0 (dsh)" }
+      models: [{ id: mimo-v2.5-free }]
+      compat: { supportsDeveloperRole: false }
+agent-default-model: { provider: opencode-zen, model: mimo-v2.5-free }
+```
+
+**Secrets 注入时机**：Secrets 只注入**新** VM。给现有运行中的 VM 加的 secret 当次会话取不到（`OPENCODE_API_KEY` 不在 env 里）——要么起新 agent、要么本地用 `public` 免费层验证。
 
 **已知偏差（非环境问题）**：本公开快照的 `ui-yzj` 源码针对比任何公开 harness tag（含 master HEAD）更新/私有的 harness 状态编写，故 `pnpm run typecheck` / 每包 `build` 的 `tsc -b` 关卡会报 API 偏差（`ComposerChainProps.interactions`、`tool.call.toolview` slot、`Session.events`、`SessionId` 品牌类型等）。运行期不受影响：`pnpm test` 全绿、`tsdown` 转译产物（`lib/*.mjs` + `lib/client.js`）齐备、GUI 中插件零加载错误。别为了让 `tsc` 变绿而改源码或把 `link:` 换成 registry。
 

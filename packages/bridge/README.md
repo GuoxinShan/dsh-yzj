@@ -2,6 +2,8 @@
 
 Host channel to the Yunzhijia CLI (`yzj-cli`): bounded subprocess invocations that reuse the machine's `yzj-cli auth login` state.
 
+The `yzj-cli` binary ships in the npm package [`@yunzhijia/cli`](https://www.npmjs.com/package/@yunzhijia/cli) (its `bin` is `yzj-cli`). Install it globally (`npm i -g @yunzhijia/cli`) so the default `binary` name resolves on `PATH`, or point the `binary` config at an absolute path. Authenticate once with `yzj-cli auth login` (headless environments use `--device` for the device-code flow); credentials live at `~/.yzj-cli/config.json` (plus the OS keychain) and are never read by this bridge — it only spawns the CLI.
+
 ## Service
 
 `ctx.yzjBridge` (service name `yzjBridge`), default-exported `YzjBridge extends Service`.
