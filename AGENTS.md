@@ -73,6 +73,18 @@ node .acceptance/verify-real-data.mjs   # 需运行中的 GUI + 已登录 yzj-cl
 
 仓库无 `.env`、无 API key。云之家凭据只存在于机器级 `yzj-cli auth login` 态（keychain + `~/.yzj-cli/config.json`）；本仓库与 harness 全程不接触 appSecret/accessToken——bridge 只 spawn CLI 复用其登录态。绝不提交凭据。
 
+## Cursor Cloud specific instructions
+
+Cloud Agent VM 上本仓库 checkout 在 `/workspace`，故 `link:../../../deepseek-harness` 解析到 **`/deepseek-harness`**——兄弟 harness 必须在那里。环境搭建已固化在 `.cursor/environment.json`（`install: bash .cursor/install.sh`），`install.sh` 幂等做四件事，动手前先跑它或据此复现：
+
+- **Node**：基础镜像默认 `node`（exec-daemon，22.14）不满足 `package.json` 的 `^22.19 || >=24`；经 nvm 选用 node 22.x 并设 default。新开 shell 若 `node -v` 仍是 22.14，`export PATH="$HOME/.nvm/versions/node/$(nvm version 22)/bin:$PATH"`。
+- **兄弟 harness（必须已构建）**：克隆 `deepseek-ai/deepseek-harness` 的 tag `dsh-v0.1.2-alpha.5`（bundle 目标版本，见 [docs/release.md](docs/release.md)）到 `/deepseek-harness`（该目录在根 `/`、需 `sudo mkdir` + `chown`），`pnpm install` 后 **`pnpm run build:lib`**。client 包的 `lib/types` 只有构建后才存在——不构建则 `@deepseek-ai/dsh-client-store` 等解析失败（它是 0.1.2 才有的包，registry rc.7 无回退）。
+- **Workspace**：harness 就位后 `pnpm install`（`link:` 解析成功），随后 `pnpm test` 应全绿（vitest 经 alias 走 harness 源，356 tests）。
+
+**跑 GUI 应用**（在 harness checkout 下，node 22.x）：先 `pnpm run build:web` 产出前端 `apps/web/dist`——**否则 `dsh web` 只返回空壳 HTML、页面全白**；再 `pnpm dsh plugin --profile web add -w link:/workspace` 装本 bundle，`pnpm dsh web --no-open --port 3080`。启动行打印的 `?token=…` URL 首访设 auth cookie 后 303 → `/`（Playwright/浏览器自动带 cookie）。未装/未登录 yzj-cli 时 bridge 报 `spawn yzj-cli ENOENT` / 面板「未登录」属预期（机器级凭据，本仓不提供）。
+
+**已知偏差（非环境问题）**：本公开快照的 `ui-yzj` 源码针对比任何公开 harness tag（含 master HEAD）更新/私有的 harness 状态编写，故 `pnpm run typecheck` / 每包 `build` 的 `tsc -b` 关卡会报 API 偏差（`ComposerChainProps.interactions`、`tool.call.toolview` slot、`Session.events`、`SessionId` 品牌类型等）。运行期不受影响：`pnpm test` 全绿、`tsdown` 转译产物（`lib/*.mjs` + `lib/client.js`）齐备、GUI 中插件零加载错误。别为了让 `tsc` 变绿而改源码或把 `link:` 换成 registry。
+
 ## Conventions
 
 - **验收要新实例就重启 GUI**：host 面与 browser bundle 都要新进程才生效。核对 PID 与命令行确认是 web GUI（`web --port 3080` / `bin.ts web`）→ 停掉 → 在 harness checkout 用原启动命令拉起（例如 `node --import tsx/esm apps/cli/src/bin.ts web`）→ 等到 `http://127.0.0.1:3080/` 可访问再跑 `.acceptance/`。不要误杀 `--profile ops` 调度 daemon，除非那就是本次要测的实例。
