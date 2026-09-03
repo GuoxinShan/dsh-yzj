@@ -150,10 +150,12 @@ export function apply(ctx: ClientContext): void {
   ))
 
   // workspaces is a single seat already taken by ui-workspace (pitfall-050).
+  // Portal mounts the 消息/会话 switch + inbox; occupancy CSS is I16-gated.
   ctx.effect(() => mountInbox(panelInject))
 
-  // Center is IM (list tab), not host Chat+trajectory. Composer chain paints
-  // null; watchHostChrome actually collapses InputBar/stats (pitfall-052).
+  // Center is IM (list tab) while surface=im. Composer chain paints null;
+  // watchHostChrome collapses InputBar/stats (pitfall-052). 会话 unsets
+  // html[data-dsh-yzj-im] so official Chat + InputBar return.
   // conversation.view has no SlotMap inject face — close over panel/write (pitfall-050).
   ctx.slots.inject('conversation.view', () => ctx.slots.register(
     {

@@ -17,6 +17,8 @@ seat 属性是 rc.7 才打上的 DOM 契约，不是跨版本 API。`overlay: tr
 
 `html[data-dsh-yzj-im]` 下 CSS + `watchHostChrome()` MutationObserver 双保险，选择器覆盖 seat / `data-composer-card` / `composerSeat|composerStack|composerHero|InputBar` / titleRow / headerActions / headerUtilities / Session 日志按钮，以及 placeholder「发消息或做任务」、统计行「N 轮 ·」。IM 输入标 `data-yzj-im-composer`，header 标 `data-yzj-im-header`，选择器排除这两棵子树。不要用 `[class*='composerCard']`（会打中 IM 自己的 `.composerCard`）。
 
+会话态（I16）必须 **unset** `data-dsh-yzj-im`：`applyHostChromeHide` 在属性缺失时 `restoreAll` 并去掉 `--dsh-composer-height`。只把 inbox 藏掉但留下 occupancy 属性，官方 InputBar / Session 日志仍然消失。
+
 ## 回归覆盖（Regression coverage）
 
-`packages/ui-yzj/tests/host-chrome.client.spec.tsx`：有 seat / 无 seat 都藏宿主条与统计，不藏 IM composer。
+`packages/ui-yzj/tests/host-chrome.client.spec.tsx`：有 seat / 无 seat 都藏宿主条与统计，不藏 IM composer；卸 occupancy 属性后 restore。

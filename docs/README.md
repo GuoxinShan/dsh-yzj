@@ -9,7 +9,7 @@ docs/
   README.md                          ← 本文件：索引与阅读顺序
   release.md                           发布流程（GitHub 分享 / npm 全量发布 + 前置检查清单）
   spec/                              ← 设计基线（要做什么、为什么、验收口径）
-    im-shell.md                        **v3.0 产品法**：IM 壳（助手单聊 1..N + 人群房间 + present）
+    im-shell.md                        **v3.0 产品法**：IM 壳（助手单聊 1..N + 人群房间 + present；消息/会话 occupancy）
     integration-master-plan.md         云之家×dsh 集成整体方案（v1.8 指针 → 会话家园；正文仍为 v1.7 人在闭环）
     group-room-topics.md               v2.0 历史产品法（群房间 + 话题 / 工作台）；导航已被 im-shell 覆盖
     dsh-home-session.md                DSH 唯一会话家园（v1.x 历史快照；D2/D3 被 group-room-topics 覆盖，D9 等仍有效）
@@ -29,7 +29,7 @@ docs/
 ## 阅读顺序（新 agent 接手）
 
 1. **`README.md`（仓库根）**——三分钟了解包结构与能力面。
-2. **`spec/im-shell.md`**——**当前产品法（v3.0 IM 壳）**：助手是 1..N 条特殊单聊；云之家群/同事是人群房间；IM 只渲染 `present` 气泡 + 写确认卡。对照 `status/gap-analysis.md` §25。
+2. **`spec/im-shell.md`**——**当前产品法（v3.0 IM 壳）**：助手是 1..N 条特殊单聊；云之家群/同事是人群房间；IM 只渲染 `present` 气泡 + 写确认卡。默认表面是 IM，「会话」页签回到官方本地工作台（I16）。对照 `status/gap-analysis.md` §25。
 3. **`spec/integration-master-plan.md`**——系统全貌：目标、用户旅程、人在闭环验收基准（会话模型见 IM 壳 + 下一份历史法）。
 4. **`spec/group-room-topics.md`**——v2.0 历史产品法（群房间 + 话题 / 工作台三域）。导航与视图已被 im-shell 覆盖；人群房间日志、写路径 D9、话题前缀仍有效。
 5. **`spec/dsh-home-session.md`** / **`spec/dsh-home-transcript.md`**——v1.x 历史快照：写路径 D9、消息日志存储/去重/回填（机制沿用）。

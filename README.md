@@ -4,7 +4,7 @@
 
 独立 bundle，经 `dsh plugin --profile <name> add` 安装，不修改 harness 本体。
 
-**产品法（v3.0）**：[IM 壳](docs/spec/im-shell.md)——助手是用户定义的 1..N 条特殊单聊（出厂「助手」），不是一群一机器人。云之家群和同事私信是人群房间。用户看不见 workspace / 文件夹树 / New Session / DSH session id。IM 只渲染模型 `present` 出的气泡和既有 yzj 写确认卡；轨迹在隐藏 session 里，弱化「查看过程」。群 `@助手` 不发云之家，锚在被回复的 `msgId` 下（只你可见）。对照 [gap-analysis §25](docs/status/gap-analysis.md)。
+**产品法（v3.0）**：[IM 壳](docs/spec/im-shell.md)——助手是用户定义的 1..N 条特殊单聊（出厂「助手」），不是一群一机器人。云之家群和同事私信是人群房间。**默认表面是 IM（「消息」）**，不是牢房：侧栏常驻「消息 / 会话」页签，会话态回到官方本地工作台（文件夹树 / 会话列表 / Chat + InputBar / 轨迹 / Session 日志）。消息态用户看不见 workspace / 文件夹树 / New Session / DSH session id。IM 只渲染模型 `present` 出的气泡和既有 yzj 写确认卡；轨迹在隐藏 session 里，弱化「查看过程」（那不是「会话」页签的替代）。群 `@助手` 不发云之家，锚在被回复的 `msgId` 下（只你可见）。对照 [gap-analysis §25](docs/status/gap-analysis.md)。
 
 ## 包结构
 
@@ -23,7 +23,7 @@ pnpm dsh plugin --profile web add -w link:<本仓库路径>
 dsh plugin --profile web add github:GuoxinShan/dsh-yzj#v0.1.0
 ```
 
-安装后重启 GUI。侧栏 workspaces 区域是 IM 收件箱；中间是助手 DM 或人群房间。日程 / 知识库走助手 composer `+` 或设置，不是首页页签。
+安装后重启 GUI。默认侧栏 workspaces 区域是 IM 收件箱（「消息」），顶部可切到「会话」恢复官方 DSH。中间在消息态是助手 DM 或人群房间。日程 / 知识库走助手 composer `+` 或设置，不是首页页签。
 
 ## 功能面
 

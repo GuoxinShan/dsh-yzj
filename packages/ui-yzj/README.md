@@ -2,10 +2,12 @@
 
 Yunzhijia browser surface, dual-face package (`dsh.client`, `platform: web`).
 
-**Product law (v3.0):** the surface is an IM shell — see `docs/spec/im-shell.md`.
-Assistants are user-defined 1..N 单聊 contacts (factory 「助手」). Yunzhijia
-groups and colleague DMs are people rooms. The user never sees the folder
-tree, New Session, cwd, or DSH session ids.
+**Product law (v3.0):** the default surface is an IM shell — see
+`docs/spec/im-shell.md`. Assistants are user-defined 1..N 单聊 contacts
+(factory 「助手」). Yunzhijia groups and colleague DMs are people rooms.
+IM occupancy hides the folder tree, New Session, cwd, and DSH session ids.
+A persistent **消息 / 会话** switch (I16) restores the official local-session
+workbench; 查看过程 is not that exit.
 
 ## Node half
 
@@ -23,16 +25,21 @@ channel. yzj-cli 0.1.6 `whoami` is `{success, identity, data}` — parse both
 Does **not** `register` layout `conversation` or `sidebar.workspaces` (those
 single seats are already taken; a second register throws — pitfall-050).
 
-- **Inbox** — portals into `[data-slot="sidebar.workspaces"]` and hides the
-  folder tree. Settings stay on `sidebar.settings`. Sectioned list 助手 /
-  单聊 / 群 / 订阅通知 (`parseRecentGroups` + `inboxRoomKind`); avatars from
-  `headerUrl`/`photoUrl`. Header `+` creates an assistant without opening 设置.
-  CSS hides New Session / session rows / details / the view tablist.
+- **Inbox** — portals into `[data-slot="sidebar.workspaces"]` under a
+  persistent 消息 / 会话 switch (`data-yzj-surface-switch`). 消息 hides the
+  folder tree; 会话 unsets `html[data-dsh-yzj-im]`, hides the inbox host, and
+  restores workspaces + official Chat. Settings stay on `sidebar.settings`.
+  Sectioned list 助手 / 单聊 / 群 / 订阅通知 (`parseRecentGroups` +
+  `inboxRoomKind`); avatars from `headerUrl`/`photoUrl`. Header `+` creates an
+  assistant without opening 设置. IM-occupancy CSS hides New Session / session
+  rows / details / the host view tablist (not the surface switch).
 - **Center** — occupies `conversation.view` (`id: yzj-im`, label 助手) with
-  the IM shell (assistant DM or people room). `conversation.composer` chain
-  paints `null`; host InputBar / stats / session chrome are collapsed via CSS
-  + `watchHostChrome` (works without `data-composer-seat`, pitfall-052).
-  Workbench overlay / 云之家 dock / topic leftover chrome are **not mounted**.
+  the IM shell (assistant DM or people room) while 消息 is selected.
+  `conversation.composer` chain paints `null`; host InputBar / stats / session
+  chrome are collapsed via CSS + `watchHostChrome` (works without
+  `data-composer-seat`, pitfall-052). 会话 unsets occupancy so official Chat +
+  InputBar return. Workbench overlay / 云之家 dock / topic leftover chrome are
+  **not mounted**.
 - **Assistant DM** — Grok-Bot bubbles from `present` + pending yzj confirm
   cards. Muted 「查看过程」opens a digest of the hidden session (not a tool
   trace in the bubble stream). Composer `+` opens calendar/docs as a pane,

@@ -11,7 +11,9 @@ import { YzjAssistantDm } from './assistant-dm.tsx'
 import { YzjGroupRoom } from './group-room.tsx'
 import { YzjProcessPeek } from './process-peek.tsx'
 import { YzjDomainWorkbench } from './workbench-pane.tsx'
-import { getImPane, getImSelection, markImOccupancy, setImPane, subscribeImSelection } from './im-nav.ts'
+import {
+  electImComposer, getImPane, getImSelection, markImOccupancy, setImPane, subscribeImSelection,
+} from './im-nav.ts'
 import { registerPanelController } from './panel-controller.ts'
 import type { WriteCardInjected } from './write-card.tsx'
 import { watchHostChrome } from './host-chrome.ts'
@@ -115,8 +117,7 @@ export function bindImConversationView(panel: YzjPanelInject, writeInject: Write
 
 /** Chain select: hide the official InputBar while the IM shell owns the center. */
 export function selectImComposer({ interactions }: ComposerChainProps): { im: true } | null {
-  if (interactions.some(item => item.kind === 'approval' || item.kind === 'question')) return null
-  return { im: true }
+  return electImComposer(interactions)
 }
 
 /** Collapse the official composer seat; the IM shell draws its own. */

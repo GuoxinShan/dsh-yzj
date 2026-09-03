@@ -18,7 +18,7 @@ const HOST_SELECTORS = [
   '[class*="sessionLogButton"]',
 ] as const
 
-const IM_OWNED = '[data-yzj-im-composer], [data-yzj-im-header], [data-yzj-inbox-host], [data-testid="yzj-inbox"]'
+const IM_OWNED = '[data-yzj-im-composer], [data-yzj-im-header], [data-yzj-inbox-host], [data-yzj-surface-switch], [data-yzj-surface-root], [data-testid="yzj-inbox"]'
 
 function ownedByIm(node: Element): boolean {
   return node.closest(IM_OWNED) !== null
@@ -91,14 +91,21 @@ function hideStatsLines(): void {
   }
 }
 
+function restoreComposerHeight(): void {
+  for (const scroller of document.querySelectorAll<HTMLElement>('[data-conversation-scroll]')) {
+    scroller.style.removeProperty('--dsh-composer-height')
+  }
+}
+
 /**
  * Collapse host InputBar / session header / stats when IM occupancy is on.
- * No-op and restores when `html[data-dsh-yzj-im]` is absent.
+ * No-op and restores when `html[data-dsh-yzj-im]` is absent (会话 surface).
  */
 export function applyHostChromeHide(): void {
   if (typeof document === 'undefined') return
   if (!document.documentElement.hasAttribute('data-dsh-yzj-im')) {
     restoreAll()
+    restoreComposerHeight()
     return
   }
   for (const selector of HOST_SELECTORS) {

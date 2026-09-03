@@ -83,6 +83,19 @@ describe('host chrome hide', () => {
     stop()
   })
 
+  it('restores the official bar after occupancy is unset (会话)', () => {
+    const tree = hostTree({ seat: false })
+    document.body.append(tree)
+    document.documentElement.setAttribute('data-dsh-yzj-im', '')
+    applyHostChromeHide()
+    expect(tree.querySelector('[data-composer-card]')?.hasAttribute('data-yzj-host-hidden')).toBe(true)
+    document.documentElement.removeAttribute('data-dsh-yzj-im')
+    applyHostChromeHide()
+    expect(tree.querySelector('[data-composer-card]')?.hasAttribute('data-yzj-host-hidden')).toBe(false)
+    expect(tree.querySelector('.titleRow')?.hasAttribute('data-yzj-host-hidden')).toBe(false)
+    expect(tree.querySelector('[data-conversation-scroll]')?.style.getPropertyValue('--dsh-composer-height')).toBe('')
+  })
+
   it('does not hide an IM composer that shares the composerCard class fragment', () => {
     const im = document.createElement('div')
     im.setAttribute('data-yzj-im-composer', '')

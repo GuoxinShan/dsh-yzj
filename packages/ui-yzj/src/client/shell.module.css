@@ -13,7 +13,8 @@
   display: none !important;
 }
 
-:global(html[data-dsh-yzj-im]) :global([role='tablist']) {
+/* Exclude the 消息/会话 switch — it is also a tablist (I16). */
+:global(html[data-dsh-yzj-im]) :global([role='tablist']:not([data-yzj-surface-switch])) {
   display: none !important;
 }
 
@@ -38,8 +39,44 @@
   border: 0 !important;
 }
 
-:global([data-slot='sidebar.workspaces'] > :not([data-yzj-inbox-host])) {
+/* Folder tree only hides in IM occupancy. Always exclude the surface switch
+   and the inbox portal (pitfall-050). Unscoped, this would jail 会话. */
+:global(html[data-dsh-yzj-im]) :global([data-slot='sidebar.workspaces'] > :not([data-yzj-surface-root]):not([data-yzj-inbox-host]):not([data-yzj-surface-switch])) {
   display: none !important;
+}
+
+:global(html:not([data-dsh-yzj-im])) :global([data-yzj-inbox-host]) {
+  display: none !important;
+}
+
+.surfaceSwitch {
+  flex: none;
+  display: flex;
+  gap: 4px;
+  margin: 8px 10px 6px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1, #1c1c1c);
+  border: 1px solid var(--dsw-alias-border-l2, #2a2a2a);
+}
+
+.surfaceTab,
+.surfaceTabOn {
+  flex: 1;
+  border: 0;
+  border-radius: 8px;
+  padding: 7px 10px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary, #aaa);
+}
+
+.surfaceTabOn {
+  background: var(--dsw-alias-interactive-bg-hover-solid, #242424);
+  color: var(--dsw-alias-label-primary, #eee);
 }
 
 .inbox {
