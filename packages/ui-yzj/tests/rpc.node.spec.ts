@@ -548,4 +548,54 @@ describe('createRpcHandler', () => {
     const afterList = (after.ok ? after.value : { list: [] }) as { list: Array<{ status: string }> }
     expect(afterList.list[0].status).toBe('approved')
   })
+
+  it('assistants-list plants the factory 助手', async () => {
+    const { AssistantStore } = await import('@dsh-yzj/tool-yzj/src/assistants.ts')
+    const store = new AssistantStore()
+    await store.ensureDefault()
+    const ctx = mountBridge({})
+    ctx.provide('yzjAssistants', {
+      store,
+      enqueue: async (_id: string, job: () => Promise<void>) => job(),
+    })
+    const handler = createRpcHandler(ctx, { list: () => [], decide: () => false })
+    const listed = await handler('assistants-list', {}, undefined as never)
+    expect(listed.ok).toBe(true)
+    const assistants = (listed.ok ? listed.value : { assistants: [] }) as { assistants: Array<{ id: string; name: string }> }
+    expect(assistants.assistants[0]).toMatchObject({ id: 'default', name: '助手' })
+  })
+
+  it('assistant-ask / thread-ask / projection round-trip without a live followup', async () => {
+    const { AssistantStore } = await import('@dsh-yzj/tool-yzj/src/assistants.ts')
+    const store = new AssistantStore()
+    await store.ensureDefault()
+    const ctx = mountBridge({})
+    ctx.provide('yzjAssistants', {
+      store,
+      enqueue: async (_id: string, job: () => Promise<void>) => job(),
+    })
+    ctx.provide('agents', {
+      get: () => ({ session: { events: [] } }),
+      resume: async () => {},
+      create: async () => {},
+    })
+    const handler = createRpcHandler(ctx, { list: () => [], decide: () => false })
+    const asked = await handler('assistant-ask', { assistantId: 'default', text: '昨天群里说了什么' }, undefined as never)
+    expect(asked.ok).toBe(true)
+    const dm = await handler('assistant-projection', { assistantId: 'default' }, undefined as never)
+    expect(dm.ok).toBe(true)
+    const bubbles = (dm.ok ? dm.value : { bubbles: [] }) as { bubbles: Array<{ role: string; text: string }>; processing: boolean }
+    expect(bubbles.bubbles.some(row => row.role === 'user' && row.text === '昨天群里说了什么')).toBe(true)
+    expect(bubbles.bubbles.some(row => row.role === 'assistant')).toBe(true)
+    expect(bubbles.processing).toBe(false)
+
+    const threadAsk = await handler('assistant-thread-ask', {
+      assistantId: 'default', groupId: 'g-a', msgId: 'm1', text: '看这条',
+    }, undefined as never)
+    expect(threadAsk.ok).toBe(true)
+    const threads = await handler('assistant-threads', { groupId: 'g-a' }, undefined as never)
+    const packed = (threads.ok ? threads.value : { threads: [] }) as { threads: Array<{ msgId: string; bubbles: unknown[] }> }
+    expect(packed.threads[0]?.msgId).toBe('m1')
+    expect(packed.threads[0]?.bubbles.length).toBeGreaterThan(0)
+  })
 })

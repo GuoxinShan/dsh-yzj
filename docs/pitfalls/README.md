@@ -64,3 +64,6 @@
 | 47 | 0.1.2 client-modules 只扫精确包名：ui-yzj 子路径行没有浏览器半 | monobundle + harness ≥ 0.1.2 | [pitfall-047-client-modules-package-root.md](pitfall-047-client-modules-package-root.md) |
 | 48 | 0.1.2 的 `dsh-client-store` 种子在 0.1.1 桌面上不存在：v0.1.2 静态导入整面 Failed to load plugins | ui-yzj `defineStore` / Oh My DSH rc.18 | [pitfall-048-store-seed-dual-runtime.md](pitfall-048-store-seed-dual-runtime.md) |
 | 49 | yzj-cli 0.1.6 高风险缺 `--yes` 是 exit 10；exit 3 改成认证失败 | tool-yzj `failureDigest` / 任何按退出码分流 CLI 失败 | [pitfall-049-cli-exit10-vs-auth-exit3.md](pitfall-049-cli-exit10-vs-auth-exit3.md) |
+| 50 | 单占槽二次 register 抛错：不能真占 `conversation` / `sidebar.workspaces` | ui-yzj IM 壳 occupancy | [pitfall-050-single-slot-second-register.md](pitfall-050-single-slot-second-register.md) |
+| 51 | 只跑 ui-yzj tsdown 不 copy：DSH 仍加载根 `lib/client.js` 旧 overlay | ui-yzj client bundle / 安装态 | [pitfall-051-bundle-copy-client.md](pitfall-051-bundle-copy-client.md) |
+| 52 | 藏官方 InputBar 不能只查 `[data-composer-seat]`（alpha.3 无此属性；rc.7 overlay 不卸 fallback） | ui-yzj IM occupancy / Oh My DSH 0.1.2-alpha.3 | [pitfall-052-host-composer-hide-alpha3.md](pitfall-052-host-composer-hide-alpha3.md) |

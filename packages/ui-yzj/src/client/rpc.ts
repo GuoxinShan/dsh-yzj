@@ -94,6 +94,21 @@ export interface YzjPanelInject {
   homeBackfill?: (sessionId: string, opts?: { beforeMsgId?: string; limit?: number; groupId?: string }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
   /** DSH「发进群」: optimistic ② + CLI send, no user-turn. */
   homeSend?: (sessionId: string, content: string | undefined, opts?: YzjPanelInject['sendMessageOpts'] & { groupId?: string }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  assistantsList?: () => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  assistantsCreate?: (name: string, prompt?: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  assistantAsk?: (assistantId: string, text: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  assistantThreadAsk?: (input: {
+    assistantId: string
+    groupId: string
+    msgId: string
+    text: string
+    groupName?: string
+    originWho?: string
+    originText?: string
+  }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  assistantProjection?: (input: { assistantId?: string; groupId?: string; msgId?: string; threadsGroupId?: string }) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  assistantThreads?: (groupId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
+  assistantProcess?: (assistantId: string) => Promise<{ ok: true; value: unknown } | { ok: false; error: YzjRpcError }>
 }
 
 /** Build the inject face from a connection handle; unavailable → failed calls. */
@@ -178,5 +193,15 @@ export function createYzjPanelInject(connection: ConnectionHandle | undefined): 
       ...(opts?.atOpenIds === undefined ? {} : { atOpenIds: opts.atOpenIds }),
       ...(opts?.atAll !== true ? {} : { atAll: true }),
     }),
+    assistantsList: () => call('assistants-list', {}),
+    assistantsCreate: (name, prompt) => call('assistants-create', {
+      name,
+      ...(prompt === undefined || prompt === '' ? {} : { prompt }),
+    }),
+    assistantAsk: (assistantId, text) => call('assistant-ask', { assistantId, text }),
+    assistantThreadAsk: (input) => call('assistant-thread-ask', input),
+    assistantProjection: (input) => call('assistant-projection', input),
+    assistantThreads: (groupId) => call('assistant-threads', { groupId }),
+    assistantProcess: (assistantId) => call('assistant-process', { assistantId }),
   }
 }

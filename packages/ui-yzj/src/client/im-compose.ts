@@ -41,3 +41,51 @@ export function resolveAtMentions(content: string, candidates: readonly AtCandid
   }
   return { ok: true, atOpenIds, atAll }
 }
+
+/** One predefined assistant the group composer can @. */
+export interface AssistantAtCandidate {
+  readonly id: string
+  readonly name: string
+}
+
+/** Result of intercepting an @助手 send so it never hits Yunzhijia. */
+export type AssistantAtIntercept =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'empty' }
+  | { readonly kind: 'need-anchor'; readonly assistantId: string }
+  | { readonly kind: 'ask'; readonly assistantId: string; readonly text: string }
+
+const AT_TOKEN = /@([^\s@，,、]+)/g
+
+/**
+ * First @ token that matches an assistant name (exact). Assistants are
+ * tried before people; empty composer `@助手` is `empty` (must not post).
+ */
+export function interceptAssistantAt(
+  content: string,
+  assistants: readonly AssistantAtCandidate[],
+  hasReplyTarget: boolean,
+): AssistantAtIntercept {
+  const trimmed = content.trim()
+  if (trimmed === '') return { kind: 'none' }
+  const tokens = [...trimmed.matchAll(AT_TOKEN)].map(match => match[1] ?? '')
+  if (tokens.length === 0) return { kind: 'none' }
+  let assistantId: string | undefined
+  for (const token of tokens) {
+    const hit = assistants.find(row => row.name === token || (token === '助手' && row.id === 'default'))
+    if (hit !== undefined) {
+      assistantId = hit.id
+      break
+    }
+  }
+  if (assistantId === undefined) return { kind: 'none' }
+  const without = trimmed.replace(AT_TOKEN, (whole, name: string) => {
+    const hit = assistants.find(row => row.name === name || (name === '助手' && row.id === 'default'))
+    return hit !== undefined ? '' : whole
+  }).trim()
+  if (without === '' && tokens.every(token => assistants.some(row => row.name === token || (token === '助手' && row.id === 'default')))) {
+    return { kind: 'empty' }
+  }
+  if (!hasReplyTarget) return { kind: 'need-anchor', assistantId }
+  return { kind: 'ask', assistantId, text: without === '' ? '请看这条消息' : without }
+}
