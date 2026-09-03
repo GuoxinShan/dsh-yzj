@@ -43,6 +43,7 @@
     "typecheck": "pnpm -r --sort typecheck",
     "test": "vitest run",
     "bundle": "pnpm --filter @dsh-yzj/ui-yzj bundle && node scripts/copy-client.mjs",
+    "check:dist": "node scripts/check-dist-fresh.mjs",
     "clean": "pnpm -r exec rm -rf lib && rm -rf lib"
   },
   "dependencies": {

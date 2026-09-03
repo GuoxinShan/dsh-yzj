@@ -23,7 +23,8 @@
 
 ```sh
 pnpm run build                        # 六包 + 聚合 lib
-pnpm test                             # 255 绿（质量门）
+pnpm test                             # 质量门
+pnpm run check:dist                   # 门：随包 lib/ 必须与 src/ 同步（重建后 git diff -- lib/ 为空）
 git add -A && git commit -m "release(v0.1.0): …"
 git push origin main
 git tag -f v0.1.0 && git push origin v0.1.0 --force
@@ -33,6 +34,7 @@ dsh plugin --profile release-check add github:GuoxinShan/dsh-yzj#v0.1.0
 
 - tag 打在新 main 上（monobundle 后不再有独立 release 分支）；
 - `--force` 重打 tag 仅当上一版 tag 指向旧结构时。
+- **`check:dist` 是硬门**：git 装的人拿到的是随包 `lib/` 原样，`lib/` 落后于 `src/` 会静默发旧行为（曾致工作台会话列表恒空，见 pitfall-050）。该脚本用当前源码重建 `lib/` 再 `git diff --exit-code -- lib/`；client bundle 已是字节稳定（CSS module 键排序，见 tsdown.shared.ts），故 diff 非空即为真陈旧。CI 同名工作流 `.github/workflows/dist-fresh.yml` 在 PR 上把关。
 
 ## 2. 安装形态（使用者）
 

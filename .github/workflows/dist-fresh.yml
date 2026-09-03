@@ -1,0 +1,44 @@
+# Guards against shipping a stale `lib/` (git-installable artifact) that lags
+# `src/`. Rebuilds from source and fails if `git diff -- lib/` is non-empty.
+# See docs/pitfalls/pitfall-050 for the failure mode this prevents.
+name: dist-fresh
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # The workspace's link: deps resolve to a sibling deepseek-harness
+      # checkout; its client packages ship type/lib artifacts only after a
+      # build (AGENTS.md「兄弟 checkout 是唯一事实源」).
+      - name: Clone sibling harness
+        run: git clone --depth 1 --branch dsh-v0.1.2-alpha.5 https://github.com/deepseek-ai/deepseek-harness.git "$GITHUB_WORKSPACE/../deepseek-harness"
+
+      - name: Build harness lib
+        working-directory: ${{ github.workspace }}/../deepseek-harness
+        run: |
+          pnpm install --frozen-lockfile || pnpm install
+          pnpm run build:lib
+
+      - name: Install workspace
+        run: pnpm install --frozen-lockfile || pnpm install
+
+      - name: Test
+        run: pnpm test
+
+      - name: Shipped lib/ is in sync with src/
+        run: pnpm run check:dist

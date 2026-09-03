@@ -133,8 +133,14 @@ function clientConfig(id: string, entry: string): UserConfig {
           cssModules: { pattern: '[hash]_[local]' },
           minify: true,
         })
+        // Sort by local name so the emitted class map is byte-stable across
+        // builds (lightningcss's export order is not deterministic); a stable
+        // bundle lets a `git diff --exit-code lib/` gate catch a stale shipped
+        // artifact without false positives (see docs/pitfalls/pitfall-050).
         const classMap: Record<string, string> = {}
-        for (const [local, exp] of Object.entries(cssExports ?? {})) classMap[local] = exp.name
+        for (const local of Object.keys(cssExports ?? {}).sort()) {
+          classMap[local] = (cssExports ?? {})[local]!.name
+        }
         return [
           `const css = ${JSON.stringify(code.toString())};`,
           `const tagId = ${JSON.stringify(`${id}/${basename(fileId)}`)};`,
