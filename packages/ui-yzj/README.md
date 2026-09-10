@@ -7,12 +7,12 @@ Yunzhijia browser surface, dual-face package (`dsh.client`, `platform: web`).
 (factory 「助手」). Yunzhijia groups and colleague DMs are people rooms.
 IM occupancy hides the folder tree, New Session, cwd, and DSH session ids.
 A persistent **消息 / 会话** switch (I16) restores the official local-session
-workbench; 查看过程 is not that exit.
+workbench; 「查看过程」opens the assistant's real session on 会话.
 
 ## Node half
 
 Registers the `/yzj` Connection RPC channel over `ctx.yzjBridge` (authority
-`loopback`). Endpoints include the existing panel reads/writes (`workspaces`,
+`loopback`). Endpoints include IM/home reads/writes (`workspaces`,
 `groups`, `whoami`, `auth-*`, `home-fused` / `home-send`, `write-list` /
 `write-decide`, …) plus the IM shell: `assistants-list` / `assistants-create` /
 `assistant-ask` / `assistant-thread-ask` / `assistant-projection` /
@@ -25,10 +25,11 @@ channel. yzj-cli 0.1.6 `whoami` is `{success, identity, data}` — parse both
 Does **not** `register` layout `conversation` or `sidebar.workspaces` (those
 single seats are already taken; a second register throws — pitfall-050).
 
-- **Inbox** — portals into `[data-slot="sidebar.workspaces"]` under a
-  persistent 消息 / 会话 switch (`data-yzj-surface-switch`). 消息 hides the
-  folder tree; 会话 unsets `html[data-dsh-yzj-im]`, hides the inbox host, and
-  restores workspaces + official Chat. Settings stay on `sidebar.settings`.
+- **Inbox** — portals into `[data-slot="sidebar.workspaces"]`. The 消息 / 会话
+  switch (`data-yzj-surface-chrome`) mounts in sidebar chrome **above** host
+  「新会话」so 会话态 reads 表面 → 新会话 → 工作区. 消息 hides the folder tree;
+  会话 unsets `html[data-dsh-yzj-im]`, hides the inbox host, and restores
+  workspaces + official Chat. Settings stay on `sidebar.settings`.
   Sectioned list 助手 / 单聊 / 群 / 订阅通知 (`parseRecentGroups` +
   `inboxRoomKind`); avatars from `headerUrl`/`photoUrl`. Header `+` creates an
   assistant without opening 设置. IM-occupancy CSS hides New Session / session
@@ -41,9 +42,8 @@ single seats are already taken; a second register throws — pitfall-050).
   InputBar return. Workbench overlay / 云之家 dock / topic leftover chrome are
   **not mounted**.
 - **Assistant DM** — Grok-Bot bubbles from `present` + pending yzj confirm
-  cards. Muted 「查看过程」opens a digest of the hidden session (not a tool
-  trace in the bubble stream). Composer `+` opens calendar/docs as a pane,
-  not a home tab.
+  cards. Muted 「查看过程」switches to 会话 and focuses the hidden assistant
+  session (official Chat / 轨迹) — no IM process digest page.
 - **People room** — Yunzhijia timeline via `home-fused` / `home-send`. Header
   「问助手」. Reply + `@助手` (assistants listed first) intercepts send and
   hangs a 只你可见 local thread under that `msgId`. Empty `@助手` does not

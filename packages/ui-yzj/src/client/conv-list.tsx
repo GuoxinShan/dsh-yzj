@@ -91,16 +91,17 @@ export type InboxRoomKind = 'dm' | 'group' | 'subscription'
 
 /**
  * Classify an `im group recent` row into inbox sections.
- * Uses CLI fields only: `BOT-` id space (measured DM) plus recent-session
- * `groupType` (Yunzhijia conversation-list enum, not group-admin 内部/外部).
- * 1 = group, 2 = DM, ≥3 = public/service/notification; 0 counts as group.
+ * Measured against yzj-cli 0.1.6 `im group recent` (2026-09-10): conversation-list
+ * enum is **1 = 单聊, 2 = 群, ≥3 = 订阅/通知** — not the group-admin 内部/外部 enum,
+ * and not the inverted mapping that shipped in the first IM-shell cut.
+ * `BOT-` id space remains measured DM; `pubacc` → subscription.
  */
 export function inboxRoomKind(row: { groupId: string; groupType?: number }): InboxRoomKind {
   const id = row.groupId
   if (/pubacc/i.test(id)) return 'subscription'
   if (id.startsWith('BOT-')) return 'dm'
   const type = row.groupType
-  if (type === 2) return 'dm'
+  if (type === 1) return 'dm'
   if (type !== undefined && type >= 3) return 'subscription'
   return 'group'
 }

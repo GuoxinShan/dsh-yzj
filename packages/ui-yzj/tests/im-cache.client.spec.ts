@@ -5,7 +5,8 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
-  clearFileDataCache, peekFileData, resolveFileData, resolveSenders, senderNameOf, senderPhotoOf,
+  clearFileDataCache, clearGroupWindow, peekFileData, peekGroupWindow, putGroupWindow,
+  resolveFileData, resolveSenders, senderNameOf, senderPhotoOf,
 } from '../src/client/im-cache.ts'
 
 const ok = (value: unknown): { ok: true; value: unknown } => ({ ok: true, value })
@@ -55,5 +56,19 @@ describe('peekFileData', () => {
     })
     expect(again).toBe(dataUrl)
     clearFileDataCache()
+  })
+})
+
+describe('peekGroupWindow', () => {
+  it('returns the last put window for warm paint', () => {
+    clearGroupWindow()
+    expect(peekGroupWindow()).toBeUndefined()
+    putGroupWindow([{ groupId: 'g1' }], true)
+    expect(peekGroupWindow()).toEqual({
+      groups: [{ groupId: 'g1' }],
+      more: true,
+      stale: false,
+    })
+    clearGroupWindow()
   })
 })

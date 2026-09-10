@@ -1,32 +1,48 @@
 /**
  * Center IM shell occupying conversation / conversation.view.
+ * Keeps assistant / group panes mounted (CSS-hidden) so drafts and
+ * timelines survive inbox row switches; warm snapshots cover 消息↔会话 remounts.
+ * Tool process opens the real assistant session on 会话 (no IM peek page).
  */
 import { useEffect, useState } from 'react'
-import { useSyncExternalStore } from 'react'
 import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { YzjPanelInject } from './rpc.ts'
-import { createYzjStore, type YzjPanelState } from './stores.ts'
 import { YzjInbox } from './inbox.tsx'
 import { YzjAssistantDm } from './assistant-dm.tsx'
 import { YzjGroupRoom } from './group-room.tsx'
-import { YzjProcessPeek } from './process-peek.tsx'
-import { YzjDomainWorkbench } from './workbench-pane.tsx'
 import {
-  electImComposer, getImPane, getImSelection, markImOccupancy, setImPane, subscribeImSelection,
+  electImComposer, getImSelection, markImOccupancy, subscribeImSelection,
+  type ImSelection,
 } from './im-nav.ts'
-import { registerPanelController } from './panel-controller.ts'
 import type { WriteCardInjected } from './write-card.tsx'
 import { watchHostChrome } from './host-chrome.ts'
 import css from './shell.module.css'
 
-function useStoreOf(store: { getSnapshot: () => YzjPanelState; subscribe: (fn: () => void) => () => void }) {
-  return function useStore<R>(selector: (state: YzjPanelState) => R): R {
-    return useSyncExternalStore(
-      store.subscribe,
-      () => selector(store.getSnapshot()),
-      () => selector(store.getSnapshot()),
-    )
-  }
+function hideStyle(on: boolean): { display: 'none' } | undefined {
+  return on ? { display: 'none' } : undefined
+}
+
+function rememberId(prev: string[], id: string, max = 6): string[] {
+  if (prev[prev.length - 1] === id) return prev
+  const next = prev.filter(row => row !== id)
+  next.push(id)
+  return next.length <= max ? next : next.slice(next.length - max)
+}
+
+function rememberGroup(
+  prev: Array<{ groupId: string; groupName: string }>,
+  groupId: string,
+  groupName: string,
+  max = 6,
+): Array<{ groupId: string; groupName: string }> {
+  const without = prev.filter(row => row.groupId !== groupId)
+  without.push({ groupId, groupName })
+  return without.length <= max ? without : without.slice(without.length - max)
+}
+
+function selectionKey(sel: ImSelection): string {
+  if (sel.kind === 'group') return `g:${sel.groupId}`
+  return `a:${sel.assistantId}`
 }
 
 export function YzjImShell(props: {
@@ -36,67 +52,69 @@ export function YzjImShell(props: {
   mode: 'inbox' | 'conversation'
 }) {
   const [sel, setSel] = useState(getImSelection)
-  const [pane, setPane] = useState(getImPane)
-  const [store] = useState(() => createYzjStore().create())
-  const useStore = useStoreOf(store)
+  const [seenAssistants, setSeenAssistants] = useState<string[]>(() => {
+    const cur = getImSelection()
+    return [cur.kind === 'group' ? 'default' : cur.assistantId]
+  })
+  const [seenGroups, setSeenGroups] = useState<Array<{ groupId: string; groupName: string }>>(() => {
+    const cur = getImSelection()
+    return cur.kind === 'group'
+      ? [{ groupId: cur.groupId, groupName: cur.groupName ?? '' }]
+      : []
+  })
 
   useEffect(() => markImOccupancy(), [])
   useEffect(() => subscribeImSelection(() => {
     setSel(getImSelection())
-    setPane(getImPane())
   }), [])
-  useEffect(() => registerPanelController(store.actions, props.panel), [props.panel, store.actions])
+
+  useEffect(() => {
+    if (sel.kind === 'assistant') {
+      setSeenAssistants(prev => rememberId(prev, sel.assistantId))
+    }
+    if (sel.kind === 'group') {
+      setSeenGroups(prev => rememberGroup(prev, sel.groupId, sel.groupName ?? ''))
+    }
+  }, [sel])
 
   if (props.mode === 'inbox') {
     return <YzjInbox panel={props.panel} />
   }
 
-  if (pane === 'calendar' || pane === 'docs') {
-    return (
-      <div className={css.shell} data-testid="yzj-im-pane">
-        <header className={css.header} data-yzj-im-header="">
-          <button type="button" className={css.back} onClick={() => setImPane('')}>← 返回</button>
-          <div className={css.headerTitle}>{pane === 'calendar' ? '日程' : '知识库'}</div>
-        </header>
-        <div className={css.pane}>
-          <YzjDomainWorkbench
-            domain={pane}
+  const assistantOn = sel.kind === 'assistant'
+  const groupOn = sel.kind === 'group'
+
+  return (
+    <div className={css.shellStack} data-testid="yzj-im-shell" data-yzj-sel={selectionKey(sel)}>
+      {seenAssistants.map(id => (
+        <div
+          key={`a-${id}`}
+          style={hideStyle(!(assistantOn && sel.assistantId === id))}
+          hidden={!(assistantOn && sel.assistantId === id)}
+        >
+          <YzjAssistantDm
+            assistantId={id}
             panel={props.panel}
-            useStore={useStore}
-            actions={store.actions}
+            writeInject={props.writeInject}
           />
         </div>
-      </div>
-    )
-  }
+      ))}
 
-  if (sel.kind === 'peek') {
-    return (
-      <YzjProcessPeek
-        assistantId={sel.assistantId}
-        panel={props.panel}
-        {...(sel.groupId === undefined ? {} : { groupId: sel.groupId })}
-        {...(sel.groupName === undefined ? {} : { groupName: sel.groupName })}
-      />
-    )
-  }
-  if (sel.kind === 'group') {
-    return (
-      <YzjGroupRoom
-        groupId={sel.groupId}
-        groupName={sel.groupName ?? ''}
-        panel={props.panel}
-        defaultAssistantId="default"
-      />
-    )
-  }
-  return (
-    <YzjAssistantDm
-      assistantId={sel.assistantId}
-      panel={props.panel}
-      writeInject={props.writeInject}
-      onOpenPane={setImPane}
-    />
+      {seenGroups.map(row => (
+        <div
+          key={`g-${row.groupId}`}
+          style={hideStyle(!(groupOn && sel.groupId === row.groupId))}
+          hidden={!(groupOn && sel.groupId === row.groupId)}
+        >
+          <YzjGroupRoom
+            groupId={row.groupId}
+            groupName={row.groupName}
+            panel={props.panel}
+            defaultAssistantId="default"
+          />
+        </div>
+      ))}
+    </div>
   )
 }
 

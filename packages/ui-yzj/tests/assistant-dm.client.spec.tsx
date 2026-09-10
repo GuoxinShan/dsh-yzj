@@ -6,7 +6,8 @@ import { act } from 'react-dom/test-utils'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 import { YzjAssistantDm } from '../src/client/assistant-dm.tsx'
-import { getImSelection, resetImSelection } from '../src/client/im-nav.ts'
+import { clearImViewCache, putAssistantDmSnapshot } from '../src/client/im-view-cache.ts'
+import { getImSelection, getImSurface, resetImSelection } from '../src/client/im-nav.ts'
 import type { YzjPanelInject } from '../src/client/rpc.ts'
 import type { WriteCardInjected } from '../src/client/write-card.tsx'
 
@@ -20,11 +21,12 @@ const writeInject: WriteCardInjected = {
 
 function panelOf(): YzjPanelInject {
   const asked: string[] = []
-  return {
+  const focused: string[] = []
+  const panel = {
     assistantProjection: async () => ({
       ok: true,
       value: {
-        assistant: { id: 'default', name: '助手' },
+        assistant: { id: 'default', name: '助手', sessionId: 'yzj-assistant-default' },
         processing: false,
         bubbles: [
           { id: 'u1', role: 'user', text: '帮我看看产品群昨天说了什么' },
@@ -42,7 +44,10 @@ function panelOf(): YzjPanelInject {
       asked.push(text)
       return { ok: true, value: { sessionId: 'yzj-assistant-default' } }
     },
-  } as unknown as YzjPanelInject
+    focusBoundSession: (id: string) => { focused.push(id) },
+    focused,
+  }
+  return panel as unknown as YzjPanelInject & { focused: string[] }
 }
 
 async function flush(): Promise<void> {
@@ -53,14 +58,18 @@ async function flush(): Promise<void> {
 }
 
 describe('YzjAssistantDm', () => {
-  afterEach(() => { resetImSelection() })
+  afterEach(() => {
+    resetImSelection()
+    clearImViewCache()
+  })
 
   it('renders bubbles and a confirm card, not a tool trace', async () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
     const root: Root = createRoot(container)
+    const panel = panelOf() as YzjPanelInject & { focused: string[] }
     act(() => {
-      root.render(<YzjAssistantDm assistantId="default" panel={panelOf()} writeInject={writeInject} />)
+      root.render(<YzjAssistantDm assistantId="default" panel={panel} writeInject={writeInject} />)
     })
     await flush()
     expect(container.textContent).toContain('专属助手 · 单聊')
@@ -71,10 +80,55 @@ describe('YzjAssistantDm', () => {
     expect(container.textContent).toContain('查看过程')
     expect(container.textContent).not.toContain('bash')
     expect(container.textContent).not.toContain('tool/call')
-    act(() => {
+    await act(async () => {
       container.querySelector<HTMLButtonElement>('[data-testid="yzj-view-process"]')?.click()
+      await Promise.resolve()
+      await Promise.resolve()
     })
-    expect(getImSelection()).toEqual({ kind: 'peek', assistantId: 'default' })
+    expect(getImSurface()).toBe('session')
+    expect(panel.focused).toEqual(['yzj-assistant-default'])
+    expect(getImSelection().kind).not.toBe('peek' as never)
+    act(() => { root.unmount() })
+  })
+
+  it('paints cached bubbles and draft before projection resolves', async () => {
+    putAssistantDmSnapshot('default', {
+      name: '助手',
+      bubbles: [{ id: 'c1', role: 'assistant', text: '缓存气泡' }],
+      processing: false,
+      writes: [],
+      draft: '未发送草稿',
+    })
+    let resolveProj: ((value: { ok: true; value: unknown }) => void) | undefined
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root: Root = createRoot(container)
+    act(() => {
+      root.render(<YzjAssistantDm
+        assistantId="default"
+        panel={{
+          assistantProjection: () => new Promise((resolve) => { resolveProj = resolve }),
+        } as unknown as YzjPanelInject}
+        writeInject={writeInject}
+      />)
+    })
+    expect(container.textContent).toContain('缓存气泡')
+    expect(container.querySelector('textarea')?.value).toBe('未发送草稿')
+    await act(async () => {
+      resolveProj?.({
+        ok: true,
+        value: {
+          assistant: { id: 'default', name: '助手' },
+          processing: false,
+          bubbles: [{ id: 'f1', role: 'assistant', text: '新鲜气泡' }],
+          writes: [],
+        },
+      })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(container.textContent).toContain('新鲜气泡')
+    expect(container.querySelector('textarea')?.value).toBe('未发送草稿')
     act(() => { root.unmount() })
   })
 })

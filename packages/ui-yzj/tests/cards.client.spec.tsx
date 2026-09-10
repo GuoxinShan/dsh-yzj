@@ -1,15 +1,13 @@
 // @vitest-environment jsdom
 /**
  * Browser-half component specs: the keyed tool card renders pending and
- * settled blocks (structured meta payloads, error states, digest fallback),
- * and the panel store/inject face behave as the components expect.
+ * settled blocks (structured meta payloads, error states, digest fallback).
  */
 import { act } from 'react-dom/test-utils'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it } from 'vitest'
 import type { ToolResultNode } from '@deepseek-ai/dsh-client-runtime/client'
 import { YzjToolCard } from '../src/client/cards.tsx'
-import { createYzjStore } from '../src/client/stores.ts'
 import { createYzjPanelInject } from '../src/client/rpc.ts'
 import type { YzjPanelInject } from '../src/client/rpc.ts'
 
@@ -95,24 +93,6 @@ describe('YzjToolCard', () => {
     const text = renderCard(block, 'yzj_im_message_send')
     expect(text).toContain('消息已发送')
     expect(text).not.toContain('6a7f1234e4b0abc')
-  })
-})
-
-describe('createYzjStore', () => {
-  it('initializes closed with the docs tab', () => {
-    const handle = createYzjStore()
-    const instance = handle.create()
-    expect(instance.getSnapshot().open).toBe(false)
-    expect(instance.getSnapshot().tab).toBe('docs')
-  })
-
-  it('bakes actions draft-stripped', () => {
-    const handle = createYzjStore()
-    const instance = handle.create()
-    instance.actions.setOpen(true)
-    instance.actions.setWorkspaces([{ id: 'kb1' }])
-    expect(instance.getSnapshot().open).toBe(true)
-    expect(instance.getSnapshot().workspaces).toEqual([{ id: 'kb1' }])
   })
 })
 

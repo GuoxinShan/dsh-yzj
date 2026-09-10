@@ -1277,16 +1277,36 @@ send 的 `--to-open-id` / `--at-open-id` / `--at-all` / `--reply-msg-id` / `--im
 | 助手 1..N | domain `yzj_assistants`；出厂 `default` / 「助手」；隐藏 session `yzj-assistant-*` + cwd `~/.dsh-yzj/assistants/<id>/` + 串行队列 | `assistants.spec.ts` |
 | `present` | 模型工具，写 IM 投影，不进 WRITE_SPECS，永不 `im message send`；回合结束回退 last assistant text | `assistants.spec.ts` present / fallback |
 | RPC | `assistants-list/create`、`assistant-ask`、`assistant-thread-ask`、`assistant-projection/threads/process` | `rpc.node.spec.ts` |
-| 收件箱 | 门户进 `sidebar.workspaces` 区域（不 register 单占座，pitfall-050）；四段 助手 / 单聊 / 群 / 订阅通知；`parseRecentGroups` 保留 `groupType`+`headerUrl`/`photoUrl`；`GroupAvatar`；inbox「新建助手」 | `inbox.client.spec.tsx` / `inbox-mount.client.spec.tsx` / `conv-list.client.spec.tsx` `inboxRoomKind` |
-| 助手 DM | Grok-Bot 气泡 + 确认卡 + 弱化「查看过程」；无 tool trace | `assistant-dm.client.spec.tsx` |
+| 收件箱 | 门户进 `sidebar.workspaces`；**默认混排**（助手+单聊+群按活跃）+ 可选分组四段；订阅沉底；`parseRecentGroups` / `inboxRoomKind`；header「+」新建；scroll load-more | `inbox.client.spec.tsx` / `inbox-mount` / `conv-list` `inboxRoomKind` |
+| 助手 DM | Grok-Bot 气泡 + 确认卡；「查看过程」切会话 focus 隐藏 session | `assistant-dm.client.spec.tsx`；`open-assistant-session.client.spec.tsx` |
 | 人群房间 | `home-send` 发群；回复 + `@助手` 拦截；只你可见本地线程；header「问助手」 | `group-room.client.spec.tsx` / `room-composer.spec.ts` intercept |
 | 身份 | 0.1.6 whoami：`data` + 同级 `identity`，不假定顶层 openId | `contact-parse.spec.ts` |
-| Occupancy | 不占 layout `conversation` / `sidebar.workspaces` 单座；占 `conversation.view` + composer chain 画 null；**CSS+DOM 收起官方 InputBar/统计/session chrome**（不依赖 `data-composer-seat`，pitfall-052）；消息态 CSS 藏 New Session / 文件夹树 / details / 宿主 tablist。**I16 消息/会话**：常驻 `data-yzj-surface-switch`；会话卸 `html[data-dsh-yzj-im]`、收起 inbox host、点宿主 Chat；切回消息保留 inbox 选中行 | pitfall-050 / 052；`host-chrome.ts`；`host-chrome.client.spec.tsx`；`inbox-mount.client.spec.tsx`；`im-nav.client.spec.tsx` |
+| Occupancy | 不占 layout `conversation` / `sidebar.workspaces` 单座；占 `conversation.view` + composer chain 画 null；**CSS+DOM 收起官方 InputBar/统计/session chrome**（不依赖 `data-composer-seat`，pitfall-052）；消息态 CSS 藏 New Session / 文件夹树 / details / 宿主 tablist。**I16 消息/会话**：常驻 `data-yzj-surface-switch`；会话卸 `html[data-dsh-yzj-im]`、收起 inbox host、点宿主 Chat、**CSS 藏「助手」view tab**（`data-yzj-im-view-tab`，登记保留）；切回消息保留 inbox 选中行 | pitfall-050 / 052；`host-chrome.ts`；`host-chrome.client.spec.tsx`；`inbox-mount.client.spec.tsx`；`im-nav.client.spec.tsx` |
 | 停止挂载 | 工作台 overlay、云之家 dock、`conversation.input.dock` 话题残留 | `src/client/index.ts` 不再 mount |
 
-**已知限制**：(a) 无 focused session 时 `conversation.view` 不画——依赖 GUI 已有当前会话；(b) V1 无回复目标的 `@助手` 不受理；(c) 日程/知识库只在 composer `+` / 设置，不是首页页签；(d) cloud agent 无 web GUI；宿主 chrome 隐藏由 jsdom 覆盖有/无 `data-composer-seat` 两种 DOM，真机须重启 GUI（host + 根 `lib/client.js`，pitfall-016/051）后对照截图验收；(e) 助手 DM 的 `input-source.ts` @ 芯片仍挂在官方 InputBar 上，IM 自绘 composer 是纯文本；(f) 未构建的兄弟 harness 上 `cards` / `panel-hooks` / `panel-switch` 三个旧 client spec 因缺 `dsh-client-runtime/lib/client.js` 无法加载——与本刀无关。
+**已知限制**：(a) ~~无 focused session 时 `conversation.view` 不画~~ → 消息态 `ensureImCanvas` 自动 focus 一条非 blank 会话（pitfall-054；列表全 blank 时仍无画布）；(b) V1 无回复目标的 `@助手` 不受理；(c) 日程/知识库只在 composer `+` / 设置，不是首页页签；(d) cloud agent 无 web GUI；宿主 chrome 隐藏由 jsdom 覆盖有/无 `data-composer-seat` 两种 DOM，真机须重启 GUI（host + 根 `lib/client.js`，pitfall-016/051）后对照截图验收；(e) 助手 DM 的 `input-source.ts` @ 芯片仍挂在官方 InputBar 上，IM 自绘 composer 是纯文本；(f) 未构建的兄弟 harness 上 `cards` / `panel-hooks` / `panel-switch` 三个旧 client spec 因缺 `dsh-client-runtime/lib/client.js` 无法加载——与本刀无关。
 
 **表面重做（同 PR，2026-09-03）**：真机 Oh My DSH / harness **0.1.2-alpha.3** 截图暴露双 composer、session 标题泄漏、扁平 inbox、无头像、无新建助手。本刀按 I13–I15 修；不恢复待办 / AI推进 / 入站机器人 / 话题 UI / 交给助手 / 悬浮球。
 
-**消息/会话出口（同 PR，2026-09-03）**：occupancy CSS 曾把 `[role=tablist]` / New Session / 文件夹树 / 宿主 composer 藏死，本地 session 不可达。I16 在 workspaces 顶部常驻「消息」「会话」；会话卸 `data-dsh-yzj-im` 并露出官方 DSH 工作台（文件夹树、session 列表、Chat、InputBar、Session 日志）。「查看过程」不是这个出口。文件夹树隐藏选择器必须带 `html[data-dsh-yzj-im]` 并排除页签，否则会话态仍盖住 workspaces。
+**消息/会话出口（同 PR，2026-09-03）**：occupancy CSS 曾把 `[role=tablist]` / New Session / 文件夹树 / 宿主 composer 藏死，本地 session 不可达。I16 在 workspaces 顶部常驻「消息」「会话」；会话卸 `data-dsh-yzj-im` 并露出官方 DSH 工作台（文件夹树、session 列表、Chat、InputBar、Session 日志）。「查看过程」= 切会话 + focus 助手 session（2026-09-10 已删 IM 过程摘要页）。文件夹树隐藏选择器必须带 `html[data-dsh-yzj-im]` 并排除页签，否则会话态仍盖住 workspaces。
+
+**会话态藏「助手」tab（2026-09-10）**：宿主 `conversation.view` tab ring 无 view-id 属性，IM 座 label「助手」会在会话态与「对话 / 轨迹」并排露出来，和侧栏表面开关重复。`im-nav` 给该 tab 打 `data-yzj-im-view-tab`；`html:not([data-dsh-yzj-im])` 下 CSS `display:none`。登记不卸（消息态仍要点回 `yzj-im`）。`im-nav.client.spec.tsx` 覆盖 stamp。
+
+**表面开关挪到「新会话」上方（2026-09-10）**：原先 portal 进 `sidebar.workspaces` 首子，会话态变成「新会话 → 消息/会话 → 工作区」，两套入口叠放难看。改为 `data-yzj-surface-chrome` 插在宿主 `button.newSession`（或 logoRow）之前；inbox 仍进 workspaces。顺序：表面开关 → 新会话（仅会话态可见）→ 工作区/收件箱。`inbox-mount.client.spec.tsx` 覆盖。
+
+**inbox 分类纠正 + 滚动加载（2026-09-10）**：`yzj-cli im group recent` 实测 `groupType` 1=单聊、2=群（首刀文档/代码写反，群全进「单聊」）。`inboxRoomKind` 与 I14 / 单测按实测改。IM 收件箱原先只拉 page=1、8s 轮询整表替换，触底无下一页；补 scroll load-more（limit≤20）且轮询只 merge 第 1 页。`inbox.client.spec.tsx` / `conv-list.client.spec.tsx` 覆盖。
+
+**去掉虚线「＋ 新建助手」（2026-09-10）**：列表里虚线引导行与 header「+」重复，观感像空态广告。I15 改为只保留搜索旁「+」展开命名；设置页目录仍可建。`inbox.client.spec.tsx` 断言 hint 不存在。
+
+**Grok 式混排 + 可选分组（2026-09-10）**：默认助手与单聊/群同一时间线（nomi/Grok Bot 联系人感）；订阅沉底。收件箱提供「混合 / 分组」切换，偏好 `dsh-yzj-inbox-layout`。I14 修订；`inbox.client.spec.tsx` 覆盖两态。
+
+**收件箱缓存（2026-09-10）**：切「会话」曾 `return null` 卸掉 `YzjInbox`，已加载页全部丢弃、回消息又冷拉。改为 CSS 隐藏保挂载；并接 `peekGroupWindow`/`putGroupWindow` + 模块快照做首屏暖启动（后台仍刷新）。
+
+**中间对话缓存（2026-09-10）**：助手 DM / 群房间切行曾 exclusive return 整树卸掉；`im-shell` 对已见过的助手/群保挂载；`im-view-cache` 暖启动气泡/草稿/threads/more。IM「查看过程」摘要页已删（改开会话）。
+
+**shellStack 包裹塌缩（2026-09-10）**：保挂载后中间栏曾只见 header+composer、时间线 height 0（消息其实已在 DOM）。`.shellStack > *:not([hidden])` 补 `flex:1`（pitfall-055）。
+
+**退役旧工作台页（2026-09-10）**：删 `panel.tsx` / `workbench-*` / `room-shell` / dock / home-chrome 等；IM 壳不再嵌日程·知识库面板（I8）；composer `+` 菜单去掉；工具卡「查看」仅群跳 IM，文档/日程仍在工具卡。
+
+**Oh My DSH boot（2026-09-10）**：desktop connection 的 `rpc.handle` 在错误 fiber 上碰 webServer；ui-yzj 改为自挂 `/yzj` 前缀路由（pitfall-053）。仅补 inject 不够。
 

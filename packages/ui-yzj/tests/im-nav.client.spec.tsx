@@ -47,6 +47,16 @@ describe('im occupancy surface', () => {
     stop()
   })
 
+  it('会话 stamps and keeps the IM view tab mark for CSS hide', () => {
+    const { im, chat } = hostTabs()
+    const stop = markImOccupancy()
+    expect(im.hasAttribute('data-yzj-im-view-tab')).toBe(true)
+    setImSurface('session')
+    expect(im.hasAttribute('data-yzj-im-view-tab')).toBe(true)
+    expect(chat.hasAttribute('data-yzj-im-view-tab')).toBe(false)
+    stop()
+  })
+
   it('clicking the host 助手 tab while in 会话 re-enters IM occupancy', () => {
     const { im, chat } = hostTabs()
     chat.addEventListener('click', () => {

@@ -12,7 +12,7 @@ import type {
   ReferenceCodec, ReferenceInsert,
 } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type { YzjPanelInject } from './rpc.ts'
-import type { YzjDragRef } from './panel.tsx'
+import type { YzjDragRef } from './drag-ref.ts'
 import { clearRefContextCache, fetchRefContext } from './context.ts'
 import { cliRows } from '../cli-payload.ts'
 

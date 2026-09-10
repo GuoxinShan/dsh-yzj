@@ -7,7 +7,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
 import { YzjGroupRoom } from '../src/client/group-room.tsx'
 import { YzjLocalThread } from '../src/client/local-thread.tsx'
-import { getImSelection, resetImSelection } from '../src/client/im-nav.ts'
+import { getImSelection, resetImSelection, setImSelection } from '../src/client/im-nav.ts'
 import { emitRoomReplyRequest } from '../src/client/reply-bus.ts'
 import type { YzjPanelInject } from '../src/client/rpc.ts'
 
@@ -150,6 +150,7 @@ describe('YzjGroupRoom', () => {
 
   it('does not post an empty @助手 to Yunzhijia', async () => {
     const sent: string[] = []
+    setImSelection({ kind: 'group', groupId: 'g-prod', groupName: '产品群' })
     const container = document.createElement('div')
     document.body.appendChild(container)
     const root: Root = createRoot(container)
@@ -176,7 +177,8 @@ describe('YzjGroupRoom', () => {
     act(() => { assistantHit?.click() })
     await flush()
     expect(sent).toEqual([])
-    expect(getImSelection().kind).toBe('assistant')
+    expect(getImSelection()).toEqual({ kind: 'group', groupId: 'g-prod', groupName: '产品群' })
+    expect(container.textContent).toContain('请先点某条消息的「回复」')
     act(() => { root.unmount() })
   })
 })

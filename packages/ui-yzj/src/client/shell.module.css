@@ -18,6 +18,12 @@
   display: none !important;
 }
 
+/* 会话: keep conversation.view registered (消息 still needs the seat) but do
+   not show a redundant 助手 tab beside 对话/轨迹 — surface switch is enough. */
+:global(html:not([data-dsh-yzj-im])) :global([role='tab'][data-yzj-im-view-tab]) {
+  display: none !important;
+}
+
 /* Host InputBar + session chrome. Do not use [class*='composerCard'] — that
    hits the IM .composerCard hash (pitfall-052). */
 :global(html[data-dsh-yzj-im]) :global([data-composer-seat]),
@@ -39,9 +45,9 @@
   border: 0 !important;
 }
 
-/* Folder tree only hides in IM occupancy. Always exclude the surface switch
-   and the inbox portal (pitfall-050). Unscoped, this would jail 会话. */
-:global(html[data-dsh-yzj-im]) :global([data-slot='sidebar.workspaces'] > :not([data-yzj-surface-root]):not([data-yzj-inbox-host]):not([data-yzj-surface-switch])) {
+/* Folder tree only hides in IM occupancy. Always exclude the inbox portal
+   (pitfall-050). Surface switch lives outside workspaces (above 新会话). */
+:global(html[data-dsh-yzj-im]) :global([data-slot='sidebar.workspaces'] > :not([data-yzj-inbox-host])) {
   display: none !important;
 }
 
@@ -100,6 +106,33 @@
   min-width: 0;
 }
 
+.layoutSwitch {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1, #1c1c1c);
+  border: 1px solid var(--dsw-alias-border-l2, #2a2a2a);
+}
+
+.layoutTab,
+.layoutTabOn {
+  border: 0;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary, #aaa);
+}
+
+.layoutTabOn {
+  background: var(--dsw-alias-interactive-bg-hover-solid, #2a2a2a);
+  color: var(--dsw-alias-label-primary, #eee);
+}
+
 .addBtn {
   flex: none;
   width: 32px;
@@ -151,26 +184,6 @@
 .createBox button:disabled {
   opacity: 0.4;
   cursor: default;
-}
-
-.createHint {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  margin: 0 0 8px;
-  padding: 8px 10px;
-  border: 1px dashed var(--dsw-alias-border-l2, #2a2a2a);
-  border-radius: 10px;
-  background: transparent;
-  color: var(--dsw-alias-label-secondary, #aaa);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.createHint:hover {
-  color: var(--dsw-alias-label-primary, #eee);
-  background: var(--dsw-alias-interactive-bg-hover-solid, #1e1e1e);
 }
 
 .sectionTitle {
@@ -225,6 +238,21 @@
   min-height: 0;
   overflow: auto;
   padding: 4px 6px 12px;
+}
+
+.inboxMore,
+.inboxMoreMuted {
+  margin: 8px 10px 4px;
+  font-size: 12px;
+  text-align: center;
+}
+
+.inboxMore {
+  color: var(--dsw-alias-label-secondary, #aaa);
+}
+
+.inboxMoreMuted {
+  color: var(--dsw-alias-label-tertiary, #666);
 }
 
 .row,
@@ -301,6 +329,28 @@
   min-height: 0;
   background: var(--dsw-alias-bg-base, #111);
   color: var(--dsw-alias-label-primary, #eee);
+}
+
+.shellStack {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+/* Pane wrappers from im-shell: without flex fill, .shell height:100% collapses
+   to header+composer and .body (flex:1) becomes 0 — messages load but invisible
+   (pitfall-055). */
+.shellStack > *:not([hidden]) {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.shellStack > [hidden] {
+  display: none !important;
+  flex: none;
 }
 
 .header {

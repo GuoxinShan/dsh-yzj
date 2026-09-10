@@ -11,24 +11,25 @@ describe('inboxRoomKind / parseRecentGroups', () => {
   it('keeps groupType and headerUrl/photoUrl from CLI recent rows', () => {
     const parsed = parseRecentGroups({
       list: [
-        { groupId: 'g-ops', groupName: '灵基全员运营群', groupType: 1, headerUrl: 'https://x/ops.png', lastMsg: { content: 'a' } },
-        { groupId: 'BOT-chen', groupName: '陈炳坤', groupType: '2', photoUrl: 'https://x/chen.png', lastMsg: { content: 'b' } },
+        { groupId: 'g-ops', groupName: '灵基全员运营群', groupType: 2, headerUrl: 'https://x/ops.png', lastMsg: { content: 'a' } },
+        { groupId: 'u-chen', groupName: '陈炳坤', groupType: 1, photoUrl: 'https://x/chen.png', lastMsg: { content: 'b' } },
         { groupId: 'pubacc-1', groupName: '公司发文', groupType: 3, lastMsg: { content: 'c' } },
       ],
     })
-    expect(parsed.rooms[0]).toMatchObject({ groupId: 'g-ops', groupType: 1, headerUrl: 'https://x/ops.png' })
-    expect(parsed.rooms[1]).toMatchObject({ groupId: 'BOT-chen', groupType: 2, headerUrl: 'https://x/chen.png' })
+    expect(parsed.rooms[0]).toMatchObject({ groupId: 'g-ops', groupType: 2, headerUrl: 'https://x/ops.png' })
+    expect(parsed.rooms[1]).toMatchObject({ groupId: 'u-chen', groupType: 1, headerUrl: 'https://x/chen.png' })
     expect(inboxRoomKind(parsed.rooms[0]!)).toBe('group')
     expect(inboxRoomKind(parsed.rooms[1]!)).toBe('dm')
     expect(inboxRoomKind(parsed.rooms[2]!)).toBe('subscription')
   })
 
-  it('classifies screenshot-shaped rows into 单聊 / 群 / 订阅通知', () => {
-    expect(inboxRoomKind({ groupId: 'g-ops', groupType: 1 })).toBe('group')
-    expect(inboxRoomKind({ groupId: 'BOT-chen', groupType: 2 })).toBe('dm')
+  it('classifies measured CLI groupType: 1=单聊 2=群 ≥3=订阅', () => {
+    expect(inboxRoomKind({ groupId: 'g-ops', groupType: 2 })).toBe('group')
+    expect(inboxRoomKind({ groupId: 'u-chen', groupType: 1 })).toBe('dm')
+    expect(inboxRoomKind({ groupId: 'BOT-chen' })).toBe('dm')
     expect(inboxRoomKind({ groupId: 'g-pub', groupType: 3 })).toBe('subscription')
     expect(inboxRoomKind({ groupId: 'g-svc', groupType: 4 })).toBe('subscription')
-    expect(inboxRoomKind({ groupId: 'g-todo', groupType: 5 })).toBe('subscription')
+    expect(inboxRoomKind({ groupId: 'g-todo', groupType: 8 })).toBe('subscription')
     expect(inboxRoomKind({ groupId: 'pubacc-x' })).toBe('subscription')
     expect(inboxRoomKind({ groupId: 'plain-group' })).toBe('group')
   })

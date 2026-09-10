@@ -6,7 +6,7 @@
  * Pure async helper; no hooks, no runtime services beyond the inject face.
  */
 import type { YzjPanelInject } from './rpc.ts'
-import type { YzjDragRef } from './panel.tsx'
+import type { YzjDragRef } from './drag-ref.ts'
 import { unwrapCli, cliRows } from '../cli-payload.ts'
 
 /** In-memory ref → context cache, keyed by a stable ref string. */

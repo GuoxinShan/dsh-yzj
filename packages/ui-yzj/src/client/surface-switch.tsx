@@ -1,6 +1,6 @@
 /**
- * Persistent 消息 / 会话 occupancy switch (I16). Lives above the inbox portal
- * so it remains visible after `html[data-dsh-yzj-im]` is unset.
+ * Persistent 消息 / 会话 occupancy switch (I16). Mounted in sidebar chrome
+ * above host「新会话」so 会话态 reads 表面 → 新会话 → 工作区.
  */
 import type { ImSurface } from './im-nav.ts'
 import { setImSurface } from './im-nav.ts'

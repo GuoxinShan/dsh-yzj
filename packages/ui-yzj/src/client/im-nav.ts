@@ -1,5 +1,5 @@
 /**
- * IM-shell selection bus: assistant DM vs Yunzhijia people room vs process peek,
+ * IM-shell selection bus: assistant DM vs Yunzhijia people room,
  * plus the 消息 / 会话 occupancy switch (I16). Module-level so inbox
  * (sidebar.workspaces) and the conversation occupy do not share a React tree.
  */
@@ -9,7 +9,6 @@ import { watchHostChrome } from './host-chrome.ts'
 export type ImSelection =
   | { readonly kind: 'assistant'; readonly assistantId: string }
   | { readonly kind: 'group'; readonly groupId: string; readonly groupName?: string }
-  | { readonly kind: 'peek'; readonly assistantId: string; readonly groupId?: string; readonly groupName?: string }
 
 /** Default surface is IM; `session` restores native DSH (I16). */
 export type ImSurface = 'im' | 'session'
@@ -17,8 +16,6 @@ export type ImSurface = 'im' | 'session'
 const DEFAULT: ImSelection = { kind: 'assistant', assistantId: 'default' }
 
 let current: ImSelection = DEFAULT
-export type ImPane = '' | 'calendar' | 'docs'
-let pane: ImPane = ''
 let surface: ImSurface = 'im'
 const listeners = new Set<() => void>()
 
@@ -33,6 +30,22 @@ function isSurfaceSwitchTab(node: Element): boolean {
 function findImViewTab(): HTMLElement | undefined {
   return [...document.querySelectorAll<HTMLElement>('[role="tab"]')]
     .find(node => !isSurfaceSwitchTab(node) && node.textContent?.trim() === '助手')
+}
+
+/**
+ * Host tab buttons have no view-id attribute — stamp ours so 会话 CSS can
+ * hide the IM seat without unregistering conversation.view (still needed for
+ * 消息). Surface switch stays unmarked.
+ */
+function markImViewTab(): void {
+  if (typeof document === 'undefined') return
+  for (const node of document.querySelectorAll<HTMLElement>('[data-yzj-im-view-tab]')) {
+    if (node.textContent?.trim() !== '助手' || isSurfaceSwitchTab(node)) {
+      node.removeAttribute('data-yzj-im-view-tab')
+    }
+  }
+  const tab = findImViewTab()
+  if (tab !== undefined) tab.setAttribute('data-yzj-im-view-tab', '')
 }
 
 function findHostChatTab(): HTMLElement | undefined {
@@ -51,17 +64,12 @@ function findHostChatTab(): HTMLElement | undefined {
 
 function applyDom(): void {
   if (typeof document === 'undefined') return
+  markImViewTab()
   if (surface === 'im') {
     document.documentElement.setAttribute('data-dsh-yzj-im', '')
-    if (current.kind === 'peek') {
-      document.documentElement.setAttribute('data-dsh-yzj-peek', '')
-    } else {
-      document.documentElement.removeAttribute('data-dsh-yzj-peek')
-    }
     return
   }
   document.documentElement.removeAttribute('data-dsh-yzj-im')
-  document.documentElement.removeAttribute('data-dsh-yzj-peek')
 }
 
 function selectImViewTab(): void {
@@ -82,15 +90,14 @@ export function getImSelection(): ImSelection {
   return current
 }
 
-/** Select an inbox row (or process peek). Does not change occupancy surface. */
+/** Select an inbox row. Does not change occupancy surface. */
 export function setImSelection(next: ImSelection): void {
   current = next
-  pane = ''
   applyDom()
   notify()
 }
 
-/** Subscribe to selection, pane, and occupancy-surface changes. */
+/** Subscribe to selection and occupancy-surface changes. */
 export function subscribeImSelection(listener: () => void): () => void {
   listeners.add(listener)
   return () => { listeners.delete(listener) }
@@ -99,23 +106,11 @@ export function subscribeImSelection(listener: () => void): () => void {
 /** Test helper. Surface returns to the IM default; occupancy attrs are cleared. */
 export function resetImSelection(): void {
   current = DEFAULT
-  pane = ''
   surface = 'im'
   listeners.clear()
   if (typeof document !== 'undefined') {
     document.documentElement.removeAttribute('data-dsh-yzj-im')
-    document.documentElement.removeAttribute('data-dsh-yzj-peek')
   }
-}
-
-/** Composer `+` / 查看上下文: calendar or docs over the IM center. */
-export function getImPane(): ImPane {
-  return pane
-}
-
-export function setImPane(next: ImPane): void {
-  pane = next
-  notify()
 }
 
 /** Current occupancy: IM shell vs native local-session workbench. */
@@ -182,7 +177,6 @@ export function markImOccupancy(): () => void {
     stopChrome()
     if (surface === 'im') {
       document.documentElement.removeAttribute('data-dsh-yzj-im')
-      document.documentElement.removeAttribute('data-dsh-yzj-peek')
     }
   }
 }

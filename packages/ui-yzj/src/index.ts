@@ -32,8 +32,12 @@ import { join } from 'node:path'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'ui-yzj'
-/** Services required by the board channel plus the robot settings face. */
-export const inject = ['connection', 'yzjBridge']
+/**
+ * Services required by the board channel. `webServer` is required to mount the
+ * `/yzj` RPC HTTP prefix (Oh My DSH desktop `connection.rpc.handle` touches
+ * webServer on a fiber that does not declare it — see pitfall-053).
+ */
+export const inject = ['connection', 'yzjBridge', 'webServer']
 
 /** Internal failure envelope matching the closed RpcError union. */
 function internalError(message: string): { ok: false; error: { code: 'internal'; message: string; details: Record<string, never> } } {
@@ -821,6 +825,132 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
 export function apply(ctx: Context): void {
   const writeGate = applyWriteGate(ctx)
   const handler = createRpcHandler(ctx, writeGate)
-  ctx.connection.rpc.handle('/yzj', handler, { authority: 'loopback' })
+  mountYzjRpcChannel(ctx, handler)
   void ensureYzjHostWorkspace(ctx).catch(() => undefined)
+}
+
+const YZJ_CHANNEL = '/yzj'
+const ENDPOINT_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/
+
+type YzjWebServer = {
+  register: (route: {
+    kind: 'prefix'
+    path: string
+    handler: (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void | Promise<void>
+  }) => () => void
+}
+
+type YzjConnectionAuth = {
+  requestRejection?: (req: import('node:http').IncomingMessage) => number | undefined
+}
+
+/**
+ * Mount `/yzj/*` on the host webServer with the Connection auth fence.
+ *
+ * Oh My DSH ships a connection build whose `rpc.handle` registers routes via
+ * `owner.webServer` on a fiber that only injects `credentials` — third-party
+ * callers always throw `cannot get property "webServer" without inject`.
+ * Registering here (with `webServer` in this module's inject) matches webhook
+ * plugins and works on both desktop and alpha.5 Connection.
+ */
+function mountYzjRpcChannel(ctx: Context, handler: ConnectionRpcHandler): void {
+  const webServer = ctx.get('webServer') as YzjWebServer | undefined
+  if (webServer === undefined) {
+    throw new Error('ui-yzj: webServer service missing (inject declares it)')
+  }
+  const connection = ctx.connection as YzjConnectionAuth
+  ctx.effect(() => webServer.register({
+    kind: 'prefix',
+    path: YZJ_CHANNEL,
+    handler: async (req, res) => {
+      const rejection = connection.requestRejection?.(req)
+      if (rejection !== undefined) {
+        res.writeHead(rejection)
+        res.end(rejection === 401 ? 'unauthorized' : 'forbidden')
+        return
+      }
+      const pathname = new URL(req.url ?? '/', 'http://dsh.internal').pathname
+      const endpoint = yzjEndpointFromPath(pathname)
+      if (req.method !== 'POST' || endpoint === undefined) {
+        res.writeHead(404)
+        res.end('not found')
+        return
+      }
+      const contentType = String(req.headers['content-type'] ?? '').split(';', 1)[0]?.trim().toLowerCase()
+      if (contentType !== 'application/json') {
+        res.writeHead(415)
+        res.end('content type must be application/json')
+        return
+      }
+      let raw: unknown
+      try {
+        raw = JSON.parse((await readHttpBody(req)).toString('utf8'))
+      } catch {
+        res.writeHead(400)
+        res.end('body is not JSON')
+        return
+      }
+      const body = typeof raw === 'object' && raw !== null ? raw as Record<string, unknown> : {}
+      const rpcId = typeof body.rpcId === 'string' ? body.rpcId : 'invalid-request'
+      if (body.type !== 'client-request' || typeof body.method !== 'string') {
+        writeYzjRpc(res, rpcId, {
+          ok: false,
+          error: { code: 'gateway/bad-request', message: 'invalid client-request message', details: { issues: [] } },
+        })
+        return
+      }
+      if (body.method !== endpoint) {
+        writeYzjRpc(res, rpcId, {
+          ok: false,
+          error: {
+            code: 'gateway/bad-request',
+            message: `method ${JSON.stringify(body.method)} does not match endpoint ${JSON.stringify(endpoint)}`,
+            details: { issues: [] },
+          },
+        })
+        return
+      }
+      try {
+        const result = await handler(endpoint, body.payload, undefined)
+        writeYzjRpc(res, rpcId, result)
+      } catch (error) {
+        res.writeHead(500)
+        res.end(`handler failure: ${String(error)}`)
+      }
+    },
+  }), 'ui-yzj: /yzj rpc channel')
+}
+
+function yzjEndpointFromPath(pathname: string): string | undefined {
+  if (!pathname.startsWith(`${YZJ_CHANNEL}/`)) return undefined
+  const endpoint = pathname.slice(YZJ_CHANNEL.length + 1)
+  if (endpoint.split('/').some(segment =>
+    segment === '' || segment === '.' || segment === '..' || !ENDPOINT_SEGMENT.test(segment))) {
+    return undefined
+  }
+  return endpoint
+}
+
+function readHttpBody(req: import('node:http').IncomingMessage, maxBytes = 32 * 1024 * 1024): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = []
+    let size = 0
+    req.on('data', (chunk: Buffer) => {
+      size += chunk.byteLength
+      if (size > maxBytes) {
+        reject(new Error('body too large'))
+        req.destroy()
+        return
+      }
+      chunks.push(chunk)
+    })
+    req.on('end', () => resolve(Buffer.concat(chunks)))
+    req.on('error', reject)
+  })
+}
+
+function writeYzjRpc(res: import('node:http').ServerResponse, rpcId: string, result: unknown): void {
+  const body = JSON.stringify({ type: 'server-response', rpcId, result })
+  res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
+  res.end(body)
 }

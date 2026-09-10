@@ -12,6 +12,8 @@ import {
 import { onRoomReplyRequest, type RoomReplyTarget } from './reply-bus.ts'
 import { rememberImSeat } from './im-seat.ts'
 import { setImSelection } from './im-nav.ts'
+import { getGroupRoomSnapshot, putGroupRoomSnapshot } from './im-view-cache.ts'
+import { openAssistantSession } from './open-assistant-session.ts'
 import css from './shell.module.css'
 import homeCss from './home.module.css'
 
@@ -54,21 +56,49 @@ export function YzjGroupRoom(props: {
   panel: YzjPanelInject
   defaultAssistantId: string
 }) {
+  const seed = getGroupRoomSnapshot(props.groupId)
   const [assistants, setAssistants] = useState<AssistantAtCandidate[]>([{ id: 'default', name: '助手' }])
-  const [threads, setThreads] = useState<LocalThreadView[]>([])
-  const [draft, setDraft] = useState('')
+  const [threads, setThreads] = useState<LocalThreadView[]>(() => seed ? [...seed.threads] : [])
+  const [draft, setDraft] = useState(() => seed?.draft ?? '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [replyTo, setReplyTo] = useState<RoomReplyTarget | null>(null)
+  const [replyTo, setReplyTo] = useState<RoomReplyTarget | null>(() => seed?.replyTo ?? null)
   const [emojiOpen, setEmojiOpen] = useState(false)
   const [atOpen, setAtOpen] = useState(false)
-  const [speakers, setSpeakers] = useState<AtCandidate[]>([])
+  const [speakers, setSpeakers] = useState<AtCandidate[]>(() => seed ? [...seed.speakers] : [])
   const imageRef = useRef<HTMLInputElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     rememberImSeat({ groupId: props.groupId, sessionId: '', groupName: props.groupName })
   }, [props.groupId, props.groupName])
+
+  useEffect(() => {
+    const hit = getGroupRoomSnapshot(props.groupId)
+    if (hit !== undefined) {
+      setThreads([...hit.threads])
+      setDraft(hit.draft)
+      setReplyTo(hit.replyTo)
+      setSpeakers([...hit.speakers])
+    } else {
+      setThreads([])
+      setDraft('')
+      setReplyTo(null)
+      setSpeakers([])
+    }
+    setError('')
+    setEmojiOpen(false)
+    setAtOpen(false)
+  }, [props.groupId])
+
+  useEffect(() => {
+    putGroupRoomSnapshot(props.groupId, {
+      draft,
+      replyTo,
+      threads,
+      speakers,
+    })
+  }, [props.groupId, draft, replyTo, threads, speakers])
 
   useEffect(() => onRoomReplyRequest((target) => {
     setReplyTo(target)
@@ -136,11 +166,11 @@ export function YzjGroupRoom(props: {
   const sendText = async (content: string, extra?: YzjPanelInject['sendMessageOpts']): Promise<void> => {
     const intercepted = interceptAssistantAt(content, assistants, replyTo !== null)
     if (intercepted.kind === 'empty') {
-      setError('单独 @助手 不会发到群。请先回复一条消息，或打开助手单聊。')
+      setError('单独 @助手 不会发到群。请先点「回复」再 @，或点右上角「问助手」。')
       return
     }
     if (intercepted.kind === 'need-anchor') {
-      setError('V1：没有回复目标的 @助手 不受理，请先点「回复」或去助手单聊。')
+      setError('请先点某条消息的「回复」再 @助手；要单聊请点右上角「问助手」。')
       return
     }
     if (intercepted.kind === 'ask') {
@@ -188,8 +218,8 @@ export function YzjGroupRoom(props: {
   const pickAssistant = (row: AssistantAtCandidate): void => {
     setAtOpen(false)
     if (replyTo === null) {
-      setError('请先回复一条消息再 @助手，或打开助手单聊。')
-      setImSelection({ kind: 'assistant', assistantId: row.id })
+      // I6: no anchor → do not post; stay in the room (header「问助手」is the DM door).
+      setError('请先点某条消息的「回复」再 @助手；要单聊请点右上角「问助手」。')
       return
     }
     const rest = draft.replace(/@\S+/g, '').trim()
@@ -229,12 +259,7 @@ export function YzjGroupRoom(props: {
             return (
               <YzjLocalThread
                 thread={thread}
-                onPeek={() => setImSelection({
-                  kind: 'peek',
-                  assistantId: thread.assistantId,
-                  groupId: props.groupId,
-                  ...(props.groupName === '' ? {} : { groupName: props.groupName }),
-                })}
+                onPeek={() => { void openAssistantSession(props.panel, thread.assistantId) }}
               />
             )
           }}

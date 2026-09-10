@@ -18,7 +18,7 @@ const HOST_SELECTORS = [
   '[class*="sessionLogButton"]',
 ] as const
 
-const IM_OWNED = '[data-yzj-im-composer], [data-yzj-im-header], [data-yzj-inbox-host], [data-yzj-surface-switch], [data-yzj-surface-root], [data-testid="yzj-inbox"]'
+const IM_OWNED = '[data-yzj-im-composer], [data-yzj-im-header], [data-yzj-inbox-host], [data-yzj-surface-switch], [data-yzj-surface-chrome], [data-yzj-surface-root], [data-testid="yzj-inbox"]'
 
 function ownedByIm(node: Element): boolean {
   return node.closest(IM_OWNED) !== null

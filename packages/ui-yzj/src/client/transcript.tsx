@@ -6,6 +6,7 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { resolveSenders, senderNameOf } from './im-cache.ts'
+import { getFusedMore, putFusedMore } from './im-view-cache.ts'
 import { ImLightbox, MessageBody, SenderAvatar, typeLabelOf } from './im-render.tsx'
 import { emitRoomReplyRequest } from './reply-bus.ts'
 import type { YzjPanelInject } from './rpc.ts'
@@ -249,7 +250,7 @@ export function YzjFusedView(props: YzjFusedInjected) {
   const value = held.sessionId === viewKey ? held.value : (cached ?? { bound: false, items: [] })
   const phase = held.sessionId === viewKey ? held.phase : phaseOf(cached)
   const [error, setError] = useState('')
-  const [more, setMore] = useState(true)
+  const [more, setMore] = useState(() => getFusedMore(viewKey) ?? true)
   const [loadingOlder, setLoadingOlder] = useState(false)
   // Anchor auto-paging budget per viewKey (决策 39 后续): reset when the view swaps.
   const anchorPagesRef = useRef(0)
@@ -279,10 +280,15 @@ export function YzjFusedView(props: YzjFusedInjected) {
       phase: phaseOf(hit),
     })
     setNames(seedNames(hit?.items ?? []))
+    setMore(getFusedMore(viewKey) ?? true)
     setHighlightMsgId('')
     setUnclamped(new Set())
     setError('')
   }, [viewKey])
+
+  useEffect(() => {
+    putFusedMore(viewKey, more)
+  }, [viewKey, more])
 
   useEffect(() => {
     if (highlightMsgId === '') return

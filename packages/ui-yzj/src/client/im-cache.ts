@@ -47,10 +47,29 @@ export function getGroupWindow(): { groups: unknown[]; more: boolean } | undefin
   return { groups: groupCache.groups, more: groupCache.more }
 }
 
+/**
+ * Last known first group page for stale-while-revalidate paint.
+ * Returns even when older than GROUP_TTL; callers must still refresh.
+ */
+export function peekGroupWindow(): { groups: unknown[]; more: boolean; stale: boolean } | undefined {
+  loadPersisted()
+  if (groupCache === null) return undefined
+  return {
+    groups: groupCache.groups,
+    more: groupCache.more,
+    stale: Date.now() - groupCache.fetchedAt > GROUP_TTL,
+  }
+}
+
 /** Store (or refresh) the first group page. */
 export function putGroupWindow(groups: unknown[], more: boolean): void {
   groupCache = { groups, more, fetchedAt: Date.now() }
   scheduleSave()
+}
+
+/** Test helper: drop the in-memory + pending group-list cache. */
+export function clearGroupWindow(): void {
+  groupCache = null
 }
 
 /* ── Local read state: the CLI has no mark-read, so opening a group marks
@@ -139,9 +158,8 @@ function applyPersisted(raw: string): void {
     }
     if (Array.isArray(data.readState)) for (const [id, unread] of data.readState) readState.set(id, unread)
     if (Array.isArray(data.senders)) for (const [id, info] of data.senders) senderNames.set(id, info)
-    if (data.groups !== undefined && data.groups !== null) {
-      if (Date.now() - data.groups.fetchedAt <= GROUP_TTL) groupCache = data.groups
-    }
+    // Keep stale groups for warm paint; getGroupWindow still gates on TTL.
+    if (data.groups !== undefined && data.groups !== null) groupCache = data.groups
     if (Array.isArray(data.windows)) {
       for (const [id, windowData] of data.windows) {
         if (Date.now() - windowData.fetchedAt <= MESSAGE_TTL) messageCache.set(id, windowData)

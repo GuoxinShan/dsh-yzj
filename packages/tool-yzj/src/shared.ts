@@ -5,7 +5,8 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { JsonValue } from '@deepseek-ai/dsh-tools'
+/** Lossless JSON value (harness moved the export to dsh-util-values). */
+type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue }
 import type { YzjRunResult } from '@dsh-yzj/bridge'
 import type {} from '@dsh-yzj/bridge'
 

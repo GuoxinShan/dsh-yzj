@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest'
 import { decodeRef, encodeRef } from '../src/client/input-source.ts'
 import { clearRefContextCache, fetchRefContext } from '../src/client/context.ts'
 import type { YzjPanelInject } from '../src/client/rpc.ts'
-import type { YzjDragRef } from '../src/client/panel.tsx'
+import type { YzjDragRef } from '../src/client/drag-ref.ts'
 
 describe('encodeRef / decodeRef', () => {
   it('round-trips a full ref including group', () => {

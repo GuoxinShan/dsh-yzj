@@ -26,15 +26,14 @@ import {
   YzjHideHostComposer, selectImComposer, bindImConversationView,
 } from './im-shell.tsx'
 import { mountInbox } from './inbox-mount.tsx'
+import { ensureImCanvas, type ImCanvasSessionsFace } from './im-canvas.ts'
 import './shell.module.css'
 
-export { createYzjStore } from './stores.ts'
 export { createYzjPanelInject } from './rpc.ts'
 export type { YzjPanelInject, YzjRpcError } from './rpc.ts'
 export { focusBoundSession, bindAndFocusGroup } from './home-focus.ts'
-export type { YzjPanelState, YzjPanelActions, YzjTab } from './stores.ts'
-export type { YzjPanelProps } from './panel.tsx'
 export type { WriteCardInjected } from './write-card.tsx'
+export type { YzjDragRef } from './drag-ref.ts'
 
 /** Required services: the slot registry, connection transport, and sessions. */
 export const inject = ['slots', 'connection', 'sessions']
@@ -153,6 +152,14 @@ export function apply(ctx: ClientContext): void {
   // Portal mounts the 消息/会话 switch + inbox; occupancy CSS is I16-gated.
   ctx.effect(() => mountInbox(panelInject))
 
+  // Hero / blank 「新会话」 never mounts conversation.view — IM chrome hide
+  // then leaves a white center (pitfall-054). Focus any non-blank row once.
+  ctx.effect(() => {
+    const sessions = ctx.sessions as unknown as ImCanvasSessionsFace | undefined
+    if (sessions === undefined || typeof sessions.open !== 'function') return
+    return ensureImCanvas(sessions)
+  })
+
   // Center is IM (list tab) while surface=im. Composer chain paints null;
   // watchHostChrome collapses InputBar/stats (pitfall-052). 会话 unsets
   // html[data-dsh-yzj-im] so official Chat + InputBar return.
@@ -207,22 +214,14 @@ export function apply(ctx: ClientContext): void {
 }
 
 /**
- * The 查看上下文 jump (write card): drive the real panel (via the live
- * controller) onto the context the write targets. IM writes anchor on the
- * replied-to message when this write is a reply.
+ * The 查看上下文 jump (write card): focus the IM shell when the write targets
+ * a people room. Docs/calendar writes stay on the tool card (I8 — no panel).
  */
 function openWriteContext(record: YzjWriteRecord): void {
   const args = asRecord(record.args)
-  if (record.domain === 'im') {
-    const groupId = asString(args.groupId)
-    if (groupId === '') return
-    const replyTarget = asString(args.replyMsgId)
-    openPanelTarget({ kind: 'group', groupId }, replyTarget === '' ? undefined : replyTarget)
-  } else if (record.domain === 'doc' || record.domain === 'kb' || record.domain === 'sheet') {
-    const workspace = asString(args.workspace)
-    if (workspace !== '') openPanelTarget({ kind: 'workspace', workspaceId: workspace })
-  } else {
-    // Calendar writes: open the panel on the calendar tab as-is.
-    openPanelTarget({ kind: 'event', event: { id: '', startDate: 0, title: '' } })
-  }
+  if (record.domain !== 'im') return
+  const groupId = asString(args.groupId)
+  if (groupId === '') return
+  const replyTarget = asString(args.replyMsgId)
+  openPanelTarget({ kind: 'group', groupId }, replyTarget === '' ? undefined : replyTarget)
 }
