@@ -67,6 +67,11 @@ export function isYzjTopicSessionId(sessionId: string): boolean {
   return sessionId.startsWith('yzj-topic-')
 }
 
+/** Hidden assistant sessions. Never attach to the official 云之家 group. */
+export function isYzjAssistantSessionId(sessionId: string): boolean {
+  return sessionId.startsWith('yzj-assistant-')
+}
+
 /** Group/DM room hosts. These must not sit in the official 云之家 group. */
 export function isYzjRoomSessionId(sessionId: string): boolean {
   return sessionId.startsWith('yzj-home-')

@@ -5,7 +5,35 @@
 import { act } from 'react-dom/test-utils'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { buildConvRows, clearConvListHold, YzjConvList } from '../src/client/conv-list.tsx'
+import { buildConvRows, clearConvListHold, inboxRoomKind, parseRecentGroups, YzjConvList } from '../src/client/conv-list.tsx'
+
+describe('inboxRoomKind / parseRecentGroups', () => {
+  it('keeps groupType and headerUrl/photoUrl from CLI recent rows', () => {
+    const parsed = parseRecentGroups({
+      list: [
+        { groupId: 'g-ops', groupName: '灵基全员运营群', groupType: 2, headerUrl: 'https://x/ops.png', lastMsg: { content: 'a' } },
+        { groupId: 'u-chen', groupName: '陈炳坤', groupType: 1, photoUrl: 'https://x/chen.png', lastMsg: { content: 'b' } },
+        { groupId: 'pubacc-1', groupName: '公司发文', groupType: 3, lastMsg: { content: 'c' } },
+      ],
+    })
+    expect(parsed.rooms[0]).toMatchObject({ groupId: 'g-ops', groupType: 2, headerUrl: 'https://x/ops.png' })
+    expect(parsed.rooms[1]).toMatchObject({ groupId: 'u-chen', groupType: 1, headerUrl: 'https://x/chen.png' })
+    expect(inboxRoomKind(parsed.rooms[0]!)).toBe('group')
+    expect(inboxRoomKind(parsed.rooms[1]!)).toBe('dm')
+    expect(inboxRoomKind(parsed.rooms[2]!)).toBe('subscription')
+  })
+
+  it('classifies measured CLI groupType: 1=单聊 2=群 ≥3=订阅', () => {
+    expect(inboxRoomKind({ groupId: 'g-ops', groupType: 2 })).toBe('group')
+    expect(inboxRoomKind({ groupId: 'u-chen', groupType: 1 })).toBe('dm')
+    expect(inboxRoomKind({ groupId: 'BOT-chen' })).toBe('dm')
+    expect(inboxRoomKind({ groupId: 'g-pub', groupType: 3 })).toBe('subscription')
+    expect(inboxRoomKind({ groupId: 'g-svc', groupType: 4 })).toBe('subscription')
+    expect(inboxRoomKind({ groupId: 'g-todo', groupType: 8 })).toBe('subscription')
+    expect(inboxRoomKind({ groupId: 'pubacc-x' })).toBe('subscription')
+    expect(inboxRoomKind({ groupId: 'plain-group' })).toBe('group')
+  })
+})
 
 describe('buildConvRows', () => {
   it('prefixes 话题· when topic activity is newer than the last group message', () => {

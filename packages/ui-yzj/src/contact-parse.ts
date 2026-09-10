@@ -24,6 +24,11 @@ function firstNonEmpty(...values: unknown[]): string {
   return ''
 }
 
+function identityOf(json: unknown): Record<string, unknown> {
+  const envelope = asRecord(json)
+  return asRecord(envelope.identity)
+}
+
 function rowsOf(json: unknown): unknown[] {
   const peeled = unwrapCli(json)
   if (Array.isArray(peeled)) return peeled
@@ -38,12 +43,14 @@ function rowsOf(json: unknown): unknown[] {
   return Object.keys(record).length === 0 ? [] : [peeled]
 }
 
-/** Parse `contact user get` JSON into openId / name / photoUrl. */
+/** Parse `contact user get` / 0.1.6 `whoami` JSON into openId / name / photoUrl.
+ * Do not assume top-level openId: peel `data` and sibling `identity`. */
 export function parseContactUser(json: unknown): ContactUser {
+  const identity = identityOf(json)
   const user = asRecord(rowsOf(json)[0])
   return {
-    openId: firstNonEmpty(user.openId, user.oId),
-    name: firstNonEmpty(user.name, user.userName, user.nickName),
-    photoUrl: firstNonEmpty(user.photoUrl, user.photo, user.avatar),
+    openId: firstNonEmpty(user.openId, user.oId, identity.openId, identity.oId),
+    name: firstNonEmpty(user.name, user.userName, user.nickName, identity.name, identity.userName),
+    photoUrl: firstNonEmpty(user.photoUrl, user.photo, user.avatar, identity.photoUrl, identity.photo, identity.avatar),
   }
 }

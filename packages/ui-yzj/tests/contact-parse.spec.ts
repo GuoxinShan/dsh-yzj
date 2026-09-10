@@ -29,6 +29,14 @@ describe('parseContactUser', () => {
     })).toEqual({ openId: 'u1', name: '老黎', photoUrl: 'p.png' })
   })
 
+  it('parses 0.1.6 whoami when identity is the only openId (no top-level)', () => {
+    expect(parseContactUser({
+      success: true,
+      identity: { openId: 'u1', name: '老黎' },
+      data: {},
+    })).toEqual({ openId: 'u1', name: '老黎', photoUrl: '' })
+  })
+
   it('parses a single object and alternate field names', () => {
     expect(parseContactUser({ oId: 'u1', name: '老黎', photo: 'p.png' }))
       .toEqual({ openId: 'u1', name: '老黎', photoUrl: 'p.png' })

@@ -76,6 +76,7 @@ export const YZJ_TOOL_NAMES = [
   'yzj_im_group_members_remove',
   'yzj_file_upload',
   'yzj_file_download',
+  'present',
 ] as const
 
 /** Short human titles per tool family. */
@@ -133,6 +134,7 @@ const FAMILY_TITLES: Record<string, string> = {
   yzj_im_group_members_remove: '移出群成员',
   yzj_file_upload: '上传文件',
   yzj_file_download: '下载文件',
+  present: '对用户说',
 }
 
 type UnknownRecord = Record<string, unknown>

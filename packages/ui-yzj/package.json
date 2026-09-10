@@ -1,6 +1,6 @@
 {
   "name": "@dsh-yzj/ui-yzj",
-  "description": "Yunzhijia browser surface: rich tool-result cards for the yzj tool family plus a workspace panel (knowledge bases, agenda, recent chats, directory), backed by a bridge RPC channel",
+  "description": "Yunzhijia browser surface: IM shell (assistant DM + people rooms) plus rich tool-result cards, backed by a bridge RPC channel",
   "version": "0.1.0",
   "type": "module",
   "main": "lib/index.js",
@@ -28,6 +28,7 @@
         "@deepseek-ai/dsh-client-connection",
         "@deepseek-ai/dsh-client-ui-layout",
         "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-sidebar",
         "@deepseek-ai/dsh-client-ui-input-trigger",
         "@deepseek-ai/dsh-client-ui-tool"
       ],
@@ -42,8 +43,8 @@
   ],
   "license": "MIT",
   "scripts": {
-    "build": "tsc -b && tsdown",
-    "bundle": "tsdown --env.DSH_BUILD_FACE=client",
+    "build": "tsc -b && tsdown && node ../../scripts/copy-client.mjs",
+    "bundle": "tsdown --env.DSH_BUILD_FACE=client && node ../../scripts/copy-client.mjs",
     "typecheck": "tsc -b"
   },
   "dependencies": {

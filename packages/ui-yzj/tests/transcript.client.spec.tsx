@@ -303,6 +303,34 @@ describe('YzjFusedView', () => {
     expect(container.querySelector('[data-testid="yzj-room-row-m1"]')?.textContent).not.toContain('交给助手')
   })
 
+  it('shows 转发给助手 when the IM shell provides a handler', async () => {
+    const forwarded: string[] = []
+    const fused = roomFused([
+      { kind: 'im', time: 1, entry: { msgId: 'm1', sentAt: 1, fromName: '同事', content: '群里一句', origin: 'inbound', isSelf: false, status: 'acked' } },
+    ])
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    act(() => {
+      root.render(
+        <YzjFusedView
+          sessionId="yzj-home-g-a"
+          homeFused={async () => fused}
+          homeBackfill={async () => ({ ok: true, value: { appended: 0, skipped: 0 } })}
+          onForwardToAssistant={(entry) => { forwarded.push(entry.msgId) }}
+        />,
+      )
+    })
+    await flush()
+    expect(container.textContent).toContain('转发给助手')
+    expect(container.textContent).not.toContain('交给助手')
+    act(() => {
+      container.querySelector<HTMLButtonElement>('[data-testid="yzj-forward-assistant-m1"]')?.click()
+    })
+    expect(forwarded).toEqual(['m1'])
+    act(() => { root.unmount() })
+  })
+
   it('cache-miss first frame is 加载群消息, not 私密会话', async () => {
     let resolveFused: ((value: Rpc) => void) | undefined
     const pending = new Promise<Rpc>((resolve) => { resolveFused = resolve })

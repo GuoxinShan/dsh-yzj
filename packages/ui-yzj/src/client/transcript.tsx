@@ -4,8 +4,9 @@
  * canvas prototype (self right, others left). Agent work lives on yzj-topic-*.
  * Registered as conversation.view「群聊」— not a Session.append event type.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { resolveSenders, senderNameOf } from './im-cache.ts'
+import { getFusedMore, putFusedMore } from './im-view-cache.ts'
 import { ImLightbox, MessageBody, SenderAvatar, typeLabelOf } from './im-render.tsx'
 import { emitRoomReplyRequest } from './reply-bus.ts'
 import type { YzjPanelInject } from './rpc.ts'
@@ -69,6 +70,10 @@ export interface YzjFusedInjected {
   focusBoundSession?: (sessionId: string) => void
   fetchFileData?: YzjPanelInject['fetchFileData']
   fetchContact?: YzjPanelInject['fetchContact']
+  /** Local-only assistant thread under this group message. */
+  renderThread?: (entry: FusedImEntry) => ReactNode
+  /** Hover: 转发给助手 (does not post to Yunzhijia). */
+  onForwardToAssistant?: (entry: FusedImEntry) => void
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -245,7 +250,7 @@ export function YzjFusedView(props: YzjFusedInjected) {
   const value = held.sessionId === viewKey ? held.value : (cached ?? { bound: false, items: [] })
   const phase = held.sessionId === viewKey ? held.phase : phaseOf(cached)
   const [error, setError] = useState('')
-  const [more, setMore] = useState(true)
+  const [more, setMore] = useState(() => getFusedMore(viewKey) ?? true)
   const [loadingOlder, setLoadingOlder] = useState(false)
   // Anchor auto-paging budget per viewKey (决策 39 后续): reset when the view swaps.
   const anchorPagesRef = useRef(0)
@@ -275,10 +280,15 @@ export function YzjFusedView(props: YzjFusedInjected) {
       phase: phaseOf(hit),
     })
     setNames(seedNames(hit?.items ?? []))
+    setMore(getFusedMore(viewKey) ?? true)
     setHighlightMsgId('')
     setUnclamped(new Set())
     setError('')
   }, [viewKey])
+
+  useEffect(() => {
+    putFusedMore(viewKey, more)
+  }, [viewKey, more])
 
   useEffect(() => {
     if (highlightMsgId === '') return
@@ -529,6 +539,7 @@ export function YzjFusedView(props: YzjFusedInjected) {
             ].filter(Boolean).join(' ')
             const time = clock(entry.sentAt)
             return (
+              <div key={`im-wrap-${entry.msgId}`}>
               <div
                 key={`im-${entry.msgId}`}
                 className={rowClass}
@@ -606,8 +617,20 @@ export function YzjFusedView(props: YzjFusedInjected) {
                     >
                       回复
                     </button>
+                    {props.onForwardToAssistant !== undefined && (
+                      <button
+                        type="button"
+                        className={css.roomAction}
+                        data-testid={`yzj-forward-assistant-${entry.msgId}`}
+                        onClick={() => props.onForwardToAssistant?.(entry)}
+                      >
+                        转发给助手
+                      </button>
+                    )}
                   </span>
                 </span>
+              </div>
+              {props.renderThread?.(entry)}
               </div>
             )
           })}

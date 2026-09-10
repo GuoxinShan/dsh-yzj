@@ -24,14 +24,20 @@ import { attachYzjSession, ensureYzjHostWorkspace } from './yzj-cwd.ts'
 import { parseContactUser } from './contact-parse.ts'
 import { unwrapCli, cliRows } from './cli-payload.ts'
 import { collectCalendarEvents } from '@dsh-yzj/tool-yzj/src/calendar-range.ts'
+import { DEFAULT_ASSISTANT_ID, type YzjAssistantsService } from '@dsh-yzj/tool-yzj/src/assistants.ts'
+import { processDigest, runAssistantTurn } from './assistant-runtime.ts'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'ui-yzj'
-/** Services required by the board channel plus the robot settings face. */
-export const inject = ['connection', 'yzjBridge']
+/**
+ * Services required by the board channel. `webServer` is required to mount the
+ * `/yzj` RPC HTTP prefix (Oh My DSH desktop `connection.rpc.handle` touches
+ * webServer on a fiber that does not declare it — see pitfall-053).
+ */
+export const inject = ['connection', 'yzjBridge', 'webServer']
 
 /** Internal failure envelope matching the closed RpcError union. */
 function internalError(message: string): { ok: false; error: { code: 'internal'; message: string; details: Record<string, never> } } {
@@ -696,6 +702,116 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
         if (!sent.ok) return internalError(sent.error)
         return { ok: true, value: sent }
       }
+      case 'assistants-list': {
+        const assistants = ctx.get('yzjAssistants') as YzjAssistantsService | undefined
+        if (assistants === undefined) return internalError('assistants-list: yzjAssistants 服务不可用（tool-yzj 未挂载）')
+        await assistants.store.ensureDefault()
+        return { ok: true, value: { assistants: assistants.store.list() } }
+      }
+      case 'assistants-create': {
+        const assistants = ctx.get('yzjAssistants') as YzjAssistantsService | undefined
+        if (assistants === undefined) return internalError('assistants-create: yzjAssistants 服务不可用（tool-yzj 未挂载）')
+        const name = stringField(payload, 'name') ?? '助手'
+        const prompt = stringField(payload, 'prompt')
+        const record = prompt === undefined
+          ? await assistants.store.create(name)
+          : await assistants.store.create(name, prompt)
+        return { ok: true, value: { assistant: record } }
+      }
+      case 'assistant-ask': {
+        const assistants = ctx.get('yzjAssistants') as YzjAssistantsService | undefined
+        if (assistants === undefined) return internalError('assistant-ask: yzjAssistants 服务不可用（tool-yzj 未挂载）')
+        const assistantId = stringField(payload, 'assistantId') ?? DEFAULT_ASSISTANT_ID
+        const text = stringField(payload, 'text')
+        if (text === undefined) return internalError('assistant-ask endpoint requires a text payload')
+        await assistants.store.ensureDefault()
+        if (assistants.store.get(assistantId) === undefined) {
+          return internalError(`assistant-ask: unknown assistant ${assistantId}`)
+        }
+        const result = await runAssistantTurn(ctx, assistants, {
+          target: { kind: 'dm', assistantId },
+          text,
+        })
+        return { ok: true, value: result }
+      }
+      case 'assistant-thread-ask': {
+        const assistants = ctx.get('yzjAssistants') as YzjAssistantsService | undefined
+        if (assistants === undefined) return internalError('assistant-thread-ask: yzjAssistants 服务不可用（tool-yzj 未挂载）')
+        const assistantId = stringField(payload, 'assistantId') ?? DEFAULT_ASSISTANT_ID
+        const groupId = stringField(payload, 'groupId')
+        const msgId = stringField(payload, 'msgId')
+        const text = stringField(payload, 'text')
+        if (groupId === undefined || msgId === undefined || text === undefined) {
+          return internalError('assistant-thread-ask endpoint requires groupId, msgId, and text')
+        }
+        await assistants.store.ensureDefault()
+        if (assistants.store.get(assistantId) === undefined) {
+          return internalError(`assistant-thread-ask: unknown assistant ${assistantId}`)
+        }
+        const io = homeIoFrom(ctx.get('yzjHome'))
+        const window = io?.formatSummonWindow?.(groupId, msgId)
+        const groupName = stringField(payload, 'groupName')
+        const originWho = stringField(payload, 'originWho')
+        const originText = stringField(payload, 'originText')
+        const result = await runAssistantTurn(ctx, assistants, {
+          target: { kind: 'thread', assistantId, groupId, msgId },
+          text,
+          ...(groupName === undefined ? {} : { groupName }),
+          ...(originWho === undefined ? {} : { originWho }),
+          ...(originText === undefined ? {} : { originText }),
+          ...(window === undefined || window === '' ? {} : { window }),
+        })
+        return { ok: true, value: result }
+      }
+      case 'assistant-projection': {
+        const assistants = ctx.get('yzjAssistants') as YzjAssistantsService | undefined
+        if (assistants === undefined) return internalError('assistant-projection: yzjAssistants 服务不可用（tool-yzj 未挂载）')
+        await assistants.store.ensureDefault()
+        const groupId = stringField(payload, 'groupId')
+        const msgId = stringField(payload, 'msgId')
+        if (groupId !== undefined && msgId !== undefined) {
+          const thread = assistants.store.threadOf(groupId, msgId)
+          return { ok: true, value: { thread } }
+        }
+        const assistantId = stringField(payload, 'assistantId') ?? DEFAULT_ASSISTANT_ID
+        const dm = assistants.store.dmProjection(assistantId)
+        if (dm === undefined) return internalError(`assistant-projection: unknown assistant ${assistantId}`)
+        const writes = writeGate.list(dm.assistant.sessionId).map(projectRecord)
+        const threads = typeof payload === 'object' && payload !== null && stringField(payload, 'threadsGroupId') !== undefined
+          ? assistants.store.threadsForGroup(stringField(payload, 'threadsGroupId') ?? '')
+          : []
+        return {
+          ok: true,
+          value: {
+            assistant: dm.assistant,
+            processing: dm.processing,
+            bubbles: dm.bubbles,
+            writes,
+            ...(threads.length === 0 ? {} : { threads }),
+          },
+        }
+      }
+      case 'assistant-threads': {
+        const assistants = ctx.get('yzjAssistants') as YzjAssistantsService | undefined
+        if (assistants === undefined) return internalError('assistant-threads: yzjAssistants 服务不可用（tool-yzj 未挂载）')
+        const groupId = stringField(payload, 'groupId')
+        if (groupId === undefined) return internalError('assistant-threads endpoint requires a groupId payload')
+        return { ok: true, value: { threads: assistants.store.threadsForGroup(groupId) } }
+      }
+      case 'assistant-process': {
+        const assistants = ctx.get('yzjAssistants') as YzjAssistantsService | undefined
+        if (assistants === undefined) return internalError('assistant-process: yzjAssistants 服务不可用（tool-yzj 未挂载）')
+        const assistantId = stringField(payload, 'assistantId') ?? DEFAULT_ASSISTANT_ID
+        const row = assistants.store.get(assistantId) ?? await assistants.store.ensureDefault()
+        const events = agentsFace(ctx)?.get(row.sessionId)?.session?.events ?? []
+        return {
+          ok: true,
+          value: {
+            sessionId: row.sessionId,
+            events: processDigest(events),
+          },
+        }
+      }
       default:
         return internalError(`unknown /yzj endpoint ${endpoint}`)
     }
@@ -709,6 +825,132 @@ export function createRpcHandler(ctx: Context, writeGate: YzjWriteGateFace): Con
 export function apply(ctx: Context): void {
   const writeGate = applyWriteGate(ctx)
   const handler = createRpcHandler(ctx, writeGate)
-  ctx.connection.rpc.handle('/yzj', handler, { authority: 'loopback' })
+  mountYzjRpcChannel(ctx, handler)
   void ensureYzjHostWorkspace(ctx).catch(() => undefined)
+}
+
+const YZJ_CHANNEL = '/yzj'
+const ENDPOINT_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/
+
+type YzjWebServer = {
+  register: (route: {
+    kind: 'prefix'
+    path: string
+    handler: (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void | Promise<void>
+  }) => () => void
+}
+
+type YzjConnectionAuth = {
+  requestRejection?: (req: import('node:http').IncomingMessage) => number | undefined
+}
+
+/**
+ * Mount `/yzj/*` on the host webServer with the Connection auth fence.
+ *
+ * Oh My DSH ships a connection build whose `rpc.handle` registers routes via
+ * `owner.webServer` on a fiber that only injects `credentials` — third-party
+ * callers always throw `cannot get property "webServer" without inject`.
+ * Registering here (with `webServer` in this module's inject) matches webhook
+ * plugins and works on both desktop and alpha.5 Connection.
+ */
+function mountYzjRpcChannel(ctx: Context, handler: ConnectionRpcHandler): void {
+  const webServer = ctx.get('webServer') as YzjWebServer | undefined
+  if (webServer === undefined) {
+    throw new Error('ui-yzj: webServer service missing (inject declares it)')
+  }
+  const connection = ctx.connection as YzjConnectionAuth
+  ctx.effect(() => webServer.register({
+    kind: 'prefix',
+    path: YZJ_CHANNEL,
+    handler: async (req, res) => {
+      const rejection = connection.requestRejection?.(req)
+      if (rejection !== undefined) {
+        res.writeHead(rejection)
+        res.end(rejection === 401 ? 'unauthorized' : 'forbidden')
+        return
+      }
+      const pathname = new URL(req.url ?? '/', 'http://dsh.internal').pathname
+      const endpoint = yzjEndpointFromPath(pathname)
+      if (req.method !== 'POST' || endpoint === undefined) {
+        res.writeHead(404)
+        res.end('not found')
+        return
+      }
+      const contentType = String(req.headers['content-type'] ?? '').split(';', 1)[0]?.trim().toLowerCase()
+      if (contentType !== 'application/json') {
+        res.writeHead(415)
+        res.end('content type must be application/json')
+        return
+      }
+      let raw: unknown
+      try {
+        raw = JSON.parse((await readHttpBody(req)).toString('utf8'))
+      } catch {
+        res.writeHead(400)
+        res.end('body is not JSON')
+        return
+      }
+      const body = typeof raw === 'object' && raw !== null ? raw as Record<string, unknown> : {}
+      const rpcId = typeof body.rpcId === 'string' ? body.rpcId : 'invalid-request'
+      if (body.type !== 'client-request' || typeof body.method !== 'string') {
+        writeYzjRpc(res, rpcId, {
+          ok: false,
+          error: { code: 'gateway/bad-request', message: 'invalid client-request message', details: { issues: [] } },
+        })
+        return
+      }
+      if (body.method !== endpoint) {
+        writeYzjRpc(res, rpcId, {
+          ok: false,
+          error: {
+            code: 'gateway/bad-request',
+            message: `method ${JSON.stringify(body.method)} does not match endpoint ${JSON.stringify(endpoint)}`,
+            details: { issues: [] },
+          },
+        })
+        return
+      }
+      try {
+        const result = await handler(endpoint, body.payload, undefined)
+        writeYzjRpc(res, rpcId, result)
+      } catch (error) {
+        res.writeHead(500)
+        res.end(`handler failure: ${String(error)}`)
+      }
+    },
+  }), 'ui-yzj: /yzj rpc channel')
+}
+
+function yzjEndpointFromPath(pathname: string): string | undefined {
+  if (!pathname.startsWith(`${YZJ_CHANNEL}/`)) return undefined
+  const endpoint = pathname.slice(YZJ_CHANNEL.length + 1)
+  if (endpoint.split('/').some(segment =>
+    segment === '' || segment === '.' || segment === '..' || !ENDPOINT_SEGMENT.test(segment))) {
+    return undefined
+  }
+  return endpoint
+}
+
+function readHttpBody(req: import('node:http').IncomingMessage, maxBytes = 32 * 1024 * 1024): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = []
+    let size = 0
+    req.on('data', (chunk: Buffer) => {
+      size += chunk.byteLength
+      if (size > maxBytes) {
+        reject(new Error('body too large'))
+        req.destroy()
+        return
+      }
+      chunks.push(chunk)
+    })
+    req.on('end', () => resolve(Buffer.concat(chunks)))
+    req.on('error', reject)
+  })
+}
+
+function writeYzjRpc(res: import('node:http').ServerResponse, rpcId: string, result: unknown): void {
+  const body = JSON.stringify({ type: 'server-response', rpcId, result })
+  res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
+  res.end(body)
 }
